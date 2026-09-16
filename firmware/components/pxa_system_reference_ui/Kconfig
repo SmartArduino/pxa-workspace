@@ -58,6 +58,24 @@ menu "PXA System UI selection"
             Draw the bottom gesture handle and reserve space above it. The
             bottom gesture target remains active when this is disabled.
 
+    config PXSYS_REFERENCE_UI_BACK_GESTURE
+        bool "Built-in left-edge back gesture"
+        default y
+        depends on PXSYS_REFERENCE_UI
+        help
+            Swipe right from the left edge to navigate back, with a drag pill
+            as the indicator. Boards can disable the built-in behavior at
+            runtime and install their own back-gesture override instead.
+
+    config PXSYS_REFERENCE_UI_BUILTIN_SETTINGS
+        bool "Built-in Sound, About, Apps and Files settings pages"
+        default y
+        depends on PXSYS_REFERENCE_UI
+        help
+            Compiles the standard Sound & display, About device, Apps and
+            Files & storage pages. Each page appears in Settings only when the
+            product wires its provider and sets the matching feature bit.
+
     config PXSYS_REFERENCE_UI_LAUNCHER_COLUMNS
         int "Launcher app columns per page"
         range 1 8

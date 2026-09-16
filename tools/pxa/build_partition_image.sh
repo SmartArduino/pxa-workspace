@@ -71,7 +71,7 @@ project_root="$(cd "$script_dir/../.." && pwd)"
 board="$1"
 shift
 app_ids=("$@")
-board_dir="$project_root/boards/$board"
+board_dir="$project_root/firmware/boards/$board"
 partition_table="$board_dir/partitions.csv"
 board_defaults="$board_dir/sdkconfig.defaults"
 

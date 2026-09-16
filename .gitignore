@@ -4,6 +4,7 @@
 /managed_components/
 /firmware/sdkconfig
 /firmware/sdkconfig.old
+/firmware/sdkconfig.*
 /firmware/managed_components/
 /firmware/components/lz4/demo
 /.pxa-tools/

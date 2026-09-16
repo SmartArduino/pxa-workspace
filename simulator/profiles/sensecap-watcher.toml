@@ -1,0 +1,10 @@
+[desktop]
+width = 412
+height = 412
+# Round 1.45" SenseCAP Watcher panel; the safe area is the inscribed square.
+round = true
+safe_insets = [60, 60, 60, 60]
+shape_background = "black"
+locale = "zh-CN"
+theme = "dark"
+gestures = true

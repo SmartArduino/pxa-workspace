@@ -6,8 +6,47 @@ menu "PXADB development service"
         default n
         help
             Expose PXADB control, PXA package management, filesystem access
-            and structured logs over USB Serial/JTAG. It does not expose a
-            shell or raw flash access.
+            and structured logs over the selected transport. It does not
+            expose a shell or raw flash access.
+
+    choice PXADB_TRANSPORT
+        prompt "PXADB transport"
+        depends on PXADB_ENABLED
+        default PXADB_TRANSPORT_USB_SERIAL_JTAG
+        help
+            USB Serial/JTAG is the ESP32-S3 native port. Boards whose native
+            USB port is not wired (the service is tunnelled through a USB-UART
+            bridge instead) can run PXADB over a UART. With a UART transport,
+            console log text shares the same line and the host client skips
+            lines that are not PXADB frames.
+
+        config PXADB_TRANSPORT_USB_SERIAL_JTAG
+            bool "USB Serial/JTAG"
+
+        config PXADB_TRANSPORT_UART
+            bool "UART"
+    endchoice
+
+    config PXADB_UART_PORT
+        int "PXADB UART port"
+        range 0 2
+        default 0
+        depends on PXADB_ENABLED && PXADB_TRANSPORT_UART
+
+    config PXADB_UART_TX_GPIO
+        int "PXADB UART TX GPIO (-1 keeps the console default)"
+        default -1
+        depends on PXADB_ENABLED && PXADB_TRANSPORT_UART
+
+    config PXADB_UART_RX_GPIO
+        int "PXADB UART RX GPIO (-1 keeps the console default)"
+        default -1
+        depends on PXADB_ENABLED && PXADB_TRANSPORT_UART
+
+    config PXADB_UART_BAUD
+        int "PXADB UART baud rate"
+        default 115200
+        depends on PXADB_ENABLED && PXADB_TRANSPORT_UART
 
     config PXADB_AUTOSTART
         bool "Start PXADB automatically after boot"

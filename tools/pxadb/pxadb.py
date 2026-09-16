@@ -199,9 +199,13 @@ class PxaDbClient:
             return
         if serial is None:
             raise PxaDbError("pyserial is required; install with: pip install -e tools/pxadb")
+        try:
+            baudrate = int(os.environ.get("PXADB_BAUD", "115200"))
+        except ValueError:
+            raise PxaDbError("PXADB_BAUD must be an integer baud rate")
         self.serial = serial.Serial(
             port,
-            baudrate=115200,
+            baudrate=baudrate,
             timeout=0.2,
             # PXADB commands fit in one small OS write. In pyserial's finite
             # timeout mode, CDC ACM waits for the endpoint to become writable
@@ -249,11 +253,21 @@ class PxaDbClient:
                                               command.encode("utf-8"))
             return
         payload = f"{PROTOCOL} {sequence} {command}\n".encode("ascii")
-        written = self.serial.write(payload)
-        if written != len(payload):
-            raise PxaDbError(
-                f"short serial write: expected {len(payload)} bytes, wrote {written}"
-            )
+        # Non-blocking serial writes can accept only part of a large upload
+        # command; keep writing until the whole line left the host.
+        offset = 0
+        deadline = time.monotonic() + max(self.timeout, 2.0)
+        while offset < len(payload):
+            written = self.serial.write(payload[offset:])
+            if written:
+                offset += written
+                continue
+            if time.monotonic() >= deadline:
+                raise PxaDbError(
+                    f"short serial write: expected {len(payload)} bytes, "
+                    f"wrote {offset}"
+                )
+            time.sleep(0.005)
 
     def request_until(
         self, command: str, terminal_kinds: set[str], timeout: float | None = None
@@ -637,10 +651,11 @@ class NormalFsClient:
         offset_transfer = properties.get("fs_offset") == "1"
         binary_transfer = getattr(self.client, "binary_transport", None) is not None
         try:
-            chunk_size = min(64 * 1024 if binary_transfer else 192,
-                             int(properties.get("max_chunk", "192")))
+            chunk_size = int(properties.get("max_chunk", "192"))
         except ValueError:
             chunk_size = 192
+        if binary_transfer:
+            chunk_size = min(64 * 1024, chunk_size)
         if chunk_size <= 0:
             chunk_size = 192
         last_progress = -1
@@ -1130,10 +1145,19 @@ def command_run(arguments: argparse.Namespace) -> int:
 
 def add_connection_arguments(parser: argparse.ArgumentParser,
                              allow_logcat: bool = True) -> None:
+    try:
+        default_baud = int(os.environ.get("PXADB_BAUD", "115200"))
+    except ValueError:
+        default_baud = 115200
     parser.add_argument(
         "--port",
         default=os.environ.get("PXADB_PORT"),
         help="USB Serial/JTAG port; auto-detects one PXADB device when omitted",
+    )
+    parser.add_argument(
+        "--baud", type=int, default=default_baud,
+        help="serial baud rate for UART transports (default 115200, "
+             "override with PXADB_BAUD); ignored by USB Serial/JTAG",
     )
     parser.add_argument(
         "--simulator", dest="port", type=simulator_socket, metavar="PROFILE[@INSTANCE]",
@@ -1316,6 +1340,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
+    baud = getattr(arguments, "baud", None)
+    if baud is not None:
+        if baud <= 0:
+            parser.error("--baud must be a positive integer")
+        # PxaDbClient reads PXADB_BAUD; keep a single source of truth.
+        os.environ["PXADB_BAUD"] = str(baud)
     connect = getattr(arguments, "connect", None)
     token_file = getattr(arguments, "token", None)
     if connect:

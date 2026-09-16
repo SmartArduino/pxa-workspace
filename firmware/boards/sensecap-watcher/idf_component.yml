@@ -1,0 +1,14 @@
+# Dependencies for this board only. Another board gets its own manifest and
+# never inherits these display, input, power, codec or font packages.
+dependencies:
+  idf:
+    version: ">=5.5.4"
+  78/esp-wifi-connect: "~3.1.5"
+  espressif/button: "^4.1.7"
+  espressif/esp_codec_dev: "~1.3.2"
+  espressif/esp_lcd_spd2010: "~1.0.1"
+  espressif/esp_lcd_touch: "^1.2.1"
+  espressif/esp_lcd_touch_spd2010: "0.0.1"
+  espressif/freetype: "^2.14.3~1"
+  espressif/knob: "0.1.4"
+  espressif/led_strip: "~2.5.4"

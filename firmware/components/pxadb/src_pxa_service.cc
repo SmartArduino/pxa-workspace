@@ -18,8 +18,13 @@
 
 #if CONFIG_PXADB_ENABLED && CONFIG_IDF_TARGET_ESP32S3
 
+#if CONFIG_PXADB_TRANSPORT_UART
+#include <driver/gpio.h>
+#include <driver/uart.h>
+#else
 #include <driver/usb_serial_jtag.h>
 #include <driver/usb_serial_jtag_vfs.h>
+#endif
 #include <esp_app_desc.h>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
@@ -48,7 +53,7 @@ namespace {
 
 constexpr char kTag[] = "Pxadb";
 constexpr char kProtocol[] = "PXADB1";
-constexpr size_t kMaxCommandLength = 512;
+constexpr size_t kMaxCommandLength = 2048;
 constexpr size_t kMaxFramePayload = 320;
 constexpr size_t kMaxLogFramePayload = kMaxFramePayload + 12;
 constexpr size_t kMaxEncodedPayload = 448;
@@ -69,6 +74,10 @@ constexpr char kPxaInboxRoot[] = CONFIG_PXA_STATE_ROOT "/inbox";
 constexpr size_t kFsAbsolutePathLength =
     kFsPathLength + sizeof(kPxaMountPoint) + 1;
 constexpr size_t kFsDataChunkSize = 192;
+// Host-to-device uploads are request/response paced, so a larger FSDATA chunk
+// is the main throughput lever on UART links. Device-to-host FSGET frames
+// stay at kFsDataChunkSize because they share the 320-byte frame payload.
+constexpr size_t kFsUploadChunkSize = 1024;
 #if CONFIG_PXA_ENABLED
 constexpr size_t kPxaPackageListCapacity = 64;
 #endif
@@ -86,6 +95,91 @@ constexpr uint16_t kInputTimeoutMs = 5000;
 constexpr uint8_t kDefaultSwipeSteps = 12;
 constexpr uint8_t kMaximumSwipeSteps = 120;
 constexpr uint32_t kCaptureMinimumIntervalMs = 250;
+#endif
+
+#if CONFIG_PXADB_TRANSPORT_UART
+constexpr uart_port_t kTransportPort =
+    static_cast<uart_port_t>(CONFIG_PXADB_UART_PORT);
+constexpr size_t kTransportRxBufferSize = 4096;
+constexpr size_t kTransportTxBufferSize = 4096;
+/* The console UART is installed with a 256-byte RX ring buffer, so poll it
+ * often enough to drain a full command line without overflowing. */
+constexpr uint32_t kTransportReadPollMs = 5;
+
+esp_err_t TransportStart() {
+    const uart_config_t config = {
+        .baud_rate = CONFIG_PXADB_UART_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .rx_flow_ctrl_thresh = 0,
+        .source_clk = UART_SCLK_DEFAULT,
+        .flags = {},
+    };
+    if (uart_is_driver_installed(kTransportPort)) {
+        /* Port 0 is normally owned by the console; adopt its driver and match
+         * the configured baud rate instead of reinstalling it. */
+        return uart_set_baudrate(kTransportPort, CONFIG_PXADB_UART_BAUD);
+    }
+    esp_err_t err = uart_param_config(kTransportPort, &config);
+    if (err != ESP_OK) return err;
+    const gpio_num_t tx_gpio = static_cast<gpio_num_t>(
+        CONFIG_PXADB_UART_TX_GPIO >= 0
+            ? CONFIG_PXADB_UART_TX_GPIO
+            : static_cast<int>(UART_PIN_NO_CHANGE));
+    const gpio_num_t rx_gpio = static_cast<gpio_num_t>(
+        CONFIG_PXADB_UART_RX_GPIO >= 0
+            ? CONFIG_PXADB_UART_RX_GPIO
+            : static_cast<int>(UART_PIN_NO_CHANGE));
+    if (tx_gpio != UART_PIN_NO_CHANGE || rx_gpio != UART_PIN_NO_CHANGE) {
+        err = uart_set_pin(kTransportPort, tx_gpio, rx_gpio, UART_PIN_NO_CHANGE,
+                           UART_PIN_NO_CHANGE);
+        if (err != ESP_OK) return err;
+    }
+    return uart_driver_install(kTransportPort, kTransportRxBufferSize,
+                               kTransportTxBufferSize, 0, nullptr, 0);
+}
+
+int TransportWrite(const uint8_t* data, size_t length) {
+    return uart_write_bytes(kTransportPort, data, length);
+}
+
+bool TransportTxDone() {
+    return uart_wait_tx_done(kTransportPort, kIoTimeout) == ESP_OK;
+}
+
+int TransportRead(uint8_t* buffer, size_t length, uint32_t timeout_ms) {
+    return uart_read_bytes(kTransportPort, buffer, length,
+                           pdMS_TO_TICKS(timeout_ms));
+}
+#else
+constexpr uint32_t kTransportReadPollMs = 25;
+
+esp_err_t TransportStart() {
+    if (!usb_serial_jtag_is_driver_installed()) {
+        usb_serial_jtag_driver_config_t config = {
+            .tx_buffer_size = kUsbBufferSize,
+            .rx_buffer_size = kUsbBufferSize,
+        };
+        const esp_err_t err = usb_serial_jtag_driver_install(&config);
+        if (err != ESP_OK) return err;
+    }
+    usb_serial_jtag_vfs_use_driver();
+    return ESP_OK;
+}
+
+int TransportWrite(const uint8_t* data, size_t length) {
+    return usb_serial_jtag_write_bytes(data, length, kIoTimeout);
+}
+
+bool TransportTxDone() {
+    return usb_serial_jtag_wait_tx_done(kIoTimeout) == ESP_OK;
+}
+
+int TransportRead(uint8_t* buffer, size_t length, uint32_t timeout_ms) {
+    return usb_serial_jtag_read_bytes(buffer, length, pdMS_TO_TICKS(timeout_ms));
+}
 #endif
 
 struct LogRecord {
@@ -177,14 +271,14 @@ bool WriteAll(const void* data, size_t length) {
     size_t offset = 0;
     bool success = true;
     while (offset < length) {
-        const int written = usb_serial_jtag_write_bytes(bytes + offset, length - offset, kIoTimeout);
+        const int written = TransportWrite(bytes + offset, length - offset);
         if (written <= 0) {
             success = false;
             break;
         }
         offset += static_cast<size_t>(written);
     }
-    if (success) success = usb_serial_jtag_wait_tx_done(kIoTimeout) == ESP_OK;
+    if (success) success = TransportTxDone();
     if (s_tx_mutex != nullptr) xSemaphoreGive(s_tx_mutex);
     return success;
 }
@@ -545,7 +639,7 @@ void WriteFsUpload(unsigned long sequence, const char* offset_text, const char* 
             return;
         }
     }
-    uint8_t bytes[kFsDataChunkSize] = {};
+    uint8_t bytes[kFsUploadChunkSize] = {};
     size_t length = 0;
     if (!DecodeFileChunk(encoded_data, bytes, sizeof(bytes), &length) || length == 0 ||
         length > s_file_upload.remaining ||
@@ -718,7 +812,7 @@ void SendHello(unsigned long sequence) {
     snprintf(payload, sizeof(payload),
              "protocol=1;mode=normal;capabilities=info,logcat,packages,package-deploy,fs,reboot,doctor%s;max_chunk=%u;fs_offset=1;fs_sha256=1;target=%s;serial=%s;version=%s",
              kTestCapabilities,
-             static_cast<unsigned>(kFsDataChunkSize),
+             static_cast<unsigned>(kFsUploadChunkSize),
              CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version);
     SendFrame(sequence, "OK", payload);
 }
@@ -1203,7 +1297,7 @@ void HandleCommand(char* line) {
     if (strcmp(command, "HELLO") == 0) {
         SendHello(sequence);
         if (!s_control_session_active.exchange(true)) {
-            ESP_LOGI(kTag, "PXADB local USB control session connected");
+            ESP_LOGI(kTag, "PXADB control session connected");
         }
     } else if (strcmp(command, "BYE") == 0) {
 #if CONFIG_PXADB_TEST_CONTROL
@@ -1211,7 +1305,7 @@ void HandleCommand(char* line) {
 #endif
         s_control_session_active.store(false);
         SendFrame(sequence, "OK", "disconnected");
-        ESP_LOGI(kTag, "PXADB local USB control session disconnected");
+        ESP_LOGI(kTag, "PXADB control session disconnected");
     } else if (strcmp(command, "PING") == 0) {
         SendFrame(sequence, "OK", "pong");
     } else if (strcmp(command, "INFO") == 0) {
@@ -1457,7 +1551,7 @@ void PxadbTask(void*) {
     bool discarding_command = false;
     uint8_t input[128] = {};
     while (s_running.load()) {
-        const int received = usb_serial_jtag_read_bytes(input, sizeof(input), pdMS_TO_TICKS(25));
+        const int received = TransportRead(input, sizeof(input), kTransportReadPollMs);
         if (received <= 0) {
             SendPendingLogs();
             const uint64_t now_us = static_cast<uint64_t>(esp_timer_get_time());
@@ -1470,7 +1564,7 @@ void PxadbTask(void*) {
 #if CONFIG_PXADB_TEST_CONTROL
                 QueueSessionCancel();
 #endif
-                ESP_LOGI(kTag, "PXADB local USB control session timed out");
+                ESP_LOGI(kTag, "PXADB control session timed out");
             }
             continue;
         }
@@ -1499,7 +1593,7 @@ void PxadbTask(void*) {
 #if CONFIG_PXADB_TEST_CONTROL
         QueueSessionCancel();
 #endif
-        ESP_LOGI(kTag, "PXADB local USB control session stopped");
+        ESP_LOGI(kTag, "PXADB control session stopped");
     }
     s_task_active.store(false);
     vTaskDelete(nullptr);
@@ -1604,15 +1698,8 @@ esp_err_t ConfigureTestControl(const TestControlAdapter* adapter) {
 
 esp_err_t Start() {
     if (s_running.load()) return ESP_OK;
-    if (!usb_serial_jtag_is_driver_installed()) {
-        usb_serial_jtag_driver_config_t config = {
-            .tx_buffer_size = kUsbBufferSize,
-            .rx_buffer_size = kUsbBufferSize,
-        };
-        const esp_err_t err = usb_serial_jtag_driver_install(&config);
-        if (err != ESP_OK) return err;
-    }
-    usb_serial_jtag_vfs_use_driver();
+    const esp_err_t transport_err = TransportStart();
+    if (transport_err != ESP_OK) return transport_err;
     // Log history can later be read by LOGSUB. Keep it in internal RAM because
     // package and filesystem operations can temporarily disable the flash cache.
     if (s_log_history == nullptr) {

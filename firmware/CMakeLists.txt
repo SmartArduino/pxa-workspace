@@ -37,6 +37,11 @@ set(SDKCONFIG_DEFAULTS
     "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults"
     "${CMAKE_CURRENT_LIST_DIR}/boards/${PXA_BOARD}/sdkconfig.defaults")
 
+# Keep the generated Kconfig state per board. The shared firmware/sdkconfig
+# would otherwise leak flash size, partition table and feature choices from a
+# previously built board into the next one.
+set(SDKCONFIG "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.${PXA_BOARD}")
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # Each board can resolve a different managed-component graph. Keep its exact
 # resolution in a separate lock file instead of rewriting another board's.

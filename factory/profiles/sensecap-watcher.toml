@@ -1,0 +1,5 @@
+[factory]
+# Ships the shared CJK system font in the PXA storage partition. Firmware
+# builds never touch pxa_data; flash this image with tools/factory.sh.
+include_system_font = true
+apps = []
