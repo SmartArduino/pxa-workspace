@@ -16,6 +16,7 @@
 #define PXA_ESP_SURFACE_MAGIC UINT32_C(0x45504753)
 #define PXA_ESP_SURFACE_LATENCY_BUCKETS 64u
 #define PXA_ESP_RASTER_MAILBOX_SLOTS 2u
+#define PXA_ESP_SURFACE_FLAG_GAME_RENDER UINT8_C(8)
 
 static const char *const PXA_ESP_SURFACE_TAG = "PxaSurface";
 
@@ -256,10 +257,11 @@ static pxa_status_t create_surface(
         desc->height == 0 || desc->buffer_count < 2 ||
         desc->buffer_count > PXA_ESP_SURFACE_MAX_BUFFERS)
         return PXA_STATUS_INVALID_ARGUMENT;
-    if ((desc->flags & ~PXA_SURFACE_FLAG_KNOWN_MASK) != 0)
+    if ((desc->flags & ~(PXA_SURFACE_FLAG_KNOWN_MASK |
+                         PXA_ESP_SURFACE_FLAG_GAME_RENDER)) != 0)
         return PXA_STATUS_UNSUPPORTED;
     if ((desc->flags & PXA_SURFACE_FLAG_GUEST_MAPPED) != 0 &&
-        (desc->flags & PXA_SURFACE_FLAG_HOST_RASTER) != 0)
+        (desc->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) != 0)
         return PXA_STATUS_UNSUPPORTED;
     if (desc->format == PXA_SURFACE_FORMAT_RGB565 &&
         (desc->flags & PXA_SURFACE_FLAG_PREMULTIPLIED_ALPHA) == 0)
@@ -298,7 +300,7 @@ static pxa_status_t create_surface(
                 return PXA_STATUS_RESOURCE_LIMIT;
             }
         }
-        if ((desc->flags & PXA_SURFACE_FLAG_HOST_RASTER) != 0) {
+        if ((desc->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) != 0) {
             surface->raster_depth_buffer = heap_caps_malloc(
                 (size_t)desc->width * desc->height *
                     sizeof(*surface->raster_depth_buffer),
@@ -549,7 +551,7 @@ static pxa_status_t write_surface(void *context, uint64_t provider_surface,
     if (surface->magic != PXA_ESP_SURFACE_MAGIC ||
         surface->closing || size != surface->frame_bytes ||
         (surface->flags & (PXA_SURFACE_FLAG_GUEST_MAPPED |
-                           PXA_SURFACE_FLAG_HOST_RASTER)) != 0) {
+                           PXA_ESP_SURFACE_FLAG_GAME_RENDER)) != 0) {
         taskEXIT_CRITICAL(&g_surface_lock);
         return PXA_STATUS_BAD_STATE;
     }
@@ -598,7 +600,7 @@ static pxa_status_t queue_surface(
     taskENTER_CRITICAL(&g_surface_lock);
     if (surface->magic != PXA_ESP_SURFACE_MAGIC || surface->closing ||
         (surface->flags & (PXA_SURFACE_FLAG_GUEST_MAPPED |
-                           PXA_SURFACE_FLAG_HOST_RASTER)) != 0) {
+                           PXA_ESP_SURFACE_FLAG_GAME_RENDER)) != 0) {
         taskEXIT_CRITICAL(&g_surface_lock);
         return PXA_STATUS_BAD_STATE;
     }
@@ -619,7 +621,8 @@ static pxa_status_t queue_surface(
 
 static uint32_t raster_capabilities(void) {
     return PXA_RASTER_CAP_FLAT_QUAD | PXA_RASTER_CAP_TEXTURED_QUAD |
-           PXA_RASTER_CAP_ADDITIVE_SPRITE;
+           PXA_RASTER_CAP_ADDITIVE_SPRITE | PXA_RASTER_CAP_SPRITE_BATCH |
+           PXA_RASTER_CAP_TRIANGLE_BATCH;
 }
 
 static void copy_raster_resources(const pxa_esp_surface_t *surface,
@@ -661,7 +664,7 @@ static pxa_status_t raster_upload_surface(void *context,
     }
     taskENTER_CRITICAL(&g_surface_lock);
     if (surface->magic != PXA_ESP_SURFACE_MAGIC || surface->closing ||
-        (surface->flags & PXA_SURFACE_FLAG_HOST_RASTER) == 0 ||
+        (surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) == 0 ||
         surface->raster_last_frame_id != 0 ||
         surface->raster_draw_pending != PXA_ESP_SURFACE_NONE ||
         surface->raster_draw_rendering != PXA_ESP_SURFACE_NONE) {
@@ -702,7 +705,7 @@ static pxa_status_t raster_submit_surface(void *context,
     submit_us = (uint64_t)esp_timer_get_time();
     taskENTER_CRITICAL(&g_surface_lock);
     if (surface->magic != PXA_ESP_SURFACE_MAGIC || surface->closing ||
-        (surface->flags & PXA_SURFACE_FLAG_HOST_RASTER) == 0 ||
+        (surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) == 0 ||
         surface->raster_palette == NULL) {
         taskEXIT_CRITICAL(&g_surface_lock);
         return PXA_STATUS_BAD_STATE;
@@ -797,7 +800,7 @@ static pxa_status_t raster_query_surface(void *context,
         return PXA_STATUS_INVALID_ARGUMENT;
     taskENTER_CRITICAL(&g_surface_lock);
     if (surface->magic != PXA_ESP_SURFACE_MAGIC || surface->closing ||
-        (surface->flags & PXA_SURFACE_FLAG_HOST_RASTER) == 0) {
+        (surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) == 0) {
         taskEXIT_CRITICAL(&g_surface_lock);
         return PXA_STATUS_BAD_STATE;
     }
@@ -872,9 +875,6 @@ static pxa_status_t query_surface(void *context, uint64_t provider_surface,
                    PXA_SURFACE_STATE_FLAG_SUPPORTS_ALPHA_COMPOSITING;
     if (PXA_ESP_SURFACE_GUEST_MAPPING_SUPPORTED)
         state->flags |= PXA_SURFACE_STATE_FLAG_SUPPORTS_GUEST_MAPPED;
-    state->flags |= PXA_SURFACE_STATE_FLAG_SUPPORTS_HOST_RASTER |
-                    PXA_SURFACE_STATE_FLAG_RASTER_TEXTURED_QUAD |
-                    PXA_SURFACE_STATE_FLAG_RASTER_ADDITIVE_SPRITE;
     ui_alpha_provider = g_ui_alpha_provider;
     ui_alpha_provider_context = g_ui_alpha_provider_context;
     taskEXIT_CRITICAL(&g_surface_lock);
@@ -930,9 +930,50 @@ void pxa_esp_surface_backend(pxa_surface_backend_t *backend) {
     backend->present_buffer = present_surface_buffer;
     backend->peek_release = peek_surface_release;
     backend->consume_release = consume_surface_release;
-    backend->raster_upload = raster_upload_surface;
-    backend->raster_submit = raster_submit_surface;
-    backend->raster_query = raster_query_surface;
+}
+
+static pxa_status_t create_game_render_context(
+    void *context, const pxa_game_render_desc_t *desc,
+    uint64_t *provider_context, uint32_t *capabilities) {
+    pxa_surface_desc_t surface_desc;
+    pxa_surface_layer_t layer;
+    uint32_t stride;
+    pxa_status_t status;
+    if (desc == NULL || provider_context == NULL || capabilities == NULL)
+        return PXA_STATUS_INVALID_ARGUMENT;
+    memset(&surface_desc, 0, sizeof(surface_desc));
+    surface_desc.width = desc->width;
+    surface_desc.height = desc->height;
+    surface_desc.format = PXA_SURFACE_FORMAT_RGB565;
+    surface_desc.buffer_count = desc->buffer_count;
+    surface_desc.flags = PXA_ESP_SURFACE_FLAG_GAME_RENDER;
+    if ((desc->flags & PXA_GAME_RENDER_FLAG_PREFER_DIRECT_SCANOUT) != 0)
+        surface_desc.flags |= PXA_SURFACE_FLAG_PREFER_DIRECT_SCANOUT;
+    status = create_surface(context, &surface_desc, provider_context, &stride);
+    if (status != PXA_STATUS_OK) return status;
+    memset(&layer, 0, sizeof(layer));
+    layer.width = desc->width;
+    layer.height = desc->height;
+    layer.visible = 1;
+    status = configure_surface(context, *provider_context, &layer);
+    if (status != PXA_STATUS_OK) {
+        close_surface(context, *provider_context);
+        *provider_context = 0;
+        return status;
+    }
+    *capabilities = raster_capabilities();
+    return PXA_STATUS_OK;
+}
+
+void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend) {
+    if (backend == NULL) return;
+    memset(backend, 0, sizeof(*backend));
+    backend->struct_size = sizeof(*backend);
+    backend->create = create_game_render_context;
+    backend->upload = raster_upload_surface;
+    backend->submit = raster_submit_surface;
+    backend->query = raster_query_surface;
+    backend->close = close_surface;
 }
 
 void pxa_esp_surface_set_frame_ready_callback(
@@ -1074,7 +1115,7 @@ void pxa_esp_surface_note_frame_presented(uint64_t timestamp_us,
     const uint32_t elapsed = latency_us(timestamp_us, presented_us);
     taskENTER_CRITICAL(&g_surface_lock);
     if (g_acquired_surface != NULL &&
-        (g_acquired_surface->flags & PXA_SURFACE_FLAG_HOST_RASTER) != 0 &&
+        (g_acquired_surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) != 0 &&
         g_acquired_surface->acquired >= 0) {
         const uint64_t ready_us = g_acquired_surface->raster_buffer_ready_us[
             (uint8_t)g_acquired_surface->acquired];
@@ -1143,7 +1184,7 @@ static bool materialize_latest_raster_draw(void) {
     taskENTER_CRITICAL(&g_surface_lock);
     surface = g_surface;
     if (surface == NULL || surface->closing ||
-        (surface->flags & PXA_SURFACE_FLAG_HOST_RASTER) == 0 ||
+        (surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) == 0 ||
         surface->raster_draw_pending == PXA_ESP_SURFACE_NONE ||
         surface->raster_draw_rendering != PXA_ESP_SURFACE_NONE) {
         taskEXIT_CRITICAL(&g_surface_lock);
@@ -1424,6 +1465,9 @@ void pxa_esp_surface_release_frame(uint64_t lease) {
 #else
 
 void pxa_esp_surface_backend(pxa_surface_backend_t *backend) {
+    if (backend != NULL) backend->struct_size = 0;
+}
+void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend) {
     if (backend != NULL) backend->struct_size = 0;
 }
 void pxa_esp_surface_set_frame_ready_callback(

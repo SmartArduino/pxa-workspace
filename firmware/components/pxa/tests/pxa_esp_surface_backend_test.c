@@ -69,6 +69,7 @@ static bool ui_alpha_plane(void *context,
 
 int main(void) {
     pxa_surface_backend_t backend;
+    pxa_game_render_backend_t game_backend;
     pxa_surface_desc_t desc = {
         4, 4, PXA_SURFACE_FORMAT_RGB565, 3,
         PXA_SURFACE_FLAG_PREFER_DIRECT_SCANOUT};
@@ -98,6 +99,7 @@ int main(void) {
     pxa_esp_surface_set_release_ready_callback(release_ready,
                                                 &release_notifications);
     pxa_esp_surface_backend(&backend);
+    pxa_esp_game_render_backend(&game_backend);
     assert(backend.create(backend.context, &desc, &surface, &stride) ==
            PXA_STATUS_OK);
     assert(surface != 0 && stride == 8 && allocations == 4);
@@ -351,14 +353,16 @@ int main(void) {
         pxa_raster_telemetry_t telemetry;
         uint16_t *front;
         unsigned color;
-        desc.flags = PXA_SURFACE_FLAG_PREFER_DIRECT_SCANOUT |
-                     PXA_SURFACE_FLAG_HOST_RASTER;
-        desc.buffer_count = 3;
-        assert(backend.create(backend.context, &desc, &surface, &stride) ==
-               PXA_STATUS_OK);
-        assert(allocations == 6);
-        assert(backend.configure(backend.context, surface, &layer) ==
-               PXA_STATUS_OK);
+        pxa_game_render_desc_t game_desc = {
+            4, 4, 3, PXA_GAME_RENDER_FLAG_PREFER_DIRECT_SCANOUT};
+        uint32_t capabilities;
+        assert(game_backend.create(game_backend.context, &game_desc, &surface,
+                                   &capabilities) == PXA_STATUS_OK);
+        assert((capabilities & (PXA_RASTER_CAP_SPRITE_BATCH |
+                                PXA_RASTER_CAP_TRIANGLE_BATCH)) ==
+               (PXA_RASTER_CAP_SPRITE_BATCH |
+                PXA_RASTER_CAP_TRIANGLE_BATCH));
+        assert(allocations == 7);
         pxa_write_u32(upload, PXA_RASTER_UPLOAD_MAGIC);
         pxa_write_u16(upload + 4, PXA_RASTER_ABI_MAJOR);
         pxa_write_u16(upload + 6, PXA_RASTER_ABI_MINOR);
@@ -367,9 +371,9 @@ int main(void) {
         pxa_write_u16(upload + 14, 1);
         pxa_write_u32(upload + 16, PXA_RASTER_PALETTE_COLORS * 2u);
         pxa_write_u16(upload + PXA_RASTER_UPLOAD_HEADER_BYTES, 0x5aa5);
-        assert(backend.raster_upload(backend.context, surface, upload,
-                                     sizeof(upload)) == PXA_STATUS_OK);
-        assert(allocations == 7 &&
+        assert(game_backend.upload(game_backend.context, surface, upload,
+                                   sizeof(upload)) == PXA_STATUS_OK);
+        assert(allocations == 8 &&
                ((pxa_esp_surface_t *)(uintptr_t)surface)->raster_palette[0] ==
                    0x5aa5);
 
@@ -383,8 +387,8 @@ int main(void) {
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2,
                       PXA_RASTER_CLEAR_BYTES);
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x1234);
-        assert(backend.raster_submit(backend.context, surface, draw,
-                                     sizeof(draw)) == PXA_STATUS_OK);
+        assert(game_backend.submit(game_backend.context, surface, draw,
+                                   sizeof(draw)) == PXA_STATUS_OK);
         assert(pxa_esp_surface_has_pending_frame());
         assert(((pxa_esp_surface_t *)(uintptr_t)surface)->pending ==
                PXA_ESP_SURFACE_NONE);
@@ -396,24 +400,24 @@ int main(void) {
 
         pxa_write_u64(draw + 20, 2);
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x2222);
-        assert(backend.raster_submit(backend.context, surface, draw,
-                                     sizeof(draw)) == PXA_STATUS_OK);
+        assert(game_backend.submit(game_backend.context, surface, draw,
+                                   sizeof(draw)) == PXA_STATUS_OK);
         pxa_write_u64(draw + 20, 3);
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x3333);
-        assert(backend.raster_submit(backend.context, surface, draw,
-                                     sizeof(draw)) == PXA_STATUS_OK);
+        assert(game_backend.submit(game_backend.context, surface, draw,
+                                   sizeof(draw)) == PXA_STATUS_OK);
         assert(pxa_esp_surface_acquire_latest_for_direct(&frame));
         assert(frame.frame_id == 3);
         front = (uint16_t *)(uintptr_t)frame.pixels;
         for (color = 0; color < 16; ++color) assert(front[color] == 0x3333);
-        assert(backend.raster_query(backend.context, surface, &telemetry) ==
+        assert(game_backend.query(game_backend.context, surface, &telemetry) ==
                    PXA_STATUS_OK &&
                telemetry.submitted_frames == 3 &&
                telemetry.dropped_frames == 1 &&
                telemetry.clear_commands == 2 &&
                telemetry.last_draw_list_bytes == sizeof(draw));
         pxa_esp_surface_release_frame(frame.lease);
-        backend.close(backend.context, surface);
+        game_backend.close(game_backend.context, surface);
         assert(allocations == 0);
     }
 

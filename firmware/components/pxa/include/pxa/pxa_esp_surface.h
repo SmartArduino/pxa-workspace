@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "pxa/game_render.h"
 #include "pxa/surface.h"
 
 #ifdef __cplusplus
@@ -68,6 +69,7 @@ typedef struct {
 } pxa_esp_surface_input_metrics_t;
 
 void pxa_esp_surface_backend(pxa_surface_backend_t *backend);
+void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend);
 void pxa_esp_surface_set_frame_ready_callback(
     pxa_esp_surface_frame_ready_fn callback, void *context);
 void pxa_esp_surface_set_release_ready_callback(

@@ -7,6 +7,7 @@
 #include "pxa/audio.h"
 #include "pxa/device.h"
 #include "pxa/fs.h"
+#include "pxa/game_render.h"
 #include "pxa/surface.h"
 #include "pxa/ipc.h"
 #include "pxa/lease.h"
@@ -75,6 +76,9 @@ typedef struct {
 
     pxa_surface_service_t *surface;
     void *surface_workspace;
+
+    pxa_game_render_service_t *game_render;
+    void *game_render_workspace;
 
     pxa_scheduler_service_t *scheduler;
     void *scheduler_workspace;

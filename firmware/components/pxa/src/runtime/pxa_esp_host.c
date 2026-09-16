@@ -2331,6 +2331,7 @@ static int start_verified(const char *identity) {
             PXA_IPC_SERVICE_ID, PXA_SENSOR_SERVICE_ID, PXA_NET_SERVICE_ID,
             PXA_AUDIO_SERVICE_ID, PXA_PERMISSION_SERVICE_ID,
             PXA_WORK_SERVICE_ID, PXA_SURFACE_SERVICE_ID,
+            PXA_GAME_RENDER_SERVICE_ID,
 #ifdef CONFIG_PXA_WASI_LIBC
             PXA_WASI_SERVICE_ID,
 #endif
@@ -2358,6 +2359,8 @@ static int start_verified(const char *identity) {
                           ? PXA_WORK_SERVICE_MINOR
                     : service_ids[index] == PXA_SURFACE_SERVICE_ID
                           ? PXA_SURFACE_SERVICE_MINOR
+                    : service_ids[index] == PXA_GAME_RENDER_SERVICE_ID
+                          ? PXA_GAME_RENDER_SERVICE_MINOR
                           : PXA_CORE_SERVICE_MINOR;
 #ifdef CONFIG_PXA_WASI_LIBC
             if (service_ids[index] == PXA_WASI_SERVICE_ID) {

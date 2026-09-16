@@ -66,6 +66,10 @@ void pxa_esp_surface_backend(pxa_surface_backend_t *output) {
     memset(output, 0, sizeof(*output));
 }
 
+void pxa_esp_game_render_backend(pxa_game_render_backend_t *output) {
+    memset(output, 0, sizeof(*output));
+}
+
 static void *test_allocate(void *context, size_t size) {
     void *memory;
     (void)context;

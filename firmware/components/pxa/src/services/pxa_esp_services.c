@@ -376,6 +376,8 @@ static pxa_status_t initialize_bounded_services(
     pxa_audio_config_t audio_config;
     pxa_surface_backend_t surface_backend;
     pxa_surface_config_t surface_config;
+    pxa_game_render_backend_t game_render_backend;
+    pxa_game_render_config_t game_render_config;
     pxa_status_t status;
     size_t workspace_size;
 
@@ -522,9 +524,33 @@ static pxa_status_t initialize_bounded_services(
     status = pxa_surface_service_init(
         services->surface_workspace, workspace_size, host->runtime,
         &surface_config, &services->surface);
+    if (status != PXA_STATUS_OK) {
+        return fail(result, "initialize-surface-service", status,
+                    PXA_ESP_SERVICES_ISSUE_NONE);
+    }
+
+    pxa_esp_game_render_backend(&game_render_backend);
+    memset(&game_render_config, 0, sizeof(game_render_config));
+    game_render_config.struct_size = sizeof(game_render_config);
+    game_render_config.max_contexts = 1;
+    game_render_config.max_contexts_per_component = 1;
+    game_render_config.max_width = 320;
+    game_render_config.max_height = 240;
+    game_render_config.min_buffer_count = 2;
+    game_render_config.max_buffer_count = 3;
+    game_render_config.backend = game_render_backend;
+    workspace_size =
+        pxa_game_render_service_workspace_size(&game_render_config);
+    status = allocate_workspace(host, workspace_size,
+                                &services->game_render_workspace, result,
+                                "allocate-game-render-service");
+    if (status != PXA_STATUS_OK) return status;
+    status = pxa_game_render_service_init(
+        services->game_render_workspace, workspace_size, host->runtime,
+        &game_render_config, &services->game_render);
     return status == PXA_STATUS_OK
                ? status
-               : fail(result, "initialize-surface-service", status,
+               : fail(result, "initialize-game-render-service", status,
                       PXA_ESP_SERVICES_ISSUE_NONE);
 }
 
@@ -762,6 +788,8 @@ static pxa_status_t register_services(
                  "register-audio-service");
     PXA_REGISTER(pxa_surface_service_register(services->surface),
                  "register-surface-service");
+    PXA_REGISTER(pxa_game_render_service_register(services->game_render),
+                 "register-game-render-service");
 #undef PXA_REGISTER
     return PXA_STATUS_OK;
 }

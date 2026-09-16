@@ -3,7 +3,8 @@ set -euo pipefail
 
 tests_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 component_dir=$(cd "$tests_dir/.." && pwd)
-project_dir=$(cd "$component_dir/../.." && pwd)
+project_dir=$(cd "$component_dir/../../.." && pwd)
+pxa_system_dir="$project_dir/deps/pxa-system"
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/pxa-esp-host-tests.XXXXXX")
 trap 'rm -rf -- "$build_dir"' EXIT
 
@@ -15,8 +16,8 @@ adapter_includes=(
   -I"$component_dir/src/package"
   -I"$component_dir/src/ui"
   -I"$component_dir/include"
-  -I"$project_dir/pxa-system/libpxa/include"
-  -I"$project_dir/pxa-system/libpxa/adapters/include"
+  -I"$pxa_system_dir/libpxa/include"
+  -I"$pxa_system_dir/libpxa/adapters/include"
 )
 
 build_and_run() {
@@ -47,7 +48,7 @@ build_and_run disabled_policy \
   "$component_dir/src/package/pxa_package_disabled_policy.c"
 
 libpxa_build="$build_dir/libpxa"
-cmake -S "$project_dir/pxa-system/libpxa" -B "$libpxa_build" \
+cmake -S "$pxa_system_dir/libpxa" -B "$libpxa_build" \
   -DPXA_BUILD_TESTS=OFF -DPXA_BUILD_ADAPTERS=OFF >/dev/null
 cmake --build "$libpxa_build" -j2 >/dev/null
 
@@ -61,9 +62,9 @@ done
 build_and_run lazy_storage \
   "${adapter_includes[@]}" -pthread \
   "$tests_dir/pxa_esp_lazy_storage_test.c" \
-  "$project_dir/pxa-system/libpxa/adapters/posix/pxa_posix_fs.c" \
-  "$project_dir/pxa-system/libpxa/adapters/posix/pxa_posix_scheduler_store.c" \
-  "$project_dir/pxa-system/libpxa/adapters/posix/pxa_posix_storage.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_fs.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_scheduler_store.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_storage.c" \
   "$libpxa_build/libpxa.a" -lm
 
 echo "PXA ESP adapter host tests passed"
