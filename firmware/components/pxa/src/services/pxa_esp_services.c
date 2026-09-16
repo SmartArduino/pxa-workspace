@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_timer.h"
 
@@ -39,6 +40,30 @@
 #endif
 
 #define PXA_ESP_SERVICES_PATH_BYTES 160
+#define PXA_ESP_GUEST_LOG_TAG "PXA-App"
+
+static pxa_status_t write_guest_log(
+    void *context, pxa_component_t component, pxa_bytes_t app_id,
+    pxa_log_level_t level, pxa_bytes_t message) {
+    static const char *const names[] = {
+        "TRACE", "DEBUG", "INFO", "WARN", "ERROR",
+    };
+    static const char *const colors[] = {
+        "\033[90m", "\033[36m", "\033[32m", "\033[33m", "\033[31m",
+    };
+    static const esp_log_level_t levels[] = {
+        ESP_LOG_VERBOSE, ESP_LOG_DEBUG, ESP_LOG_INFO, ESP_LOG_WARN,
+        ESP_LOG_ERROR,
+    };
+    (void)context;
+    if (level > PXA_LOG_LEVEL_ERROR) return PXA_STATUS_INVALID_ARGUMENT;
+    esp_log_write(levels[level], PXA_ESP_GUEST_LOG_TAG,
+                  "%s[PXA app=%.*s component=%lu level=%s] %.*s\033[0m\n",
+                  colors[level], (int)app_id.size, (const char *)app_id.data,
+                  (unsigned long)component, names[level], (int)message.size,
+                  (const char *)message.data);
+    return PXA_STATUS_OK;
+}
 
 static pxa_status_t fail(pxa_esp_services_result_t *result,
                          const char *stage, pxa_status_t status,
@@ -368,6 +393,7 @@ static pxa_status_t initialize_bounded_services(
     pxa_esp_services_result_t *result) {
     pxa_ipc_limits_t ipc_limits;
     pxa_lease_limits_t lease_limits;
+    pxa_log_config_t log_config;
     pxa_sensor_config_t sensor_config;
     pxa_device_config_t device_config;
     pxa_net_backend_t net_backend;
@@ -412,6 +438,22 @@ static pxa_status_t initialize_bounded_services(
                                     &services->lease);
     if (status != PXA_STATUS_OK) {
         return fail(result, "initialize-lease-service", status,
+                    PXA_ESP_SERVICES_ISSUE_NONE);
+    }
+
+    memset(&log_config, 0, sizeof(log_config));
+    log_config.struct_size = sizeof(log_config);
+    log_config.write = write_guest_log;
+    log_config.app_id = host->manifest->app_id;
+    log_config.max_message_bytes = PXA_LOG_MAX_MESSAGE_BYTES;
+    workspace_size = pxa_log_service_workspace_size(&log_config);
+    status = allocate_workspace(host, workspace_size, &services->log_workspace,
+                                result, "allocate-log-service");
+    if (status != PXA_STATUS_OK) return status;
+    status = pxa_log_service_init(services->log_workspace, workspace_size,
+                                  host->runtime, &log_config, &services->log);
+    if (status != PXA_STATUS_OK) {
+        return fail(result, "initialize-log-service", status,
                     PXA_ESP_SERVICES_ISSUE_NONE);
     }
 
@@ -774,6 +816,8 @@ static pxa_status_t register_services(
     PXA_REGISTER(pxa_ipc_broker_register(services->ipc), "register-ipc-broker");
     PXA_REGISTER(pxa_lease_service_register(services->lease),
                  "register-lease-service");
+    PXA_REGISTER(pxa_log_service_register(services->log),
+                 "register-log-service");
     PXA_REGISTER(pxa_permission_service_register(services->permission),
                  "register-permission-service");
     PXA_REGISTER(pxa_scheduler_service_register(services->scheduler),

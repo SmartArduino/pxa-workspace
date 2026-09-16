@@ -64,7 +64,7 @@
 #define PXA_ESP_HOST_TAG "PxaHost"
 #define PXA_ESP_HOST_MAX_APP_ID PXA_HOST_COMMAND_MAX_IDENTITY_BYTES
 #define PXA_ESP_HOST_MAX_PATH 160
-#define PXA_ESP_HOST_MAX_SERVICES 16
+#define PXA_ESP_HOST_MAX_SERVICES 18
 #define PXA_ESP_HOST_EVENT_DRAIN_ROUNDS 3
 #define PXA_ESP_HOST_BACK_EVENT_DRAIN_LIMIT 32
 #define PXA_ESP_HOST_CLOCK_PERIOD_US 5000
@@ -2331,7 +2331,7 @@ static int start_verified(const char *identity) {
             PXA_IPC_SERVICE_ID, PXA_SENSOR_SERVICE_ID, PXA_NET_SERVICE_ID,
             PXA_AUDIO_SERVICE_ID, PXA_PERMISSION_SERVICE_ID,
             PXA_WORK_SERVICE_ID, PXA_SURFACE_SERVICE_ID,
-            PXA_GAME_RENDER_SERVICE_ID,
+            PXA_GAME_RENDER_SERVICE_ID, PXA_LOG_SERVICE_ID,
 #ifdef CONFIG_PXA_WASI_LIBC
             PXA_WASI_SERVICE_ID,
 #endif
@@ -2361,6 +2361,8 @@ static int start_verified(const char *identity) {
                           ? PXA_SURFACE_SERVICE_MINOR
                     : service_ids[index] == PXA_GAME_RENDER_SERVICE_ID
                           ? PXA_GAME_RENDER_SERVICE_MINOR
+                    : service_ids[index] == PXA_LOG_SERVICE_ID
+                          ? PXA_LOG_SERVICE_MINOR
                           : PXA_CORE_SERVICE_MINOR;
 #ifdef CONFIG_PXA_WASI_LIBC
             if (service_ids[index] == PXA_WASI_SERVICE_ID) {

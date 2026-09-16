@@ -11,6 +11,7 @@
 #include "pxa/surface.h"
 #include "pxa/ipc.h"
 #include "pxa/lease.h"
+#include "pxa/log.h"
 #include "pxa/net.h"
 #include "pxa/package.h"
 #include "pxa/permission.h"
@@ -61,6 +62,9 @@ typedef struct {
 
     pxa_lease_service_t *lease;
     void *lease_workspace;
+
+    pxa_log_service_t *log;
+    void *log_workspace;
 
     pxa_sensor_service_t *sensor;
     void *sensor_workspace;
