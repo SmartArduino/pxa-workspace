@@ -139,6 +139,8 @@ void pxa_host_set_launch_request_callback(
 void pxa_host_set_window_changed_callback(
     pxa_host_window_changed_fn callback, void *context);
 bool pxa_host_request_launch(const char *identity_key);
+/* Resolves an installed app ID and requests that its active runtime stops. */
+bool pxa_host_request_stop(const char *identity_key);
 bool pxa_host_runtime_launch(const char *identity_key);
 bool pxa_host_runtime_launch_app(
     const uint8_t publisher_root[PXA_HOST_PUBLISHER_ROOT_BYTES],

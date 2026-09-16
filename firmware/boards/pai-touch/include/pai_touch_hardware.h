@@ -28,7 +28,8 @@ public:
     void SetVolume(uint8_t percent);
     void PublishStatus();
     void ShowInitialFrame();
-    bool ConfigurePxadbTestControl();
+    bool ConfigurePxadbControls();
+    bool RequestPowerOff();
 
     lv_display_t* display() const { return display_; }
     uint8_t brightness() const { return brightness_.load(); }

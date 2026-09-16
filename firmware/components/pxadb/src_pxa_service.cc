@@ -87,6 +87,13 @@ constexpr uint32_t kTaskStackSize = 12 * 1024;
 constexpr uint32_t kAutostartTaskStackSize = 3 * 1024;
 constexpr uint32_t kSessionIdleTimeoutMs = 30000;
 constexpr TickType_t kIoTimeout = pdMS_TO_TICKS(1000);
+PowerControlAdapter s_power_control;
+
+bool PowerControlAvailable() {
+    return s_power_control.struct_size >= sizeof(PowerControlAdapter) &&
+           s_power_control.power_off != nullptr;
+}
+
 #if CONFIG_PXADB_TEST_CONTROL
 constexpr uint32_t kInputTaskStackSize = 5 * 1024;
 constexpr size_t kInputMailboxCapacity = 16;
@@ -809,9 +816,11 @@ void SendHello(unsigned long sequence) {
 #else
         "";
 #endif
+    const char* kPowerCapabilities =
+        PowerControlAvailable() ? ",poweroff" : "";
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,logcat,packages,package-deploy,fs,reboot,doctor%s;max_chunk=%u;fs_offset=1;fs_sha256=1;target=%s;serial=%s;version=%s",
-             kTestCapabilities,
+             "protocol=1;mode=normal;capabilities=info,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;target=%s;serial=%s;version=%s",
+             kTestCapabilities, kPowerCapabilities,
              static_cast<unsigned>(kFsUploadChunkSize),
              CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version);
     SendFrame(sequence, "OK", payload);
@@ -1221,6 +1230,44 @@ void HandlePackageAction(unsigned long sequence, const char* action, const char*
 #endif
 }
 
+void HandlePackageRun(unsigned long sequence, const char* identity) {
+#if CONFIG_PXA_ENABLED
+    if (!IsSafeIdentity(identity)) {
+        SendFrame(sequence, "ERR", "invalid_identity");
+        return;
+    }
+    if (!pxa_host_ready()) {
+        SendFrame(sequence, "ERR", "pxa_unavailable");
+        return;
+    }
+    const bool success = pxa_host_request_launch(identity);
+    SendFrame(sequence, success ? "OK" : "ERR",
+              success ? "launch_queued" : "package_launch_failed");
+#else
+    (void)identity;
+    SendFrame(sequence, "ERR", "pxa_disabled");
+#endif
+}
+
+void HandlePackageStop(unsigned long sequence, const char* identity) {
+#if CONFIG_PXA_ENABLED
+    if (!IsSafeIdentity(identity)) {
+        SendFrame(sequence, "ERR", "invalid_identity");
+        return;
+    }
+    if (!pxa_host_ready()) {
+        SendFrame(sequence, "ERR", "pxa_unavailable");
+        return;
+    }
+    const bool success = pxa_host_request_stop(identity);
+    SendFrame(sequence, success ? "OK" : "ERR",
+              success ? "stop_queued" : "package_not_running");
+#else
+    (void)identity;
+    SendFrame(sequence, "ERR", "pxa_disabled");
+#endif
+}
+
 void HandlePackageDeploy(unsigned long sequence, const char* identity) {
 #if CONFIG_PXA_ENABLED
     if (!IsSafeIdentity(identity)) {
@@ -1350,12 +1397,27 @@ void HandleCommand(char* line) {
     } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
                strcmp(argument, "deploy") == 0 && second_argument != nullptr) {
         HandlePackageDeploy(sequence, second_argument);
+    } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
+               strcmp(argument, "run") == 0 && second_argument != nullptr) {
+        HandlePackageRun(sequence, second_argument);
+    } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
+               strcmp(argument, "stop") == 0 && second_argument != nullptr) {
+        HandlePackageStop(sequence, second_argument);
     } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr && second_argument != nullptr) {
         HandlePackageAction(sequence, argument, second_argument);
     } else if (strcmp(command, "REBOOT") == 0) {
         SendFrame(sequence, "OK", "rebooting");
         vTaskDelay(pdMS_TO_TICKS(20));
         esp_restart();
+    } else if (strcmp(command, "POWEROFF") == 0) {
+        if (!PowerControlAvailable()) {
+            SendFrame(sequence, "ERR", "poweroff_not_supported");
+        } else {
+            SendFrame(sequence, "OK", "powering_off");
+            vTaskDelay(pdMS_TO_TICKS(20));
+            if (!s_power_control.power_off(s_power_control.context))
+                ESP_LOGE(kTag, "Board rejected PXADB power-off request");
+        }
     } else {
         SendFrame(sequence, "ERR", "unknown_command");
     }
@@ -1696,6 +1758,19 @@ esp_err_t ConfigureTestControl(const TestControlAdapter* adapter) {
 #endif
 }
 
+esp_err_t ConfigurePowerControl(const PowerControlAdapter* adapter) {
+    if (s_running.load()) return ESP_ERR_INVALID_STATE;
+    if (adapter == nullptr) {
+        s_power_control = {};
+        return ESP_OK;
+    }
+    if (adapter->struct_size < sizeof(PowerControlAdapter) ||
+        adapter->power_off == nullptr)
+        return ESP_ERR_INVALID_ARG;
+    s_power_control = *adapter;
+    return ESP_OK;
+}
+
 esp_err_t Start() {
     if (s_running.load()) return ESP_OK;
     const esp_err_t transport_err = TransportStart();
@@ -1815,6 +1890,9 @@ bool SetEnabled(bool enabled) {
 
 namespace pxadb {
 esp_err_t ConfigureTestControl(const TestControlAdapter*) {
+    return ESP_ERR_NOT_SUPPORTED;
+}
+esp_err_t ConfigurePowerControl(const PowerControlAdapter*) {
     return ESP_ERR_NOT_SUPPORTED;
 }
 esp_err_t Start() { return ESP_ERR_NOT_SUPPORTED; }

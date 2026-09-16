@@ -214,6 +214,26 @@ class PxaDbLogStreamingTest(unittest.TestCase):
             "--installed", "pxa-voxel-craft",
         ])
 
+    def test_package_run_on_device_requests_a_launch(self) -> None:
+        arguments = pxadb.build_parser().parse_args([
+            "package", "run", "pxa-voxel-craft", "--port", "/dev/ttyACM0"
+        ])
+        client = mock.MagicMock()
+        with mock.patch.object(pxadb, "open_client", return_value=client):
+            self.assertEqual(pxadb.command_package_run(arguments), 0)
+        client.__enter__().request.assert_called_once_with(
+            "PACKAGE run pxa-voxel-craft")
+
+    def test_package_stop_on_device_requests_a_stop(self) -> None:
+        arguments = pxadb.build_parser().parse_args([
+            "package", "stop", "pxa-voxel-craft", "--port", "/dev/ttyACM0"
+        ])
+        client = mock.MagicMock()
+        with mock.patch.object(pxadb, "open_client", return_value=client):
+            self.assertEqual(pxadb.command_package_stop(arguments), 0)
+        client.__enter__().request.assert_called_once_with(
+            "PACKAGE stop pxa-voxel-craft")
+
     def test_devices_includes_running_simulator(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             socket_path = pathlib.Path(directory) / "pai-touch.sock"
@@ -262,6 +282,22 @@ class PxaDbLogStreamingTest(unittest.TestCase):
             "package", "install", "package.pxa", "--logcat"
         ])
         self.assertTrue(arguments.logcat)
+
+    def test_poweroff_command_and_unsupported_error(self) -> None:
+        arguments = pxadb.build_parser().parse_args([
+            "poweroff", "--port", "/dev/ttyACM0"
+        ])
+        client = mock.MagicMock()
+        with mock.patch.object(pxadb, "open_client", return_value=client):
+            self.assertEqual(pxadb.command_poweroff(arguments), 0)
+        client.__enter__().request.assert_called_once_with("POWEROFF")
+
+        client.__enter__().request.side_effect = pxadb.PxaDbError(
+            "poweroff_not_supported")
+        with mock.patch.object(pxadb, "open_client", return_value=client), \
+                self.assertRaisesRegex(pxadb.PxaDbError,
+                                       "does not support software power-off"):
+            pxadb.command_poweroff(arguments)
 
     def test_input_and_screenshot_parsers(self) -> None:
         touch = pxadb.build_parser().parse_args([

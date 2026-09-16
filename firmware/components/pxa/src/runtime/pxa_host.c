@@ -257,6 +257,19 @@ bool pxa_host_request_launch(const char *identity_key) {
     return pxa_esp_host_launch(canonical);
 }
 
+bool pxa_host_request_stop(const char *identity_key) {
+    uint8_t publisher_root[PXA_HOST_PUBLISHER_ROOT_BYTES];
+    char canonical[PXA_HOST_PACKAGE_ID_MAX];
+    char app_id[PXA_HOST_APP_ID_MAX];
+    if (!g_host_ready || identity_key == NULL || identity_key[0] == '\0')
+        return false;
+    if (!resolve_package(identity_key, publisher_root, canonical,
+                         sizeof(canonical), app_id, sizeof(app_id))) {
+        return false;
+    }
+    return pxa_esp_host_is_active(canonical) && pxa_esp_host_stop(canonical);
+}
+
 bool pxa_host_runtime_launch(const char *identity_key) {
     return g_host_ready && identity_key != NULL && identity_key[0] != '\0' &&
            pxa_esp_host_launch(identity_key);

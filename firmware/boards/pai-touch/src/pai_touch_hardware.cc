@@ -317,15 +317,7 @@ void PaiTouchHardware::InitializeButtons() {
     volume_down_button_ = new AdcButton(config);
 
     power_button_->OnClick([this]() { ToggleScreen(); });
-    power_button_->OnLongPress([this]() {
-        if (xTaskCreate(
-                [](void* context) {
-                    static_cast<PaiTouchHardware*>(context)->PowerOff();
-                },
-                "power_off", 3072, this, 4, nullptr) != pdPASS) {
-            ESP_LOGE(kTag, "Cannot create power-off task");
-        }
-    });
+    power_button_->OnLongPress([this]() { (void)RequestPowerOff(); });
     home_button_->OnClick([this]() { NavigateBack(); });
     home_button_->OnLongPress([this]() { EnterWifiProvisioning(); });
     volume_up_button_->OnPressDown([this]() {
@@ -595,7 +587,14 @@ bool PaiTouchHardware::CaptureRgb565(
     return true;
 }
 
-bool PaiTouchHardware::ConfigurePxadbTestControl() {
+bool PaiTouchHardware::ConfigurePxadbControls() {
+    pxadb::PowerControlAdapter power_adapter;
+    power_adapter.context = this;
+    power_adapter.power_off = [](void* context) {
+        return static_cast<PaiTouchHardware*>(context)->RequestPowerOff();
+    };
+    if (pxadb::ConfigurePowerControl(&power_adapter) != ESP_OK) return false;
+
     pxadb::TestControlAdapter adapter;
     adapter.context = this;
     adapter.width = PAI_DISPLAY_WIDTH;
@@ -622,7 +621,19 @@ bool PaiTouchHardware::ConfigurePxadbTestControl() {
         return static_cast<PaiTouchHardware*>(context)->CaptureRgb565(
             pixels, pixel_count, after_present, info);
     };
-    return pxadb::ConfigureTestControl(&adapter) == ESP_OK;
+    const esp_err_t result = pxadb::ConfigureTestControl(&adapter);
+    return result == ESP_OK || result == ESP_ERR_NOT_SUPPORTED;
+}
+
+bool PaiTouchHardware::RequestPowerOff() {
+    if (xTaskCreate(
+            [](void* context) {
+                static_cast<PaiTouchHardware*>(context)->PowerOff();
+            },
+            "power_off", 3072, this, 4, nullptr) == pdPASS)
+        return true;
+    ESP_LOGE(kTag, "Cannot create power-off task");
+    return false;
 }
 
 void PaiTouchHardware::ScheduleStatusUpdate() {

@@ -52,7 +52,7 @@ void ShowInitialFrame(void*) {
 }
 
 bool ConfigureDiagnostics(void*) {
-    return g_hardware.ConfigurePxadbTestControl();
+    return g_hardware.ConfigurePxadbControls();
 }
 
 const pxa_board_port_t kPort = {

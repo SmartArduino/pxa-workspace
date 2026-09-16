@@ -24,6 +24,7 @@ struct TestControlCaptureInfo {
 };
 
 using TestControlTakeoverCallback = void (*)(void* callback_context);
+using PowerOffCallback = bool (*)(void* context);
 
 // Product adapter for logical input injection and final visible-frame capture.
 // Configure it before Start()/StartAutostart(); the service copies this table.
@@ -46,6 +47,16 @@ struct TestControlAdapter {
 };
 
 esp_err_t ConfigureTestControl(const TestControlAdapter* adapter);
+
+// Optional board-owned soft power-off control. Boards without a controllable
+// power latch leave this unconfigured and PXADB reports power-off unsupported.
+struct PowerControlAdapter {
+    size_t struct_size = sizeof(PowerControlAdapter);
+    void* context = nullptr;
+    PowerOffCallback power_off = nullptr;
+};
+
+esp_err_t ConfigurePowerControl(const PowerControlAdapter* adapter);
 
 // Starts the ESP32-S3 USB Serial/JTAG PXADB service. It owns the structured
 // control and log stream but never exposes a shell or raw partition access.

@@ -873,10 +873,10 @@ def command_package_install(arguments: argparse.Namespace) -> int:
 def command_package_run(arguments: argparse.Namespace) -> int:
     port = resolve_pxadb_port(arguments.port, arguments.timeout)
     if not port.startswith("unix:"):
-        raise PxaDbError(
-            "package run is only available for a local simulator; "
-            "use tools/simulator.sh product run for a package directory"
-        )
+        with open_client(port, arguments.timeout, arguments.logcat) as client:
+            client.request(f"PACKAGE run {arguments.identity}")
+        print(f"run: {arguments.identity}")
+        return 0
     socket_path = pathlib.Path(port.removeprefix("unix:"))
     selector = socket_path.stem
     if simulator_socket(selector) != port:
@@ -892,10 +892,33 @@ def command_package_run(arguments: argparse.Namespace) -> int:
     return subprocess.run(command, check=False).returncode
 
 
+def command_package_stop(arguments: argparse.Namespace) -> int:
+    with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
+                     arguments.timeout, arguments.logcat) as client:
+        client.request(f"PACKAGE stop {arguments.identity}")
+    print(f"stop: {arguments.identity}")
+    return 0
+
+
 def command_reboot(arguments: argparse.Namespace) -> int:
     with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
                      arguments.timeout, arguments.logcat) as client:
         client.request("REBOOT")
+    return 0
+
+
+def command_poweroff(arguments: argparse.Namespace) -> int:
+    try:
+        with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
+                         arguments.timeout, arguments.logcat) as client:
+            client.request("POWEROFF")
+    except PxaDbError as error:
+        if str(error) == "poweroff_not_supported":
+            raise PxaDbError(
+                "this board does not support software power-off; use pxadb reboot "
+                "or turn the device off with its hardware control"
+            ) from error
+        raise
     return 0
 
 
@@ -1202,6 +1225,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_connection_arguments(reboot)
     reboot.set_defaults(handler=command_reboot)
 
+    poweroff = subcommands.add_parser(
+        "poweroff", help="request a board-supported software power-off"
+    )
+    add_connection_arguments(poweroff)
+    poweroff.set_defaults(handler=command_poweroff)
+
     sync = subcommands.add_parser(
         "sync", help="wait until all earlier injected input entered the router"
     )
@@ -1294,11 +1323,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     install.set_defaults(handler=command_package_install)
     package_run = package_commands.add_parser(
-        "run", help="launch an installed package in the local product simulator"
+        "run", help="launch an installed package on a device or product simulator"
     )
-    add_connection_arguments(package_run, allow_logcat=False)
+    add_connection_arguments(package_run)
     package_run.add_argument("identity", help="installed PXA app ID")
     package_run.set_defaults(handler=command_package_run)
+    package_stop = package_commands.add_parser(
+        "stop", help="stop a running package on a device"
+    )
+    add_connection_arguments(package_stop)
+    package_stop.add_argument("identity", help="installed PXA app ID")
+    package_stop.set_defaults(handler=command_package_stop)
     for action in ("uninstall", "enable", "disable", "clear-data"):
         action_parser = package_commands.add_parser(action, help=f"{action} a PXA package")
         add_connection_arguments(action_parser)

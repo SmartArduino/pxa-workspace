@@ -13,12 +13,21 @@ pxadb package install local/app-output/pai-touch/pxa-example.pxa \
 
 # Inspect the installed package catalog.
 pxadb package list --port /dev/ttyACM0
+
+# Launch or stop an installed App without navigating the launcher.
+pxadb package run pxa-example --port /dev/ttyACM0
+pxadb package stop pxa-example --port /dev/ttyACM0
 ```
 
 The client stages a local `.pxa` into the firmware inbox, asks the firmware to
 verify its signature and inventory, then commits it through the normal package
 transaction. Passing `--yes` permits a non-interactive replacement. `--port`
 is optional when exactly one PXADB USB device can be identified.
+
+Restart a connected device with `pxadb reboot --port /dev/ttyACM0`. Boards that
+register a controllable power latch also advertise `poweroff` and accept
+`pxadb poweroff --port /dev/ttyACM0`; unsupported boards report that software
+power-off is unavailable rather than restarting.
 
 For the product simulator, start its local service and select a profile instead
 of a serial port:
@@ -67,11 +76,19 @@ pxadb package install local/app-output/pai-touch/pxa-example.pxa \
 
 # 查看已安装的 Package catalog。
 pxadb package list --port /dev/ttyACM0
+
+# 不经过启动器，直接启动或停止已安装的 App。
+pxadb package run pxa-example --port /dev/ttyACM0
+pxadb package stop pxa-example --port /dev/ttyACM0
 ```
 
 客户端将本地 `.pxa` 暂存到固件 inbox，请求固件校验签名和文件清单，再通过常规
 Package 事务提交。传入 `--yes` 可进行非交互式替换。只有一个可识别的 PXADB USB 设备时，
 可以省略 `--port`。
+
+可通过 `pxadb reboot --port /dev/ttyACM0` 重启设备。具有可控电源锁存的板子会声明
+`poweroff` 能力，并支持 `pxadb poweroff --port /dev/ttyACM0`；不支持的软件关机板子
+会明确提示不可用，不会被重启替代。
 
 产品模拟器可启动本地服务，并用 Profile 代替串口：
 
