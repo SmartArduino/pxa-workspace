@@ -1,0 +1,5 @@
+[factory]
+# Product releases add only reproducible App IDs here. Source roots are mapped
+# locally, so this repository never records a developer's private App paths.
+include_system_font = true
+apps = []

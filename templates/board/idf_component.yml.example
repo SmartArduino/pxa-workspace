@@ -1,0 +1,10 @@
+# Copy to firmware/boards/<board>/idf_component.yml.
+# Keep only dependencies used by this physical board. Common PXA dependencies
+# are declared once in firmware/main/idf_component.yml.
+dependencies:
+  idf:
+    version: ">=5.5.4"
+  # Examples, uncomment and pin only what this board uses:
+  # espressif/button: "^4.1.7"
+  # espressif/esp_lcd_touch: "^1.2.1"
+  # joltwallet/littlefs: "^1.22.3"

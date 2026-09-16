@@ -1,0 +1,8 @@
+# Dependencies for this board only. Another board gets its own manifest and
+# never inherits these display, input, power, network, or font packages.
+dependencies:
+  78/esp-wifi-connect: "~3.1.5"
+  espressif/adc_battery_estimation: "^0.2.2"
+  espressif/button: "^4.1.7"
+  espressif/esp_lcd_touch: "^1.2.1"
+  espressif/freetype: "^2.14.3~1"

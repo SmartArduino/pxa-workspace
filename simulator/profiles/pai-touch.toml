@@ -1,0 +1,11 @@
+[desktop]
+width = 296
+height = 240
+# Matches the legacy pai-touch simulator: min(296, 240) / 5.
+corner_radius = 48
+safe_insets = [8, 10, 8, 10]
+# Host-only backdrop for pixels outside the physical rounded panel.
+shape_background = "matte"
+locale = "zh-CN"
+theme = "dark"
+gestures = true

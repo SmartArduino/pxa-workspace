@@ -1,0 +1,29 @@
+menu "PXADB development service"
+
+    config PXADB_ENABLED
+        bool "Enable PXADB development service"
+        depends on IDF_TARGET_ESP32S3
+        default n
+        help
+            Expose PXADB control, PXA package management, filesystem access
+            and structured logs over USB Serial/JTAG. It does not expose a
+            shell or raw flash access.
+
+    config PXADB_AUTOSTART
+        bool "Start PXADB automatically after boot"
+        depends on PXADB_ENABLED
+        default n
+        help
+            Start PXADB from a bounded background retry task after platform
+            initialization. Keep this disabled in production firmware.
+
+    config PXADB_TEST_CONTROL
+        bool "Enable input injection and display capture"
+        depends on PXADB_ENABLED
+        default n
+        help
+            Enable logical input injection and RGB565 capture commands. The
+            product must configure a pxadb::TestControlAdapter before starting
+            the service; unavailable controls are not advertised to the host.
+
+endmenu

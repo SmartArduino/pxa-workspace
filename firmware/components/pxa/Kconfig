@@ -1,0 +1,186 @@
+menu "PXA Development Apps"
+    depends on IDF_TARGET_ESP32S3 && !USE_EMOTE_MESSAGE_STYLE
+
+    config PXA_ENABLED
+        bool "Enable PXA Draft 0.1 platform"
+        default n
+        select LITTLEFS_SPIFFS_COMPAT
+        select LITTLEFS_OPEN_DIR
+        select LITTLEFS_FCNTL_GET_PATH
+        select WAMR_LINEAR_MEMORY_RESERVE_MAX
+        help
+            Enable the PXA Draft 0.1 Core and signed Package platform.
+
+    if PXA_ENABLED
+        config PXA_STORAGE_PARTITION_LABEL
+            string "PXA storage partition label"
+            default "assets"
+            help
+                LittleFS partition used for PXA Packages, private state and
+                optional factory content. This must match a data/littlefs
+                partition in the selected board's partition table.
+
+        config PXA_MOUNT_POINT
+            string "PXA storage mount point"
+            default "/assets"
+            help
+                Absolute VFS mount point for the PXA storage partition. Keep
+                this unique and do not use a trailing slash.
+
+        config PXA_STORAGE_FORMAT_IF_MOUNT_FAILED
+            bool "Format an uninitialized PXA storage partition"
+            default y
+            help
+                Format the PXA storage partition when LittleFS cannot mount
+                it. This lets a firmware-only flash initialize an empty data
+                partition for pxadb installation. Disable it when corrupted
+                storage must never be reformatted automatically.
+
+        config PXA_TRUST_BUNDLED_DEVELOPMENT_KEY
+            bool "Trust the bundled PXA development signing key"
+            default n
+            help
+                Development only. Trust the checked-in public key used to sign
+                pxa-system/apps/pxa packages. Production firmware must leave this off and
+                override pxa_platform_trusted_publishers() from a product-owned
+                trust component.
+
+        config PXA_BUILTIN_PACKAGE_ROOT
+            string "Factory signed Package source relative to PXA storage"
+            default "system/pxa/builtin"
+            help
+                Canonical product-owned source for factory-provisioned
+                Packages. Apps are authenticated at boot and run in place.
+                They may be disabled, but their source cannot be removed by
+                App management.
+
+        config PXA_STATE_ROOT
+            string "Mutable PXA state root relative to PXA storage"
+            default "pxa-state"
+            help
+                Root for the fixed inbox/, packages/ and data/ ownership
+                domains. Keep it outside system/, tmp/ and .previous so normal
+                factory-content provisioning does not replace App state.
+
+        config PXA_REVERIFY_INSTALLED_PACKAGES
+            bool "Reverify installed PXA Packages before use"
+            default n
+            help
+                Verify a Package signature and every inventoried file when
+                reading a Package already committed under packages/. Leave
+                disabled when the Host treats managed Package storage as its
+                trusted installation domain: Packages are then fully verified
+                only before installation or update, while normal boot, listing
+                and launch parse the manifest and rely on Host storage
+                integrity. Enable on platforms where managed storage can be
+                modified outside the Package installer.
+
+        config PXA_GUEST_STACK_SIZE
+            int "Guest callback stack size"
+            range 8192 131072
+            default 16384
+
+        config PXA_HOST_MANAGED_HEAP_SIZE
+            int "WAMR host-managed heap size per Component"
+            range 16384 524288
+            default 16384
+            help
+                Size of the heap WAMR inserts into each Component's linear
+                memory for Host-side temporary allocations, such as copying
+                configuration and event payloads into the Guest. This is not
+                the wasi-libc malloc heap or the Component's linear-memory
+                limit.
+
+        config PXA_WASI_LIBC
+            bool "Enable capability-restricted WASI libc Apps"
+            depends on WAMR_ENABLE_LIBC_WASI
+            default y
+            help
+                Publish WASI Preview 1 reactor support. The base capability
+                enables wasi-libc for pure computation only; ambient files,
+                arguments, environment, clocks, randomness and stdio remain
+                unavailable unless separately published by the Host.
+
+        config PXA_RUNTIME_TASK_STACK_SIZE
+            int "PXA runtime pthread stack size"
+            range 6144 32768
+            default 12288
+            help
+                Native stack reserved for the PXA owner pthread. The host
+                raises lower values from an older sdkconfig to 12 KiB.
+
+        config PXA_RUNTIME_TASK_PRIORITY
+            int "PXA runtime pthread priority"
+            range 1 10
+            default 4
+
+        config PXA_RUNTIME_TASK_AFFINITY
+            int "PXA runtime pthread core affinity"
+            range -1 1
+            default -1
+            help
+                Pin the PXA owner pthread to CPU0 (0) or CPU1 (1). Use -1 to
+                allow FreeRTOS to schedule it on either core. CPU1 is invalid
+                on single-core targets.
+
+        config PXA_WATCHDOG_PERIOD_MS
+            int "Guest callback watchdog poll period in milliseconds"
+            range 10 250
+            default 50
+            help
+                Poll the WAMR call deadline while the runtime is active. This
+                only affects detection latency after PXA_CALL_TIMEOUT_MS; it
+                does not shorten the configured callback timeout.
+
+        config PXA_NET_WORKER_STACK_SIZE
+            int "PXA HTTP(S) worker stack size"
+            range 4096 16384
+            default 8192
+            help
+                One external-RAM worker serializes PXA HTTP(S) requests so
+                the PXA runtime task never waits for DNS, TLS, or network I/O.
+
+        config PXA_COMMAND_QUEUE_LENGTH
+            int "PXA runtime command queue length"
+            range 8 64
+            default 24
+
+        config PXA_MAX_CONTROL_MESSAGE
+            int "Maximum guest control message size"
+            range 1024 16384
+            default 4096
+
+        config PXA_PRIVATE_FS_QUOTA_BYTES
+            int "Per-App private FS quota in bytes"
+            range 4096 1048576
+            default 65536
+            help
+                Logical regular-file byte quota for one signed PXA App identity.
+
+        config PXA_PRIVATE_FS_MAX_OPEN_HANDLES
+            int "Per-App private FS open Handle limit"
+            range 1 32
+            default 8
+            help
+                Combined limit for active private file and directory Handles.
+
+        config PXA_PRIVATE_KV_QUOTA_BYTES
+            int "Per-App private KV value quota in bytes"
+            range 1024 65536
+            default 8192
+            help
+                Sum of Storage v1 value bytes for one signed PXA App identity.
+
+        config PXA_PRIVATE_KV_MAX_VALUE_BYTES
+            int "Private KV maximum value size in bytes"
+            range 64 960
+            default 960
+            help
+                Maximum byte-string value accepted by one Storage v1 set request.
+
+        config PXA_CALL_TIMEOUT_MS
+            int "Guest callback deadline in milliseconds"
+            range 10 20000
+            default 3000
+    endif
+endmenu

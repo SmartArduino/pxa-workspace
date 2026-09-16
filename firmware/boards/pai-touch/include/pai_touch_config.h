@@ -1,0 +1,47 @@
+#pragma once
+
+#include <driver/gpio.h>
+#include <driver/i2c_master.h>
+#include <driver/uart.h>
+
+// JL701 RPC UART and its remote PA control pin.
+#define PAI_JL701_UART UART_NUM_2
+#define PAI_JL701_BAUD 2000000
+#define PAI_JL701_TX GPIO_NUM_17
+#define PAI_JL701_RX GPIO_NUM_18
+#define PAI_JL701_PA_IO 6
+#define PAI_JL701_PA_LEVEL 1
+
+// GPIO1 is both ADC1_CH0 and the controller power-off signal.
+#define PAI_POWER_GPIO GPIO_NUM_1
+#define PAI_BUTTON_ADC_UNIT ADC_UNIT_1
+#define PAI_BUTTON_ADC_CHANNEL ADC_CHANNEL_0
+#define PAI_BUTTON_POWER_MIN 0
+#define PAI_BUTTON_POWER_MAX 275
+#define PAI_BUTTON_HOME_MIN 1101
+#define PAI_BUTTON_HOME_MAX 1924
+#define PAI_BUTTON_UP_MIN 1925
+#define PAI_BUTTON_UP_MAX 2300
+#define PAI_BUTTON_DOWN_MIN 2350
+#define PAI_BUTTON_DOWN_MAX 3018
+
+// Native panel scan is 240x296; the PXA System UI is 296x240.
+#define PAI_LCD_MOSI GPIO_NUM_38
+#define PAI_LCD_RESET GPIO_NUM_21
+#define PAI_LCD_CLOCK GPIO_NUM_47
+#define PAI_LCD_DC GPIO_NUM_40
+#define PAI_LCD_CS GPIO_NUM_48
+#define PAI_LCD_TE GPIO_NUM_39
+#define PAI_LCD_BACKLIGHT GPIO_NUM_41
+#define PAI_DISPLAY_WIDTH 296
+#define PAI_DISPLAY_HEIGHT 240
+
+#define PAI_TOUCH_RESET GPIO_NUM_46
+#define PAI_TOUCH_SDA GPIO_NUM_45
+#define PAI_TOUCH_SCL GPIO_NUM_42
+#define PAI_TOUCH_INTERRUPT GPIO_NUM_NC
+#define PAI_TOUCH_I2C_PORT I2C_NUM_1
+
+#define PAI_BATTERY_ADC_CHANNEL ADC_CHANNEL_1
+#define PAI_BATTERY_CHARGING GPIO_NUM_3
+

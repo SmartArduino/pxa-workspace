@@ -1,0 +1,16 @@
+/build/
+/sdkconfig
+/sdkconfig.old
+/managed_components/
+/firmware/sdkconfig
+/firmware/sdkconfig.old
+/firmware/managed_components/
+/firmware/components/lz4/demo
+/.pxa-tools/
+/out/
+/.codex/
+/local/*
+!/local/README.md
+/tools/__pycache__/
+/tools/pxadb/__pycache__/
+/tools/pxadb/*.egg-info/

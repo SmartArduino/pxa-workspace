@@ -1,0 +1,2 @@
+# Cross-board defaults intentionally stay empty. Each board provides its own
+# target, flash, memory, partition and peripheral overlay under firmware/boards/<id>/.

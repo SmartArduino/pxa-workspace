@@ -1,0 +1,6 @@
+[desktop]
+width = 390
+height = 844
+locale = "en-US"
+theme = "dark"
+gestures = true

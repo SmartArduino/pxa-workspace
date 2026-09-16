@@ -1,0 +1,8 @@
+# Dependencies needed by every PXA System product, independent of board IO.
+# Board-only packages belong in firmware/boards/<board>/idf_component.yml.
+dependencies:
+  idf:
+    version: ">=5.5.4"
+  lvgl/lvgl: "~9.5.0"
+  espressif/esp_lvgl_port: "~2.9.0"
+  joltwallet/littlefs: "^1.22.3"

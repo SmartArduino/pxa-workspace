@@ -1,0 +1,43 @@
+// This file is a template, not an ESP-IDF component source.
+#include "pxa_board_api.h"
+
+// Include only the legacy product's public board/display headers here.
+// #include "legacy_board.h"
+
+namespace {
+// static LegacyBoard& board = LegacyBoard::GetInstance();
+
+bool Initialize(void*) {
+    // The old firmware usually initialized hardware already. Return true or
+    // call its existing one-time board initialization entry point.
+    return true;
+}
+
+lv_display_t* Display(void*) {
+    // return board.display();
+    return nullptr;
+}
+
+void DisplayProfile(void*, pxsys_display_profile_t* output) {
+    if (output == nullptr) return;
+    pxsys_display_profile_init(output, 320, 240);
+    output->safe_insets = {0, 0, 0, 0};
+}
+
+const pxa_board_port_t kLegacyPort = {
+    .struct_size = sizeof(pxa_board_port_t),
+    .context = nullptr,
+    .initialize = Initialize,
+    .display = Display,
+    .display_profile = DisplayProfile,
+    .set_network_enabled = nullptr,
+    .set_level = nullptr,
+    .system_ready = nullptr,
+    .show_initial_frame = nullptr,
+    .configure_diagnostics = nullptr,
+};
+}  // namespace
+
+bool register_legacy_board_port() {
+    return pxa_board_register(&kLegacyPort);
+}

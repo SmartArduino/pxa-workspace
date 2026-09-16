@@ -1,0 +1,121 @@
+menu "PXA System UI selection"
+
+    config PXSYS_REFERENCE_UI
+        bool "Use reference UI instead of product legacy UI"
+        default n
+        help
+            Selects the standard PXA System Home, Settings, status bar and
+            navigation implementations. The ESP product defaults to its legacy
+            app_pages UI while retaining the PXA System services, renderer and
+            runtime beneath it. Enable this only to evaluate or migrate to the
+            reference presentation.
+
+    config PXSYS_REFERENCE_UI_STATUS_BAR
+        bool "Standard status bar"
+        default y
+        depends on PXSYS_REFERENCE_UI
+
+    config PXSYS_REFERENCE_UI_WIFI
+        bool "Wi-Fi status and settings"
+        default y
+        depends on PXSYS_REFERENCE_UI
+
+    config PXSYS_REFERENCE_UI_CELLULAR
+        bool "Cellular status and settings"
+        default y
+        depends on PXSYS_REFERENCE_UI
+
+    config PXSYS_REFERENCE_UI_BATTERY_PERCENT
+        bool "Numeric battery percentage"
+        default y
+        depends on PXSYS_REFERENCE_UI_STATUS_BAR
+        help
+            Show battery percentage text in the status bar and notification
+            shade. The battery icon remains available when this is disabled.
+
+    config PXSYS_REFERENCE_UI_NAVIGATION_BAR
+        bool "Standard navigation bar"
+        default y
+        depends on PXSYS_REFERENCE_UI
+
+    choice PXSYS_REFERENCE_UI_NAVIGATION_MODE
+        prompt "Standard navigation mode"
+        default PXSYS_REFERENCE_UI_NAVIGATION_BUTTONS
+        depends on PXSYS_REFERENCE_UI_NAVIGATION_BAR
+
+        config PXSYS_REFERENCE_UI_NAVIGATION_BUTTONS
+            bool "Back button"
+
+        config PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
+            bool "Edge Back and bottom-swipe Home gestures"
+    endchoice
+
+    config PXSYS_REFERENCE_UI_GESTURE_HANDLE
+        bool "Gesture navigation indicator"
+        default n
+        depends on PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
+        help
+            Draw the bottom gesture handle and reserve space above it. The
+            bottom gesture target remains active when this is disabled.
+
+    config PXSYS_REFERENCE_UI_LAUNCHER_COLUMNS
+        int "Launcher app columns per page"
+        range 1 8
+        default 4
+        depends on PXSYS_REFERENCE_UI
+
+    config PXSYS_REFERENCE_UI_LAUNCHER_ROWS
+        int "Launcher app rows per page"
+        range 1 8
+        default 2
+        depends on PXSYS_REFERENCE_UI
+        help
+            The launcher is horizontally paged. Each page contains columns
+            multiplied by rows applications.
+
+    config PXSYS_REFERENCE_UI_NOTIFICATION_SHADE
+        bool "Standard notification shade"
+        default y
+        depends on PXSYS_REFERENCE_UI_STATUS_BAR
+
+    config PXSYS_REFERENCE_UI_WALLPAPER
+        bool "Standard Home wallpaper"
+        default y
+        depends on PXSYS_REFERENCE_UI
+        help
+            Includes the adaptive reference wallpaper. Disable this to remove
+            the wallpaper code and render Home on the theme background only.
+
+    config PXSYS_REFERENCE_UI_ANIMATIONS
+        bool "System UI animations"
+        default y
+        depends on PXSYS_REFERENCE_UI
+        help
+            Compiles gesture, Home and task-switcher animations. Disable this
+            to remove their code; animations can also be disabled at runtime.
+
+    choice PXSYS_REFERENCE_UI_TASK_SWITCHER_MODE
+        prompt "Recent-task presentation"
+        default PXSYS_REFERENCE_UI_TASK_SWITCHER_CARDS
+        depends on PXSYS_REFERENCE_UI
+
+        config PXSYS_REFERENCE_UI_TASK_SWITCHER_CARDS
+            bool "Live-preview cards"
+            depends on LV_USE_SNAPSHOT
+            help
+                Keeps a bounded RGB565 snapshot cache and presents recent apps
+                as horizontally scrolling cards.
+
+        config PXSYS_REFERENCE_UI_TASK_SWITCHER_LIST
+            bool "Low-memory list"
+            help
+                Does not capture app surfaces and uses a compact text list.
+    endchoice
+
+    config PXSYS_REFERENCE_UI_TASK_PREVIEW_COUNT
+        int "Cached recent-task previews"
+        range 1 8
+        default 4
+        depends on PXSYS_REFERENCE_UI_TASK_SWITCHER_CARDS
+
+endmenu
