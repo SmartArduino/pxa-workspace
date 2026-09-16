@@ -1261,6 +1261,7 @@ static bool materialize_latest_raster_draw(void) {
         finished_us - started_us > UINT32_MAX
             ? UINT32_MAX
             : (uint32_t)(finished_us - started_us);
+    ++surface->raster_telemetry.rendered_frames;
     surface->raster_telemetry.draw_list_bytes +=
         frame_telemetry.draw_list_bytes;
     surface->raster_telemetry.covered_pixels +=
@@ -1449,6 +1450,8 @@ void pxa_esp_surface_release_frame(uint64_t lease) {
                 surface->acquired_input_timestamp_us;
         }
         ++surface->presented_frames;
+        if ((surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) != 0)
+            ++surface->raster_telemetry.visible_frames;
     }
     surface->acquired = PXA_ESP_SURFACE_NONE;
     surface->acquire_active = 0;

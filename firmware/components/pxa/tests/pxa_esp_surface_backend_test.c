@@ -414,6 +414,8 @@ int main(void) {
                    PXA_STATUS_OK &&
                telemetry.submitted_frames == 3 &&
                telemetry.dropped_frames == 1 &&
+               telemetry.rendered_frames == 2 &&
+               telemetry.visible_frames == 1 &&
                telemetry.clear_commands == 2 &&
                telemetry.last_draw_list_bytes == sizeof(draw));
         pxa_esp_surface_release_frame(frame.lease);
