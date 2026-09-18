@@ -71,6 +71,42 @@ write the PXA storage partition. See
 Directory ownership and daily workflows are documented in
 [Workspace Layout](docs/workspace-layout.md).
 
+## Fast PXA Development
+
+`tools/dev.sh` combines incremental App packaging, PXADB replacement and
+launching into one development loop. An App source root is the parent directory
+that contains `<app-id>/`; configure it once in ignored `local/apps.toml`, or
+supply it for a one-off command:
+
+```toml
+# local/apps.toml
+[apps.my-app]
+source_root = "/home/me/work/pxa-apps"
+```
+
+Simulator mode keeps its PXADB2 service running and restarts the App after each
+source save. Product-runner and Guest `pxa_log_*` output is streamed to the
+terminal:
+
+```sh
+tools/dev.sh sim my-app --watch
+# Or without a local catalog:
+tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
+```
+
+Device mode independently builds an `esp32s3` package and replaces the App in
+the existing firmware without reflashing it. It starts `pxadb logcat` after
+each deployment and releases that USB Serial/JTAG connection before the next
+update:
+
+```sh
+tools/dev.sh device my-app --port /dev/ttyACM0 --watch
+```
+
+Combined build, deployment and runtime output is also written to
+`local/dev-logs/<mode>/<app-id>.log`. This is a fast WASM/AOT reload loop, not
+runtime hot reload, so each source update restarts the App process.
+
 ## Simulator
 
 `tools/simulator.sh` runs the imported SDL/LVGL standard UI simulator with the

@@ -60,6 +60,36 @@ idf.py -C firmware -B build/firmware/pai-touch -DPXA_BOARD=pai-touch build
 详见 [PXA 应用交付](docs/zh-CN/pxa-app-delivery.md)。
 目录职责与日常流程见 [工作区结构](docs/zh-CN/workspace-layout.md)。
 
+## PXA 快速开发
+
+`tools/dev.sh` 将应用的增量打包、PXADB 覆盖安装和启动串为一个开发循环。App 源码根目录是
+包含 `<app-id>/` 的父目录：可在被忽略的 `local/apps.toml` 中登记，也可在命令中临时传入。
+
+```toml
+# local/apps.toml
+[apps.my-app]
+source_root = "/home/me/work/pxa-apps"
+```
+
+模拟器模式会保持 PXADB2 服务运行，在每次保存后重启 App 进程，并将运行器及 Guest 的
+`pxa_log_*` 日志输出到终端：
+
+```sh
+tools/dev.sh sim my-app --watch
+# 或者不登记本机 catalog：
+tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
+```
+
+设备模式独立构建 `esp32s3` 包并覆盖安装到现有固件，不会重新烧录固件；部署后默认会显示
+`pxadb logcat`，下一次更新前会自动暂时关闭它以释放 USB Serial/JTAG 连接：
+
+```sh
+tools/dev.sh device my-app --port /dev/ttyACM0 --watch
+```
+
+所有构建、部署和运行器输出同时保存在 `local/dev-logs/<mode>/<app-id>.log`。这是重新加载
+WASM/AOT 应用的快速循环，而非运行时热重载，因此每次代码更新会重新启动该 App 窗口。
+
 ## 模拟器
 
 `tools/simulator.sh` 启动引入的 SDL/LVGL 标准 UI 模拟器，未指定时使用默认的
