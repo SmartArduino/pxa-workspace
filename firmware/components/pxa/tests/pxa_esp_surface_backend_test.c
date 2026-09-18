@@ -79,6 +79,7 @@ int main(void) {
     pxa_esp_surface_input_metrics_t input_metrics;
     pxa_esp_surface_frame_t frame;
     pxa_esp_surface_frame_t probe;
+    pxa_esp_surface_present_info_t present_info;
     uint8_t first[32];
     uint8_t second[32];
     uint8_t third[32];
@@ -105,6 +106,10 @@ int main(void) {
     assert(surface != 0 && stride == 8 && allocations == 4);
     assert(backend.configure(backend.context, surface, &layer) ==
            PXA_STATUS_OK && notifications == 1);
+    assert(pxa_esp_surface_get_present_info(&present_info) &&
+           present_info.width == 4 && present_info.height == 4 &&
+           present_info.x == 2 && present_info.y == 3 &&
+           present_info.visible == 1);
     assert(backend.configure_opaque_ui_regions(backend.context, surface, &overlay, 1) ==
            PXA_STATUS_OK && notifications == 2);
 
@@ -122,10 +127,14 @@ int main(void) {
     assert(pxa_esp_surface_has_pending_frame());
     pxa_esp_surface_set_host_visible(false);
     assert(notifications == 5);
+    assert(pxa_esp_surface_get_present_info(&present_info) &&
+           present_info.visible == 0);
     assert(!pxa_esp_surface_has_pending_frame());
     assert(!pxa_esp_surface_acquire_latest(&probe));
     pxa_esp_surface_set_host_visible(true);
     assert(notifications == 6);
+    assert(pxa_esp_surface_get_present_info(&present_info) &&
+           present_info.visible == 1);
     assert(pxa_esp_surface_has_pending_frame());
     assert(!pxa_esp_surface_composition_required());
     pxa_esp_surface_set_system_overlay_visible(true);

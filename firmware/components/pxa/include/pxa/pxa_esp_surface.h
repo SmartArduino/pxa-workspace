@@ -54,6 +54,14 @@ typedef struct {
 } pxa_esp_surface_frame_t;
 
 typedef struct {
+    uint16_t width;
+    uint16_t height;
+    int32_t x;
+    int32_t y;
+    uint8_t visible;
+} pxa_esp_surface_present_info_t;
+
+typedef struct {
     uint64_t sample_to_guest_total_us;
     uint64_t sample_to_present_total_us;
     uint64_t sample_to_visible_total_us;
@@ -107,6 +115,9 @@ bool pxa_esp_surface_acquire_latest(pxa_esp_surface_frame_t *frame);
 bool pxa_esp_surface_acquire_latest_for_direct(
     pxa_esp_surface_frame_t *frame);
 bool pxa_esp_surface_has_pending_frame(void);
+/* Reads immutable placement data without acquiring a framebuffer lease. */
+bool pxa_esp_surface_get_present_info(
+    pxa_esp_surface_present_info_t *info);
 void pxa_esp_surface_release_frame(uint64_t lease);
 
 #ifdef __cplusplus

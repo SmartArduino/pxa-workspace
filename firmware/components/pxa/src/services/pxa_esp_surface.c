@@ -1659,6 +1659,26 @@ bool pxa_esp_surface_has_pending_frame(void) {
     return pending;
 }
 
+bool pxa_esp_surface_get_present_info(
+    pxa_esp_surface_present_info_t *info) {
+    pxa_esp_surface_t *surface;
+    if (info == NULL) return false;
+    taskENTER_CRITICAL(&g_surface_lock);
+    surface = g_surface;
+    if (surface == NULL || surface->closing ||
+        surface->magic != PXA_ESP_SURFACE_MAGIC) {
+        taskEXIT_CRITICAL(&g_surface_lock);
+        return false;
+    }
+    info->width = surface->width;
+    info->height = surface->height;
+    info->x = surface->layer.x;
+    info->y = surface->layer.y;
+    info->visible = surface->layer.visible && g_host_visible;
+    taskEXIT_CRITICAL(&g_surface_lock);
+    return true;
+}
+
 void pxa_esp_surface_release_frame(uint64_t lease) {
     pxa_esp_surface_t *surface;
     uint32_t generation =
@@ -1769,6 +1789,11 @@ bool pxa_esp_surface_acquire_latest_for_direct(
     return false;
 }
 bool pxa_esp_surface_has_pending_frame(void) { return false; }
+bool pxa_esp_surface_get_present_info(
+    pxa_esp_surface_present_info_t *info) {
+    (void)info;
+    return false;
+}
 void pxa_esp_surface_release_frame(uint64_t lease) { (void)lease; }
 
 #endif

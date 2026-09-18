@@ -24,6 +24,8 @@ constexpr uint32_t kPresenterLockTimeoutMs = 100;
 
 lv_display_t* g_display = nullptr;
 TaskHandle_t g_presenter_task = nullptr;
+lv_area_t g_last_present_area = {};
+bool g_has_last_present_area = false;
 
 uint16_t SwapBytes(uint16_t value) { return __builtin_bswap16(value); }
 
@@ -77,22 +79,26 @@ uint16_t BlendUiAlphaPixel(uint16_t destination, uint16_t foreground,
     return static_cast<uint16_t>((red << 11) | (green << 5) | blue);
 }
 
-// A Surface smaller than the panel is centered unless the Guest placed it
-// explicitly; the panel's safe area is the inscribed square of the round
-// display, so a top-left 296x240 Surface would fall outside it.
-void ResolveFrameGeometry(const pxa_esp_surface_frame_t& frame,
-                          int32_t* origin_x, int32_t* origin_y,
-                          int32_t* drawn_width, int32_t* drawn_height,
-                          uint8_t* scale) {
-    uint8_t factor = pxa_surface_integer_scale(
-        frame.width, frame.height, static_cast<uint16_t>(WATCHER_DISPLAY_WIDTH),
+// A Surface smaller than the panel is presented at the largest exact 1x/2x/4x
+// factor that fits and is centered unless the Guest placed it explicitly; the
+// panel's safe area is the inscribed square of the round display, so a
+// top-left 296x240 Surface would fall outside it. The Guest repeats this fit
+// computation to map panel input coordinates back into Surface pixels.
+void ResolveSurfaceGeometry(uint16_t frame_width, uint16_t frame_height,
+                            int32_t frame_x, int32_t frame_y,
+                            int32_t* origin_x, int32_t* origin_y,
+                            int32_t* drawn_width, int32_t* drawn_height,
+                            uint8_t* scale) {
+    uint8_t factor = pxa_surface_fit_scale(
+        frame_width, frame_height,
+        static_cast<uint16_t>(WATCHER_DISPLAY_WIDTH),
         static_cast<uint16_t>(WATCHER_DISPLAY_HEIGHT));
     if (factor == 0) factor = 1;
-    int32_t x = frame.x;
-    int32_t y = frame.y;
-    const int32_t width = static_cast<int32_t>(frame.width) * factor;
-    const int32_t height = static_cast<int32_t>(frame.height) * factor;
-    if (frame.x == 0 && frame.y == 0 &&
+    int32_t x = frame_x;
+    int32_t y = frame_y;
+    const int32_t width = static_cast<int32_t>(frame_width) * factor;
+    const int32_t height = static_cast<int32_t>(frame_height) * factor;
+    if (frame_x == 0 && frame_y == 0 &&
         (width < WATCHER_DISPLAY_WIDTH || height < WATCHER_DISPLAY_HEIGHT)) {
         x = (WATCHER_DISPLAY_WIDTH - width) / 2;
         y = (WATCHER_DISPLAY_HEIGHT - height) / 2;
@@ -102,6 +108,72 @@ void ResolveFrameGeometry(const pxa_esp_surface_frame_t& frame,
     *drawn_width = width;
     *drawn_height = height;
     *scale = factor;
+}
+
+bool ResolvePresentArea(lv_area_t* area) {
+    pxa_esp_surface_present_info_t info;
+    int32_t origin_x;
+    int32_t origin_y;
+    int32_t drawn_width;
+    int32_t drawn_height;
+    uint8_t scale;
+    if (area == nullptr || !pxa_esp_surface_get_present_info(&info) ||
+        !info.visible)
+        return false;
+    ResolveSurfaceGeometry(info.width, info.height, info.x, info.y, &origin_x,
+                           &origin_y, &drawn_width, &drawn_height, &scale);
+    (void)scale;
+    area->x1 = static_cast<lv_coord_t>(std::max<int32_t>(origin_x, 0));
+    area->y1 = static_cast<lv_coord_t>(std::max<int32_t>(origin_y, 0));
+    area->x2 = static_cast<lv_coord_t>(std::min<int32_t>(
+        origin_x + drawn_width, WATCHER_DISPLAY_WIDTH) - 1);
+    area->y2 = static_cast<lv_coord_t>(std::min<int32_t>(
+        origin_y + drawn_height, WATCHER_DISPLAY_HEIGHT) - 1);
+    return area->x1 <= area->x2 && area->y1 <= area->y2;
+}
+
+bool AreasEqual(const lv_area_t& lhs, const lv_area_t& rhs) {
+    return lhs.x1 == rhs.x1 && lhs.y1 == rhs.y1 && lhs.x2 == rhs.x2 &&
+           lhs.y2 == rhs.y2;
+}
+
+void ComposeRgb565Scale1(const pxa_esp_surface_frame_t& frame,
+                         const lv_area_t* area, uint8_t* pixels,
+                         int32_t origin_x, int32_t origin_y,
+                         int32_t drawn_width, int32_t drawn_height) {
+    const int32_t area_width = lv_area_get_width(area);
+    const int32_t left = std::max<int32_t>(area->x1, origin_x);
+    const int32_t right = std::min<int32_t>(
+        area->x2 + 1, origin_x + drawn_width);
+    const int32_t top = std::max<int32_t>(area->y1, origin_y);
+    const int32_t bottom = std::min<int32_t>(
+        area->y2 + 1, origin_y + drawn_height);
+    if (left >= right || top >= bottom) return;
+
+    for (int32_t y = top; y < bottom; ++y) {
+        const uint8_t* source = frame.pixels +
+            static_cast<size_t>(y - origin_y) * frame.stride_bytes +
+            static_cast<size_t>(left - origin_x) * 2u;
+        uint16_t* destination = reinterpret_cast<uint16_t*>(pixels) +
+            static_cast<size_t>(y - area->y1) * area_width +
+            (left - area->x1);
+        int32_t remaining = right - left;
+        while (remaining >= 2) {
+            uint32_t pair;
+            std::memcpy(&pair, source, sizeof(pair));
+            pair = ((pair & UINT32_C(0x00ff00ff)) << 8u) |
+                   ((pair & UINT32_C(0xff00ff00)) >> 8u);
+            std::memcpy(destination, &pair, sizeof(pair));
+            source += sizeof(pair);
+            destination += 2;
+            remaining -= 2;
+        }
+        if (remaining != 0) {
+            uint16_t value;
+            std::memcpy(&value, source, sizeof(value));
+            *destination = SwapBytes(value);
+        }
+    }
 }
 
 void ComposeRgb565Scale2(const pxa_esp_surface_frame_t& frame,
@@ -166,8 +238,9 @@ void ComposeFrame(const pxa_esp_surface_frame_t& frame,
     int32_t drawn_width;
     int32_t drawn_height;
     uint8_t scale;
-    ResolveFrameGeometry(frame, &origin_x, &origin_y, &drawn_width,
-                         &drawn_height, &scale);
+    ResolveSurfaceGeometry(frame.width, frame.height, frame.x, frame.y,
+                           &origin_x, &origin_y, &drawn_width, &drawn_height,
+                           &scale);
     const int32_t surface_right = origin_x + drawn_width;
     const int32_t surface_bottom = origin_y + drawn_height;
     const size_t bytes_per_pixel =
@@ -178,11 +251,18 @@ void ComposeFrame(const pxa_esp_surface_frame_t& frame,
     const int32_t plane_right = plane.x + plane.width;
     const int32_t plane_bottom = plane.y + plane.height;
 
-    if (frame.format == PXA_SURFACE_FORMAT_RGB565 && scale == 2 &&
+    if (frame.format == PXA_SURFACE_FORMAT_RGB565 &&
         frame.opaque_ui_region_count == 0 && !plane_visible) {
-        ComposeRgb565Scale2(frame, area, pixels, origin_x, origin_y,
-                            drawn_width, drawn_height);
-        return;
+        if (scale == 1) {
+            ComposeRgb565Scale1(frame, area, pixels, origin_x, origin_y,
+                                drawn_width, drawn_height);
+            return;
+        }
+        if (scale == 2) {
+            ComposeRgb565Scale2(frame, area, pixels, origin_x, origin_y,
+                                drawn_width, drawn_height);
+            return;
+        }
     }
 
     for (int32_t y = area->y1; y <= area->y2; ++y) {
@@ -269,7 +349,22 @@ void PresenterTaskEntry(void*) {
         if (g_display == nullptr) continue;
         if (!lvgl_port_lock(kPresenterLockTimeoutMs)) continue;
         lv_obj_t* screen = lv_display_get_screen_active(g_display);
-        if (screen != nullptr) lv_obj_invalidate(screen);
+        if (screen != nullptr) {
+            lv_area_t area;
+            if (ResolvePresentArea(&area)) {
+                if (g_has_last_present_area &&
+                    !AreasEqual(g_last_present_area, area)) {
+                    (void)lv_obj_invalidate_area(screen,
+                                                 &g_last_present_area);
+                }
+                (void)lv_obj_invalidate_area(screen, &area);
+                g_last_present_area = area;
+                g_has_last_present_area = true;
+            } else {
+                lv_obj_invalidate(screen);
+                g_has_last_present_area = false;
+            }
+        }
         lvgl_port_unlock();
     }
 }

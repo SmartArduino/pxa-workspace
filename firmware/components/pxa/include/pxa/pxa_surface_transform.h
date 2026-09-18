@@ -24,6 +24,28 @@ static inline uint8_t pxa_surface_integer_scale(uint16_t source_width,
     return 0;
 }
 
+/* Largest 1x/2x/4x factor that keeps the whole Surface inside the target.
+ * Boards use this to present a Surface that is smaller than the panel at the
+ * biggest exact upscale that fits; the Guest repeats the same computation to
+ * map panel input coordinates back into Surface pixels. Returns 0 when either
+ * size is empty or even 1x does not fit, otherwise the best factor. */
+static inline uint8_t pxa_surface_fit_scale(uint16_t source_width,
+                                            uint16_t source_height,
+                                            uint16_t target_width,
+                                            uint16_t target_height) {
+    uint8_t scale;
+    uint8_t best = 0;
+    if (source_width == 0 || source_height == 0 || target_width == 0 ||
+        target_height == 0)
+        return 0;
+    for (scale = 1; scale <= 4; scale = (uint8_t)(scale * 2)) {
+        if ((uint32_t)source_width * scale <= target_width &&
+            (uint32_t)source_height * scale <= target_height)
+            best = scale;
+    }
+    return best;
+}
+
 static inline bool pxa_surface_upscale_rgb565_nearest(
     const uint16_t *source, uint16_t *output, uint16_t source_width,
     uint16_t source_height, uint32_t source_stride_pixels,

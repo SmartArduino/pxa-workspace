@@ -110,6 +110,17 @@ int main(void) {
     assert(pxa_surface_integer_scale(74, 60, 296, 240) == 4);
     assert(pxa_surface_integer_scale(147, 120, 296, 240) == 0);
     assert(pxa_surface_integer_scale(0, 120, 296, 240) == 0);
+    assert(pxa_surface_fit_scale(296, 240, 296, 240) == 1);
+    assert(pxa_surface_fit_scale(148, 120, 296, 240) == 2);
+    assert(pxa_surface_fit_scale(148, 120, 412, 412) == 2);
+    assert(pxa_surface_fit_scale(296, 240, 412, 412) == 1);
+    assert(pxa_surface_fit_scale(206, 206, 412, 412) == 2);
+    assert(pxa_surface_fit_scale(103, 103, 412, 412) == 4);
+    assert(pxa_surface_fit_scale(207, 206, 412, 412) == 1);
+    assert(pxa_surface_fit_scale(147, 120, 296, 240) == 2);
+    assert(pxa_surface_fit_scale(413, 412, 412, 412) == 0);
+    assert(pxa_surface_fit_scale(0, 120, 412, 412) == 0);
+    assert(pxa_surface_fit_scale(148, 120, 0, 412) == 0);
     check_scale(1, 0);
     check_scale(1, 1);
     check_scale(2, 0);
