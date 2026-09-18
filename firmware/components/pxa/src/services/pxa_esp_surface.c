@@ -9,6 +9,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #if CONFIG_PXA_PARALLEL_RASTER
+#include "esp_attr.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #endif
@@ -96,6 +97,7 @@ typedef struct {
     pxa_raster_telemetry_t raster_telemetry;
     uint32_t raster_main_us;
     uint32_t raster_worker_us;
+    uint16_t raster_split_row;
 } pxa_esp_surface_t;
 
 static portMUX_TYPE g_surface_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -130,10 +132,15 @@ typedef struct {
 } pxa_esp_raster_worker_job_t;
 
 static TaskHandle_t g_raster_worker_task;
+static StaticTask_t g_raster_worker_task_storage;
+EXT_RAM_BSS_ATTR static StackType_t
+    g_raster_worker_stack[CONFIG_PXA_RASTER_WORKER_STACK_SIZE];
 static StaticSemaphore_t g_raster_worker_done_storage;
 static SemaphoreHandle_t g_raster_worker_done;
 static pxa_esp_raster_worker_job_t g_raster_worker_job;
 static uint8_t g_raster_worker_attempted;
+static uint16_t g_raster_split_row;
+static uint16_t g_raster_split_height;
 
 static void raster_worker_task(void *context) {
     (void)context;
@@ -159,22 +166,65 @@ static void ensure_raster_worker(void) {
     g_raster_worker_attempted = 1;
     g_raster_worker_done = xSemaphoreCreateBinaryStatic(
         &g_raster_worker_done_storage);
-    if (g_raster_worker_done == NULL ||
-        xTaskCreatePinnedToCore(
+    if (g_raster_worker_done != NULL) {
+        g_raster_worker_task = xTaskCreateStaticPinnedToCore(
             raster_worker_task, "pxa_raster",
             CONFIG_PXA_RASTER_WORKER_STACK_SIZE, NULL,
-            CONFIG_PXA_RASTER_WORKER_PRIORITY, &g_raster_worker_task,
-            CONFIG_PXA_RASTER_WORKER_AFFINITY) != pdPASS) {
+            CONFIG_PXA_RASTER_WORKER_PRIORITY, g_raster_worker_stack,
+            &g_raster_worker_task_storage,
+            CONFIG_PXA_RASTER_WORKER_AFFINITY);
+    }
+    if (g_raster_worker_task == NULL) {
         g_raster_worker_task = NULL;
         ESP_LOGW(PXA_ESP_SURFACE_TAG,
                  "Parallel raster worker unavailable; using one core");
         return;
     }
     ESP_LOGI(PXA_ESP_SURFACE_TAG,
-             "Parallel raster worker: core=%d priority=%d stack=%uB",
+             "Parallel raster worker: core=%d priority=%d stack=%uB PSRAM",
              CONFIG_PXA_RASTER_WORKER_AFFINITY,
              CONFIG_PXA_RASTER_WORKER_PRIORITY,
              (unsigned)CONFIG_PXA_RASTER_WORKER_STACK_SIZE);
+}
+
+static uint16_t current_raster_split(uint16_t height) {
+    if (g_raster_split_height != height || g_raster_split_row == 0 ||
+        g_raster_split_row >= height) {
+        g_raster_split_height = height;
+        g_raster_split_row = (uint16_t)(((uint32_t)height * 4u) / 5u);
+        if (g_raster_split_row == 0) g_raster_split_row = 1;
+        if (g_raster_split_row >= height) g_raster_split_row = height - 1u;
+    }
+    return g_raster_split_row;
+}
+
+static void update_raster_split(uint16_t height, uint16_t split,
+                                uint32_t main_us, uint32_t worker_us) {
+    uint16_t min_split = height / 4u;
+    uint16_t max_split = (uint16_t)(((uint32_t)height * 7u) / 8u);
+    uint16_t target;
+    uint16_t max_step = height / 16u;
+    uint64_t main_cost;
+    uint64_t worker_cost;
+
+    if (main_us == 0 || worker_us == 0 || split == 0 || split >= height) return;
+    if (min_split == 0) min_split = 1;
+    if (max_split >= height) max_split = height - 1u;
+    if (max_step == 0) max_step = 1;
+
+    /* Balance estimated per-row work without chasing single-frame spikes. */
+    main_cost = ((uint64_t)main_us << 10u) / split;
+    worker_cost = ((uint64_t)worker_us << 10u) / (height - split);
+    target = (uint16_t)(((uint64_t)height * worker_cost) /
+                        (main_cost + worker_cost));
+    if (target < min_split) target = min_split;
+    if (target > max_split) target = max_split;
+    if (target > split && target - split > max_step) {
+        target = split + max_step;
+    } else if (target < split && split - target > max_step) {
+        target = split - max_step;
+    }
+    g_raster_split_row = target;
 }
 #endif
 static uint32_t
@@ -1286,13 +1336,15 @@ static void execute_raster_draw_list(
     const pxa_raster_target_t *target,
     const pxa_raster_resources_t *resources,
     pxa_raster_telemetry_t *telemetry, uint32_t *main_us,
-    uint32_t *worker_us) {
+    uint32_t *worker_us, uint16_t *split_row) {
     uint64_t main_started_us;
     *main_us = 0;
     *worker_us = 0;
+    *split_row = target->height;
 #if CONFIG_PXA_PARALLEL_RASTER
     if (g_raster_worker_task != NULL && target->height >= 2) {
-        const uint16_t split = target->height / 2u;
+        const uint16_t split = current_raster_split(target->height);
+        *split_row = split;
         memset(&g_raster_worker_job, 0, sizeof(g_raster_worker_job));
         g_raster_worker_job.bytes = bytes;
         g_raster_worker_job.list = *list;
@@ -1314,6 +1366,7 @@ static void execute_raster_draw_list(
             g_raster_worker_job.telemetry.covered_pixels;
         telemetry->last_covered_pixels +=
             g_raster_worker_job.telemetry.last_covered_pixels;
+        update_raster_split(target->height, split, *main_us, *worker_us);
         return;
     }
 #endif
@@ -1351,6 +1404,7 @@ static bool materialize_latest_raster_draw(void) {
     uint32_t mailbox_capacity_1 = 0;
     uint32_t main_us = 0;
     uint32_t worker_us = 0;
+    uint16_t split_row = 0;
     uint8_t candidate;
 
     taskENTER_CRITICAL(&g_surface_lock);
@@ -1395,7 +1449,8 @@ static bool materialize_latest_raster_draw(void) {
     started_us = (uint64_t)esp_timer_get_time();
     memset(&frame_telemetry, 0, sizeof(frame_telemetry));
     execute_raster_draw_list(draw_bytes, &list, &target, &resources,
-                             &frame_telemetry, &main_us, &worker_us);
+                             &frame_telemetry, &main_us, &worker_us,
+                             &split_row);
     finished_us = (uint64_t)esp_timer_get_time();
 
     taskENTER_CRITICAL(&g_surface_lock);
@@ -1427,6 +1482,7 @@ static bool materialize_latest_raster_draw(void) {
             : (uint32_t)(finished_us - started_us);
     surface->raster_main_us = main_us;
     surface->raster_worker_us = worker_us;
+    surface->raster_split_row = split_row;
     ++surface->raster_telemetry.rendered_frames;
     surface->raster_telemetry.draw_list_bytes +=
         frame_telemetry.draw_list_bytes;
@@ -1460,13 +1516,14 @@ static bool materialize_latest_raster_draw(void) {
         mailbox_capacity_1 = surface->raster_draw_capacities[1];
         main_us = surface->raster_main_us;
         worker_us = surface->raster_worker_us;
+        split_row = surface->raster_split_row;
     }
     taskEXIT_CRITICAL(&g_surface_lock);
     if (log_telemetry) {
         ESP_LOGI(PXA_ESP_SURFACE_TAG,
                  "Raster: submitted=%llu rendered=%llu visible=%llu "
                  "dropped=%llu list=%uB "
-                 "pixels=%u raster=%uus parts=%u/%uus "
+                 "pixels=%u raster=%uus split=%u parts=%u/%uus "
                  "queue_avg=%lluus present_avg=%lluus "
                  "mailbox=%u/%uB",
                  (unsigned long long)submitted_frames,
@@ -1474,7 +1531,8 @@ static bool materialize_latest_raster_draw(void) {
                  (unsigned long long)visible_frames,
                  (unsigned long long)dropped_frames,
                  (unsigned)draw_list_bytes, (unsigned)covered_pixels,
-                 (unsigned)raster_us, (unsigned)main_us,
+                 (unsigned)raster_us, (unsigned)split_row,
+                 (unsigned)main_us,
                  (unsigned)worker_us,
                  (unsigned long long)(rendered_frames != 0
                                           ? queue_wait_us / rendered_frames
