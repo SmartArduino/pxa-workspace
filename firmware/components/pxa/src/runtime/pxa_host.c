@@ -3,6 +3,7 @@
 #if defined(ESP_PLATFORM) && CONFIG_PXA_ENABLED
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -294,11 +295,23 @@ bool pxa_host_runtime_stop(const char *identity_key) {
 }
 
 bool pxa_host_deploy_package(const char *identity_key) {
+    return pxa_host_deploy_package_detailed(identity_key, NULL);
+}
+
+bool pxa_host_deploy_package_detailed(
+    const char *identity_key, pxa_host_package_deploy_result_t *result) {
     bool success;
     if (!g_host_ready || identity_key == NULL || identity_key[0] == '\0') {
+        if (result != NULL) {
+            result->status = identity_key == NULL || identity_key[0] == '\0'
+                                 ? -1
+                                 : -2;
+            snprintf(result->stage, sizeof(result->stage), "%s",
+                     "host_unavailable");
+        }
         return false;
     }
-    success = pxa_esp_host_deploy_package(identity_key);
+    success = pxa_esp_host_deploy_package_detailed(identity_key, result);
     if (success) notify_catalog_changed();
     return success;
 }

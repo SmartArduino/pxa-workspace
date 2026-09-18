@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "lvgl.h"
 #include "pxa/package_icon.h"
@@ -18,6 +19,7 @@
 
 #define PXSYS_ESP_PXA_MAGIC UINT32_C(0x50584550)
 #define PXSYS_ESP_PXA_RUNTIME_ID "pxa-esp"
+#define PXSYS_ESP_PXA_TAG "PxaBridge"
 
 typedef struct {
     pxsys_app_identity_t identity;
@@ -57,6 +59,7 @@ typedef struct {
 
 typedef struct {
     uint32_t generation;
+    uint32_t window_generation;
     pxa_window_configuration_t configuration;
 } window_change_t;
 
@@ -91,6 +94,7 @@ typedef struct {
 struct pxsys_esp_pxa_bridge {
     uint32_t magic;
     uint32_t generation;
+    uint32_t window_generation;
     size_t capacity;
     size_t subscription_capacity;
     size_t endpoint_capacity;
@@ -113,6 +117,7 @@ struct pxsys_esp_pxa_bridge {
     uint64_t next_call_id;
     uint8_t theme_subscribed;
     uint8_t locale_subscribed;
+    uint8_t window_accepting;
     char metadata_locale[PXSYS_LOCALE_TAG_MAX_BYTES + 1u];
 };
 
@@ -134,9 +139,37 @@ static lv_result_t schedule_on_lvgl_owner(lv_async_cb_t callback, void* context)
     return result;
 }
 
+static uint32_t advance_window_generation(pxsys_esp_pxa_bridge_t* bridge) {
+    ++bridge->window_generation;
+    if (bridge->window_generation == 0) ++bridge->window_generation;
+    return bridge->window_generation;
+}
+
+static void begin_window_session(pxsys_esp_pxa_bridge_t* bridge) {
+    if (!bridge_valid(bridge)) return;
+    portENTER_CRITICAL(&g_bridge_lock);
+    advance_window_generation(bridge);
+    bridge->window_accepting = 1;
+    portEXIT_CRITICAL(&g_bridge_lock);
+}
+
+static void resume_window_session(pxsys_esp_pxa_bridge_t* bridge) {
+    if (!bridge_valid(bridge)) return;
+    portENTER_CRITICAL(&g_bridge_lock);
+    bridge->window_accepting = 1;
+    portEXIT_CRITICAL(&g_bridge_lock);
+}
+
 static void reset_window(pxsys_esp_pxa_bridge_t* bridge) {
     pxsys_window_snapshot_t window;
     if (!bridge_valid(bridge)) return;
+    /* Invalidate queued guest updates before publishing the desktop defaults.
+     * A full-screen update can otherwise arrive after an app is backgrounded
+     * and make the home screen full-screen again. */
+    portENTER_CRITICAL(&g_bridge_lock);
+    bridge->window_accepting = 0;
+    advance_window_generation(bridge);
+    portEXIT_CRITICAL(&g_bridge_lock);
     pxsys_window_snapshot_init(&window);
     (void)pxsys_window_service_update(
         pxsys_standard_system_window(bridge->system), &window);
@@ -146,8 +179,15 @@ static void apply_window_on_owner(void* context) {
     window_change_t* change = (window_change_t*)context;
     pxsys_esp_pxa_bridge_t* bridge = g_bridge;
     pxsys_window_snapshot_t window;
+    int current = 0;
     if (change == NULL) return;
-    if (!bridge_valid(bridge) || bridge->generation != change->generation) {
+    portENTER_CRITICAL(&g_bridge_lock);
+    if (bridge_valid(bridge) && bridge->generation == change->generation &&
+        bridge->window_accepting &&
+        bridge->window_generation == change->window_generation)
+        current = 1;
+    portEXIT_CRITICAL(&g_bridge_lock);
+    if (!current) {
         free(change);
         return;
     }
@@ -172,10 +212,24 @@ static void window_changed(
     void* context, const pxa_window_configuration_t* configuration) {
     pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
     window_change_t* change;
-    if (!bridge_valid(bridge) || configuration == NULL) return;
+    uint32_t generation = 0;
+    uint32_t window_generation = 0;
+    if (configuration == NULL) return;
     change = (window_change_t*)malloc(sizeof(*change));
     if (change == NULL) return;
-    change->generation = bridge->generation;
+    portENTER_CRITICAL(&g_bridge_lock);
+    if (g_bridge == bridge && bridge_valid(bridge) &&
+        bridge->window_accepting) {
+        generation = bridge->generation;
+        window_generation = advance_window_generation(bridge);
+    }
+    portEXIT_CRITICAL(&g_bridge_lock);
+    if (generation == 0) {
+        free(change);
+        return;
+    }
+    change->generation = generation;
+    change->window_generation = window_generation;
     change->configuration = *configuration;
     if (schedule_on_lvgl_owner(apply_window_on_owner, change) != LV_RESULT_OK)
         free(change);
@@ -1122,8 +1176,13 @@ static pxsys_status_t backend_start(void* context, void* backend_instance,
         encode_intent_event(bridge, launch, &instance->launch_event_size);
     if (instance->launch_event == NULL)
         return PXSYS_STATUS_NO_MEMORY;
+    /* Guest startup can configure its window before the runtime reports that
+     * it is ready to foreground. Accept that initial configuration as part of
+     * this launch's window session. */
+    begin_window_session(bridge);
     if (pxa_host_runtime_launch(instance->identity_key))
         return PXSYS_STATUS_PENDING;
+    reset_window(bridge);
     bridge->allocator.release(bridge->allocator.context,
                               instance->launch_event);
     instance->launch_event = NULL;
@@ -1132,9 +1191,10 @@ static pxsys_status_t backend_start(void* context, void* backend_instance,
 }
 
 static pxsys_status_t backend_foreground(void* context, void* backend_instance) {
-    (void)context;
+    pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
     if (backend_instance == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
+    resume_window_session(bridge);
     pxa_esp_surface_set_host_visible(true);
     return PXSYS_STATUS_OK;
 }
@@ -1187,11 +1247,12 @@ static void backend_stop(void* context, void* backend_instance, pxsys_stop_reaso
 static pxsys_status_t backend_request_stop(void* context, void* backend_instance,
                                            pxsys_stop_reason_t reason) {
     esp_pxa_instance_t* instance = (esp_pxa_instance_t*)backend_instance;
-    (void)context;
+    pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
     (void)reason;
     if (instance == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
     pxa_esp_surface_set_host_visible(false);
+    reset_window(bridge);
     return pxa_host_runtime_stop(instance->identity_key) ? PXSYS_STATUS_PENDING
                                                      : PXSYS_STATUS_UNAVAILABLE;
 }
@@ -1216,27 +1277,68 @@ static void backend_destroy(void* context, void* backend_instance) {
     bridge->allocator.release(bridge->allocator.context, instance);
 }
 
+/* A launch request may arrive on any task: the standalone UI asks for it on
+ * the LVGL owner, PXADB asks for it on its own service task. The task manager
+ * backgrounds the running app and rebuilds trusted UI synchronously, so the
+ * whole start must run on the LVGL owner. Queue it there and return
+ * immediately: the PXADB response is "launch_queued" and the PXA runtime
+ * reports the final start state through the normal runtime events. */
+typedef struct {
+    pxsys_esp_pxa_bridge_t* bridge;
+    uint32_t generation;
+    pxsys_app_identity_t target;
+    char app_id[PXA_HOST_APP_ID_MAX];
+} pending_launch_t;
+
+static void perform_launch_request(void* context) {
+    pending_launch_t* request = (pending_launch_t*)context;
+    pxsys_intent_t intent = {0};
+    pxsys_instance_ref_t instance;
+    pxsys_status_t status = PXSYS_STATUS_INTERNAL;
+    if (request == NULL) return;
+    if (bridge_valid(request->bridge) &&
+        request->bridge->generation == request->generation) {
+        intent.struct_size = sizeof(intent);
+        intent.action = pxsys_string_from_cstr("system.intent.main");
+        intent.target = &request->target;
+        status = pxsys_task_manager_start(
+            pxsys_standard_system_tasks(request->bridge->system), &intent,
+            &instance);
+    }
+    if (status != PXSYS_STATUS_OK && status != PXSYS_STATUS_PENDING) {
+        ESP_LOGW(PXSYS_ESP_PXA_TAG, "Launch request failed: %s status=%d",
+                 request->app_id, (int)status);
+    }
+    free(request);
+}
+
 static bool launch_requested(void* context,
                              const uint8_t publisher_root[PXA_HOST_PUBLISHER_ROOT_BYTES],
                              const char* identity) {
     pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
-    pxsys_intent_t intent = {0};
-    pxsys_instance_ref_t instance;
+    pending_launch_t* request;
     size_t index;
     if (!bridge_valid(bridge) || identity == NULL)
         return false;
     for (index = 0; index < bridge->tracked_count; ++index) {
         if (memcmp(bridge->tracked[index].identity.publisher_root, publisher_root,
-                   PXSYS_PUBLISHER_ROOT_BYTES) == 0 &&
-            strcmp(bridge->tracked[index].app_id, identity) == 0) {
-            pxsys_status_t status;
-            intent.struct_size = sizeof(intent);
-            intent.action = pxsys_string_from_cstr("system.intent.main");
-            intent.target = &bridge->tracked[index].identity;
-            status = pxsys_task_manager_start(pxsys_standard_system_tasks(bridge->system), &intent,
-                                              &instance);
-            return status == PXSYS_STATUS_OK || status == PXSYS_STATUS_PENDING;
+                   PXSYS_PUBLISHER_ROOT_BYTES) != 0 ||
+            strcmp(bridge->tracked[index].app_id, identity) != 0)
+            continue;
+        request = (pending_launch_t*)calloc(1, sizeof(*request));
+        if (request == NULL) return false;
+        request->bridge = bridge;
+        request->generation = bridge->generation;
+        request->target = bridge->tracked[index].identity;
+        snprintf(request->app_id, sizeof(request->app_id), "%s",
+                 bridge->tracked[index].app_id);
+        request->target.app_id = pxsys_string_from_cstr(request->app_id);
+        if (schedule_on_lvgl_owner(perform_launch_request, request) !=
+            LV_RESULT_OK) {
+            free(request);
+            return false;
         }
+        return true;
     }
     return false;
 }

@@ -88,6 +88,8 @@
 #define PXA_SYSTEM_CONFIGURATION_LOCALE UINT16_C(1)
 #define PXA_SYSTEM_CONFIGURATION_TEXT_DIRECTION UINT16_C(0x8002)
 #define PXA_SYSTEM_LOCALE_MAX_BYTES 63u
+#define PXA_ESP_HOST_CJK_FONT_PATH \
+    CONFIG_PXA_MOUNT_POINT "/system/fonts/noto_sans_cjk_common.ttf"
 #ifndef CONFIG_PXA_GUEST_STACK_SIZE
 #define CONFIG_PXA_GUEST_STACK_SIZE (128 * 1024)
 #endif
@@ -196,6 +198,8 @@ typedef struct {
     pxa_lvgl_ui_t *ui_adapter;
     void *ui_adapter_workspace;
     pxa_ui_backend_t ui_backend;
+    lv_font_t *ui_body_font;
+    lv_font_t *ui_title_font;
 
     uint64_t last_clock_us;
     uint64_t next_maintenance_us;
@@ -233,6 +237,32 @@ static portMUX_TYPE g_system_request_lock = portMUX_INITIALIZER_UNLOCKED;
 static pxa_host_window_changed_fn g_window_changed_callback;
 static void *g_window_changed_context;
 static portMUX_TYPE g_window_changed_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static lv_font_t *load_ui_font(uint16_t size,
+                                const lv_font_t *symbol_fallback) {
+#if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+    lv_font_t *font = lv_freetype_font_create(
+        PXA_ESP_HOST_CJK_FONT_PATH, LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
+        size, LV_FREETYPE_FONT_STYLE_NORMAL);
+    if (font != NULL) font->fallback = symbol_fallback;
+    return font;
+#else
+    (void)size;
+    (void)symbol_fallback;
+    return NULL;
+#endif
+}
+
+static void release_ui_fonts(void) {
+#if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+    if (g_host.ui_title_font != NULL)
+        lv_freetype_font_delete(g_host.ui_title_font);
+    if (g_host.ui_body_font != NULL)
+        lv_freetype_font_delete(g_host.ui_body_font);
+#endif
+    g_host.ui_title_font = NULL;
+    g_host.ui_body_font = NULL;
+}
 
 typedef struct {
     char app_id[PXA_HOST_PACKAGE_ID_MAX];
@@ -3410,6 +3440,7 @@ static void rollback_host_initialization(void) {
         pxa_lvgl_ui_deinit(g_host.ui_adapter);
         g_host.ui_adapter = NULL;
     }
+    release_ui_fonts();
     if (g_host.engine != NULL) {
         pxa_wamr_engine_set_runtime(g_host.engine, NULL);
         pxa_wamr_engine_deinit(g_host.engine);
@@ -3459,9 +3490,17 @@ bool pxa_esp_host_initialize(void) {
     ui_config.release = esp_ui_free;
     ui_config.execute = esp_lvgl_execute;
     pxa_lvgl_ui_theme_init(&ui_config.theme);
-    ui_config.theme.caption_font = pxa_esp_ui_shell_text_font();
-    ui_config.theme.body_font = pxa_esp_ui_shell_text_font();
-    ui_config.theme.title_font = pxa_esp_ui_shell_title_font();
+    g_host.ui_body_font = load_ui_font(16, pxa_esp_ui_shell_text_font());
+    g_host.ui_title_font = load_ui_font(20, pxa_esp_ui_shell_title_font());
+    ui_config.theme.caption_font = g_host.ui_body_font != NULL
+                                       ? g_host.ui_body_font
+                                       : pxa_esp_ui_shell_text_font();
+    ui_config.theme.body_font = g_host.ui_body_font != NULL
+                                    ? g_host.ui_body_font
+                                    : pxa_esp_ui_shell_text_font();
+    ui_config.theme.title_font = g_host.ui_title_font != NULL
+                                     ? g_host.ui_title_font
+                                     : pxa_esp_ui_shell_title_font();
     ui_config.theme.icon_font = pxa_esp_ui_shell_icon_font();
     ui_config.resolve_asset = pxa_esp_ui_asset_resolve;
     ui_config.release_asset = pxa_esp_ui_asset_release;
@@ -3998,8 +4037,27 @@ done:
 }
 
 bool pxa_esp_host_deploy_package(const char *identity) {
-    if (!g_host.initialized || identity == NULL) return false;
-    return pxa_esp_package_store_deploy(identity);
+    return pxa_esp_host_deploy_package_detailed(identity, NULL);
+}
+
+bool pxa_esp_host_deploy_package_detailed(
+    const char *identity, pxa_host_package_deploy_result_t *result) {
+    pxa_esp_package_store_deploy_result_t store_result = {
+        .status = PXA_STATUS_BAD_STATE,
+        .stage = "host_unavailable",
+    };
+    if (!g_host.initialized || identity == NULL) {
+        store_result.status = identity == NULL ? PXA_STATUS_INVALID_ARGUMENT
+                                               : PXA_STATUS_BAD_STATE;
+    } else {
+        (void)pxa_esp_package_store_deploy_detailed(identity, &store_result);
+    }
+    if (result != NULL) {
+        result->status = store_result.status;
+        snprintf(result->stage, sizeof(result->stage), "%s",
+                 store_result.stage != NULL ? store_result.stage : "unknown");
+    }
+    return store_result.status == PXA_STATUS_OK;
 }
 
 bool pxa_esp_host_manage_app(pxa_host_app_action_t action,

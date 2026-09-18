@@ -42,7 +42,13 @@ private:
     bool InitializeWifi();
     void InitializeButtons();
     void ScheduleStatusUpdate();
+    void SetScreenEnabled(bool enabled);
     void ToggleScreen();
+    void HandlePowerButtonPressDown();
+    void HandlePowerButtonPressUp();
+    void HandlePowerButtonLongPress();
+    bool IsTouchInteractionRecent() const;
+    void OnLockChanged(bool locked);
     void NavigateBack();
     void EnterWifiProvisioning();
     void PowerOff();
@@ -82,4 +88,9 @@ private:
     std::atomic<uint16_t> injected_pointer_x_{0};
     std::atomic<uint16_t> injected_pointer_y_{0};
     std::atomic<bool> injected_pointer_pressed_{false};
+    std::atomic<int64_t> last_touch_activity_us_{0};
+    int64_t power_button_pressed_at_us_ = 0;
+    bool power_button_long_press_ = false;
+    bool power_button_woke_screen_ = false;
+    bool power_button_ignored_ = false;
 };

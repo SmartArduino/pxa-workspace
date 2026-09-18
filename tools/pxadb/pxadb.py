@@ -634,15 +634,179 @@ class NormalFsClient:
             entries.append((kind, int(size), name))
         return entries
 
-    def get(self, remote_path: str, destination: pathlib.Path) -> None:
-        frames = self.client.request(f"FSGET {client_encode_path(remote_path)}", timeout=120.0)
-        with destination.open("wb") as output:
+    def _expected_digest(self, remote_path: str) -> tuple[str | None, int | None]:
+        properties = info_properties(self.client.device_info)
+        if properties.get("fs_sha256") != "1":
+            return None, None
+        try:
+            frames = self.client.request(
+                f"FSSHA {client_encode_path(remote_path)}", timeout=60.0
+            )
+        except PxaDbError:
+            return None, None
+        digest = info_properties(frames[-1].payload)
+        sha = digest.get("sha256")
+        try:
+            size = int(digest["bytes"]) if "bytes" in digest else None
+        except ValueError:
+            size = None
+        return (sha if sha else None), size
+
+    def _append_data_frame(self, frame: Frame, output: bytearray,
+                           require_offset: bool = True) -> bool:
+        """Append one DATA frame; False means the frame must be re-requested.
+
+        Firmware with paced reads tags every frame with its byte offset and a
+        CRC32; older firmware streams bare base64 chunks without either.
+        """
+        offset_text, separator, rest = frame.payload.partition("\t")
+        if not separator:
+            if require_offset:
+                return False
+            try:
+                output.extend(
+                    base64.b64decode(frame.payload.encode("ascii"), validate=True)
+                )
+            except ValueError:
+                return False
+            return True
+        crc_text, crc_separator, encoded = rest.partition("\t")
+        if not crc_separator:
+            crc_text = None
+            encoded = rest
+        try:
+            offset = int(offset_text)
+        except ValueError:
+            return False
+        if offset < len(output):
+            return True
+        if offset > len(output):
+            return False
+        try:
+            chunk = base64.b64decode(encoded.encode("ascii"), validate=True)
+        except ValueError:
+            return False
+        if crc_text is not None:
+            try:
+                expected_crc = int(crc_text, 16)
+            except ValueError:
+                return False
+            if zlib.crc32(chunk) & 0xFFFFFFFF != expected_crc:
+                return False
+        output.extend(chunk)
+        return True
+
+    def _download_windowed(self, remote_path: str,
+                           expected_size: int | None) -> bytearray:
+        # One FSREAD carries a bounded window of offset tagged DATA frames.
+        # The host truncates to the first gap and re-requests that offset, so
+        # a lossy link costs one window instead of the whole file.
+        encoded_path = client_encode_path(remote_path)
+        output = bytearray()
+        failures = 0
+        while True:
+            try:
+                frames = self.client.request(
+                    f"FSREAD {encoded_path} {len(output)}", timeout=3.0
+                )
+            except PxaDbError as error:
+                # Device-level rejections are permanent; only link-level stalls
+                # are worth retrying.
+                if str(error) in {"unknown_command", "file_not_found",
+                                  "invalid_path", "file_open_failed",
+                                  "invalid_offset", "file_read_failed",
+                                  "seek_failed"}:
+                    raise
+                failures += 1
+                if failures > 20:
+                    raise PxaDbError(
+                        f"file read stalled after {failures} retries: {error}"
+                    ) from error
+                continue
+            progressed = False
+            truncated = False
             for frame in frames:
-                if frame.kind == "DATA":
-                    try:
-                        output.write(base64.b64decode(frame.payload.encode("ascii"), validate=True))
-                    except ValueError as error:
-                        raise PxaDbError(f"invalid file data from device: {error}") from error
+                if frame.kind != "DATA":
+                    continue
+                before = len(output)
+                if not self._append_data_frame(frame, output):
+                    del output[before:]
+                    truncated = True
+                    break
+                progressed = True
+            if expected_size is not None and len(output) >= expected_size:
+                break
+            status = frames[-1].payload if frames else ""
+            if status == "eof" and not truncated:
+                break
+            if not progressed:
+                failures += 1
+                if failures > 20:
+                    raise PxaDbError(
+                        "file read stalled; the link keeps losing frames"
+                    )
+                continue
+            failures = 0
+        return output
+
+    def _download_burst(self, remote_path: str,
+                        expected_size: int | None) -> bytearray:
+        """Legacy FSGET burst used when the device has no FSREAD command."""
+        frames = self.client.request(
+            f"FSGET {client_encode_path(remote_path)}", timeout=120.0
+        )
+        output = bytearray()
+        for frame in frames:
+            if frame.kind != "DATA":
+                continue
+            if not self._append_data_frame(frame, output, require_offset=False):
+                raise PxaDbError("file chunk stream is not contiguous")
+        if expected_size is not None and len(output) != expected_size:
+            raise PxaDbError(
+                f"file size mismatch: expected {expected_size}, got {len(output)}"
+            )
+        return output
+
+    def get(self, remote_path: str, destination: pathlib.Path) -> None:
+        expected_sha, expected_size = self._expected_digest(remote_path)
+        attempts = 3 if expected_sha is not None else 1
+        last_error: PxaDbError | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                data = self._download_windowed(remote_path, expected_size)
+            except PxaDbError as error:
+                if "unknown_command" not in str(error):
+                    last_error = error
+                    if attempt == attempts:
+                        raise
+                    print(
+                        f"file read interrupted ({error}); retrying "
+                        f"({attempt}/{attempts})",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    continue
+                # Device firmware predates the paced read command.
+                data = self._download_burst(remote_path, expected_size)
+            if expected_sha is None:
+                destination.write_bytes(data)
+                return
+            actual = hashlib.sha256(data).hexdigest()
+            if actual == expected_sha:
+                destination.write_bytes(data)
+                return
+            last_error = PxaDbError(
+                "file transfer checksum mismatch "
+                f"(expected {expected_sha}, got {actual})"
+            )
+            if attempt < attempts:
+                print(
+                    f"{last_error}; retrying ({attempt}/{attempts})",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        assert last_error is not None
+        raise last_error
 
     def put(self, source: pathlib.Path, remote_path: str) -> None:
         total = source.stat().st_size
@@ -701,7 +865,7 @@ class NormalFsClient:
                         command = (f"FSDATA {offset} {encoded}" if offset_transfer
                                    else f"FSDATA {encoded}")
                         frames = self.client.request_until(
-                            command, {"READY", "OK"}, timeout=30.0
+                            command, {"READY", "OK"}, timeout=10.0
                         )
                     terminal = frames[-1]
                 except PxaDbError:
@@ -753,8 +917,18 @@ def command_fs(arguments: argparse.Namespace) -> int:
             client.get(arguments.remote, pathlib.Path(arguments.local))
         elif arguments.fs_action == "rm":
             fs_remove(client, arguments.remote, arguments.timeout)
+        elif arguments.fs_action == "rmtree":
+            fs_remove_tree(client, arguments.remote, arguments.timeout)
         elif arguments.fs_action == "mkdir":
             fs_mkdir(client, arguments.remote)
+        elif arguments.fs_action == "unlock":
+            frames = client.client.request(
+                f"FSUNLOCK {arguments.minutes}", timeout=10.0
+            )
+            print(f"unlocked: {frames[-1].payload}")
+        elif arguments.fs_action == "lock":
+            frames = client.client.request("FSLOCK", timeout=10.0)
+            print(f"locked: {frames[-1].payload}")
     finally:
         client.close()
     return 0
@@ -773,6 +947,35 @@ def iter_package_files(directory: pathlib.Path) -> Iterable[pathlib.Path]:
             yield path
 
 
+def fs_remove_tree(client: NormalFsClient, path: str, timeout: float) -> None:
+    """Remove a staged tree. The device command removes it in one transaction;
+    older firmware falls back to a recursive entry-by-entry removal."""
+    try:
+        client.client.request(f"FSRMTREE {client_encode_path(path)}",
+                              timeout=timeout)
+        return
+    except PxaDbError as error:
+        if "unknown_command" not in str(error):
+            return
+    try:
+        entries = client.list(path)
+    except Exception:
+        return
+    for kind, _size, name in entries:
+        child = f"{path.rstrip('/')}/{name}"
+        if kind == "D":
+            fs_remove_tree(client, child, timeout)
+        else:
+            try:
+                fs_remove(client, child, timeout)
+            except Exception:
+                pass
+    try:
+        fs_remove(client, path, timeout)
+    except Exception:
+        pass
+
+
 def stage_package(source: pathlib.Path, identity: str, port: str | None,
                   timeout: float, stream_logs: bool = False) -> None:
     inbox = "pxa-state/inbox"
@@ -786,17 +989,23 @@ def stage_package(source: pathlib.Path, identity: str, port: str | None,
                 pass
         if source.is_file():
             remote = f"{root}.pxa"
-            for stale in (root, remote):
-                try:
-                    fs_remove(client, stale, timeout)
-                except Exception:
-                    pass
+            # A stale directory with the same identity must go too: the inbox
+            # scanner would otherwise keep whichever source it reads first.
+            fs_remove_tree(client, root, timeout)
+            try:
+                fs_remove(client, remote, timeout)
+            except Exception:
+                pass
             client.put(source, remote)
             return
+        # A prior single-file upload uses the same identity with a .pxa
+        # suffix. Remove it before publishing a directory package so inbox
+        # scanning cannot select the stale source first.
         try:
-            fs_remove(client, root, timeout)
+            fs_remove(client, f"{root}.pxa", timeout)
         except Exception:
             pass
+        fs_remove_tree(client, root, timeout)
         current = ""
         for segment in root.split("/"):
             current = segment if not current else f"{current}/{segment}"
@@ -824,6 +1033,22 @@ def command_package_stage(arguments: argparse.Namespace) -> int:
                   arguments.logcat)
     print(f"staged {identity}; run: pxadb package install {identity}")
     return 0
+
+
+def clear_staged_source(client: PxaDbClient, identity: str) -> None:
+    """Drop the staged inbox copy after a successful commit.
+
+    The inbox scanner re-verifies every staged container with a full signature
+    check after each mutation and at boot, so leaving installed containers in
+    the inbox makes every later install and boot progressively slower.
+    """
+    fs = NormalFsClient(client)
+    for remote in (f"pxa-state/inbox/{identity}.pxa",):
+        try:
+            fs_remove(fs, remote, 10.0)
+        except Exception:
+            pass
+    fs_remove_tree(fs, f"pxa-state/inbox/{identity}", 10.0)
 
 
 def command_package_install(arguments: argparse.Namespace) -> int:
@@ -855,9 +1080,14 @@ def command_package_install(arguments: argparse.Namespace) -> int:
                       arguments.timeout, arguments.logcat)
         print(f"verifying and installing: {identity}", file=sys.stderr,
               flush=True)
-        with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
-                         arguments.timeout, arguments.logcat) as client:
+        # The deploy phase includes signature verification and the post-upload
+        # inbox scan, so the connection needs more headroom than a plain
+        # command even when the caller passes the small default timeout.
+        deploy_timeout = max(arguments.timeout, 60.0)
+        with open_client(resolve_pxadb_port(arguments.port, deploy_timeout),
+                         deploy_timeout, arguments.logcat) as client:
             deploy(client, identity)
+            clear_staged_source(client, identity)
         print(f"installed: {identity}")
         return 0
 
@@ -1365,6 +1595,21 @@ def build_parser() -> argparse.ArgumentParser:
     add_connection_arguments(fs_rm)
     fs_rm.add_argument("remote")
     fs_rm.set_defaults(handler=command_fs)
+    fs_rmtree = fs_commands.add_parser(
+        "rmtree", help="remove a file or directory tree")
+    add_connection_arguments(fs_rmtree)
+    fs_rmtree.add_argument("remote")
+    fs_rmtree.set_defaults(handler=command_fs)
+    fs_unlock = fs_commands.add_parser(
+        "unlock", help="allow writes under the read-only system tree")
+    add_connection_arguments(fs_unlock)
+    fs_unlock.add_argument(
+        "--minutes", type=int, default=10,
+        help="unlock duration in minutes (default 10, maximum 1440)")
+    fs_unlock.set_defaults(handler=command_fs)
+    fs_lock = fs_commands.add_parser("lock", help="drop a system unlock")
+    add_connection_arguments(fs_lock)
+    fs_lock.set_defaults(handler=command_fs)
     fs_mkdir = fs_commands.add_parser("mkdir")
     add_connection_arguments(fs_mkdir)
     fs_mkdir.add_argument("remote")

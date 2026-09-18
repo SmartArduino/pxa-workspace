@@ -3,6 +3,13 @@
 #include <stddef.h>
 #include <string.h>
 
+static int same_pointer_stream(const pxa_host_pointer_event_t *left,
+                               const pxa_host_pointer_event_t *right) {
+    return left->id == right->id &&
+           left->instance_id == right->instance_id &&
+           left->surface == right->surface && left->node == right->node;
+}
+
 void pxa_host_pointer_mailbox_init(pxa_host_pointer_mailbox_t *mailbox) {
     if (mailbox == NULL) return;
     memset(mailbox, 0, sizeof(*mailbox));
@@ -16,7 +23,9 @@ int pxa_host_pointer_mailbox_push(pxa_host_pointer_mailbox_t *mailbox,
     if (event->phase == PXA_HOST_POINTER_MOVE_PHASE) {
         if (mailbox->count != 0 &&
             mailbox->events[mailbox->count - 1u].phase ==
-                PXA_HOST_POINTER_MOVE_PHASE) {
+                PXA_HOST_POINTER_MOVE_PHASE &&
+            same_pointer_stream(&mailbox->events[mailbox->count - 1u],
+                                event)) {
             mailbox->events[mailbox->count - 1u] = *event;
             return 1;
         }
@@ -26,7 +35,8 @@ int pxa_host_pointer_mailbox_push(pxa_host_pointer_mailbox_t *mailbox,
         }
         for (index = mailbox->count; index != 0; --index) {
             if (mailbox->events[index - 1u].phase ==
-                PXA_HOST_POINTER_MOVE_PHASE) {
+                    PXA_HOST_POINTER_MOVE_PHASE &&
+                same_pointer_stream(&mailbox->events[index - 1u], event)) {
                 mailbox->events[index - 1u] = *event;
                 return 1;
             }

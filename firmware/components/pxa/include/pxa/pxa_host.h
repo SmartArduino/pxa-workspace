@@ -20,6 +20,7 @@ extern "C" {
 #define PXA_HOST_PACKAGE_LOCALIZED_NAME_MAX 128
 #define PXA_HOST_PACKAGE_DESCRIPTION_MAX 512
 #define PXA_HOST_PACKAGE_ICON_PATH_MAX 256
+#define PXA_HOST_PACKAGE_DEPLOY_STAGE_MAX 40
 #define PXA_HOST_PUBLISHER_ROOT_BYTES 32
 #define PXA_HOST_COMPONENT_ID_MAX 65
 #define PXA_HOST_SYSTEM_SERVICE_ID UINT16_C(17)
@@ -59,6 +60,13 @@ typedef struct {
     char description[PXA_HOST_PACKAGE_DESCRIPTION_MAX + 1u];
     char icon_path[PXA_HOST_PACKAGE_ICON_PATH_MAX + 1u];
 } pxa_host_package_metadata_t;
+
+/* Deployment diagnostics are populated only by
+ * pxa_host_deploy_package_detailed(). status is a pxa_status_t value. */
+typedef struct {
+    int32_t status;
+    char stage[PXA_HOST_PACKAGE_DEPLOY_STAGE_MAX];
+} pxa_host_package_deploy_result_t;
 
 typedef void (*pxa_host_icon_release_fn)(void *context);
 
@@ -148,6 +156,8 @@ bool pxa_host_runtime_launch_app(
 bool pxa_host_runtime_back(void);
 bool pxa_host_runtime_stop(const char *identity_key);
 bool pxa_host_deploy_package(const char *identity_key);
+bool pxa_host_deploy_package_detailed(
+    const char *identity_key, pxa_host_package_deploy_result_t *result);
 bool pxa_host_manage_app(pxa_host_app_action_t action,
                          const char *identity_key);
 bool pxa_host_ready(void);
@@ -161,7 +171,8 @@ bool pxa_host_set_color_scheme(pxa_host_color_scheme_t color_scheme);
 bool pxa_host_set_locale(const char *locale, uint8_t text_direction);
 /* Thread-safe display metrics handed to guest applications. safe_insets is
  * the physical safe area (cutouts, rounded corners); system_bar_insets is the
- * screen region currently covered by status/navigation chrome. Both use
+ * screen region covered or reserved by status/navigation chrome, including
+ * the Home and Back gesture strips in gesture navigation mode. Both use
  * logical pixels and may be updated when chrome visibility changes. */
 bool pxa_host_set_window_insets(const pxa_window_insets_t *safe_insets,
                                 const pxa_window_insets_t *system_bar_insets);

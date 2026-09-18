@@ -7,6 +7,7 @@
 
 #include "esp_heap_caps.h"
 #include "lvgl.h"
+#include "src/misc/cache/instance/lv_image_cache.h"
 
 #include "pxa_esp_package_store.h"
 
@@ -32,7 +33,11 @@ static uint32_t read_big_endian_u32(const uint8_t *data) {
 }
 
 static void release_icon(void *user_data) {
-    heap_caps_free(user_data);
+    pxa_esp_package_icon_resource_t *resource =
+        (pxa_esp_package_icon_resource_t *)user_data;
+    if (resource == NULL) return;
+    lv_image_cache_drop(&resource->descriptor);
+    heap_caps_free(resource);
 }
 
 pxa_host_icon_t pxa_esp_package_icon_default(void) {

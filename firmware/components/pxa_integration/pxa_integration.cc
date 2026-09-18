@@ -53,6 +53,18 @@ const lv_font_t* const kTypographySymbolFallbacks[
 void* Allocate(void*, size_t size) { return std::malloc(size); }
 void Release(void*, void* memory) { std::free(memory); }
 
+bool ReadMemoryInfo(void*, uint64_t* available_bytes, uint64_t* total_bytes) {
+    if (available_bytes == nullptr || total_bytes == nullptr) return false;
+    const uint32_t internal_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    *available_bytes =
+        heap_caps_get_free_size(internal_caps) +
+        heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    *total_bytes =
+        heap_caps_get_total_size(internal_caps) +
+        heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    return *total_bytes != 0;
+}
+
 bool MountPxaStorage() {
     const esp_vfs_littlefs_conf_t config = {
         .base_path = CONFIG_PXA_MOUNT_POINT,
@@ -444,6 +456,7 @@ bool CreateSystem(const pxa_board_port_t* board,
     ui_config.resolve_app_metadata = ResolveAppMetadata;
     ui_config.app_icon_context = g_bridge;
     ui_config.resolve_app_icon = ResolveAppIcon;
+    ui_config.memory_info = ReadMemoryInfo;
     status = pxsys_reference_lvgl_create(&ui_config, &g_reference_ui);
     if (status == PXSYS_STATUS_OK)
         status = pxsys_reference_lvgl_start(g_reference_ui);
@@ -462,7 +475,14 @@ bool CreateSystem(const pxa_board_port_t* board,
     if (pxsys_reference_layout_compute(&system_config.initial_display, &layout) ==
         PXSYS_STATUS_OK) {
         bars.top = layout.status_bar.y + layout.status_bar.height;
-#if !CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
+#if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
+        /* Gesture mode reserves an invisible Home strip at the bottom and a
+         * Back strip at the left edge. Report both so fullscreen applications
+         * keep their controls out of the system gesture zones. */
+        bars.bottom =
+            pxsys_reference_layout_gesture_strip_height(layout.size_class);
+        bars.left = pxsys_reference_layout_back_gesture_width();
+#else
         bars.bottom = system_config.initial_display.height - layout.navigation_bar.y;
 #endif
     }

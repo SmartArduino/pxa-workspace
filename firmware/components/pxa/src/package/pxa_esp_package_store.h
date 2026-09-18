@@ -84,6 +84,11 @@ typedef struct {
     uint8_t permission_count;
 } pxa_esp_package_preview_t;
 
+typedef struct {
+    pxa_status_t status;
+    const char *stage;
+} pxa_esp_package_store_deploy_result_t;
+
 typedef bool (*pxa_esp_package_permission_visitor_fn)(
     const pxa_esp_package_permission_info_t *permission, void *user_data);
 typedef void (*pxa_esp_package_store_sync_fn)(void *user_data);
@@ -112,6 +117,8 @@ bool pxa_esp_package_store_preview_file(const char *source_path,
 /* Development deployment bypasses Inbox duplicate filtering but still runs
  * the normal signed, atomic package installer. */
 bool pxa_esp_package_store_deploy(const char *identity);
+bool pxa_esp_package_store_deploy_detailed(
+    const char *identity, pxa_esp_package_store_deploy_result_t *result);
 bool pxa_esp_package_store_uninstall(const char *identity);
 bool pxa_esp_package_store_clear_data(const char *identity);
 

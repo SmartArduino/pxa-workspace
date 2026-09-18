@@ -8,6 +8,10 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#if CONFIG_PXA_PARALLEL_RASTER
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#endif
 #include "pxa/wire.h"
 #include "sdkconfig.h"
 
@@ -90,6 +94,8 @@ typedef struct {
     int8_t raster_draw_writing;
     uint64_t raster_last_frame_id;
     pxa_raster_telemetry_t raster_telemetry;
+    uint32_t raster_main_us;
+    uint32_t raster_worker_us;
 } pxa_esp_surface_t;
 
 static portMUX_TYPE g_surface_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -109,6 +115,68 @@ static bool g_direct_resume_barrier;
 static uint64_t g_direct_resume_after_frame_id;
 static uint64_t g_next_input_timestamp_us;
 static pxa_esp_surface_input_metrics_t g_input_metrics;
+static uint32_t latency_us(uint64_t started_us, uint64_t finished_us);
+
+#if CONFIG_PXA_PARALLEL_RASTER
+typedef struct {
+    const uint8_t *bytes;
+    pxa_raster_draw_list_view_t list;
+    pxa_raster_target_t target;
+    pxa_raster_resources_t resources;
+    pxa_raster_telemetry_t telemetry;
+    uint16_t row_begin;
+    uint16_t row_end;
+    uint32_t elapsed_us;
+} pxa_esp_raster_worker_job_t;
+
+static TaskHandle_t g_raster_worker_task;
+static StaticSemaphore_t g_raster_worker_done_storage;
+static SemaphoreHandle_t g_raster_worker_done;
+static pxa_esp_raster_worker_job_t g_raster_worker_job;
+static uint8_t g_raster_worker_attempted;
+
+static void raster_worker_task(void *context) {
+    (void)context;
+    for (;;) {
+        uint64_t started_us;
+        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        started_us = (uint64_t)esp_timer_get_time();
+        memset(&g_raster_worker_job.telemetry, 0,
+               sizeof(g_raster_worker_job.telemetry));
+        pxa_raster_execute_draw_list_rows(
+            g_raster_worker_job.bytes, &g_raster_worker_job.list,
+            &g_raster_worker_job.target, &g_raster_worker_job.resources,
+            g_raster_worker_job.row_begin, g_raster_worker_job.row_end,
+            &g_raster_worker_job.telemetry);
+        g_raster_worker_job.elapsed_us = latency_us(
+            started_us, (uint64_t)esp_timer_get_time());
+        xSemaphoreGive(g_raster_worker_done);
+    }
+}
+
+static void ensure_raster_worker(void) {
+    if (g_raster_worker_task != NULL || g_raster_worker_attempted) return;
+    g_raster_worker_attempted = 1;
+    g_raster_worker_done = xSemaphoreCreateBinaryStatic(
+        &g_raster_worker_done_storage);
+    if (g_raster_worker_done == NULL ||
+        xTaskCreatePinnedToCore(
+            raster_worker_task, "pxa_raster",
+            CONFIG_PXA_RASTER_WORKER_STACK_SIZE, NULL,
+            CONFIG_PXA_RASTER_WORKER_PRIORITY, &g_raster_worker_task,
+            CONFIG_PXA_RASTER_WORKER_AFFINITY) != pdPASS) {
+        g_raster_worker_task = NULL;
+        ESP_LOGW(PXA_ESP_SURFACE_TAG,
+                 "Parallel raster worker unavailable; using one core");
+        return;
+    }
+    ESP_LOGI(PXA_ESP_SURFACE_TAG,
+             "Parallel raster worker: core=%d priority=%d stack=%uB",
+             CONFIG_PXA_RASTER_WORKER_AFFINITY,
+             CONFIG_PXA_RASTER_WORKER_PRIORITY,
+             (unsigned)CONFIG_PXA_RASTER_WORKER_STACK_SIZE);
+}
+#endif
 static uint32_t
     g_input_latency_histograms[3][PXA_ESP_SURFACE_LATENCY_BUCKETS];
 
@@ -630,7 +698,8 @@ static pxa_status_t queue_surface(
 static uint32_t raster_capabilities(void) {
     return PXA_RASTER_CAP_FLAT_QUAD | PXA_RASTER_CAP_TEXTURED_QUAD |
            PXA_RASTER_CAP_ADDITIVE_SPRITE | PXA_RASTER_CAP_SPRITE_BATCH |
-           PXA_RASTER_CAP_TRIANGLE_BATCH | PXA_RASTER_CAP_AFFINE_UV;
+           PXA_RASTER_CAP_TRIANGLE_BATCH | PXA_RASTER_CAP_AFFINE_UV |
+           PXA_RASTER_CAP_TEXTURE_SLOTS_48;
 }
 
 static void copy_raster_resources(const pxa_esp_surface_t *surface,
@@ -1013,6 +1082,9 @@ static pxa_status_t create_game_render_context(
         *provider_context = 0;
         return status;
     }
+#if CONFIG_PXA_PARALLEL_RASTER
+    ensure_raster_worker();
+#endif
     *capabilities = raster_capabilities();
     return PXA_STATUS_OK;
 }
@@ -1209,6 +1281,47 @@ void pxa_esp_surface_take_input_metrics(
     taskEXIT_CRITICAL(&g_surface_lock);
 }
 
+static void execute_raster_draw_list(
+    const uint8_t *bytes, const pxa_raster_draw_list_view_t *list,
+    const pxa_raster_target_t *target,
+    const pxa_raster_resources_t *resources,
+    pxa_raster_telemetry_t *telemetry, uint32_t *main_us,
+    uint32_t *worker_us) {
+    uint64_t main_started_us;
+    *main_us = 0;
+    *worker_us = 0;
+#if CONFIG_PXA_PARALLEL_RASTER
+    if (g_raster_worker_task != NULL && target->height >= 2) {
+        const uint16_t split = target->height / 2u;
+        memset(&g_raster_worker_job, 0, sizeof(g_raster_worker_job));
+        g_raster_worker_job.bytes = bytes;
+        g_raster_worker_job.list = *list;
+        g_raster_worker_job.target = *target;
+        g_raster_worker_job.resources = *resources;
+        g_raster_worker_job.row_begin = split;
+        g_raster_worker_job.row_end = target->height;
+        (void)xSemaphoreTake(g_raster_worker_done, 0);
+        xTaskNotifyGive(g_raster_worker_task);
+
+        main_started_us = (uint64_t)esp_timer_get_time();
+        pxa_raster_execute_draw_list_rows(bytes, list, target, resources, 0,
+                                          split, telemetry);
+        *main_us = latency_us(main_started_us,
+                              (uint64_t)esp_timer_get_time());
+        (void)xSemaphoreTake(g_raster_worker_done, portMAX_DELAY);
+        *worker_us = g_raster_worker_job.elapsed_us;
+        telemetry->covered_pixels +=
+            g_raster_worker_job.telemetry.covered_pixels;
+        telemetry->last_covered_pixels +=
+            g_raster_worker_job.telemetry.last_covered_pixels;
+        return;
+    }
+#endif
+    main_started_us = (uint64_t)esp_timer_get_time();
+    pxa_raster_execute_draw_list(bytes, list, target, resources, telemetry);
+    *main_us = latency_us(main_started_us, (uint64_t)esp_timer_get_time());
+}
+
 static bool materialize_latest_raster_draw(void) {
     pxa_esp_surface_t *surface;
     pxa_raster_resources_t resources;
@@ -1236,6 +1349,8 @@ static bool materialize_latest_raster_draw(void) {
     uint32_t covered_pixels = 0;
     uint32_t mailbox_capacity_0 = 0;
     uint32_t mailbox_capacity_1 = 0;
+    uint32_t main_us = 0;
+    uint32_t worker_us = 0;
     uint8_t candidate;
 
     taskENTER_CRITICAL(&g_surface_lock);
@@ -1279,8 +1394,8 @@ static bool materialize_latest_raster_draw(void) {
 
     started_us = (uint64_t)esp_timer_get_time();
     memset(&frame_telemetry, 0, sizeof(frame_telemetry));
-    pxa_raster_execute_draw_list(draw_bytes, &list, &target, &resources,
-                                 &frame_telemetry);
+    execute_raster_draw_list(draw_bytes, &list, &target, &resources,
+                             &frame_telemetry, &main_us, &worker_us);
     finished_us = (uint64_t)esp_timer_get_time();
 
     taskENTER_CRITICAL(&g_surface_lock);
@@ -1310,6 +1425,8 @@ static bool materialize_latest_raster_draw(void) {
         finished_us - started_us > UINT32_MAX
             ? UINT32_MAX
             : (uint32_t)(finished_us - started_us);
+    surface->raster_main_us = main_us;
+    surface->raster_worker_us = worker_us;
     ++surface->raster_telemetry.rendered_frames;
     surface->raster_telemetry.draw_list_bytes +=
         frame_telemetry.draw_list_bytes;
@@ -1341,20 +1458,24 @@ static bool materialize_latest_raster_draw(void) {
         covered_pixels = surface->raster_telemetry.last_covered_pixels;
         mailbox_capacity_0 = surface->raster_draw_capacities[0];
         mailbox_capacity_1 = surface->raster_draw_capacities[1];
+        main_us = surface->raster_main_us;
+        worker_us = surface->raster_worker_us;
     }
     taskEXIT_CRITICAL(&g_surface_lock);
     if (log_telemetry) {
         ESP_LOGI(PXA_ESP_SURFACE_TAG,
                  "Raster: submitted=%llu rendered=%llu visible=%llu "
                  "dropped=%llu list=%uB "
-                 "pixels=%u raster=%uus queue_avg=%lluus present_avg=%lluus "
+                 "pixels=%u raster=%uus parts=%u/%uus "
+                 "queue_avg=%lluus present_avg=%lluus "
                  "mailbox=%u/%uB",
                  (unsigned long long)submitted_frames,
                  (unsigned long long)rendered_frames,
                  (unsigned long long)visible_frames,
                  (unsigned long long)dropped_frames,
                  (unsigned)draw_list_bytes, (unsigned)covered_pixels,
-                 (unsigned)raster_us,
+                 (unsigned)raster_us, (unsigned)main_us,
+                 (unsigned)worker_us,
                  (unsigned long long)(rendered_frames != 0
                                           ? queue_wait_us / rendered_frames
                                           : 0),

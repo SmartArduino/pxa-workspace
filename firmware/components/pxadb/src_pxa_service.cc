@@ -30,6 +30,7 @@
 #include <esp_log.h>
 #include <esp_mac.h>
 #include <esp_private/log_lock.h>
+#include <esp_rom_crc.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -74,6 +75,15 @@ constexpr char kPxaInboxRoot[] = CONFIG_PXA_STATE_ROOT "/inbox";
 constexpr size_t kFsAbsolutePathLength =
     kFsPathLength + sizeof(kPxaMountPoint) + 1;
 constexpr size_t kFsDataChunkSize = 192;
+// A paced read window bounds how much data the device sends between two host
+// requests. A burst large enough to outrun the host/CH340 buffer silently
+// loses frames on a 2 Mbaud link, so the host re-requests from the first
+// missing offset. The window is read with one filesystem call and stays below
+// the point where a host scheduling hiccup can drop a frame.
+constexpr size_t kFsReadWindowChunks = 32;
+// Filled by SendFsRead; the PXADB task serializes commands, so one buffer is
+// enough and it stays out of the 20 KiB task stack.
+uint8_t s_fs_read_buffer[kFsDataChunkSize * kFsReadWindowChunks] = {};
 // Host-to-device uploads are request/response paced, so a larger FSDATA chunk
 // is the main throughput lever on UART links. Device-to-host FSGET frames
 // stay at kFsDataChunkSize because they share the 320-byte frame payload.
@@ -83,7 +93,7 @@ constexpr size_t kPxaPackageListCapacity = 64;
 #endif
 // Package and file operations access LittleFS. ESP-IDF disables cache during
 // Flash operations, so this task's stack must remain in internal SRAM.
-constexpr uint32_t kTaskStackSize = 12 * 1024;
+constexpr uint32_t kTaskStackSize = 20 * 1024;
 constexpr uint32_t kAutostartTaskStackSize = 3 * 1024;
 constexpr uint32_t kSessionIdleTimeoutMs = 30000;
 constexpr TickType_t kIoTimeout = pdMS_TO_TICKS(1000);
@@ -218,6 +228,9 @@ std::atomic<bool> s_autostart_active{false};
 std::atomic<bool> s_autostart_cancelled{false};
 std::atomic<bool> s_control_session_active{false};
 std::atomic<uint64_t> s_last_control_activity_us{0};
+// Zero while the read-only system tree stays locked. FSUNLOCK arms an expiry
+// so a development session can stage factory content under system/.
+std::atomic<uint64_t> s_system_unlock_expiry_us{0};
 QueueHandle_t s_log_queue = nullptr;
 SemaphoreHandle_t s_tx_mutex = nullptr;
 StaticSemaphore_t s_tx_mutex_storage = {};
@@ -380,12 +393,27 @@ bool DecodeFsPath(const char* encoded, char* relative, size_t relative_capacity,
     return length > 0 && static_cast<size_t>(length) < absolute_capacity;
 }
 
+bool IsSystemWriteUnlocked() {
+    const uint64_t expiry =
+        s_system_unlock_expiry_us.load(std::memory_order_relaxed);
+    return expiry != 0 &&
+           static_cast<uint64_t>(esp_timer_get_time()) < expiry;
+}
+
 bool IsWritableFsPath(const char* relative) {
     if (relative == nullptr) return false;
-    return strcmp(relative, kPxaStateRoot) == 0 ||
-           (strncmp(relative, kPxaInboxRoot, sizeof(kPxaInboxRoot) - 1) == 0 &&
-            (relative[sizeof(kPxaInboxRoot) - 1] == '\0' ||
-             relative[sizeof(kPxaInboxRoot) - 1] == '/'));
+    if (strcmp(relative, kPxaStateRoot) == 0 ||
+        (strncmp(relative, kPxaInboxRoot, sizeof(kPxaInboxRoot) - 1) == 0 &&
+         (relative[sizeof(kPxaInboxRoot) - 1] == '\0' ||
+          relative[sizeof(kPxaInboxRoot) - 1] == '/'))) {
+        return true;
+    }
+    // The factory tree is read-only until FSUNLOCK. The mount root itself and
+    // the two managed subtrees stay in place even while unlocked.
+    return IsSystemWriteUnlocked() &&
+           strncmp(relative, "system/", 7) == 0 &&
+           strcmp(relative, "system/fonts") != 0 &&
+           strcmp(relative, "system/pxa") != 0;
 }
 
 bool IsPxaInboxPath(const char* relative) {
@@ -431,14 +459,17 @@ bool IsSha256Hex(const char* value) {
     return true;
 }
 
-bool FileMatchesSha256(const char* path, const char* expected) {
-    if (path == nullptr || !IsSha256Hex(expected)) return false;
-    FILE* file = fopen(path, "rb");
-    if (file == nullptr) return false;
+bool FileSha256Hex(const char* path, char output[65]) {
+    FILE* file;
     mbedtls_sha256_context context;
-    mbedtls_sha256_init(&context);
-    bool success = mbedtls_sha256_starts(&context, 0) == 0;
     uint8_t bytes[512] = {};
+    uint8_t digest[32] = {};
+    bool success;
+    if (path == nullptr || output == nullptr) return false;
+    file = fopen(path, "rb");
+    if (file == nullptr) return false;
+    mbedtls_sha256_init(&context);
+    success = mbedtls_sha256_starts(&context, 0) == 0;
     while (success) {
         const size_t read = fread(bytes, 1, sizeof(bytes), file);
         if (read > 0) success = mbedtls_sha256_update(&context, bytes, read) == 0;
@@ -447,16 +478,43 @@ bool FileMatchesSha256(const char* path, const char* expected) {
             break;
         }
     }
-    uint8_t digest[32] = {};
     success = success && mbedtls_sha256_finish(&context, digest) == 0;
     mbedtls_sha256_free(&context);
     fclose(file);
     if (!success) return false;
-    char actual[65] = {};
     for (size_t index = 0; index < sizeof(digest); ++index) {
-        snprintf(actual + index * 2, sizeof(actual) - index * 2, "%02x", digest[index]);
+        snprintf(output + index * 2, 65 - index * 2, "%02x", digest[index]);
     }
-    return strcmp(actual, expected) == 0;
+    return true;
+}
+
+bool FileMatchesSha256(const char* path, const char* expected) {
+    char actual[65] = {};
+    return path != nullptr && IsSha256Hex(expected) &&
+           FileSha256Hex(path, actual) && strcmp(actual, expected) == 0;
+}
+
+void SendFsDigest(unsigned long sequence, const char* encoded_path) {
+    char relative[kFsPathLength] = {};
+    char path[kFsAbsolutePathLength] = {};
+    struct stat metadata = {};
+    if (!DecodeFsPath(encoded_path, relative, sizeof(relative), path, sizeof(path))) {
+        SendFrame(sequence, "ERR", "invalid_path");
+        return;
+    }
+    if (stat(path, &metadata) != 0 || !S_ISREG(metadata.st_mode)) {
+        SendFrame(sequence, "ERR", "file_not_found");
+        return;
+    }
+    char digest[65] = {};
+    if (!FileSha256Hex(path, digest)) {
+        SendFrame(sequence, "ERR", "file_read_failed");
+        return;
+    }
+    char payload[128] = {};
+    snprintf(payload, sizeof(payload), "sha256=%s;bytes=%llu", digest,
+             static_cast<unsigned long long>(metadata.st_size));
+    SendFrame(sequence, "OK", payload);
 }
 
 void SendFsUploadReady(unsigned long sequence) {
@@ -521,19 +579,25 @@ void SendFsFile(unsigned long sequence, const char* encoded_path) {
         return;
     }
     bool sent = true;
+    uint64_t offset = 0;
     while (sent) {
         uint8_t bytes[kFsDataChunkSize] = {};
         const size_t read = fread(bytes, 1, sizeof(bytes), file);
         if (read == 0) break;
-        char payload[kFsDataChunkSize * 2] = {};
+        char payload[kFsDataChunkSize * 2 + 24] = {};
+        const int prefix = snprintf(payload, sizeof(payload), "%llu\t",
+                                    static_cast<unsigned long long>(offset));
         size_t payload_length = 0;
-        if (mbedtls_base64_encode(reinterpret_cast<unsigned char*>(payload),
-                                  sizeof(payload) - 1, &payload_length, bytes,
-                                  read) != 0) {
+        if (prefix <= 0 ||
+            mbedtls_base64_encode(
+                reinterpret_cast<unsigned char*>(payload + prefix),
+                sizeof(payload) - static_cast<size_t>(prefix) - 1,
+                &payload_length, bytes, read) != 0) {
             sent = false;
             break;
         }
-        payload[payload_length] = '\0';
+        payload[static_cast<size_t>(prefix) + payload_length] = '\0';
+        offset += read;
         sent = SendFrame(sequence, "DATA", payload);
     }
     const bool read_failed = ferror(file) != 0;
@@ -541,6 +605,95 @@ void SendFsFile(unsigned long sequence, const char* encoded_path) {
     if (!sent) return;
     SendFrame(sequence, read_failed ? "ERR" : "OK",
               read_failed ? "file_read_failed" : "");
+}
+
+/* Host-paced read: one response carries at most kFsReadWindowChunks offset
+ * tagged DATA frames for [offset, offset + window). On a lossy link the host
+ * validates the contiguous offsets, truncates to the first gap and re-issues
+ * FSREAD for that byte offset, so only the missing window is re-sent. */
+void SendFsRead(unsigned long sequence, const char* encoded_path,
+                const char* offset_text) {
+    char relative[kFsPathLength] = {};
+    char path[kFsAbsolutePathLength] = {};
+    char* end = nullptr;
+    unsigned long long offset = 0;
+    struct stat metadata = {};
+    FILE* file;
+    uint64_t position;
+    bool eof = false;
+    if (!DecodeFsPath(encoded_path, relative, sizeof(relative), path, sizeof(path))) {
+        SendFrame(sequence, "ERR", "invalid_path");
+        return;
+    }
+    if (offset_text != nullptr) {
+        offset = strtoull(offset_text, &end, 10);
+        if (end == offset_text || *end != '\0') {
+            SendFrame(sequence, "ERR", "invalid_offset");
+            return;
+        }
+    }
+    if (stat(path, &metadata) != 0 || !S_ISREG(metadata.st_mode)) {
+        SendFrame(sequence, "ERR", "file_not_found");
+        return;
+    }
+    if (offset > static_cast<unsigned long long>(metadata.st_size)) {
+        SendFrame(sequence, "ERR", "invalid_offset");
+        return;
+    }
+    file = fopen(path, "rb");
+    if (file == nullptr) {
+        SendFrame(sequence, "ERR", "file_open_failed");
+        return;
+    }
+    if (offset != 0 && fseek(file, static_cast<long>(offset), SEEK_SET) != 0) {
+        fclose(file);
+        SendFrame(sequence, "ERR", "seek_failed");
+        return;
+    }
+    position = offset;
+    {
+        const size_t window_bytes = fread(s_fs_read_buffer, 1,
+                                          sizeof(s_fs_read_buffer), file);
+        size_t sent_bytes = 0;
+        if (window_bytes == 0) eof = true;
+        while (sent_bytes < window_bytes) {
+            const size_t read = std::min(kFsDataChunkSize,
+                                         window_bytes - sent_bytes);
+            char payload[kFsDataChunkSize * 2 + 32] = {};
+            const uint32_t crc = esp_rom_crc32_le(
+                0, s_fs_read_buffer + sent_bytes, static_cast<uint32_t>(read));
+            const int prefix = snprintf(
+                payload, sizeof(payload), "%llu\t%08x\t",
+                static_cast<unsigned long long>(position),
+                static_cast<unsigned>(crc));
+            size_t payload_length = 0;
+            if (prefix <= 0 ||
+                mbedtls_base64_encode(
+                    reinterpret_cast<unsigned char*>(payload + prefix),
+                    sizeof(payload) - static_cast<size_t>(prefix) - 1,
+                    &payload_length, s_fs_read_buffer + sent_bytes,
+                    read) != 0) {
+                fclose(file);
+                SendFrame(sequence, "ERR", "file_read_failed");
+                return;
+            }
+            payload[static_cast<size_t>(prefix) + payload_length] = '\0';
+            position += read;
+            sent_bytes += read;
+            if (!SendFrame(sequence, "DATA", payload)) {
+                fclose(file);
+                return;
+            }
+        }
+    }
+    if (position >= static_cast<uint64_t>(metadata.st_size)) eof = true;
+    if (ferror(file) != 0) {
+        fclose(file);
+        SendFrame(sequence, "ERR", "file_read_failed");
+        return;
+    }
+    fclose(file);
+    SendFrame(sequence, "OK", eof ? "eof" : "more");
 }
 
 void StartFsUpload(unsigned long sequence, const char* encoded_path,
@@ -611,12 +764,12 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
         }
         const bool renamed = rename(s_file_upload.temporary, s_file_upload.destination) == 0;
         if (!renamed) AbortFileUpload();
-        else {
-            s_file_upload = {};
-            if (refresh_pxa_inbox) RefreshPxaInboxAfterFsMutation();
-        }
+        else s_file_upload = {};
+        // Answer before refreshing: the inbox scan verifies signatures and can
+        // take seconds, which must not delay the upload acknowledgement.
         SendFrame(sequence, renamed ? "OK" : "ERR",
                   renamed ? "" : "file_commit_failed");
+        if (renamed && refresh_pxa_inbox) RefreshPxaInboxAfterFsMutation();
         return;
     }
     SendFsUploadReady(sequence);
@@ -680,8 +833,10 @@ void WriteFsUpload(unsigned long sequence, const char* offset_text, const char* 
         return;
     }
     s_file_upload = {};
-    if (refresh_pxa_inbox) RefreshPxaInboxAfterFsMutation();
+    // Answer before refreshing: the inbox scan verifies signatures and can
+    // take seconds, which must not delay the upload acknowledgement.
     SendFrame(sequence, "OK", "");
+    if (refresh_pxa_inbox) RefreshPxaInboxAfterFsMutation();
 }
 
 void MakeFsDirectory(unsigned long sequence, const char* encoded_path) {
@@ -713,6 +868,92 @@ void RemoveFsPath(unsigned long sequence, const char* encoded_path) {
     } else {
         SendFrame(sequence, "ERR", errno == ENOTEMPTY ? "directory_not_empty" : "remove_failed");
     }
+}
+
+/* Removes a staged directory in one transaction. Removing a tree entry by
+ * entry would run the inbox refresh (and its signature scan) once per file. */
+bool RemoveTreeAt(const char* path) {
+    struct stat metadata = {};
+    if (stat(path, &metadata) != 0) return errno == ENOENT;
+    if (!S_ISDIR(metadata.st_mode)) return unlink(path) == 0;
+
+    DIR* directory = opendir(path);
+    if (directory == nullptr) return false;
+    // LittleFS directory cursors may skip entries when the current tree is
+    // mutated. Explicitly rewind after each child instead of retaining a
+    // heap-backed name list.
+    while (true) {
+        char child[kFsAbsolutePathLength + 1] = {};
+        struct dirent* entry;
+        rewinddir(directory);
+        while ((entry = readdir(directory)) != nullptr) {
+            int length;
+            if (strcmp(entry->d_name, ".") == 0 ||
+                strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            length = snprintf(child, sizeof(child), "%s/%s", path,
+                              entry->d_name);
+            if (length < 0 || static_cast<size_t>(length) >= sizeof(child)) {
+                closedir(directory);
+                return false;
+            }
+            break;
+        }
+        if (child[0] == '\0') break;
+        if (!RemoveTreeAt(child)) {
+            closedir(directory);
+            return false;
+        }
+    }
+    closedir(directory);
+    return rmdir(path) == 0 || errno == ENOENT;
+}
+
+void RemoveFsTree(unsigned long sequence, const char* encoded_path) {
+    char relative[kFsPathLength] = {};
+    char path[kFsAbsolutePathLength] = {};
+    struct stat metadata = {};
+    if (!DecodeFsPath(encoded_path, relative, sizeof(relative), path, sizeof(path)) ||
+        !IsWritableFsPath(relative) || strcmp(relative, "pxa-state") == 0) {
+        SendFrame(sequence, "ERR", "invalid_path");
+        return;
+    }
+    if (stat(path, &metadata) != 0) {
+        SendFrame(sequence, "ERR", "file_not_found");
+        return;
+    }
+    if (!RemoveTreeAt(path)) {
+        SendFrame(sequence, "ERR", "remove_failed");
+        return;
+    }
+    if (IsPxaInboxPath(relative)) RefreshPxaInboxAfterFsMutation();
+    SendFrame(sequence, "OK", "");
+}
+
+void HandleFsUnlock(unsigned long sequence, const char* minutes_text) {
+    unsigned long minutes = 10;
+    uint64_t expiry;
+    char payload[64] = {};
+    if (minutes_text != nullptr) {
+        char* end = nullptr;
+        minutes = strtoul(minutes_text, &end, 10);
+        if (end == minutes_text || *end != '\0' || minutes == 0 ||
+            minutes > 1440) {
+            SendFrame(sequence, "ERR", "invalid_unlock_duration");
+            return;
+        }
+    }
+    expiry = static_cast<uint64_t>(esp_timer_get_time()) +
+             static_cast<uint64_t>(minutes) * 60u * 1000000u;
+    s_system_unlock_expiry_us.store(expiry, std::memory_order_relaxed);
+    snprintf(payload, sizeof(payload), "system;seconds=%lu", minutes * 60ul);
+    SendFrame(sequence, "OK", payload);
+}
+
+void HandleFsLock(unsigned long sequence) {
+    s_system_unlock_expiry_us.store(0, std::memory_order_relaxed);
+    SendFrame(sequence, "OK", "locked");
 }
 
 void RememberLog(const LogRecord& record) {
@@ -1278,14 +1519,24 @@ void HandlePackageDeploy(unsigned long sequence, const char* identity) {
         SendFrame(sequence, "ERR", "pxa_unavailable");
         return;
     }
+    pxa_host_package_deploy_result_t result = {};
     ESP_LOGI(kTag, "Package deploy started: %s stack_free=%uB", identity,
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
-    const bool success = pxa_host_deploy_package(identity);
-    ESP_LOGI(kTag, "Package deploy finished: %s success=%u stack_free=%uB",
-             identity, static_cast<unsigned>(success),
+    const bool success = pxa_host_deploy_package_detailed(identity, &result);
+    ESP_LOGI(kTag,
+             "Package deploy finished: %s success=%u stage=%s status=%" PRId32
+             " stack_free=%uB",
+             identity, static_cast<unsigned>(success), result.stage,
+             result.status,
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
-    SendFrame(sequence, success ? "OK" : "ERR",
-              success ? "" : "package_deploy_failed");
+    if (success) {
+        SendFrame(sequence, "OK", "");
+        return;
+    }
+    char error[96] = {};
+    snprintf(error, sizeof(error), "package_deploy_failed;stage=%s;status=%" PRId32,
+             result.stage[0] != '\0' ? result.stage : "unknown", result.status);
+    SendFrame(sequence, "ERR", error);
 #else
     (void)identity;
     SendFrame(sequence, "ERR", "pxa_disabled");
@@ -1386,6 +1637,10 @@ void HandleCommand(char* line) {
         SendFsList(sequence, argument);
     } else if (strcmp(command, "FSGET") == 0 && argument != nullptr) {
         SendFsFile(sequence, argument);
+    } else if (strcmp(command, "FSREAD") == 0 && argument != nullptr) {
+        SendFsRead(sequence, argument, second_argument);
+    } else if (strcmp(command, "FSSHA") == 0 && argument != nullptr) {
+        SendFsDigest(sequence, argument);
     } else if (strcmp(command, "FSPUT") == 0 && argument != nullptr && second_argument != nullptr) {
         StartFsUpload(sequence, argument, second_argument, third_argument);
     } else if (strcmp(command, "FSDATA") == 0 && argument != nullptr) {
@@ -1394,6 +1649,12 @@ void HandleCommand(char* line) {
         MakeFsDirectory(sequence, argument);
     } else if (strcmp(command, "FSRM") == 0 && argument != nullptr) {
         RemoveFsPath(sequence, argument);
+    } else if (strcmp(command, "FSRMTREE") == 0 && argument != nullptr) {
+        RemoveFsTree(sequence, argument);
+    } else if (strcmp(command, "FSUNLOCK") == 0) {
+        HandleFsUnlock(sequence, argument);
+    } else if (strcmp(command, "FSLOCK") == 0) {
+        HandleFsLock(sequence);
     } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
                strcmp(argument, "deploy") == 0 && second_argument != nullptr) {
         HandlePackageDeploy(sequence, second_argument);

@@ -123,6 +123,33 @@ menu "PXA Development Apps"
                 allow FreeRTOS to schedule it on either core. CPU1 is invalid
                 on single-core targets.
 
+        config PXA_PARALLEL_RASTER
+            bool "Use a second core for GameRender rasterization"
+            depends on !FREERTOS_UNICORE
+            default n
+            help
+                Splits each validated draw list into disjoint horizontal row
+                ranges. The caller renders one range while a pinned worker
+                renders the other into the same color and depth buffers.
+
+        config PXA_RASTER_WORKER_AFFINITY
+            int "GameRender raster worker core affinity"
+            depends on PXA_PARALLEL_RASTER
+            range 0 1
+            default 0
+
+        config PXA_RASTER_WORKER_PRIORITY
+            int "GameRender raster worker priority"
+            depends on PXA_PARALLEL_RASTER
+            range 1 10
+            default 4
+
+        config PXA_RASTER_WORKER_STACK_SIZE
+            int "GameRender raster worker stack size"
+            depends on PXA_PARALLEL_RASTER
+            range 3072 8192
+            default 4096
+
         config PXA_WATCHDOG_PERIOD_MS
             int "Guest callback watchdog poll period in milliseconds"
             range 10 250

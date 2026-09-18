@@ -23,8 +23,10 @@
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <esp_lvgl_port.h>
+#include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
 #include <pxsys/reference_lvgl.h>
 #include <pxsys/standard_system.h>
@@ -40,6 +42,8 @@ constexpr uint32_t kLcdClockHz = 80 * 1000 * 1000;
 constexpr int kLcdTransferLines = 4;
 constexpr int kLcdQueueDepth = 2;
 constexpr uint32_t kTouchPollMs = 5;
+constexpr int64_t kPowerButtonMinPressUs = 50 * 1000;
+constexpr int64_t kPowerButtonTouchGuardUs = 350 * 1000;
 
 struct LcdCommand {
     uint8_t command;
@@ -316,8 +320,9 @@ void PaiTouchHardware::InitializeButtons() {
     config.max = PAI_BUTTON_DOWN_MAX;
     volume_down_button_ = new AdcButton(config);
 
-    power_button_->OnClick([this]() { ToggleScreen(); });
-    power_button_->OnLongPress([this]() { (void)RequestPowerOff(); });
+    power_button_->OnPressDown([this]() { HandlePowerButtonPressDown(); });
+    power_button_->OnPressUp([this]() { HandlePowerButtonPressUp(); });
+    power_button_->OnLongPress([this]() { HandlePowerButtonLongPress(); });
     home_button_->OnClick([this]() { NavigateBack(); });
     home_button_->OnLongPress([this]() { EnterWifiProvisioning(); });
     volume_up_button_->OnPressDown([this]() {
@@ -364,6 +369,36 @@ void PaiTouchHardware::AttachSystem(pxsys_standard_system_t* system,
                                     pxsys_reference_lvgl_t* reference_ui) {
     system_ = system;
     reference_ui_ = reference_ui;
+    if (reference_ui_ != nullptr) {
+        (void)pxsys_reference_lvgl_set_lock_changed_callback(
+            reference_ui_, this,
+            [](void* context, bool locked) {
+                static_cast<PaiTouchHardware*>(context)->OnLockChanged(locked);
+            });
+        (void)pxsys_reference_lvgl_set_power_action_callback(
+            reference_ui_, this,
+            [](void* context, pxsys_reference_power_action_t action) {
+                auto* self = static_cast<PaiTouchHardware*>(context);
+                if (action == PXSYS_REFERENCE_POWER_ACTION_SHUTDOWN) {
+                    (void)self->RequestPowerOff();
+                    return;
+                }
+                if (xTaskCreate(
+                        [](void*) {
+                            vTaskDelay(pdMS_TO_TICKS(120));
+                            esp_restart();
+                        },
+                        "system_restart", 2048, nullptr, 4, nullptr) !=
+                    pdPASS) {
+                    ESP_LOGE(kTag, "Cannot create restart task");
+                }
+            });
+        (void)pxsys_reference_lvgl_set_power_menu_changed_callback(
+            reference_ui_, nullptr,
+            [](void*, bool visible) {
+                pxa_esp_surface_set_system_overlay_visible(visible);
+            });
+    }
     PublishStatus();
 }
 
@@ -495,12 +530,17 @@ void PaiTouchHardware::ReadPhysicalPointer(lv_indev_t* indev,
     }
     data->timestamp = lv_tick_get();
     self->physical_pointer_read_cb_(indev, data);
+    if (!self->screen_enabled_.load()) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
+    if (data->state == LV_INDEV_STATE_PRESSED)
+        self->last_touch_activity_us_.store(esp_timer_get_time());
 }
 
 bool PaiTouchHardware::RouteInjectedPointerDown() {
     if (screen_enabled_.load()) return true;
-    screen_enabled_.store(true);
-    SetBrightness(brightness_.load() == 0 ? 75 : brightness_.load());
+    SetScreenEnabled(true);
     return false;
 }
 
@@ -653,23 +693,112 @@ void PaiTouchHardware::StatusOnLvgl(void* context) {
     self->PublishStatus();
 }
 
-void PaiTouchHardware::ToggleScreen() {
-    const bool enabled = !screen_enabled_.load();
-    screen_enabled_.store(enabled);
-    if (enabled) {
-        SetBrightness(brightness_.load() == 0 ? 75 : brightness_.load());
-    } else {
+void PaiTouchHardware::SetScreenEnabled(bool enabled) {
+    const bool previous = screen_enabled_.exchange(enabled);
+    if (previous == enabled) return;
+    pxa_esp_surface_set_host_visible(false);
+    if (!enabled) {
         ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
         ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
     }
+    lv_lock();
+    const lv_result_t result = lv_async_call(
+        [](void* context) {
+            auto* self = static_cast<PaiTouchHardware*>(context);
+            if (self->reference_ui_ != nullptr)
+                (void)pxsys_reference_lvgl_set_locked(self->reference_ui_, true);
+            if (!self->screen_enabled_.load()) return;
+            if (self->display_ != nullptr) lv_refr_now(self->display_);
+            self->SetBrightness(self->brightness_.load() == 0
+                                    ? 75
+                                    : self->brightness_.load());
+        },
+        this);
+    lv_unlock();
+    if (result != LV_RESULT_OK)
+        ESP_LOGE(kTag, "Cannot schedule screen %s",
+                 enabled ? "wake" : "lock");
+}
+
+void PaiTouchHardware::ToggleScreen() {
+    SetScreenEnabled(!screen_enabled_.load());
+}
+
+bool PaiTouchHardware::IsTouchInteractionRecent() const {
+    const int64_t last_touch_us = last_touch_activity_us_.load();
+    return last_touch_us != 0 &&
+           esp_timer_get_time() - last_touch_us <= kPowerButtonTouchGuardUs;
+}
+
+void PaiTouchHardware::HandlePowerButtonPressDown() {
+    power_button_woke_screen_ = !screen_enabled_.load();
+    power_button_pressed_at_us_ = esp_timer_get_time();
+    power_button_long_press_ = false;
+    power_button_ignored_ =
+        !power_button_woke_screen_ && IsTouchInteractionRecent();
+    if (power_button_woke_screen_) SetScreenEnabled(true);
+}
+
+void PaiTouchHardware::HandlePowerButtonLongPress() {
+    if (power_button_woke_screen_ || power_button_ignored_ ||
+        IsTouchInteractionRecent()) {
+        power_button_ignored_ = true;
+        return;
+    }
+    power_button_long_press_ = true;
+    lv_lock();
+    const lv_result_t result = lv_async_call(
+        [](void* context) {
+            auto* self = static_cast<PaiTouchHardware*>(context);
+            if (self->reference_ui_ != nullptr)
+                (void)pxsys_reference_lvgl_show_power_menu(self->reference_ui_);
+        },
+        this);
+    lv_unlock();
+    if (result != LV_RESULT_OK)
+        ESP_LOGE(kTag, "Cannot schedule power menu");
+}
+
+void PaiTouchHardware::HandlePowerButtonPressUp() {
+    const int64_t pressed_at_us = power_button_pressed_at_us_;
+    const int64_t duration_us = pressed_at_us == 0
+                                    ? 0
+                                    : esp_timer_get_time() - pressed_at_us;
+    power_button_pressed_at_us_ = 0;
+    if (power_button_woke_screen_) {
+        power_button_woke_screen_ = false;
+        power_button_ignored_ = false;
+        return;
+    }
+    if (power_button_long_press_) {
+        power_button_long_press_ = false;
+        power_button_ignored_ = false;
+        return;
+    }
+    if (power_button_ignored_ || IsTouchInteractionRecent() ||
+        duration_us < kPowerButtonMinPressUs) {
+        ESP_LOGW(kTag, "Ignored power-button ADC event: duration_us=%lld",
+                 static_cast<long long>(duration_us));
+        power_button_ignored_ = false;
+        return;
+    }
+    ESP_LOGI(kTag, "Power-button short press: duration_ms=%lld",
+             static_cast<long long>(duration_us / 1000));
+    ToggleScreen();
+}
+
+void PaiTouchHardware::OnLockChanged(bool locked) {
+    pxa_esp_surface_set_host_visible(!locked);
 }
 
 void PaiTouchHardware::NavigateBack() {
     if (!screen_enabled_.load()) {
-        screen_enabled_.store(true);
-        SetBrightness(brightness_.load() == 0 ? 75 : brightness_.load());
+        SetScreenEnabled(true);
         return;
     }
+    if (reference_ui_ != nullptr &&
+        pxsys_reference_lvgl_is_locked(reference_ui_))
+        return;
     lv_lock();
     lv_async_call([](void* context) {
         auto* self = static_cast<PaiTouchHardware*>(context);

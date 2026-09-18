@@ -234,6 +234,27 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         client.__enter__().request.assert_called_once_with(
             "PACKAGE stop pxa-voxel-craft")
 
+    def test_staging_directory_removes_same_identity_pxa_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "pxa-example"
+            artifacts = source / "artifacts"
+            artifacts.mkdir(parents=True)
+            (source / "manifest.pxm").write_bytes(b"manifest")
+            (source / "signature.pxs").write_bytes(b"signature")
+            (artifacts / "main.wasm").write_bytes(b"wasm")
+            client = mock.MagicMock()
+            with mock.patch.object(pxadb, "open_file_client", return_value=client), \
+                    mock.patch.object(pxadb, "fs_remove") as remove:
+                pxadb.stage_package(source, "pxa-example", "/dev/ttyACM0", 1.0)
+        root = "pxa-state/inbox/pxa-example"
+        self.assertEqual(remove.call_args_list, [
+            mock.call(client, f"{root}.pxa", 1.0),
+        ])
+        self.assertIn(
+            mock.call(f"FSRMTREE {pxadb.client_encode_path(root)}", timeout=1.0),
+            client.client.request.call_args_list,
+        )
+
     def test_devices_includes_running_simulator(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             socket_path = pathlib.Path(directory) / "pai-touch.sock"
@@ -399,6 +420,102 @@ class PxaDbLogStreamingTest(unittest.TestCase):
             "INPUT KEY HOME",
             "INPUT SYNC",
         ])
+
+
+class PxaDbFileTransferTest(unittest.TestCase):
+    class ScriptedClient:
+        def __init__(self, responses: list[list[pxadb.Frame]]) -> None:
+            self.responses = responses
+            self.commands: list[str] = []
+            self.device_info = "fs_sha256=1"
+
+        def request(self, command: str,
+                    timeout: float | None = None) -> list[pxadb.Frame]:
+            del timeout
+            self.commands.append(command)
+            return self.responses.pop(0)
+
+    @staticmethod
+    def data_frame(offset: int, data: bytes, crc: int | None = None) -> pxadb.Frame:
+        checksum = zlib.crc32(data) & 0xFFFFFFFF if crc is None else crc
+        encoded = base64.b64encode(data).decode("ascii")
+        return pxadb.Frame(1, "DATA", f"{offset}\t{checksum:08x}\t{encoded}")
+
+    def client(self, responses: list[list[pxadb.Frame]]) -> pxadb.NormalFsClient:
+        return pxadb.NormalFsClient(self.ScriptedClient(responses))  # type: ignore[arg-type]
+
+    def test_windowed_download_resumes_at_first_gap(self) -> None:
+        first = bytes(range(192))
+        second = bytes((value + 64) % 256 for value in range(192))
+        third = bytes(range(192))[::-1]
+        client = self.client([
+            [
+                self.data_frame(0, first),
+                self.data_frame(384, third),
+                pxadb.Frame(1, "OK", "more"),
+            ],
+            [
+                self.data_frame(192, second),
+                self.data_frame(384, third),
+                pxadb.Frame(1, "OK", "eof"),
+            ],
+        ])
+        data = client._download_windowed("pxa-state/inbox/x", 576)
+        self.assertEqual(bytes(data), first + second + third)
+        encoded = pxadb.client_encode_path("pxa-state/inbox/x")
+        self.assertEqual(client.client.commands,
+                         [f"FSREAD {encoded} 0", f"FSREAD {encoded} 192"])
+
+    def test_corrupted_chunk_crc_is_rejected(self) -> None:
+        client = object.__new__(pxadb.NormalFsClient)
+        output = bytearray()
+        frame = self.data_frame(0, b"payload", crc=0xDEADBEEF)
+        self.assertFalse(client._append_data_frame(frame, output))
+        self.assertEqual(output, b"")
+
+    def test_offset_tagged_frame_without_crc_is_accepted(self) -> None:
+        client = object.__new__(pxadb.NormalFsClient)
+        output = bytearray()
+        frame = pxadb.Frame(1, "DATA", "0\t" + base64.b64encode(b"legacy").decode("ascii"))
+        self.assertTrue(client._append_data_frame(frame, output))
+        self.assertEqual(output, b"legacy")
+
+    def test_bare_chunk_is_only_allowed_for_legacy_burst(self) -> None:
+        client = object.__new__(pxadb.NormalFsClient)
+        frame = pxadb.Frame(1, "DATA", base64.b64encode(b"legacy").decode("ascii"))
+        output = bytearray()
+        self.assertFalse(client._append_data_frame(frame, output))
+        self.assertEqual(output, b"")
+        self.assertTrue(
+            client._append_data_frame(frame, output, require_offset=False)
+        )
+        self.assertEqual(output, b"legacy")
+
+    def test_fs_unlock_requests_system_unlock(self) -> None:
+        arguments = pxadb.build_parser().parse_args([
+            "fs", "unlock", "--minutes", "5", "--port", "/dev/ttyACM0"
+        ])
+        client = mock.MagicMock()
+        client.client.request.return_value = [
+            pxadb.Frame(1, "OK", "system;seconds=300")
+        ]
+        with mock.patch.object(pxadb, "open_file_client", return_value=client):
+            self.assertEqual(pxadb.command_fs(arguments), 0)
+        client.client.request.assert_called_once_with("FSUNLOCK 5",
+                                                      timeout=10.0)
+
+    def test_fs_rmtree_uses_one_tree_command(self) -> None:
+        arguments = pxadb.build_parser().parse_args([
+            "fs", "rmtree", "system/pxa/builtin", "--port", "/dev/ttyACM0"
+        ])
+        client = mock.MagicMock()
+        with mock.patch.object(pxadb, "open_file_client", return_value=client):
+            self.assertEqual(pxadb.command_fs(arguments), 0)
+        command = client.client.request.call_args.args[0]
+        self.assertEqual(
+            command,
+            "FSRMTREE " + pxadb.client_encode_path("system/pxa/builtin"),
+        )
 
 
 if __name__ == "__main__":

@@ -222,6 +222,12 @@ build_dir="$project_root/build/simulator/$profile_name"
 cmake_bin="${CMAKE:-cmake}"
 product_args=("${profile_args[0]}" "${profile_args[1]}"
               "${profile_args[2]}" "${profile_args[3]}")
+for ((profile_index = 0; profile_index < ${#profile_args[@]}; ++profile_index)); do
+  if [[ "${profile_args[profile_index]}" == "--locale" ]]; then
+    product_args+=("--locale" "${profile_args[profile_index + 1]}")
+    break
+  fi
+done
 if [[ "$mode" == "ui" ]]; then
   simulator_target="pxsys_desktop_simulator"
 else

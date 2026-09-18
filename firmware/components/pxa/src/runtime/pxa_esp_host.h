@@ -60,6 +60,8 @@ bool pxa_esp_host_resolve_package_metadata(
     const char *identity, const char *locale,
     pxa_host_package_metadata_t *metadata);
 bool pxa_esp_host_deploy_package(const char *identity);
+bool pxa_esp_host_deploy_package_detailed(
+    const char *identity, pxa_host_package_deploy_result_t *result);
 bool pxa_esp_host_manage_app(pxa_host_app_action_t action,
                              const char *identity);
 bool pxa_esp_host_set_permission(const char *identity,

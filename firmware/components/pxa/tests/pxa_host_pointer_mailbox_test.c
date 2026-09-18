@@ -11,6 +11,16 @@ static pxa_host_pointer_event_t event(uint8_t phase, int32_t x) {
     return value;
 }
 
+static pxa_host_pointer_event_t pointer_event(uint8_t id, uint8_t phase,
+                                              int32_t x) {
+    pxa_host_pointer_event_t value = event(phase, x);
+    value.id = id;
+    value.instance_id = 7;
+    value.surface = 1;
+    value.node = 2;
+    return value;
+}
+
 static void test_contiguous_moves_are_coalesced(void) {
     pxa_host_pointer_mailbox_t mailbox;
     pxa_host_pointer_event_t output;
@@ -37,6 +47,23 @@ static void test_move_before_edge_bypasses_throttle(void) {
     assert(output.phase == PXA_HOST_POINTER_MOVE_PHASE);
     assert(pxa_host_pointer_mailbox_take(&mailbox, 1001, 16000, &output));
     assert(output.phase == 2);
+}
+
+static void test_different_pointer_moves_are_not_coalesced(void) {
+    pxa_host_pointer_mailbox_t mailbox;
+    pxa_host_pointer_event_t output;
+    pxa_host_pointer_event_t first =
+        pointer_event(0, PXA_HOST_POINTER_MOVE_PHASE, 10);
+    pxa_host_pointer_event_t second =
+        pointer_event(1, PXA_HOST_POINTER_MOVE_PHASE, 20);
+    pxa_host_pointer_mailbox_init(&mailbox);
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &first));
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &second));
+    assert(mailbox.count == 2);
+    assert(pxa_host_pointer_mailbox_take(&mailbox, 16000, 16000, &output));
+    assert(output.id == 0 && output.x == 10);
+    assert(pxa_host_pointer_mailbox_take(&mailbox, 32000, 16000, &output));
+    assert(output.id == 1 && output.x == 20);
 }
 
 static void test_edge_evicts_move_from_full_mailbox(void) {
@@ -97,6 +124,7 @@ static void test_internal_layout_stays_bounded(void) {
 int main(void) {
     test_contiguous_moves_are_coalesced();
     test_move_before_edge_bypasses_throttle();
+    test_different_pointer_moves_are_not_coalesced();
     test_edge_evicts_move_from_full_mailbox();
     test_full_edge_mailbox_rejects_new_events();
     test_move_throttle_and_reset();
