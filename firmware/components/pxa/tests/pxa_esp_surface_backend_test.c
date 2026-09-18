@@ -363,6 +363,12 @@ int main(void) {
                (PXA_RASTER_CAP_SPRITE_BATCH |
                 PXA_RASTER_CAP_TRIANGLE_BATCH));
         assert(allocations == 7);
+        assert(((pxa_esp_surface_t *)(uintptr_t)surface)
+                       ->raster_draw_capacities[0] ==
+                   PXA_ESP_RASTER_MAILBOX_MIN_BYTES &&
+               ((pxa_esp_surface_t *)(uintptr_t)surface)
+                       ->raster_draw_capacities[1] ==
+                   PXA_ESP_RASTER_MAILBOX_MIN_BYTES);
         pxa_write_u32(upload, PXA_RASTER_UPLOAD_MAGIC);
         pxa_write_u16(upload + 4, PXA_RASTER_ABI_MAJOR);
         pxa_write_u16(upload + 6, PXA_RASTER_ABI_MINOR);
@@ -419,6 +425,40 @@ int main(void) {
                telemetry.clear_commands == 2 &&
                telemetry.last_draw_list_bytes == sizeof(draw));
         pxa_esp_surface_release_frame(frame.lease);
+        {
+            enum {
+                BIG_COMMANDS = 512,
+                BIG_DRAW_BYTES = PXA_RASTER_DRAW_HEADER_BYTES +
+                                 BIG_COMMANDS * PXA_RASTER_CLEAR_BYTES
+            };
+            uint8_t big_draw[BIG_DRAW_BYTES] = {0};
+            unsigned command;
+            pxa_write_u32(big_draw, PXA_RASTER_DRAW_MAGIC);
+            pxa_write_u16(big_draw + 4, PXA_RASTER_ABI_MAJOR);
+            pxa_write_u16(big_draw + 6, PXA_RASTER_ABI_MINOR);
+            pxa_write_u32(big_draw + 8, sizeof(big_draw));
+            pxa_write_u32(big_draw + 16, BIG_COMMANDS);
+            pxa_write_u64(big_draw + 20, 4);
+            for (command = 0; command < BIG_COMMANDS; ++command) {
+                uint8_t *record = big_draw + PXA_RASTER_DRAW_HEADER_BYTES +
+                                  command * PXA_RASTER_CLEAR_BYTES;
+                record[0] = PXA_RASTER_RECORD_CLEAR_RGB565;
+                pxa_write_u16(record + 2, PXA_RASTER_CLEAR_BYTES);
+                pxa_write_u16(record + 4, 0x4567);
+            }
+            assert(game_backend.submit(game_backend.context, surface, big_draw,
+                                       sizeof(big_draw)) == PXA_STATUS_OK);
+            assert(((pxa_esp_surface_t *)(uintptr_t)surface)
+                           ->raster_draw_capacities[0] ==
+                       PXA_ESP_RASTER_MAILBOX_MIN_BYTES * 2u &&
+                   allocations == 8);
+            assert(pxa_esp_surface_acquire_latest_for_direct(&frame) &&
+                   frame.frame_id == 4);
+            front = (uint16_t *)(uintptr_t)frame.pixels;
+            for (color = 0; color < 16; ++color)
+                assert(front[color] == 0x4567);
+            pxa_esp_surface_release_frame(frame.lease);
+        }
         game_backend.close(game_backend.context, surface);
         assert(allocations == 0);
     }

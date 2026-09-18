@@ -16,6 +16,8 @@
 #define PXA_ESP_SURFACE_MAGIC UINT32_C(0x45504753)
 #define PXA_ESP_SURFACE_LATENCY_BUCKETS 64u
 #define PXA_ESP_RASTER_MAILBOX_SLOTS 2u
+#define PXA_ESP_RASTER_MAILBOX_MIN_BYTES UINT32_C(4096)
+#define PXA_ESP_RASTER_MAILBOX_GROW_BYTES UINT32_C(4096)
 #define PXA_ESP_SURFACE_FLAG_GAME_RENDER UINT8_C(8)
 
 static const char *const PXA_ESP_SURFACE_TAG = "PxaSurface";
@@ -76,13 +78,16 @@ typedef struct {
     uint16_t *raster_palette;
     uint16_t *raster_depth_buffer;
     uint8_t *raster_draw_lists[PXA_ESP_RASTER_MAILBOX_SLOTS];
-    uint32_t raster_draw_sizes[PXA_ESP_RASTER_MAILBOX_SLOTS];
+    uint32_t raster_draw_capacities[PXA_ESP_RASTER_MAILBOX_SLOTS];
+    pxa_raster_draw_list_view_t
+        raster_draw_views[PXA_ESP_RASTER_MAILBOX_SLOTS];
     uint64_t raster_draw_frame_ids[PXA_ESP_RASTER_MAILBOX_SLOTS];
     uint64_t raster_draw_input_timestamps_us[PXA_ESP_RASTER_MAILBOX_SLOTS];
     uint64_t raster_draw_queued_us[PXA_ESP_RASTER_MAILBOX_SLOTS];
     uint64_t raster_buffer_ready_us[PXA_ESP_SURFACE_MAX_BUFFERS];
     int8_t raster_draw_pending;
     int8_t raster_draw_rendering;
+    int8_t raster_draw_writing;
     uint64_t raster_last_frame_id;
     pxa_raster_telemetry_t raster_telemetry;
 } pxa_esp_surface_t;
@@ -311,12 +316,14 @@ static pxa_status_t create_surface(
             }
             for (index = 0; index < PXA_ESP_RASTER_MAILBOX_SLOTS; ++index) {
                 surface->raster_draw_lists[index] = heap_caps_malloc(
-                    PXA_RASTER_MAX_DRAW_BYTES,
+                    PXA_ESP_RASTER_MAILBOX_MIN_BYTES,
                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
                 if (surface->raster_draw_lists[index] == NULL) {
                     destroy_surface(surface);
                     return PXA_STATUS_RESOURCE_LIMIT;
                 }
+                surface->raster_draw_capacities[index] =
+                    PXA_ESP_RASTER_MAILBOX_MIN_BYTES;
             }
         }
     }
@@ -333,6 +340,7 @@ static pxa_status_t create_surface(
     surface->acquired = PXA_ESP_SURFACE_NONE;
     surface->raster_draw_pending = PXA_ESP_SURFACE_NONE;
     surface->raster_draw_rendering = PXA_ESP_SURFACE_NONE;
+    surface->raster_draw_writing = PXA_ESP_SURFACE_NONE;
     surface->layer.width = desc->width;
     surface->layer.height = desc->height;
     taskENTER_CRITICAL(&g_surface_lock);
@@ -622,7 +630,7 @@ static pxa_status_t queue_surface(
 static uint32_t raster_capabilities(void) {
     return PXA_RASTER_CAP_FLAT_QUAD | PXA_RASTER_CAP_TEXTURED_QUAD |
            PXA_RASTER_CAP_ADDITIVE_SPRITE | PXA_RASTER_CAP_SPRITE_BATCH |
-           PXA_RASTER_CAP_TRIANGLE_BATCH;
+           PXA_RASTER_CAP_TRIANGLE_BATCH | PXA_RASTER_CAP_AFFINE_UV;
 }
 
 static void copy_raster_resources(const pxa_esp_surface_t *surface,
@@ -667,7 +675,8 @@ static pxa_status_t raster_upload_surface(void *context,
         (surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) == 0 ||
         surface->raster_last_frame_id != 0 ||
         surface->raster_draw_pending != PXA_ESP_SURFACE_NONE ||
-        surface->raster_draw_rendering != PXA_ESP_SURFACE_NONE) {
+        surface->raster_draw_rendering != PXA_ESP_SURFACE_NONE ||
+        surface->raster_draw_writing != PXA_ESP_SURFACE_NONE) {
         taskEXIT_CRITICAL(&g_surface_lock);
         heap_caps_free(replacement);
         return PXA_STATUS_BAD_STATE;
@@ -695,20 +704,32 @@ static pxa_status_t raster_submit_surface(void *context,
     pxa_raster_target_t target;
     pxa_raster_draw_list_view_t list;
     pxa_status_t status;
+    uint8_t *mailbox;
+    uint8_t *replacement = NULL;
+    uint8_t *previous = NULL;
+    uint32_t capacity;
+    uint32_t replacement_capacity = 0;
     uint64_t submit_us;
     uint64_t input_timestamp_us;
     int replaced_pending;
     int mailbox_index;
+    int mailbox_overwritten = 0;
+    int submit_busy;
     int destroy = 0;
     (void)context;
     if (surface == NULL || bytes == NULL) return PXA_STATUS_INVALID_ARGUMENT;
+    if (size < PXA_RASTER_DRAW_HEADER_BYTES ||
+        size > PXA_RASTER_MAX_DRAW_BYTES)
+        return PXA_STATUS_LIMIT_EXCEEDED;
     submit_us = (uint64_t)esp_timer_get_time();
     taskENTER_CRITICAL(&g_surface_lock);
     if (surface->magic != PXA_ESP_SURFACE_MAGIC || surface->closing ||
         (surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) == 0 ||
-        surface->raster_palette == NULL) {
+        surface->raster_palette == NULL ||
+        surface->raster_draw_writing != PXA_ESP_SURFACE_NONE) {
+        submit_busy = surface->raster_draw_writing != PXA_ESP_SURFACE_NONE;
         taskEXIT_CRITICAL(&g_surface_lock);
-        return PXA_STATUS_BAD_STATE;
+        return submit_busy ? PXA_STATUS_WOULD_BLOCK : PXA_STATUS_BAD_STATE;
     }
     copy_raster_resources(surface, &resources);
     target.pixels = (uint16_t *)surface->buffers[0];
@@ -717,27 +738,6 @@ static pxa_status_t raster_submit_surface(void *context,
     target.depth_stride_pixels = surface->width;
     target.width = surface->width;
     target.height = surface->height;
-    ++surface->writer_active;
-    taskEXIT_CRITICAL(&g_surface_lock);
-
-    status = pxa_raster_validate_draw_list(bytes, size, &target, &resources,
-                                           &list);
-    taskENTER_CRITICAL(&g_surface_lock);
-    if (surface->magic != PXA_ESP_SURFACE_MAGIC || surface->closing) {
-        --surface->writer_active;
-        destroy = surface->magic == PXA_ESP_SURFACE_MAGIC &&
-                  !surface->writer_active && !surface->acquire_active;
-        taskEXIT_CRITICAL(&g_surface_lock);
-        if (destroy) destroy_surface(surface);
-        return PXA_STATUS_CANCELLED;
-    }
-    if (status != PXA_STATUS_OK ||
-        list.frame_id <= surface->raster_last_frame_id) {
-        --surface->writer_active;
-        ++surface->raster_telemetry.rejected_lists;
-        taskEXIT_CRITICAL(&g_surface_lock);
-        return status != PXA_STATUS_OK ? status : PXA_STATUS_BAD_STATE;
-    }
     replaced_pending = surface->raster_draw_pending;
     mailbox_index = replaced_pending;
     if (mailbox_index == PXA_ESP_SURFACE_NONE)
@@ -749,24 +749,75 @@ static pxa_status_t raster_submit_surface(void *context,
                    ? surface->raster_draw_input_timestamps_us[mailbox_index]
                    : 0);
     surface->raster_draw_pending = PXA_ESP_SURFACE_NONE;
+    surface->raster_draw_writing = (int8_t)mailbox_index;
+    mailbox = surface->raster_draw_lists[mailbox_index];
+    capacity = surface->raster_draw_capacities[mailbox_index];
+    ++surface->writer_active;
     taskEXIT_CRITICAL(&g_surface_lock);
 
-    memcpy(surface->raster_draw_lists[mailbox_index], bytes, size);
+    if (size > capacity) {
+        replacement_capacity =
+            ((uint32_t)size + PXA_ESP_RASTER_MAILBOX_GROW_BYTES - 1u) /
+            PXA_ESP_RASTER_MAILBOX_GROW_BYTES *
+            PXA_ESP_RASTER_MAILBOX_GROW_BYTES;
+        if (replacement_capacity > PXA_RASTER_MAX_DRAW_BYTES)
+            replacement_capacity = PXA_RASTER_MAX_DRAW_BYTES;
+        replacement = heap_caps_malloc(
+            replacement_capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (replacement == NULL) {
+            status = PXA_STATUS_RESOURCE_LIMIT;
+        } else {
+            mailbox = replacement;
+            memcpy(mailbox, bytes, size);
+            status = pxa_raster_validate_draw_list(
+                mailbox, size, &target, &resources, &list);
+        }
+    } else {
+        memcpy(mailbox, bytes, size);
+        mailbox_overwritten = 1;
+        status = pxa_raster_validate_draw_list(mailbox, size, &target,
+                                               &resources, &list);
+    }
+
     taskENTER_CRITICAL(&g_surface_lock);
     --surface->writer_active;
+    surface->raster_draw_writing = PXA_ESP_SURFACE_NONE;
     if (surface->magic != PXA_ESP_SURFACE_MAGIC || surface->closing) {
         destroy = surface->magic == PXA_ESP_SURFACE_MAGIC &&
                   !surface->writer_active && !surface->acquire_active;
         taskEXIT_CRITICAL(&g_surface_lock);
+        heap_caps_free(replacement);
         if (destroy) destroy_surface(surface);
         return PXA_STATUS_CANCELLED;
+    }
+    if (status != PXA_STATUS_OK ||
+        list.frame_id <= surface->raster_last_frame_id) {
+        if (replaced_pending != PXA_ESP_SURFACE_NONE && mailbox_overwritten) {
+            ++surface->dropped_frames;
+            ++surface->replaced_frames;
+            ++surface->raster_telemetry.dropped_frames;
+        } else if (replaced_pending != PXA_ESP_SURFACE_NONE) {
+            surface->raster_draw_pending = (int8_t)mailbox_index;
+        }
+        ++surface->raster_telemetry.rejected_lists;
+        taskEXIT_CRITICAL(&g_surface_lock);
+        heap_caps_free(replacement);
+        if (replaced_pending != PXA_ESP_SURFACE_NONE && !mailbox_overwritten)
+            notify_frame_ready();
+        return status != PXA_STATUS_OK ? status : PXA_STATUS_BAD_STATE;
+    }
+    if (replacement != NULL) {
+        previous = surface->raster_draw_lists[mailbox_index];
+        surface->raster_draw_lists[mailbox_index] = replacement;
+        surface->raster_draw_capacities[mailbox_index] = replacement_capacity;
+        replacement = NULL;
     }
     if (replaced_pending != PXA_ESP_SURFACE_NONE) {
         ++surface->dropped_frames;
         ++surface->replaced_frames;
         ++surface->raster_telemetry.dropped_frames;
     }
-    surface->raster_draw_sizes[mailbox_index] = (uint32_t)size;
+    surface->raster_draw_views[mailbox_index] = list;
     surface->raster_draw_frame_ids[mailbox_index] = list.frame_id;
     surface->raster_draw_input_timestamps_us[mailbox_index] =
         input_timestamp_us;
@@ -786,6 +837,7 @@ static pxa_status_t raster_submit_surface(void *context,
     ++surface->submitted_frames;
     ++surface->raster_telemetry.submitted_frames;
     taskEXIT_CRITICAL(&g_surface_lock);
+    heap_caps_free(previous);
     notify_frame_ready();
     return PXA_STATUS_OK;
 }
@@ -1119,9 +1171,12 @@ void pxa_esp_surface_note_frame_presented(uint64_t timestamp_us,
         g_acquired_surface->acquired >= 0) {
         const uint64_t ready_us = g_acquired_surface->raster_buffer_ready_us[
             (uint8_t)g_acquired_surface->acquired];
-        if (ready_us != 0 && presented_us >= ready_us)
+        if (ready_us != 0 && presented_us >= ready_us) {
             g_acquired_surface->raster_telemetry.present_us +=
                 presented_us - ready_us;
+            g_acquired_surface->raster_buffer_ready_us[
+                (uint8_t)g_acquired_surface->acquired] = 0;
+        }
     }
     if (timestamp_us != 0)
         record_latency(PXA_ESP_SURFACE_LATENCY_VISIBLE, elapsed,
@@ -1161,24 +1216,26 @@ static bool materialize_latest_raster_draw(void) {
     pxa_raster_draw_list_view_t list;
     pxa_raster_telemetry_t frame_telemetry;
     const uint8_t *draw_bytes;
-    uint32_t draw_size;
     uint64_t frame_id;
     uint64_t input_timestamp_us;
     uint64_t queued_us;
     uint64_t started_us;
     uint64_t finished_us;
-    pxa_status_t status;
     int draw_index;
     int buffer_index = PXA_ESP_SURFACE_NONE;
     int destroy = 0;
     int log_telemetry = 0;
     uint64_t submitted_frames = 0;
+    uint64_t rendered_frames = 0;
+    uint64_t visible_frames = 0;
     uint64_t dropped_frames = 0;
     uint64_t queue_wait_us = 0;
     uint64_t present_us = 0;
     uint32_t raster_us = 0;
     uint32_t draw_list_bytes = 0;
     uint32_t covered_pixels = 0;
+    uint32_t mailbox_capacity_0 = 0;
+    uint32_t mailbox_capacity_1 = 0;
     uint8_t candidate;
 
     taskENTER_CRITICAL(&g_surface_lock);
@@ -1206,7 +1263,7 @@ static bool materialize_latest_raster_draw(void) {
     surface->writing = (int8_t)buffer_index;
     ++surface->writer_active;
     draw_bytes = surface->raster_draw_lists[draw_index];
-    draw_size = surface->raster_draw_sizes[draw_index];
+    list = surface->raster_draw_views[draw_index];
     frame_id = surface->raster_draw_frame_ids[draw_index];
     input_timestamp_us =
         surface->raster_draw_input_timestamps_us[draw_index];
@@ -1222,11 +1279,8 @@ static bool materialize_latest_raster_draw(void) {
 
     started_us = (uint64_t)esp_timer_get_time();
     memset(&frame_telemetry, 0, sizeof(frame_telemetry));
-    status = pxa_raster_validate_draw_list(draw_bytes, draw_size, &target,
-                                           &resources, &list);
-    if (status == PXA_STATUS_OK)
-        pxa_raster_execute_draw_list(draw_bytes, &list, &target, &resources,
-                                     &frame_telemetry);
+    pxa_raster_execute_draw_list(draw_bytes, &list, &target, &resources,
+                                 &frame_telemetry);
     finished_us = (uint64_t)esp_timer_get_time();
 
     taskENTER_CRITICAL(&g_surface_lock);
@@ -1238,11 +1292,6 @@ static bool materialize_latest_raster_draw(void) {
                   !surface->writer_active && !surface->acquire_active;
         taskEXIT_CRITICAL(&g_surface_lock);
         if (destroy) destroy_surface(surface);
-        return false;
-    }
-    if (status != PXA_STATUS_OK || list.frame_id != frame_id) {
-        ++surface->raster_telemetry.rejected_lists;
-        taskEXIT_CRITICAL(&g_surface_lock);
         return false;
     }
     if (surface->pending != PXA_ESP_SURFACE_NONE) {
@@ -1282,24 +1331,38 @@ static bool materialize_latest_raster_draw(void) {
         surface->submitted_frames % UINT64_C(120) == 0) {
         log_telemetry = 1;
         submitted_frames = surface->submitted_frames;
+        rendered_frames = surface->raster_telemetry.rendered_frames;
+        visible_frames = surface->raster_telemetry.visible_frames;
         dropped_frames = surface->raster_telemetry.dropped_frames;
         queue_wait_us = surface->raster_telemetry.queue_wait_us;
         present_us = surface->raster_telemetry.present_us;
         raster_us = surface->raster_telemetry.last_host_raster_us;
         draw_list_bytes = surface->raster_telemetry.last_draw_list_bytes;
         covered_pixels = surface->raster_telemetry.last_covered_pixels;
+        mailbox_capacity_0 = surface->raster_draw_capacities[0];
+        mailbox_capacity_1 = surface->raster_draw_capacities[1];
     }
     taskEXIT_CRITICAL(&g_surface_lock);
     if (log_telemetry) {
         ESP_LOGI(PXA_ESP_SURFACE_TAG,
-                 "Raster: submitted=%llu dropped=%llu list=%uB "
-                 "pixels=%u raster=%uus queue_avg=%lluus present_avg=%lluus",
+                 "Raster: submitted=%llu rendered=%llu visible=%llu "
+                 "dropped=%llu list=%uB "
+                 "pixels=%u raster=%uus queue_avg=%lluus present_avg=%lluus "
+                 "mailbox=%u/%uB",
                  (unsigned long long)submitted_frames,
+                 (unsigned long long)rendered_frames,
+                 (unsigned long long)visible_frames,
                  (unsigned long long)dropped_frames,
                  (unsigned)draw_list_bytes, (unsigned)covered_pixels,
                  (unsigned)raster_us,
-                 (unsigned long long)(queue_wait_us / submitted_frames),
-                 (unsigned long long)(present_us / submitted_frames));
+                 (unsigned long long)(rendered_frames != 0
+                                          ? queue_wait_us / rendered_frames
+                                          : 0),
+                 (unsigned long long)(visible_frames != 0
+                                          ? present_us / visible_frames
+                                          : 0),
+                 (unsigned)mailbox_capacity_0,
+                 (unsigned)mailbox_capacity_1);
     }
     return true;
 }

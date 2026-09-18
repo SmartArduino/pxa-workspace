@@ -1,6 +1,7 @@
 #include "watcher_hardware.h"
 
 #include "sensecap_watcher_config.h"
+#include "watcher_pxa_surface.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -10,32 +11,61 @@
 #include <driver/ledc.h>
 #include <driver/spi_master.h>
 #include <esp_lcd_panel_vendor.h>
+#include <esp_heap_caps.h>
 #include <esp_lcd_spd2010.h>
 #include <esp_lcd_touch.h>
-#include <esp_lcd_touch_spd2010.h>
+#include "watcher_spd2010_touch.h"
 #include <esp_log.h>
+#include <esp_lv_decoder.h>
 #include <esp_lvgl_port.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <iot_knob.h>
+#include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
+#include <pxsys/reference_lvgl.h>
 #include <pxsys/standard_system.h>
 #include <pxsys/system_status.h>
 #include <wifi_manager.h>
 
 namespace {
 constexpr char kTag[] = "WatcherHw";
-// LVGL draw buffers live in PSRAM, so the SPI driver must bounce every color
-// chunk through internal DMA memory. Keep each chunk small and serialize two
-// at a time so the bounce buffers always fit; 20 lines is 16480 bytes.
+// The SPI driver bounces PSRAM color data through internal DMA buffers that
+// are allocated per transaction. Keep the chunks small (8 KiB, two in flight)
+// so those allocations cannot fail under internal-RAM pressure; a failed
+// transfer would otherwise leave LVGL waiting for a completion forever.
+constexpr int kLcdChunkBytes = 8 * 1024;
 constexpr int kLcdQueueDepth = 2;
-constexpr int kLcdTransferLines = 20;
-constexpr int kTouchPollMs = 8;
+// The flush task only runs the SPI submission and its bounce copies.
+constexpr int kFlushTaskPriority = 4;
+constexpr uint32_t kFlushTaskStack = 4096;
+// The official BSP polls the touchpad on the LVGL indev timer and treats a
+// report as a touch only when its pressure is above this threshold, which
+// also filters the controller's zero-pressure lift records.
+constexpr int kTouchPollMs = 6;
+constexpr unsigned kTouchSensitivity = 20;
+// A live finger makes the controller report continuously (heartbeat reports
+// every ~16 ms even when it does not move), so a short silence means the lift.
+// The controller's explicit lift record releases instantly; this timeout only
+// bounds a lost report.
+constexpr int64_t kTouchReleaseTimeoutUs = 300 * 1000;
+// A pointer slot survives this long without appearing in a report, so a
+// report that only carries the changed fingers does not release the others.
+constexpr int64_t kTouchSlotGraceUs = 120 * 1000;
+// Safety net in case the expander interrupt line is not connected: keep the
+// touch task sampling on this cadence anyway.
+constexpr int kTouchFallbackPollMs = 50;
+constexpr int kTouchTaskPriority = 10;
+constexpr uint32_t kTouchTaskStack = 3072;
+constexpr int64_t kTouchLogIntervalUs = 150 * 1000;
 constexpr int kTouchI2cTimeoutMs = 100;
 constexpr int kVolumeStep = 5;
 constexpr uint8_t kDefaultBrightness = 75;
 constexpr int64_t kPowerKeyBootGraceUs = 3 * 1000 * 1000;
+// Periodic memory report: SRAM and PSRAM usage including the lowest free
+// value seen and the largest allocatable block.
+constexpr int64_t kHeapLogIntervalUs = 10 * 1000 * 1000;
 
 uint8_t SignalLevel(int rssi) {
     if (rssi >= -55) return 4;
@@ -44,6 +74,32 @@ uint8_t SignalLevel(int rssi) {
     if (rssi >= -85) return 1;
     return 0;
 }
+
+#if LV_USE_LOG
+// Route the LVGL log module (the performance monitor prints through it) to
+// the ESP log so the lines carry the usual tag and timestamp.
+void LvglLogCallback(lv_log_level_t level, const char* buffer) {
+    esp_log_level_t esp_level = ESP_LOG_INFO;
+    switch (level) {
+        case LV_LOG_LEVEL_TRACE:
+            esp_level = ESP_LOG_VERBOSE;
+            break;
+        case LV_LOG_LEVEL_INFO:
+        case LV_LOG_LEVEL_USER:
+            esp_level = ESP_LOG_INFO;
+            break;
+        case LV_LOG_LEVEL_WARN:
+            esp_level = ESP_LOG_WARN;
+            break;
+        case LV_LOG_LEVEL_ERROR:
+            esp_level = ESP_LOG_ERROR;
+            break;
+        default:
+            return;
+    }
+    esp_log_write(esp_level, "LVGL", "%s", buffer);
+}
+#endif
 
 // SPD2010 QSPI transfers want areas aligned to four pixels.
 void RoundDisplayArea(lv_area_t* area) {
@@ -99,6 +155,14 @@ bool SensecapWatcherHardware::Initialize() {
     ESP_ERROR_CHECK(esp_timer_create(&timer_config, &status_timer_));
     ESP_ERROR_CHECK(esp_timer_start_periodic(status_timer_,
                                              WATCHER_STATUS_TIMER_PERIOD_US));
+    ESP_LOGI(kTag,
+             "Heap after bring-up: internal %u/%u free (min %u), PSRAM %u/%u free",
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+             static_cast<unsigned>(heap_caps_get_total_size(MALLOC_CAP_INTERNAL)),
+             static_cast<unsigned>(
+                 heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+             static_cast<unsigned>(heap_caps_get_total_size(MALLOC_CAP_SPIRAM)));
     return true;
 }
 
@@ -221,7 +285,7 @@ bool SensecapWatcherHardware::InitializeDisplay() {
         .sclk_io_num = WATCHER_LCD_PCLK,
         .data2_io_num = WATCHER_LCD_DATA2,
         .data3_io_num = WATCHER_LCD_DATA3,
-        .max_transfer_sz = WATCHER_DISPLAY_WIDTH * kLcdTransferLines * 2,
+        .max_transfer_sz = kLcdChunkBytes,
     };
     if (spi_bus_initialize(WATCHER_LCD_SPI_HOST, &bus_config,
                            SPI_DMA_CH_AUTO) != ESP_OK) {
@@ -266,6 +330,14 @@ bool SensecapWatcherHardware::InitializeDisplay() {
     }
 
     lv_init();
+#if LV_USE_LOG
+    lv_log_register_print_cb(LvglLogCallback);
+#endif
+    // Register the optimized PNG/JPEG decoders before any image is loaded.
+    if (esp_lv_decoder_init(&image_decoder_) != ESP_OK) {
+        image_decoder_ = nullptr;
+        ESP_LOGW(kTag, "Continuing with the built-in image decoders");
+    }
     const lvgl_port_cfg_t port_config = {
         .task_priority = 4,
         .task_stack = 10 * 1024,
@@ -280,11 +352,10 @@ bool SensecapWatcherHardware::InitializeDisplay() {
         .io_handle = panel_io_,
         .panel_handle = panel_,
         .control_handle = nullptr,
-        // The panel has no TE line, so vsync locking is impossible. Direct
-        // mode keeps full-screen double buffers but renders and flushes only
-        // the invalidated areas, which is far cheaper than full_refresh. The
-        // native swapped format lets LVGL render byte-swapped directly: an
-        // in-place swap is not allowed on a direct-mode framebuffer.
+        // Full-screen PSRAM draw buffer with two software draw units: LVGL
+        // splits the refreshed area into two tiles and renders them on both
+        // cores, without the per-band tiling overhead internal RAM bands
+        // introduced. The native swapped format removes the CPU byte swap.
         .buffer_size = WATCHER_DISPLAY_WIDTH * WATCHER_DISPLAY_HEIGHT,
         .double_buffer = true,
         .trans_size = 0,
@@ -300,7 +371,7 @@ bool SensecapWatcherHardware::InitializeDisplay() {
             .sw_rotate = false,
             .swap_bytes = false,
             .full_refresh = false,
-            .direct_mode = true,
+            .direct_mode = false,
         },
     };
     display_ = lvgl_port_add_disp(&display_config);
@@ -308,9 +379,89 @@ bool SensecapWatcherHardware::InitializeDisplay() {
         ESP_LOGE(kTag, "Cannot register SPD2010 display with LVGL");
         return false;
     }
+    // Submitting a PSRAM frame costs the SPI driver a bounce copy per chunk.
+    // A dedicated task does that work so the LVGL task can start the next
+    // render immediately; LVGL still waits for the transfer completion.
+    flush_queue_ = xQueueCreate(2, sizeof(FlushRequest));
+    if (flush_queue_ == nullptr ||
+        xTaskCreate(FlushTaskEntry, "watcher_flush", kFlushTaskStack, this,
+                    kFlushTaskPriority, &flush_task_) != pdPASS) {
+        ESP_LOGE(kTag, "Cannot start the display flush task");
+        return false;
+    }
+    // The port's flush would leave LVGL spinning forever if the panel IO ever
+    // fails to queue a transfer (LVGL waits on a completion callback that
+    // only fires on success), so the board installs a flush that reports the
+    // error and always releases the display.
+    if (lvgl_port_lock(100)) {
+        lv_display_set_user_data(display_, this);
+        lv_display_set_flush_cb(display_, FlushDisplay);
+        lvgl_port_unlock();
+    }
+    if (!watcher_pxa_surface::Install(display_)) {
+        ESP_LOGW(kTag, "Continuing without PXA Surface presentation");
+    }
     ESP_LOGI(kTag, "SPD2010 display initialized as %dx%d",
              WATCHER_DISPLAY_WIDTH, WATCHER_DISPLAY_HEIGHT);
     return true;
+}
+
+void SensecapWatcherHardware::FlushDisplay(lv_display_t* display,
+                                           const lv_area_t* area,
+                                           uint8_t* pixels) {
+    auto* self = static_cast<SensecapWatcherHardware*>(
+        lv_display_get_user_data(display));
+    if (self == nullptr || self->panel_ == nullptr ||
+        self->flush_queue_ == nullptr) {
+        lv_display_flush_ready(display);
+        return;
+    }
+    // Composite the latest PXA Surface under the trusted UI before the area
+    // leaves the LVGL task; the queued pixels are then fully owned by the
+    // flush task and the Surface lease can be released immediately.
+    watcher_pxa_surface::ComposeFlushArea(area, pixels);
+    const FlushRequest request = {
+        .display = display,
+        .area = *area,
+        .pixels = pixels,
+    };
+    if (xQueueSend(self->flush_queue_, &request, 0) != pdTRUE) {
+        // LVGL waits for the previous transfer before the next flush, so the
+        // queue should never fill; drop the frame instead of blocking the
+        // render task if it ever does.
+        ESP_LOGW(kTag, "flush queue full, dropping frame");
+        lv_display_flush_ready(display);
+    }
+}
+
+void SensecapWatcherHardware::FlushTaskEntry(void* arg) {
+    static_cast<SensecapWatcherHardware*>(arg)->FlushTask();
+}
+
+void SensecapWatcherHardware::FlushTask() {
+    FlushRequest request = {};
+    for (;;) {
+        if (xQueueReceive(flush_queue_, &request, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        const esp_err_t err = esp_lcd_panel_draw_bitmap(
+            panel_, request.area.x1, request.area.y1, request.area.x2 + 1,
+            request.area.y2 + 1, request.pixels);
+        if (err != ESP_OK) {
+            const int64_t now_us = esp_timer_get_time();
+            if (now_us - flush_error_us_ > 1000 * 1000) {
+                flush_error_us_ = now_us;
+                ESP_LOGE(kTag, "flush failed (%s): %dx%d at %d,%d",
+                         esp_err_to_name(err),
+                         (int)(request.area.x2 - request.area.x1 + 1),
+                         (int)(request.area.y2 - request.area.y1 + 1),
+                         (int)request.area.x1, (int)request.area.y1);
+            }
+            // Nothing will complete this transfer, so do not leave LVGL
+            // waiting; the success path is released by the panel IO callback.
+            lv_display_flush_ready(request.display);
+        }
+    }
 }
 
 bool SensecapWatcherHardware::InitializeTouch() {
@@ -363,36 +514,234 @@ bool SensecapWatcherHardware::InitializeTouch() {
         .user_data = nullptr,
     };
     esp_lcd_touch_handle_t touch = nullptr;
-    if (esp_lcd_touch_new_i2c_spd2010(touch_io, &touch_config, &touch) !=
+    if (watcher_spd2010_touch_new(touch_io, &touch_config, &touch) !=
         ESP_OK) {
         ESP_LOGE(kTag, "Cannot create SPD2010 touch driver");
         return false;
     }
-    // Prime the controller, matching the factory bring-up order.
+    // Prime the controller the way the official BSP does before adding the
+    // input device.
     vTaskDelay(pdMS_TO_TICKS(50));
     esp_lcd_touch_read_data(touch);
     vTaskDelay(pdMS_TO_TICKS(100));
-
-    const lvgl_port_touch_cfg_t lvgl_touch = {
-        .disp = display_,
-        .handle = touch,
-        .scale = {.x = 1.0f, .y = 1.0f},
+    touch_ = touch;
+    // The PCA9555 asserts its interrupt (GPIO2) whenever an input changes,
+    // and the SPD2010 raises P0.5 when a report is ready. Wake a dedicated
+    // task on that edge so the controller is read immediately instead of on
+    // a slow poll.
+    touch_sem_ = xSemaphoreCreateBinary();
+    if (touch_sem_ == nullptr) {
+        ESP_LOGE(kTag, "Cannot create touch interrupt semaphore");
+        return false;
+    }
+    const gpio_config_t int_config = {
+        .pin_bit_mask = 1ULL << WATCHER_IO_INT,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE,
     };
-    touch_indev_ = lvgl_port_add_touch(&lvgl_touch);
+    if (gpio_config(&int_config) != ESP_OK) {
+        ESP_LOGE(kTag, "Cannot configure the expander interrupt pin");
+        return false;
+    }
+    const esp_err_t isr_service = gpio_install_isr_service(0);
+    if (isr_service != ESP_OK && isr_service != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(kTag, "Cannot install the GPIO ISR service");
+        return false;
+    }
+    if (gpio_isr_handler_add(WATCHER_IO_INT, TouchInterruptHandler, this) !=
+        ESP_OK) {
+        ESP_LOGE(kTag, "Cannot attach the expander interrupt handler");
+        return false;
+    }
+    if (xTaskCreate(TouchTaskEntry, "watcher_touch", kTouchTaskStack, this,
+                    kTouchTaskPriority, &touch_task_) != pdPASS) {
+        ESP_LOGE(kTag, "Cannot start the touch task");
+        return false;
+    }
+    // One pointer indev per touch slot: LVGL and the PXA Guest bridge see
+    // every finger, and the Guest bridge derives a stable pointer id from the
+    // indev order. The read callback only publishes the state the touch task
+    // already fetched, so the fast timers stay cheap.
+    if (lvgl_port_lock(100)) {
+        for (int i = 0; i < kTouchMaxPointers; ++i) {
+            lv_indev_t* indev = lv_indev_create();
+            if (indev == nullptr) continue;
+            lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+            lv_indev_set_read_cb(indev, TouchReadCallback);
+            lv_indev_set_disp(indev, display_);
+            lv_indev_set_driver_data(indev, this);
+            lv_indev_set_user_data(
+                indev, reinterpret_cast<void*>(static_cast<intptr_t>(i)));
+            lv_timer_set_period(lv_indev_get_read_timer(indev), kTouchPollMs);
+            if (touch_indev_ == nullptr) touch_indev_ = indev;
+        }
+        lvgl_port_unlock();
+    }
     if (touch_indev_ == nullptr) {
         ESP_LOGE(kTag, "Cannot register SPD2010 touch with LVGL");
         return false;
     }
-    // Sample the panel faster than the refresh period so drags track the
-    // finger instead of stepping once per rendered frame.
-    if (lvgl_port_lock(100)) {
-        lv_lock();
-        lv_timer_set_period(lv_indev_get_read_timer(touch_indev_), kTouchPollMs);
-        lv_unlock();
-        lvgl_port_unlock();
-    }
-    ESP_LOGI(kTag, "SPD2010 touch initialized (poll %d ms)", kTouchPollMs);
+    ESP_LOGI(kTag, "SPD2010 touch initialized (%d pointers, poll %d ms)",
+             kTouchMaxPointers, kTouchPollMs);
     return true;
+}
+
+void SensecapWatcherHardware::TouchReadCallback(lv_indev_t* indev,
+                                                lv_indev_data_t* data) {
+    auto* self = static_cast<SensecapWatcherHardware*>(
+        lv_indev_get_driver_data(indev));
+    if (self == nullptr || self->touch_ == nullptr) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
+    const int slot = static_cast<int>(
+        reinterpret_cast<intptr_t>(lv_indev_get_user_data(indev)));
+    if (slot < 0 || slot >= kTouchMaxPointers) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
+    // Publish the state the touch task already fetched; doing I2C here would
+    // make the fast timer expensive and would delay the touch task.
+    portENTER_CRITICAL(&self->touch_lock_);
+    data->point = self->touch_slot_point_[slot];
+    data->state = self->touch_slot_pressed_[slot] ? LV_INDEV_STATE_PRESSED
+                                                  : LV_INDEV_STATE_RELEASED;
+    portEXIT_CRITICAL(&self->touch_lock_);
+}
+
+void IRAM_ATTR SensecapWatcherHardware::TouchInterruptHandler(void* arg) {
+    auto* self = static_cast<SensecapWatcherHardware*>(arg);
+    BaseType_t woken = pdFALSE;
+    if (self != nullptr && self->touch_sem_ != nullptr) {
+        xSemaphoreGiveFromISR(self->touch_sem_, &woken);
+    }
+    if (woken == pdTRUE) portYIELD_FROM_ISR();
+}
+
+void SensecapWatcherHardware::TouchTaskEntry(void* arg) {
+    static_cast<SensecapWatcherHardware*>(arg)->TouchTask();
+}
+
+void SensecapWatcherHardware::TouchTask() {
+    for (;;) {
+        // Wake on the expander interrupt (any input change) with a slow
+        // fallback so the touch keeps working if that line is missing.
+        xSemaphoreTake(touch_sem_, pdMS_TO_TICKS(kTouchFallbackPollMs));
+        // Reading the input register clears the PCA9555 interrupt latch, which
+        // re-arms the pin for the next change.
+        uint16_t inputs = 0;
+        io_expander_.ReadInputs(&inputs);
+        PollTouchController();
+    }
+}
+
+void SensecapWatcherHardware::PollTouchController() {
+    // The vendored driver exposes the controller's own view of the touch:
+    // `pressed` is set by reports that carry pressure and cleared only by the
+    // controller's lift record. Empty samples therefore hold a press instead
+    // of ending it, which the stock driver's point data cannot distinguish.
+    esp_lcd_touch_point_data_t points[kTouchMaxPointers] = {};
+    uint8_t count = 0;
+    const int64_t now_us = esp_timer_get_time();
+    const esp_err_t err = esp_lcd_touch_read_data(touch_);
+    if (err == ESP_OK) {
+        (void)esp_lcd_touch_get_data(touch_, points, &count,
+                                     kTouchMaxPointers);
+    } else if (now_us - touch_log_us_ >= kTouchLogIntervalUs) {
+        touch_log_us_ = now_us;
+        ESP_LOGW(kTag, "touch read failed: %s", esp_err_to_name(err));
+    }
+    // Log the strongest point; it is the one the user is most likely driving.
+    uint8_t strongest = 0;
+    for (uint8_t i = 1; i < count; ++i) {
+        if (points[i].strength > points[strongest].strength) strongest = i;
+    }
+    if (count > 0) {
+        LogTouch(count, points[strongest].x, points[strongest].y,
+                 points[strongest].strength);
+    }
+
+    const char* release_reason = nullptr;
+    portENTER_CRITICAL(&touch_lock_);
+    const bool lift = !watcher_spd2010_touch_pressed();
+    const bool lost =
+        touch_pressed_ && now_us - touch_active_us_ > kTouchReleaseTimeoutUs;
+    if (lift || lost) {
+        if (touch_pressed_) {
+            touch_pressed_ = false;
+            release_reason = lift ? "lift record" : "no reports";
+        }
+        for (int i = 0; i < kTouchMaxPointers; ++i) {
+            touch_slot_pressed_[i] = false;
+        }
+    } else if (count > 0) {
+        const bool strong = strongest < count &&
+                            points[strongest].strength > kTouchSensitivity;
+        if (strong) {
+            // Map the report onto the pointer slots, keeping a finger on the
+            // same slot (and therefore the same LVGL indev and Guest pointer
+            // id) by its controller track id.
+            bool slot_taken[kTouchMaxPointers] = {};
+            for (uint8_t i = 0; i < count; ++i) {
+                if (points[i].strength == 0) continue;
+                int slot = -1;
+                for (int s = 0; s < kTouchMaxPointers; ++s) {
+                    if (!slot_taken[s] && touch_slot_pressed_[s] &&
+                        touch_slot_id_[s] == points[i].track_id) {
+                        slot = s;
+                        break;
+                    }
+                }
+                for (int s = 0; slot < 0 && s < kTouchMaxPointers; ++s) {
+                    if (!slot_taken[s] &&
+                        (!touch_slot_pressed_[s] ||
+                         now_us - touch_slot_seen_us_[s] > kTouchSlotGraceUs)) {
+                        slot = s;
+                    }
+                }
+                if (slot < 0) continue;
+                slot_taken[slot] = true;
+                touch_slot_pressed_[slot] = true;
+                touch_slot_id_[slot] = points[i].track_id;
+                touch_slot_point_[slot].x = points[i].x;
+                touch_slot_point_[slot].y = points[i].y;
+                touch_slot_seen_us_[slot] = now_us;
+            }
+            touch_pressed_ = true;
+            touch_active_us_ = now_us;
+        }
+        // Slots missing from the report are released after a short grace, so
+        // a report that only carries the changed fingers does not flicker.
+        for (int s = 0; s < kTouchMaxPointers; ++s) {
+            if (touch_slot_pressed_[s] &&
+                now_us - touch_slot_seen_us_[s] > kTouchSlotGraceUs) {
+                touch_slot_pressed_[s] = false;
+            }
+        }
+    }
+    portEXIT_CRITICAL(&touch_lock_);
+    if (release_reason != nullptr) {
+        ESP_LOGI(kTag, "touch: released (%s)", release_reason);
+    }
+}
+
+void SensecapWatcherHardware::LogTouch(uint8_t count, int32_t x, int32_t y,
+                                       uint16_t strength) {
+    const int64_t now_us = esp_timer_get_time();
+    if (count == touch_log_count_ &&
+        now_us - touch_log_us_ < kTouchLogIntervalUs) {
+        return;
+    }
+    touch_log_us_ = now_us;
+    touch_log_count_ = count;
+    if (count == 0) {
+        ESP_LOGD(kTag, "touch: no points");
+    } else {
+        ESP_LOGD(kTag, "touch: 1 finger (%d,%d) w=%u", static_cast<int>(x),
+                 static_cast<int>(y), static_cast<unsigned>(strength));
+    }
 }
 
 esp_err_t SensecapWatcherHardware::TouchPanelTxParam(esp_lcd_panel_io_t* io,
@@ -492,6 +841,8 @@ bool SensecapWatcherHardware::InitializeInputs() {
     }
     iot_button_register_cb(power_key_, BUTTON_PRESS_DOWN, nullptr,
                            OnPowerKeyPressDown, this);
+    iot_button_register_cb(power_key_, BUTTON_PRESS_UP, nullptr,
+                           OnPowerKeyPressUp, this);
     iot_button_register_cb(power_key_, BUTTON_SINGLE_CLICK, nullptr,
                            OnPowerKeyClick, this);
     iot_button_register_cb(power_key_, BUTTON_DOUBLE_CLICK, nullptr,
@@ -513,6 +864,45 @@ void SensecapWatcherHardware::AttachSystem(
     pxsys_standard_system_t* system, pxsys_reference_lvgl_t* reference_ui) {
     system_ = system;
     reference_ui_ = reference_ui;
+    if (reference_ui_ != nullptr) {
+        (void)pxsys_reference_lvgl_set_lock_changed_callback(
+            reference_ui_, this,
+            [](void* context, bool locked) {
+                static_cast<SensecapWatcherHardware*>(context)
+                    ->OnLockChanged(locked);
+            });
+        (void)pxsys_reference_lvgl_set_power_action_callback(
+            reference_ui_, this,
+            [](void* context, pxsys_reference_power_action_t action) {
+                auto* self = static_cast<SensecapWatcherHardware*>(context);
+                if (action == PXSYS_REFERENCE_POWER_ACTION_SHUTDOWN) {
+                    if (xTaskCreate(
+                            [](void* arg) {
+                                static_cast<SensecapWatcherHardware*>(arg)
+                                    ->PowerOff();
+                            },
+                            "watcher_power_off", 3072, self, 4, nullptr) !=
+                        pdPASS) {
+                        ESP_LOGE(kTag, "Cannot create power-off task");
+                    }
+                    return;
+                }
+                if (xTaskCreate(
+                        [](void*) {
+                            vTaskDelay(pdMS_TO_TICKS(120));
+                            esp_restart();
+                        },
+                        "system_restart", 2048, nullptr, 4, nullptr) !=
+                    pdPASS) {
+                    ESP_LOGE(kTag, "Cannot create restart task");
+                }
+            });
+        (void)pxsys_reference_lvgl_set_power_menu_changed_callback(
+            reference_ui_, nullptr,
+            [](void*, bool visible) {
+                pxa_esp_surface_set_system_overlay_visible(visible);
+            });
+    }
     PublishStatus();
 }
 
@@ -620,7 +1010,34 @@ void SensecapWatcherHardware::ScheduleStatusUpdate() {
 }
 
 void SensecapWatcherHardware::StatusTimer(void* context) {
-    static_cast<SensecapWatcherHardware*>(context)->ScheduleStatusUpdate();
+    auto* self = static_cast<SensecapWatcherHardware*>(context);
+    self->LogHeapUsage();
+    self->ScheduleStatusUpdate();
+}
+
+void SensecapWatcherHardware::LogHeapUsage() {
+    const int64_t now_us = esp_timer_get_time();
+    if (now_us - heap_log_us_ < kHeapLogIntervalUs) return;
+    heap_log_us_ = now_us;
+    const uint32_t internal_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const size_t internal_total = heap_caps_get_total_size(internal_caps);
+    const size_t internal_free = heap_caps_get_free_size(internal_caps);
+    const size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    const size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    ESP_LOGI(kTag,
+             "Heap: SRAM used=%u free=%u total=%u min_free=%u largest=%u "
+             "| PSRAM used=%u free=%u total=%u min_free=%u largest=%u",
+             static_cast<unsigned>(internal_total - internal_free),
+             static_cast<unsigned>(internal_free),
+             static_cast<unsigned>(internal_total),
+             static_cast<unsigned>(
+                 heap_caps_get_minimum_free_size(internal_caps)),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(internal_caps)),
+             static_cast<unsigned>(psram_total - psram_free),
+             static_cast<unsigned>(psram_free),
+             static_cast<unsigned>(psram_total),
+             static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM)),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)));
 }
 
 void SensecapWatcherHardware::StatusOnLvgl(void* context) {
@@ -650,12 +1067,20 @@ void SensecapWatcherHardware::AdjustVolume(int delta) {
 
 void SensecapWatcherHardware::OnPowerKeyPressDown(void*, void* context) {
     auto* self = static_cast<SensecapWatcherHardware*>(context);
+    self->power_key_long_press_.store(false);
     self->power_key_woke_screen_.store(!self->screen_enabled_.load());
     self->WakeScreen();
 }
 
+void SensecapWatcherHardware::OnPowerKeyPressUp(void*, void* context) {
+    auto* self = static_cast<SensecapWatcherHardware*>(context);
+    if (self->power_key_long_press_.load())
+        self->power_key_woke_screen_.store(false);
+}
+
 void SensecapWatcherHardware::OnPowerKeyClick(void*, void* context) {
     auto* self = static_cast<SensecapWatcherHardware*>(context);
+    if (self->power_key_long_press_.exchange(false)) return;
     // A press that only turned the screen back on must not toggle it off.
     if (self->power_key_woke_screen_.exchange(false)) return;
     self->ToggleScreen();
@@ -671,32 +1096,59 @@ void SensecapWatcherHardware::OnPowerKeyLongPress(void*, void* context) {
     if (esp_timer_get_time() - self->boot_time_us_ < kPowerKeyBootGraceUs) {
         return;
     }
-    if (xTaskCreate(
-            [](void* arg) {
-                static_cast<SensecapWatcherHardware*>(arg)->PowerOff();
-            },
-            "watcher_power_off", 3072, self, 4, nullptr) != pdPASS) {
-        ESP_LOGE(kTag, "Cannot create power-off task");
-    }
+    if (self->power_key_woke_screen_.load()) return;
+    self->power_key_long_press_.store(true);
+    lv_lock();
+    const lv_result_t result = lv_async_call(
+        [](void* arg) {
+            auto* hardware = static_cast<SensecapWatcherHardware*>(arg);
+            if (hardware->reference_ui_ != nullptr)
+                (void)pxsys_reference_lvgl_show_power_menu(
+                    hardware->reference_ui_);
+        },
+        self);
+    lv_unlock();
+    if (result != LV_RESULT_OK)
+        ESP_LOGE(kTag, "Cannot schedule power menu");
 }
 
 void SensecapWatcherHardware::WakeScreen() {
-    if (screen_enabled_.load()) return;
-    screen_enabled_.store(true);
-    SetBrightness(brightness_.load() == 0 ? kDefaultBrightness
-                                          : brightness_.load());
+    SetScreenEnabled(true);
 }
 
-void SensecapWatcherHardware::ToggleScreen() {
-    const bool enabled = !screen_enabled_.load();
-    screen_enabled_.store(enabled);
-    if (enabled) {
-        SetBrightness(brightness_.load() == 0 ? kDefaultBrightness
-                                              : brightness_.load());
-    } else {
+void SensecapWatcherHardware::SetScreenEnabled(bool enabled) {
+    const bool previous = screen_enabled_.exchange(enabled);
+    if (previous == enabled) return;
+    pxa_esp_surface_set_host_visible(false);
+    if (!enabled) {
         ledc_set_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL, 0);
         ledc_update_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL);
     }
+    lv_lock();
+    const lv_result_t result = lv_async_call(
+        [](void* context) {
+            auto* self = static_cast<SensecapWatcherHardware*>(context);
+            if (self->reference_ui_ != nullptr)
+                (void)pxsys_reference_lvgl_set_locked(self->reference_ui_, true);
+            if (!self->screen_enabled_.load()) return;
+            if (self->display_ != nullptr) lv_refr_now(self->display_);
+            self->SetBrightness(self->brightness_.load() == 0
+                                    ? kDefaultBrightness
+                                    : self->brightness_.load());
+        },
+        this);
+    lv_unlock();
+    if (result != LV_RESULT_OK)
+        ESP_LOGE(kTag, "Cannot schedule screen %s",
+                 enabled ? "wake" : "lock");
+}
+
+void SensecapWatcherHardware::ToggleScreen() {
+    SetScreenEnabled(!screen_enabled_.load());
+}
+
+void SensecapWatcherHardware::OnLockChanged(bool locked) {
+    pxa_esp_surface_set_host_visible(!locked);
 }
 
 void SensecapWatcherHardware::PowerOff() {

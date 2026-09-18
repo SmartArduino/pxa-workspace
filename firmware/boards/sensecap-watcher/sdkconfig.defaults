@@ -12,13 +12,22 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
-# The QSPI LCD bounces color chunks through internal DMA memory, and the WiFi
-# driver needs internal buffers; keep a large internal reserve available.
-CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=1024
+# Follow the pai-touch board: even small allocations may fall back to PSRAM,
+# and the high watermark makes default allocations avoid internal RAM while
+# it is needed. Internal RAM then serves only what must be internal: SPI DMA
+# bounce buffers, task stacks and the Wi-Fi static pools.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
 CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=262144
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 CONFIG_SPIRAM_ALLOW_NOINIT_SEG_EXTERNAL_MEMORY=y
+# Match the pai-touch board's cache tuning: a bigger instruction cache for
+# the LVGL code and 64-byte lines for linear PSRAM traffic. The data cache
+# stays at 32 KB like theirs; 64 KB cost 32 KB of SRAM and helped starve the
+# internal heap. PSRAM speed is already at the S3 maximum (Octal 80 MHz).
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 CONFIG_SPIRAM_MEMTEST=n
 
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
@@ -32,9 +41,14 @@ CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 # Long littlefs/FreeType flash operations run with the cache disabled.
 CONFIG_ESP_INT_WDT_TIMEOUT_MS=10000
-# Keep the Wi-Fi static RX pool small enough for the internal RAM budget.
-CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=10
+# Wi-Fi buffers follow the pai-touch board's tuning: the static RX/TX pools
+# are the internal-RAM consumers, so they are trimmed for this station link.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=6
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_MGMT_SBUF_NUM=32
 CONFIG_ESP_WIFI_RX_BA_WIN=6
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=24
 # The Wi-Fi event handlers run on the default event loop task; 2304 bytes is
 # too small and its overflow corrupts the loop mutex.
 CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096
@@ -56,16 +70,27 @@ CONFIG_LV_OS_FREERTOS=y
 CONFIG_LV_USE_CLIB_MALLOC=y
 CONFIG_LV_USE_CLIB_STRING=y
 CONFIG_LV_USE_CLIB_SPRINTF=y
-# Refreshes are invalidation-driven with direct-mode rendering; a 16 ms period
+# Refreshes are invalidation-driven with partial rendering; a 16 ms period
 # keeps drags and animations smooth without forcing full-screen redraws.
 CONFIG_LV_DEF_REFR_PERIOD=16
-CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
+# Two software draw units: LVGL splits the refreshed area into tiles and the
+# two render threads run on both cores, the software equivalent of the
+# pai-touch board's dual-core rotation stage. Costs one extra draw thread
+# stack (LV_DRAW_THREAD_STACK_SIZE).
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
+# Highest draw-thread priority: the LVGL task runs at 4, and with the default
+# (3) the render threads competed with it instead of preempting it.
+CONFIG_LV_DRAW_THREAD_PRIO=4
 CONFIG_LV_DRAW_THREAD_STACK_SIZE=32768
-# Multi-touch: the SPD2010 reports up to five points and the LVGL port feeds
-# two of them to the pinch/rotate/two-finger-swipe recognizers.
-CONFIG_LV_USE_FLOAT=y
-CONFIG_LV_USE_GESTURE_RECOGNITION=y
+# Touch follows the official Watcher BSP: one point polled on the indev timer
+# with a pressure threshold. LVGL gesture recognition stays off because the
+# port's gesture path swallows drags on multi-point panels.
 CONFIG_ESP_LCD_TOUCH_MAX_POINTS=5
+# LVGL performance monitor is off in production. Enable SYSMON +
+# PERF_MONITOR + PERF_MONITOR_LOG_MODE to measure FPS and render/flush times.
+CONFIG_LV_USE_SYSMON=y
+CONFIG_LV_USE_LOG=y
+CONFIG_LV_LOG_LEVEL_USER=y
 CONFIG_LV_USE_FREETYPE=y
 CONFIG_LV_FREETYPE_USE_LVGL_PORT=n
 CONFIG_LV_FREETYPE_CACHE_FT_GLYPH_CNT=2048
@@ -73,6 +98,11 @@ CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_USE_SNAPSHOT=y
 CONFIG_LV_USE_LODEPNG=y
+# The launcher icons are PNGs decoded by esp_lv_decoder; with the image cache
+# disabled every redraw decoded them again, which dominated the render time
+# whenever the launcher was repainted (for example behind the shade drag).
+CONFIG_LV_CACHE_DEF_SIZE=1048576
+CONFIG_LV_IMAGE_HEADER_CACHE_DEF_CNT=32
 
 # The board owns I2C0 with the new i2c_master driver, so the ES8311 control
 # interface must use the IDF 5.3+ bus handle instead of the legacy driver.
@@ -127,9 +157,9 @@ CONFIG_PXADB_AUTOSTART=y
 CONFIG_PXADB_TEST_CONTROL=y
 # The Watcher's native USB port is not always wired; tunnel PXADB over UART0,
 # which is also the console. The host client skips non-PXADB log lines.
-# UART0 runs at 460800 for both the console and PXADB; monitor at the same
+# UART0 runs at 2000000 for both the console and PXADB; monitor at the same
 # rate (the ROM banner stays at 115200).
 CONFIG_PXADB_TRANSPORT_UART=y
 CONFIG_PXADB_UART_PORT=0
-CONFIG_PXADB_UART_BAUD=460800
-CONFIG_ESP_CONSOLE_UART_BAUDRATE=460800
+CONFIG_PXADB_UART_BAUD=2000000
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=2000000

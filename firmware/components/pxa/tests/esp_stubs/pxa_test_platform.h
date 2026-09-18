@@ -14,6 +14,14 @@ typedef int BaseType_t;
 typedef void *QueueHandle_t;
 typedef void *TaskHandle_t;
 typedef int esp_http_client_method_t;
+typedef enum {
+    ESP_LOG_NONE,
+    ESP_LOG_ERROR,
+    ESP_LOG_WARN,
+    ESP_LOG_INFO,
+    ESP_LOG_DEBUG,
+    ESP_LOG_VERBOSE
+} esp_log_level_t;
 typedef void *esp_http_client_handle_t;
 typedef struct {
     void *user_data;
@@ -52,6 +60,12 @@ enum { HTTP_EVENT_ON_HEADER, HTTP_EVENT_ON_DATA };
 #define taskEXIT_CRITICAL(lock) portEXIT_CRITICAL(lock)
 
 void test_log(const char *, const char *, ...);
+static inline void esp_log_write(esp_log_level_t level, const char *tag,
+                                 const char *format, ...) {
+    (void)level;
+    (void)tag;
+    (void)format;
+}
 void test_enter(void);
 void test_leave(void);
 void *heap_caps_malloc(size_t, unsigned);

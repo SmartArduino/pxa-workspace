@@ -54,9 +54,10 @@
 #define WATCHER_LCD_DATA3 GPIO_NUM_13
 #define WATCHER_LCD_CS GPIO_NUM_45
 #define WATCHER_LCD_BACKLIGHT GPIO_NUM_8
-// 8.5 ms full-frame transfer at 80 MHz; drop to 60/40 MHz if the flex cable
-// ever shows signal-integrity artifacts.
-#define WATCHER_LCD_PIXEL_CLK_HZ (80 * 1000 * 1000)
+// 40 MHz, the clock the official Watcher BSP uses. 80 MHz occasionally
+// corrupted refreshed areas, which points at signal integrity on the panel
+// flex for this board.
+#define WATCHER_LCD_PIXEL_CLK_HZ (40 * 1000 * 1000)
 #define WATCHER_LCD_BACKLIGHT_CHANNEL LEDC_CHANNEL_0
 #define WATCHER_LCD_BACKLIGHT_TIMER LEDC_TIMER_0
 #define WATCHER_LCD_BACKLIGHT_DUTY_RES LEDC_TIMER_10_BIT

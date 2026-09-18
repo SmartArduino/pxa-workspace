@@ -6,9 +6,12 @@ dependencies:
   78/esp-wifi-connect: "~3.1.5"
   espressif/button: "^4.1.7"
   espressif/esp_codec_dev: "~1.3.2"
-  espressif/esp_lcd_spd2010: "~1.0.1"
+  espressif/esp_lcd_spd2010: "~2.0.0"
   espressif/esp_lcd_touch: "^1.2.1"
-  espressif/esp_lcd_touch_spd2010: "0.0.1"
+  # The SPD2010 touch driver is vendored in src/watcher_spd2010_touch.c: the
+  # stock one hides the lift report, which made releases unreliable.
+  # Hardware-accelerated PNG/JPEG decoding for LVGL image assets.
+  espressif/esp_lv_decoder: "^0.4.3"
   espressif/freetype: "^2.14.3~1"
   espressif/knob: "0.1.4"
   espressif/led_strip: "~2.5.4"

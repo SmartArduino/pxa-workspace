@@ -5,6 +5,8 @@ idf_component_register(
         "src/watcher_io_expander.cc"
         "src/watcher_battery.cc"
         "src/watcher_audio.cc"
+        "src/watcher_pxa_surface.cc"
+        "src/watcher_spd2010_touch.c"
     INCLUDE_DIRS "include"
     PRIV_REQUIRES
         78__esp-wifi-connect
@@ -21,7 +23,7 @@ idf_component_register(
         espressif__esp_codec_dev
         espressif__esp_lcd_spd2010
         espressif__esp_lcd_touch
-        espressif__esp_lcd_touch_spd2010
+        espressif__esp_lv_decoder
         espressif__esp_lvgl_port
         espressif__knob
         espressif__led_strip
