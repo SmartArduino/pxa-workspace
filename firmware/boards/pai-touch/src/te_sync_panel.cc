@@ -10,6 +10,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
+#include "parallel_sw_rotation_flush.h"
+
 #include <cstdint>
 #include <inttypes.h>
 
@@ -90,6 +92,8 @@ void LogDiagnostics(TeSyncPanel* context, uint32_t now_us) {
     const uint32_t average_submit_us = context->synchronized_update_count == 0 ? 0 :
         context->submit_total_us / context->synchronized_update_count;
 
+    if (zuowei_pai_touch::ParallelSoftwareRotationFlush::
+            PerformanceLogEnabled()) {
     ESP_LOGI(kTag,
              "TE perf: window=%" PRIu32 "ms updates=%" PRIu32
              " (%" PRIu32 ".%uHz) te_irq=%" PRIu32
@@ -106,6 +110,7 @@ void LogDiagnostics(TeSyncPanel* context, uint32_t now_us) {
              " submit=%" PRIu32 "/%" PRIu32,
              average_wait_us, context->te_wait_max_us, average_submit_us,
              context->submit_max_us);
+    }
 
     context->report_started_us = now_us;
     context->timeout_count_in_window = 0;

@@ -9,6 +9,7 @@
 #include <esp_lcd_panel_ops.h>
 #include <esp_timer.h>
 #include <lvgl.h>
+#include <pxsys/reference_lvgl.h>
 #include <pxadb/pxadb_service.h>
 
 class AdcBatteryMonitor;
@@ -34,6 +35,9 @@ public:
     lv_display_t* display() const { return display_; }
     uint8_t brightness() const { return brightness_.load(); }
     uint8_t volume() const { return audio_.volume(); }
+    bool PerformanceGet(pxsys_reference_performance_option_t option) const;
+    bool PerformanceSet(pxsys_reference_performance_option_t option,
+                        bool enabled);
 
 private:
     bool InitializeDisplay();

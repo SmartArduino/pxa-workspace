@@ -24,6 +24,7 @@
 #include <esp_heap_caps.h>
 #include <esp_lvgl_port.h>
 #include <esp_system.h>
+#include <nvs.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <pxa/pxa_esp_surface.h>
@@ -44,6 +45,9 @@ constexpr int kLcdQueueDepth = 2;
 constexpr uint32_t kTouchPollMs = 5;
 constexpr int64_t kPowerButtonMinPressUs = 50 * 1000;
 constexpr int64_t kPowerButtonTouchGuardUs = 350 * 1000;
+constexpr char kPerformanceNamespace[] = "pxa_perf";
+constexpr char kPerformanceOverlayKey[] = "overlay";
+constexpr char kPerformanceLogKey[] = "log";
 
 struct LcdCommand {
     uint8_t command;
@@ -106,10 +110,68 @@ uint8_t SignalLevel(int rssi) {
 }
 }  // namespace
 
+bool PaiTouchHardware::PerformanceGet(
+    pxsys_reference_performance_option_t option) const {
+    switch (option) {
+        case PXSYS_REFERENCE_PERFORMANCE_OVERLAY:
+            return zuowei_pai_touch::ParallelSoftwareRotationFlush::
+                PerformanceOverlayEnabled();
+        case PXSYS_REFERENCE_PERFORMANCE_LOG:
+            return zuowei_pai_touch::ParallelSoftwareRotationFlush::
+                PerformanceLogEnabled();
+    }
+    return false;
+}
+
+bool PaiTouchHardware::PerformanceSet(
+    pxsys_reference_performance_option_t option, bool enabled) {
+    const char* key = nullptr;
+    switch (option) {
+        case PXSYS_REFERENCE_PERFORMANCE_OVERLAY:
+            key = kPerformanceOverlayKey;
+            break;
+        case PXSYS_REFERENCE_PERFORMANCE_LOG:
+            key = kPerformanceLogKey;
+            break;
+        default:
+            return false;
+    }
+    nvs_handle_t handle;
+    if (nvs_open(kPerformanceNamespace, NVS_READWRITE, &handle) != ESP_OK)
+        return false;
+    const esp_err_t result = nvs_set_u8(handle, key, enabled ? 1 : 0);
+    const esp_err_t committed = result == ESP_OK ? nvs_commit(handle) : result;
+    nvs_close(handle);
+    if (committed != ESP_OK) return false;
+    if (option == PXSYS_REFERENCE_PERFORMANCE_OVERLAY)
+        zuowei_pai_touch::ParallelSoftwareRotationFlush::
+            SetPerformanceOverlayEnabled(enabled);
+    else
+        zuowei_pai_touch::ParallelSoftwareRotationFlush::
+            SetPerformanceLogEnabled(enabled);
+    return true;
+}
+
 bool PaiTouchHardware::Initialize() {
     // Wake the JL701 before display and network startup can leave it idle.
     if (!audio_.Initialize()) ESP_LOGW(kTag, "Continuing without RPC701 audio");
     if (!InitializeDisplay()) return false;
+    nvs_handle_t performance_handle;
+    if (nvs_open(kPerformanceNamespace, NVS_READONLY, &performance_handle) ==
+        ESP_OK) {
+        uint8_t enabled = 0;
+        if (nvs_get_u8(performance_handle, kPerformanceOverlayKey, &enabled) ==
+            ESP_OK) {
+            zuowei_pai_touch::ParallelSoftwareRotationFlush::
+                SetPerformanceOverlayEnabled(enabled != 0);
+        }
+        if (nvs_get_u8(performance_handle, kPerformanceLogKey, &enabled) ==
+            ESP_OK) {
+            zuowei_pai_touch::ParallelSoftwareRotationFlush::
+                SetPerformanceLogEnabled(enabled != 0);
+        }
+        nvs_close(performance_handle);
+    }
     if (!InitializeTouch()) ESP_LOGW(kTag, "Continuing without touch input");
     if (!InitializeAdc()) return false;
     InitializeButtons();

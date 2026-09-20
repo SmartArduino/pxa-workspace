@@ -6,6 +6,7 @@
 #include <nvs_flash.h>
 
 #include "pxa_board.h"
+#include "pxa_board_api.h"
 #include "pxa_integration.h"
 #include "pxadb/pxadb_service.h"
 #include "sdkconfig.h"
@@ -46,7 +47,8 @@ extern "C" void app_main(void) {
     }
 
 #if CONFIG_PXADB_AUTOSTART
-    if (pxadb::StartAutostart() != ESP_OK)
+    if (pxa_board_performance_get(PXSYS_REFERENCE_PXADB) &&
+        pxadb::StartAutostart() != ESP_OK)
         ESP_LOGW(kTag, "PXADB autostart task could not be created");
 #endif
 }

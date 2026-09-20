@@ -42,6 +42,15 @@ pxsys_status_t SetLevel(void*, pxsys_level_control_t control, uint8_t percent) {
     return PXSYS_STATUS_UNSUPPORTED;
 }
 
+bool PerformanceGet(void*, pxsys_reference_performance_option_t option) {
+    return g_hardware.PerformanceGet(option);
+}
+
+bool PerformanceSet(void*, pxsys_reference_performance_option_t option,
+                    bool enabled) {
+    return g_hardware.PerformanceSet(option, enabled);
+}
+
 void SystemReady(void*, pxsys_standard_system_t* system,
                  pxsys_reference_lvgl_t* reference_ui) {
     g_hardware.AttachSystem(system, reference_ui);
@@ -63,6 +72,8 @@ const pxa_board_port_t kPort = {
     .display_profile = DisplayProfile,
     .set_network_enabled = SetNetworkEnabled,
     .set_level = SetLevel,
+    .performance_get = PerformanceGet,
+    .performance_set = PerformanceSet,
     .system_ready = SystemReady,
     .show_initial_frame = ShowInitialFrame,
     .configure_diagnostics = ConfigureDiagnostics,

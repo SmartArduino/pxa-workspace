@@ -18,7 +18,9 @@
 #endif
 
 #include <atomic>
+#include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <inttypes.h>
 #include <new>
 
@@ -31,6 +33,9 @@ namespace zuowei_pai_touch {
 // buffer while the panel IO owns the other; IO completion releases only the
 // submitted physical buffer.
 class ParallelSoftwareRotationFlush {
+private:
+    struct Context;
+
 public:
     struct CompletedFrameInfo {
         uint32_t width = 0;
@@ -46,6 +51,11 @@ public:
     // rotation halves have copied it into a board-owned output buffer.
     using DirectFrameReleaseCallback = void (*)(void* context,
                                                 uint8_t buffer_index);
+
+    static bool PerformanceOverlayEnabled();
+    static void SetPerformanceOverlayEnabled(bool enabled);
+    static bool PerformanceLogEnabled();
+    static void SetPerformanceLogEnabled(bool enabled);
 
     static bool Install(lv_display_t* display,
                         esp_lcd_panel_io_handle_t panel_io,
@@ -219,6 +229,7 @@ public:
             static_cast<uint32_t>(esp_timer_get_time()) - rotation_started_us;
 #endif
         if (copied) {
+            CompositePerformanceOverlay(context, output);
             context->output_frame_id[output_index] = frame_id;
             context->output_source[output_index] = kFrameSourceSurface;
             context->output_input_timestamp_us[output_index] =
@@ -461,6 +472,11 @@ private:
         std::atomic<uint64_t> last_completed_frame_id{0};
         std::atomic<uint64_t> last_completed_timestamp_us{0};
         std::atomic<uint8_t> last_completed_source{kFrameSourceLvgl};
+        std::atomic<bool> performance_overlay_enabled{false};
+        std::atomic<bool> performance_log_enabled{false};
+        std::atomic<uint32_t> performance_fps_x10{0};
+        std::atomic<uint32_t> performance_rotate_us{0};
+        std::atomic<uint32_t> performance_send_us{0};
         int32_t split_column = 0;
         uint32_t worker_last_us = 0;
         bool uses_worker = false;
@@ -503,6 +519,32 @@ private:
 #endif
     };
 
+    static bool PerformanceOverlayEnabled() {
+        auto* context = GetContext();
+        return context != nullptr && context->performance_overlay_enabled.load(
+            std::memory_order_relaxed);
+    }
+
+    static void SetPerformanceOverlayEnabled(bool enabled) {
+        auto* context = GetContext();
+        if (context != nullptr)
+            context->performance_overlay_enabled.store(enabled,
+                                                       std::memory_order_relaxed);
+    }
+
+    static bool PerformanceLogEnabled() {
+        auto* context = GetContext();
+        return context != nullptr && context->performance_log_enabled.load(
+            std::memory_order_relaxed);
+    }
+
+    static void SetPerformanceLogEnabled(bool enabled) {
+        auto* context = GetContext();
+        if (context != nullptr)
+            context->performance_log_enabled.store(enabled,
+                                                   std::memory_order_relaxed);
+    }
+
     static Context*& GetContext() {
         static Context* context = nullptr;
         return context;
@@ -531,6 +573,88 @@ private:
             static_cast<uint16_t>(width), static_cast<uint16_t>(height),
             static_cast<uint16_t>(context->logical_width),
             static_cast<uint16_t>(context->logical_height));
+    }
+
+    static uint8_t GlyphRow(char character, uint8_t row) {
+        static const uint8_t digits[][5] = {
+            {7, 5, 5, 5, 7}, {2, 6, 2, 2, 7}, {7, 1, 7, 4, 7},
+            {7, 1, 7, 1, 7}, {5, 5, 7, 1, 1}, {7, 4, 7, 1, 7},
+            {7, 4, 7, 5, 7}, {7, 1, 2, 2, 2}, {7, 5, 7, 5, 7},
+            {7, 5, 7, 1, 7},
+        };
+        static const uint8_t f[] = {7, 4, 6, 4, 4};
+        static const uint8_t p[] = {6, 5, 6, 4, 4};
+        static const uint8_t s[] = {7, 4, 7, 1, 7};
+        static const uint8_t r[] = {6, 5, 6, 5, 5};
+        static const uint8_t m[] = {5, 7, 7, 5, 5};
+        if (row >= 5) return 0;
+        if (character >= '0' && character <= '9')
+            return digits[character - '0'][row];
+        switch (character) {
+            case 'F': return f[row];
+            case 'P': return p[row];
+            case 'S': return s[row];
+            case 'R': return r[row];
+            case 'M': return m[row];
+            case '.': return row == 4 ? 2 : 0;
+            default: return 0;
+        }
+    }
+
+    static void OverlayPixel(Context* context, uint16_t* output, int32_t x,
+                             int32_t y, uint16_t color) {
+        if (x < 0 || y < 0 || x >= context->logical_width ||
+            y >= context->logical_height)
+            return;
+        const int32_t physical_x = context->logical_height - 1 - y;
+        const int32_t physical_y = x;
+        output[static_cast<size_t>(physical_y) * context->native_width +
+               physical_x] = __builtin_bswap16(color);
+    }
+
+    static void OverlayFill(Context* context, uint16_t* output, int32_t x,
+                            int32_t y, int32_t width, int32_t height,
+                            uint16_t color) {
+        for (int32_t yy = y; yy < y + height; ++yy)
+            for (int32_t xx = x; xx < x + width; ++xx)
+                OverlayPixel(context, output, xx, yy, color);
+    }
+
+    static void OverlayText(Context* context, uint16_t* output, int32_t x,
+                            int32_t y, const char* text, uint16_t color) {
+        constexpr int32_t kScale = 2;
+        for (; text != nullptr && *text != '\0'; ++text, x += 8) {
+            for (uint8_t row = 0; row < 5; ++row) {
+                const uint8_t bits = GlyphRow(*text, row);
+                for (uint8_t column = 0; column < 3; ++column)
+                    if ((bits & (1u << (2u - column))) != 0)
+                        OverlayFill(context, output, x + column * kScale,
+                                    y + row * kScale, kScale, kScale, color);
+            }
+        }
+    }
+
+    static void CompositePerformanceOverlay(Context* context, uint16_t* output) {
+        if (context == nullptr || output == nullptr ||
+            !context->performance_overlay_enabled.load(
+                std::memory_order_relaxed))
+            return;
+        char line[32];
+        const uint32_t fps = context->performance_fps_x10.load(
+            std::memory_order_relaxed);
+        const uint32_t rotate_us = context->performance_rotate_us.load(
+            std::memory_order_relaxed);
+        const uint32_t send_us = context->performance_send_us.load(
+            std::memory_order_relaxed);
+        snprintf(line, sizeof(line), "FPS%lu.%lu R%lu M%lu",
+                 static_cast<unsigned long>(fps / 10),
+                 static_cast<unsigned long>(fps % 10),
+                 static_cast<unsigned long>(rotate_us / 1000),
+                 static_cast<unsigned long>(send_us / 1000));
+        const int32_t width = static_cast<int32_t>(strlen(line)) * 8 + 8;
+        const int32_t x = (context->logical_width - width) / 2;
+        OverlayFill(context, output, x, 0, width, 16, 0x0000);
+        OverlayText(context, output, x + 4, 3, line, 0xffff);
     }
 
     static const char* FrameSourceName(uint8_t source) {
@@ -1197,6 +1321,15 @@ private:
             context->main_total_us / context->frame_count;
         const uint32_t average_worker_us = context->frame_count == 0 ? 0 :
             context->worker_total_us / context->frame_count;
+        const uint32_t overlay_fps_x10 = elapsed_us == 0 ? 0 :
+            static_cast<uint32_t>(context->frame_count * UINT64_C(10000000) /
+                                  elapsed_us);
+        const uint32_t overlay_rotate_us = context->frame_count == 0 ? 0 :
+            context->rotate_total_us / context->frame_count;
+        context->performance_fps_x10.store(overlay_fps_x10,
+                                           std::memory_order_relaxed);
+        context->performance_rotate_us.store(overlay_rotate_us,
+                                              std::memory_order_relaxed);
 
 #if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
         const uint32_t fps_x10 = elapsed_us == 0 ? 0 : static_cast<uint32_t>(
@@ -1217,6 +1350,8 @@ private:
             0, std::memory_order_relaxed);
         const uint32_t average_send_us = submitted == 0 ? 0 :
             send_total_us / submitted;
+        context->performance_send_us.store(average_send_us,
+                                           std::memory_order_relaxed);
         const UBaseType_t free_buffers =
             uxQueueMessagesWaiting(context->free_queue);
         const UBaseType_t ready_buffers =
@@ -1267,6 +1402,7 @@ private:
 
         AdaptSplit(context, average_main_us, average_worker_us);
 #if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
+        if (context->performance_log_enabled.load(std::memory_order_relaxed)) {
         ESP_LOGI(kTag,
                  "Parallel rotation: window=%" PRIu32 "ms frames=%" PRIu32
                  " (%" PRIu32 ".%u fps) areas=%" PRIu32
@@ -1330,6 +1466,7 @@ private:
                  input_metrics.sample_to_visible_max_us,
                  input_metrics.sample_to_visible_count);
 #endif
+        }
 #endif
 
         context->report_started_us = now_us;
@@ -1491,6 +1628,8 @@ private:
             context->rotate_max_us = rotate_us;
         }
 #endif
+
+        CompositePerformanceOverlay(context, output);
 
         uint8_t output_source = kFrameSourceLvgl;
         uint64_t output_frame_id = 0;

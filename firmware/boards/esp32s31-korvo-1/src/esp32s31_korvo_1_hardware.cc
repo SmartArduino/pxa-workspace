@@ -17,6 +17,7 @@
 #include <esp_lvgl_port.h>
 #include <esp_log.h>
 #include <pxa/pxa_host.h>
+#include <pxa_board_api.h>
 #include <pxsys/standard_system.h>
 #include <pxsys/reference_lvgl.h>
 #include <wifi_manager.h>
@@ -412,6 +413,11 @@ void Esp32S31Korvo1Hardware::FlushDisplay(lv_display_t* display,
          * regions. Surface-only updates deliberately invalidate one pixel,
          * avoiding an otherwise redundant full-screen LVGL redraw. */
         korvo_pxa_surface::ComposeFrame(pixels);
+        pxa_board_performance_note_frame();
+        pxa_board_performance_draw_rgb565(
+            reinterpret_cast<uint16_t*>(pixels), KORVO_DISPLAY_WIDTH,
+            KORVO_DISPLAY_HEIGHT, KORVO_DISPLAY_WIDTH, 0, 0,
+            KORVO_DISPLAY_WIDTH, KORVO_DISPLAY_HEIGHT, false);
         const int64_t flush_started_us = esp_timer_get_time();
         /* pixels is one of the panel frame buffers, so this only writes back
          * the CPU cache and queues the buffer for the next VSYNC; the RGB

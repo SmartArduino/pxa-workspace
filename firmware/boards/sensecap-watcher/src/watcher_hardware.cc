@@ -24,6 +24,7 @@
 #include <iot_knob.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
+#include <pxa_board_api.h>
 #include <pxsys/reference_lvgl.h>
 #include <pxsys/standard_system.h>
 #include <pxsys/system_status.h>
@@ -420,6 +421,12 @@ void SensecapWatcherHardware::FlushDisplay(lv_display_t* display,
     // leaves the LVGL task; the queued pixels are then fully owned by the
     // flush task and the Surface lease can be released immediately.
     watcher_pxa_surface::ComposeFlushArea(area, pixels);
+    if (lv_display_flush_is_last(display)) pxa_board_performance_note_frame();
+    pxa_board_performance_draw_rgb565(
+        reinterpret_cast<uint16_t*>(pixels), WATCHER_DISPLAY_WIDTH,
+        WATCHER_DISPLAY_HEIGHT, static_cast<uint32_t>(lv_area_get_width(area)),
+        area->x1, area->y1, static_cast<uint16_t>(lv_area_get_width(area)),
+        static_cast<uint16_t>(lv_area_get_height(area)), true);
     const FlushRequest request = {
         .display = display,
         .area = *area,

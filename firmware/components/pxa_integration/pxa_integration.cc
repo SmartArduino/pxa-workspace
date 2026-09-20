@@ -16,6 +16,7 @@
 #include <esp_lvgl_port.h>
 #include <pxa/pxa_host.h>
 #include <pxa/version.h>
+#include <pxadb/pxadb_service.h>
 #include <pxsys/esp_pxa_bridge.h>
 #include <pxsys/lvgl_renderer.h>
 #include <pxsys/reference_layout.h>
@@ -23,6 +24,7 @@
 #include <pxsys/standard_system.h>
 
 #include "pxa_board_api.h"
+#include "wifi_manager.h"
 #include "sdkconfig.h"
 
 namespace {
@@ -63,6 +65,45 @@ bool ReadMemoryInfo(void*, uint64_t* available_bytes, uint64_t* total_bytes) {
         heap_caps_get_total_size(internal_caps) +
         heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
     return *total_bytes != 0;
+}
+
+bool DeveloperGet(void* context, pxsys_reference_performance_option_t option) {
+    const auto* board = static_cast<const pxa_board_port_t*>(context);
+    if (option == PXSYS_REFERENCE_PXADB)
+        return pxa_board_performance_get(option);
+    return board != nullptr && board->performance_get != nullptr &&
+           board->performance_get(board->context, option);
+}
+
+bool DeveloperSet(void* context, pxsys_reference_performance_option_t option,
+                  bool enabled) {
+    const auto* board = static_cast<const pxa_board_port_t*>(context);
+    if (option == PXSYS_REFERENCE_PXADB) {
+        return pxadb::SetEnabled(enabled) &&
+               pxa_board_performance_set(option, enabled);
+    }
+    return board != nullptr && board->performance_set != nullptr &&
+           board->performance_set(board->context, option, enabled);
+}
+
+size_t ScanWifi(void*, pxsys_reference_wifi_network_t* networks,
+                size_t capacity) {
+    if (networks == nullptr || capacity == 0) return 0;
+    std::vector<WifiNetwork> found;
+    if (!WifiManager::GetInstance().ScanNetworks(&found)) return 0;
+    const size_t count = found.size() < capacity ? found.size() : capacity;
+    for (size_t index = 0; index < count; ++index) {
+        std::snprintf(networks[index].ssid, sizeof(networks[index].ssid), "%s",
+                      found[index].ssid.c_str());
+        networks[index].rssi = found[index].rssi;
+        networks[index].secured = found[index].authmode != WIFI_AUTH_OPEN;
+    }
+    return count;
+}
+
+bool ConnectWifi(void*, const char* ssid, const char* password) {
+    return ssid != nullptr && WifiManager::GetInstance().Connect(
+        ssid, password != nullptr ? password : "");
 }
 
 bool MountPxaStorage() {
@@ -457,6 +498,11 @@ bool CreateSystem(const pxa_board_port_t* board,
     ui_config.app_icon_context = g_bridge;
     ui_config.resolve_app_icon = ResolveAppIcon;
     ui_config.memory_info = ReadMemoryInfo;
+    ui_config.performance_context = const_cast<pxa_board_port_t*>(board);
+    ui_config.performance_get = DeveloperGet;
+    ui_config.performance_set = DeveloperSet;
+    ui_config.wifi_scan = ScanWifi;
+    ui_config.wifi_connect = ConnectWifi;
     status = pxsys_reference_lvgl_create(&ui_config, &g_reference_ui);
     if (status == PXSYS_STATUS_OK)
         status = pxsys_reference_lvgl_start(g_reference_ui);

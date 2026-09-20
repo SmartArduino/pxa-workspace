@@ -27,6 +27,13 @@ typedef struct {
                                           uint8_t enabled);
     pxsys_status_t (*set_level)(void* context, pxsys_level_control_t control,
                                 uint8_t percent);
+    /* Optional persistent diagnostics settings. The board owns the final
+     * framebuffer composition, so the system UI only calls this control API. */
+    bool (*performance_get)(void* context,
+                            pxsys_reference_performance_option_t option);
+    bool (*performance_set)(void* context,
+                            pxsys_reference_performance_option_t option,
+                            bool enabled);
     void (*system_ready)(void* context, pxsys_standard_system_t* system,
                          pxsys_reference_lvgl_t* reference_ui);
     void (*show_initial_frame)(void* context);
@@ -35,6 +42,17 @@ typedef struct {
 
 bool pxa_board_register(const pxa_board_port_t* port);
 const pxa_board_port_t* pxa_board_current(void);
+
+/* Shared NVS-backed diagnostics preference used by every board port. */
+bool pxa_board_performance_get(pxsys_reference_performance_option_t option);
+bool pxa_board_performance_set(pxsys_reference_performance_option_t option,
+                               bool enabled);
+void pxa_board_performance_note_frame(void);
+void pxa_board_performance_draw_rgb565(uint16_t* pixels, uint16_t viewport_width,
+                                       uint16_t viewport_height, uint32_t stride,
+                                       int32_t origin_x, int32_t origin_y,
+                                       uint16_t width, uint16_t height,
+                                       bool byte_swapped);
 
 #ifdef __cplusplus
 }

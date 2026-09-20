@@ -25,6 +25,7 @@ idf_component_register(
         esp_lcd_touch_cst826
         joltwallet__littlefs
         lvgl
+        nvs_flash
         pxa
         pxadb
         pxa_board_api
