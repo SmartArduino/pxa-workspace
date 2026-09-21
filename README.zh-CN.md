@@ -84,7 +84,7 @@ tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
 `pxadb logcat`，下一次更新前会自动暂时关闭它以释放 USB Serial/JTAG 连接：
 
 ```sh
-tools/dev.sh device my-app --port /dev/ttyACM0 --watch
+tools/dev.sh device my-app --port /dev/ttyACM0 --baud 2000000 --watch
 ```
 
 所有构建、部署和运行器输出同时保存在 `local/dev-logs/<mode>/<app-id>.log`。这是重新加载

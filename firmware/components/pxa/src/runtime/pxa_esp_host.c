@@ -20,6 +20,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_memory_utils.h"
 #include "esp_pthread.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -119,6 +120,14 @@
 #endif
 #ifndef CONFIG_PXA_RUNTIME_TASK_AFFINITY
 #define CONFIG_PXA_RUNTIME_TASK_AFFINITY tskNO_AFFINITY
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32S31)
+#define PXA_ESP_HOST_TARGET "esp32-s31"
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+#define PXA_ESP_HOST_TARGET "esp32-s3"
+#else
+#error "PXA ESP host target is not defined for this IDF target"
 #endif
 
 static size_t runtime_task_stack_size(void) {
@@ -237,6 +246,14 @@ static portMUX_TYPE g_system_request_lock = portMUX_INITIALIZER_UNLOCKED;
 static pxa_host_window_changed_fn g_window_changed_callback;
 static void *g_window_changed_context;
 static portMUX_TYPE g_window_changed_lock = portMUX_INITIALIZER_UNLOCKED;
+
+const lv_font_t *pxa_esp_host_ui_body_font(void) {
+    return g_host.ui_body_font;
+}
+
+const lv_font_t *pxa_esp_host_ui_title_font(void) {
+    return g_host.ui_title_font;
+}
 
 static lv_font_t *load_ui_font(uint16_t size,
                                 const lv_font_t *symbol_fallback) {
@@ -994,6 +1011,12 @@ static void host_log_heap_usage(const char *stage) {
     const size_t internal_free = heap_caps_get_free_size(internal_caps);
     const size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
     const size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+#ifdef MALLOC_CAP_EXEC
+    const uint32_t executable_caps = MALLOC_CAP_EXEC;
+#else
+    /* ESP32-S31 executes AOT code from its unified executable PSRAM range. */
+    const uint32_t executable_caps = MALLOC_CAP_SPIRAM;
+#endif
     ESP_LOGI(PXA_ESP_HOST_TAG,
              "Heap[%s]: SRAM used=%u free=%u total=%u min_free=%u "
              "largest=%u exec_free=%u exec_largest=%u; "
@@ -1003,8 +1026,8 @@ static void host_log_heap_usage(const char *stage) {
              (unsigned)internal_free, (unsigned)internal_total,
              (unsigned)heap_caps_get_minimum_free_size(internal_caps),
              (unsigned)heap_caps_get_largest_free_block(internal_caps),
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_EXEC),
-             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_EXEC),
+             (unsigned)heap_caps_get_free_size(executable_caps),
+             (unsigned)heap_caps_get_largest_free_block(executable_caps),
              (unsigned)(psram_total - psram_free), (unsigned)psram_free,
              (unsigned)psram_total,
              (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),
@@ -1493,11 +1516,10 @@ static bool provide_ui_alpha_plane(
     void *context, pxa_esp_surface_ui_alpha_plane_t *output) {
     pxa_lvgl_ui_alpha_plane_t plane;
     pxa_esp_host_t *host = (pxa_esp_host_t *)context;
-    if (output == NULL || host == NULL || host->ui_adapter == NULL ||
-        !pxa_lvgl_ui_alpha_plane(host->ui_adapter, &plane)) {
+    if (output == NULL || host == NULL || host->ui_adapter == NULL)
         return false;
-    }
     memset(output, 0, sizeof(*output));
+    if (!pxa_lvgl_ui_alpha_plane(host->ui_adapter, &plane)) return true;
     output->pixels = plane.pixels;
     output->alpha = plane.alpha;
     output->pixel_stride_bytes = plane.pixel_stride_bytes;
@@ -1508,6 +1530,7 @@ static bool provide_ui_alpha_plane(
     output->height = plane.height;
     output->opacity = 255;
     output->visible = 1;
+    output->revision = plane.revision;
     return true;
 }
 
@@ -2317,6 +2340,29 @@ static int start_verified(const char *identity) {
     services_config.cancel_work = cancel_work;
     services_config.work_epoch = g_host.work_epoch;
     services_config.color_scheme = g_host.color_scheme;
+    {
+        /* The UI service otherwise starts from a legacy 320x240 default, so
+         * Guests would lay out for the wrong panel. Seed it with the real
+         * display metrics and safe insets before any component binds. */
+        lv_display_t *display;
+        lv_lock();
+        display = lv_display_get_default();
+        if (display != NULL) {
+            services_config.primary_width =
+                (uint32_t)lv_display_get_horizontal_resolution(display);
+            services_config.primary_height =
+                (uint32_t)lv_display_get_vertical_resolution(display);
+        }
+        lv_unlock();
+        portENTER_CRITICAL(&g_process_state_lock);
+        if (g_host.window_insets_valid) {
+            services_config.safe_insets[0] = g_host.safe_insets.top;
+            services_config.safe_insets[1] = g_host.safe_insets.right;
+            services_config.safe_insets[2] = g_host.safe_insets.bottom;
+            services_config.safe_insets[3] = g_host.safe_insets.left;
+        }
+        portEXIT_CRITICAL(&g_process_state_lock);
+    }
     status = pxa_esp_services_initialize(
         &g_host.activation.services, &services_config, &services_result);
     if (status != PXA_STATUS_OK) {
@@ -2347,7 +2393,9 @@ static int start_verified(const char *identity) {
     }
     /* Activation plan + coordinator. */
     memset(&host_profile, 0, sizeof(host_profile));
-    host_profile.target = (pxa_bytes_t){(const uint8_t *)"esp32-s3", 8};
+    host_profile.target =
+        (pxa_bytes_t){(const uint8_t *)PXA_ESP_HOST_TARGET,
+                      sizeof(PXA_ESP_HOST_TARGET) - 1u};
     host_profile.engine = (pxa_bytes_t){(const uint8_t *)"wamr", 4};
     host_profile.engine_abi =
         (pxa_bytes_t){(const uint8_t *)PXSYS_WAMR_ENGINE_ABI,

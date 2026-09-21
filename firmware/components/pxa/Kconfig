@@ -1,5 +1,5 @@
 menu "PXA Development Apps"
-    depends on IDF_TARGET_ESP32S3 && !USE_EMOTE_MESSAGE_STYLE
+    depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32S31) && !USE_EMOTE_MESSAGE_STYLE
 
     config PXA_ENABLED
         bool "Enable PXA Draft 0.1 platform"

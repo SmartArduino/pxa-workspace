@@ -2,7 +2,9 @@
 #define PXA_SURFACE_TRANSFORM_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,6 +75,149 @@ static inline bool pxa_surface_upscale_rgb565_nearest(
         }
     }
     return true;
+}
+
+/* Blends a logical RGB565+A8 plane over an RGB565 destination. The plane may
+ * be clipped by any target edge. Transparent pixels are skipped so sparse HUD
+ * overlays do not read or write the destination framebuffer unnecessarily.
+ * Returns the number of destination pixels that were changed. */
+static inline uint32_t pxa_surface_blend_rgb565_a8(
+    uint16_t *destination, uint16_t destination_width,
+    uint16_t destination_height, uint32_t destination_stride_pixels,
+    const uint16_t *foreground, const uint8_t *alpha,
+    uint16_t foreground_width, uint16_t foreground_height,
+    uint32_t foreground_stride_pixels, uint32_t alpha_stride_bytes,
+    int32_t origin_x, int32_t origin_y, uint8_t opacity) {
+    int32_t left;
+    int32_t top;
+    int32_t right;
+    int32_t bottom;
+    uint32_t blended = 0;
+    int32_t y;
+    if (destination == NULL || foreground == NULL || alpha == NULL ||
+        destination_width == 0 || destination_height == 0 ||
+        foreground_width == 0 || foreground_height == 0 || opacity == 0 ||
+        destination_stride_pixels < destination_width ||
+        foreground_stride_pixels < foreground_width ||
+        alpha_stride_bytes < foreground_width)
+        return 0;
+    left = origin_x < 0 ? 0 : origin_x;
+    top = origin_y < 0 ? 0 : origin_y;
+    right = origin_x + (int32_t)foreground_width;
+    bottom = origin_y + (int32_t)foreground_height;
+    if (right > destination_width) right = destination_width;
+    if (bottom > destination_height) bottom = destination_height;
+    if (left >= right || top >= bottom) return 0;
+    for (y = top; y < bottom; ++y) {
+        const uint32_t source_y = (uint32_t)(y - origin_y);
+        const uint32_t source_x = (uint32_t)(left - origin_x);
+        const uint16_t *source_row = foreground +
+            source_y * foreground_stride_pixels + source_x;
+        const uint8_t *alpha_row = alpha +
+            source_y * alpha_stride_bytes + source_x;
+        uint16_t *destination_row = destination +
+            (uint32_t)y * destination_stride_pixels + (uint32_t)left;
+        int32_t x = left;
+        while (x < right) {
+            if (opacity == 255 && right - x >= 4 &&
+                (alpha_row[0] & alpha_row[1] &
+                 alpha_row[2] & alpha_row[3]) == 255) {
+                memcpy(destination_row, source_row,
+                       4 * sizeof(*destination_row));
+                source_row += 4;
+                alpha_row += 4;
+                destination_row += 4;
+                blended += 4;
+                x += 4;
+                continue;
+            }
+            if (right - x >= 4 &&
+                (alpha_row[0] | alpha_row[1] |
+                 alpha_row[2] | alpha_row[3]) == 0) {
+                source_row += 4;
+                alpha_row += 4;
+                destination_row += 4;
+                x += 4;
+                continue;
+            }
+            uint8_t effective_alpha = *alpha_row++;
+            uint16_t source;
+            uint16_t target;
+            uint16_t inverse;
+            uint16_t red;
+            uint16_t green;
+            uint16_t blue;
+            if (effective_alpha == 0) {
+                ++source_row;
+                ++destination_row;
+                ++x;
+                continue;
+            }
+            if (opacity != 255) {
+                effective_alpha = (uint8_t)(
+                    ((uint16_t)effective_alpha * opacity + 127u) / 255u);
+                if (effective_alpha == 0) {
+                    ++source_row;
+                    ++destination_row;
+                    ++x;
+                    continue;
+                }
+            }
+            source = *source_row++;
+            ++blended;
+            if (effective_alpha == 255) {
+                *destination_row++ = source;
+                ++x;
+                continue;
+            }
+            target = *destination_row;
+            inverse = (uint16_t)(255u - effective_alpha);
+            red = (uint16_t)(((source >> 11) * effective_alpha +
+                              (target >> 11) * inverse + 128u) >> 8);
+            green = (uint16_t)((((source >> 5) & 0x3fu) * effective_alpha +
+                                ((target >> 5) & 0x3fu) * inverse + 128u) >>
+                               8);
+            blue = (uint16_t)(((source & 0x1fu) * effective_alpha +
+                               (target & 0x1fu) * inverse + 128u) >> 8);
+            *destination_row++ =
+                (uint16_t)((red << 11) | (green << 5) | blue);
+            ++x;
+        }
+    }
+    return blended;
+}
+
+typedef struct {
+    uint16_t x;
+    uint16_t y;
+    uint16_t width;
+} pxa_surface_alpha_span_t;
+
+/* The alpha plane changes less often than the world. Cache its nontransparent
+ * horizontal runs so each world frame only visits visible UI pixels. */
+static inline size_t pxa_surface_alpha_spans(
+    const uint8_t *alpha, uint16_t width, uint16_t height,
+    uint32_t stride_bytes, pxa_surface_alpha_span_t *spans,
+    size_t capacity) {
+    size_t count = 0;
+    if (alpha == NULL || spans == NULL || stride_bytes < width)
+        return SIZE_MAX;
+    for (uint32_t y = 0; y < height; ++y) {
+        const uint8_t *row = alpha + (size_t)y * stride_bytes;
+        uint32_t x = 0;
+        while (x < width) {
+            while (x < width && row[x] == 0) ++x;
+            if (x == width) break;
+            const uint32_t first = x;
+            while (x < width && row[x] != 0) ++x;
+            if (count == capacity) return SIZE_MAX;
+            spans[count].x = (uint16_t)first;
+            spans[count].y = (uint16_t)y;
+            spans[count].width = (uint16_t)(x - first);
+            ++count;
+        }
+    }
+    return count;
 }
 
 /* Fused nearest-neighbor upscale, 270-degree logical-to-panel rotation and

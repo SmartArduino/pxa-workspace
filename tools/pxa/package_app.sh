@@ -12,7 +12,7 @@ Environment:
   PXSYS_ROOT             Imported pxa-system checkout (default: deps/pxa-system)
   PXA_APP_SOURCE_ROOT    External App source root; it must contain <app-id>/
   PXA_SIGNING_KEY        Signing key accepted by the imported package tool
-  PXA_PACKAGE_TARGET     Package target; esp32s3 or simulator (default: board target)
+  PXA_PACKAGE_TARGET     Package target; esp32s3, esp32s31, or simulator (default: board target)
 EOF
 }
 
@@ -46,9 +46,9 @@ fi
 board_target="$(sed -nE 's/^[[:space:]]*set\(PXA_BOARD_TARGET[[:space:]]+"([^"]+)"\).*/\1/p' \
   "$board_metadata" | head -n 1)"
 package_target="${PXA_PACKAGE_TARGET:-$board_target}"
-if [[ "$package_target" != "esp32s3" && "$package_target" != "simulator" ]]; then
+if [[ "$package_target" != "esp32s3" && "$package_target" != "esp32s31" && "$package_target" != "simulator" ]]; then
   echo "PXA package target is unsupported: $package_target" >&2
-  echo "Set PXA_PACKAGE_TARGET to esp32s3 or simulator." >&2
+  echo "Set PXA_PACKAGE_TARGET to esp32s3, esp32s31, or simulator." >&2
   exit 2
 fi
 

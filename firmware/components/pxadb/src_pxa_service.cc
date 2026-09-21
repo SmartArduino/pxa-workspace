@@ -16,7 +16,7 @@
 
 #include "sdkconfig.h"
 
-#if CONFIG_PXADB_ENABLED && CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_PXADB_ENABLED && (CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32S31)
 
 #if CONFIG_PXADB_TRANSPORT_UART
 #include <driver/gpio.h>
@@ -39,7 +39,7 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <mbedtls/base64.h>
-#include <mbedtls/sha256.h>
+#include <psa/crypto.h>
 
 #if CONFIG_PXADB_TEST_CONTROL
 #include "pxadb_input_mailbox.h"
@@ -461,27 +461,31 @@ bool IsSha256Hex(const char* value) {
 
 bool FileSha256Hex(const char* path, char output[65]) {
     FILE* file;
-    mbedtls_sha256_context context;
+    psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
     uint8_t bytes[512] = {};
     uint8_t digest[32] = {};
+    size_t digest_length = 0;
     bool success;
     if (path == nullptr || output == nullptr) return false;
     file = fopen(path, "rb");
     if (file == nullptr) return false;
-    mbedtls_sha256_init(&context);
-    success = mbedtls_sha256_starts(&context, 0) == 0;
+    success = psa_hash_setup(&operation, PSA_ALG_SHA_256) == PSA_SUCCESS;
     while (success) {
         const size_t read = fread(bytes, 1, sizeof(bytes), file);
-        if (read > 0) success = mbedtls_sha256_update(&context, bytes, read) == 0;
+        if (read > 0)
+            success = psa_hash_update(&operation, bytes, read) == PSA_SUCCESS;
         if (read < sizeof(bytes)) {
             success = success && ferror(file) == 0;
             break;
         }
     }
-    success = success && mbedtls_sha256_finish(&context, digest) == 0;
-    mbedtls_sha256_free(&context);
+    if (success)
+        success = psa_hash_finish(&operation, digest, sizeof(digest),
+                                  &digest_length) == PSA_SUCCESS;
+    else
+        psa_hash_abort(&operation);
     fclose(file);
-    if (!success) return false;
+    if (!success || digest_length != sizeof(digest)) return false;
     for (size_t index = 0; index < sizeof(digest); ++index) {
         snprintf(output + index * 2, 65 - index * 2, "%02x", digest[index]);
     }
@@ -1296,13 +1300,12 @@ void HandleInput(unsigned long sequence, char* const* arguments,
 
 bool Sha256Bytes(const uint8_t* bytes, size_t length, char output[65]) {
     uint8_t digest[32] = {};
-    mbedtls_sha256_context context;
-    mbedtls_sha256_init(&context);
-    const bool success = mbedtls_sha256_starts(&context, 0) == 0 &&
-                         mbedtls_sha256_update(&context, bytes, length) == 0 &&
-                         mbedtls_sha256_finish(&context, digest) == 0;
-    mbedtls_sha256_free(&context);
-    if (!success) return false;
+    size_t digest_length = 0;
+    if (bytes == nullptr || output == nullptr) return false;
+    if (psa_hash_compute(PSA_ALG_SHA_256, bytes, length, digest,
+                         sizeof(digest), &digest_length) != PSA_SUCCESS)
+        return false;
+    if (digest_length != sizeof(digest)) return false;
     for (size_t index = 0; index < sizeof(digest); ++index) {
         snprintf(output + index * 2, 65 - index * 2, "%02x", digest[index]);
     }

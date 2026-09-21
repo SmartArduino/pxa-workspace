@@ -57,11 +57,16 @@ def stream_command(command: list[str], log: LogWriter) -> None:
         bufsize=1,
     )
     assert process.stdout is not None
+    last_line = ""
     for line in process.stdout:
         log.write(line)
+        if line.strip():
+            last_line = line.strip()
     status = process.wait()
     if status:
-        raise DevError(f"command failed with exit code {status}: {command_label(command)}")
+        raise DevError(
+            f"command failed with exit code {status}: {command_label(command)}; {last_line}"
+        )
 
 
 def stop_process(process: subprocess.Popen[str] | None, label: str, log: LogWriter) -> None:
@@ -161,10 +166,14 @@ class Developer:
             command.extend(["--simulator", self.args.profile])
         elif self.args.port:
             command.extend(["--port", self.args.port])
+        if self.args.mode == "device" and self.args.baud:
+            command.extend(["--baud", str(self.args.baud)])
         return command
 
     def build(self) -> None:
-        target = "simulator" if self.args.mode == "sim" else "esp32s3"
+        target = "simulator" if self.args.mode == "sim" else (
+            "esp32s31" if self.args.board == "esp32s31-korvo-1" else "esp32s3"
+        )
         command = [
             str(APP_TOOL), "build", self.app_id,
             "--board", self.args.board,
@@ -198,7 +207,16 @@ class Developer:
                 self.log,
             )
         else:
-            stream_command(self.pxadb("package", "run", self.package_id), self.log)
+            # The catalog is synchronized on the LVGL owner after installation.
+            # Give that owner a bounded window to register the new package.
+            for attempt in range(10):
+                try:
+                    stream_command(self.pxadb("package", "run", self.package_id), self.log)
+                    break
+                except DevError as error:
+                    if "package_launch_failed" not in str(error) or attempt == 9:
+                        raise
+                    time.sleep(0.3)
             if not self.args.no_logcat:
                 self.logcat = start_logged_process(
                     self.pxadb("logcat"), "logcat", self.log
@@ -255,6 +273,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--board", default="pai-touch", help="PXA board profile (default: pai-touch)")
     parser.add_argument("--profile", default="pai-touch", help="simulator profile (default: pai-touch)")
     parser.add_argument("--port", help="PXADB USB Serial/JTAG port for device mode")
+    parser.add_argument("--baud", type=int, help="PXADB UART baud rate for device mode")
     parser.add_argument("--watch", action="store_true", help="rebuild and restart after source changes")
     parser.add_argument("--no-logcat", action="store_true", help="do not start device logcat after deployment")
     parser.add_argument("--log-file", help="write combined tool and runtime output to this file")
@@ -265,8 +284,12 @@ def parse_arguments() -> argparse.Namespace:
         parser.error("--interval must be positive and --debounce must not be negative")
     if args.mode == "sim" and args.port:
         parser.error("--port is only valid in device mode")
+    if args.mode == "sim" and args.baud:
+        parser.error("--baud is only valid in device mode")
     if args.mode == "device" and args.profile != "pai-touch":
         parser.error("--profile is only valid in sim mode")
+    if args.baud is not None and args.baud <= 0:
+        parser.error("--baud must be positive")
     return args
 
 

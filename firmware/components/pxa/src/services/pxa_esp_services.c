@@ -576,8 +576,6 @@ static pxa_status_t initialize_bounded_services(
     game_render_config.struct_size = sizeof(game_render_config);
     game_render_config.max_contexts = 1;
     game_render_config.max_contexts_per_component = 1;
-    game_render_config.max_width = 320;
-    game_render_config.max_height = 240;
     game_render_config.min_buffer_count = 2;
     game_render_config.max_buffer_count = 3;
     game_render_config.backend = game_render_backend;
@@ -780,8 +778,10 @@ static pxa_status_t initialize_window_ui(
                       PXA_UI_FEATURE_RGB565_BITMAP |
                       PXA_UI_FEATURE_CONTROLLER_INPUT |
                       PXA_UI_FEATURE_CANVAS_STREAM_IO;
-    config.primary_width = 320;
-    config.primary_height = 240;
+    config.primary_width = host->primary_width != 0 ? host->primary_width : 320;
+    config.primary_height = host->primary_height != 0 ? host->primary_height : 240;
+    for (uint8_t index = 0; index < 4; ++index)
+        config.safe_insets[index] = host->safe_insets[index];
     config.color_scheme = host->color_scheme;
     workspace_size = pxa_ui_service_workspace_size();
     status = allocate_workspace(host, workspace_size, &services->ui_workspace,

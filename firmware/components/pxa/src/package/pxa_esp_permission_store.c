@@ -16,7 +16,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "mbedtls/sha256.h"
+#include "mbedtls/md.h"
 #include "nvs.h"
 #include "pxa/esp/pxa_esp_mbedtls.h"
 
@@ -193,32 +193,35 @@ static void bytes_to_hex(const uint8_t *bytes, size_t size, char *output) {
     output[size * 2] = '\0';
 }
 
-static int sha256_begin(mbedtls_sha256_context *sha) {
-    mbedtls_sha256_init(sha);
-    if (mbedtls_sha256_starts(sha, 0) != 0) {
-        mbedtls_sha256_free(sha);
+static int sha256_begin(mbedtls_md_context_t *sha) {
+    const mbedtls_md_info_t *info =
+        mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    mbedtls_md_init(sha);
+    if (info == NULL || mbedtls_md_setup(sha, info, 0) != 0 ||
+        mbedtls_md_starts(sha) != 0) {
+        mbedtls_md_free(sha);
         return 0;
     }
     return 1;
 }
 
-static int sha256_finish(mbedtls_sha256_context *sha, uint8_t *digest) {
-    int success = mbedtls_sha256_finish(sha, digest) == 0;
-    mbedtls_sha256_free(sha);
+static int sha256_finish(mbedtls_md_context_t *sha, uint8_t *digest) {
+    int success = mbedtls_md_finish(sha, digest) == 0;
+    mbedtls_md_free(sha);
     return success;
 }
 
 static int hash_identity(pxa_bytes_t identity, uint8_t *digest) {
-    mbedtls_sha256_context sha;
+    mbedtls_md_context_t sha;
     if (!sha256_begin(&sha)) return 0;
-    if (mbedtls_sha256_update(&sha, identity.data, identity.size) != 0) {
-        mbedtls_sha256_free(&sha);
+    if (mbedtls_md_update(&sha, identity.data, identity.size) != 0) {
+        mbedtls_md_free(&sha);
         return 0;
     }
     return sha256_finish(&sha, digest);
 }
 
-static int hash_tuple_field(mbedtls_sha256_context *sha, uint8_t tag,
+static int hash_tuple_field(mbedtls_md_context_t *sha, uint8_t tag,
                             pxa_bytes_t value) {
     uint8_t prefix[5];
     uint32_t size;
@@ -229,19 +232,19 @@ static int hash_tuple_field(mbedtls_sha256_context *sha, uint8_t tag,
     size = (uint32_t)value.size;
     prefix[0] = tag;
     write_u32_le(prefix + 1, size);
-    if (mbedtls_sha256_update(sha, prefix, sizeof(prefix)) != 0) return 0;
+    if (mbedtls_md_update(sha, prefix, sizeof(prefix)) != 0) return 0;
     return value.size == 0 ||
-           mbedtls_sha256_update(sha, value.data, value.size) == 0;
+           mbedtls_md_update(sha, value.data, value.size) == 0;
 }
 
 static int derive_tuple_digest(pxa_bytes_t name, pxa_bytes_t scope,
                                uint8_t *tuple_digest) {
     uint8_t digest[PXA_ESP_MBEDTLS_SHA256_BYTES];
-    mbedtls_sha256_context sha;
+    mbedtls_md_context_t sha;
     if (!sha256_begin(&sha)) return 0;
     if (!hash_tuple_field(&sha, 1, name) ||
         !hash_tuple_field(&sha, 2, scope)) {
-        mbedtls_sha256_free(&sha);
+        mbedtls_md_free(&sha);
         return 0;
     }
     if (!sha256_finish(&sha, digest)) {
@@ -254,15 +257,15 @@ static int derive_tuple_digest(pxa_bytes_t name, pxa_bytes_t scope,
 static int derive_legacy_key(pxa_bytes_t identity, pxa_bytes_t name,
                              pxa_bytes_t scope, char *key) {
     uint8_t digest[PXA_ESP_MBEDTLS_SHA256_BYTES];
-    mbedtls_sha256_context sha;
+    mbedtls_md_context_t sha;
     if (!sha256_begin(&sha)) return 0;
     if ((identity.size != 0 &&
-         mbedtls_sha256_update(&sha, identity.data, identity.size) != 0) ||
+         mbedtls_md_update(&sha, identity.data, identity.size) != 0) ||
         (name.size != 0 &&
-         mbedtls_sha256_update(&sha, name.data, name.size) != 0) ||
+         mbedtls_md_update(&sha, name.data, name.size) != 0) ||
         (scope.size != 0 &&
-         mbedtls_sha256_update(&sha, scope.data, scope.size) != 0)) {
-        mbedtls_sha256_free(&sha);
+         mbedtls_md_update(&sha, scope.data, scope.size) != 0)) {
+        mbedtls_md_free(&sha);
         return 0;
     }
     if (!sha256_finish(&sha, digest)) {
@@ -313,16 +316,16 @@ static void *allocate_file_buffer(size_t size) {
 static int calculate_checksum(const uint8_t *bytes, size_t size,
                               uint8_t *checksum) {
     uint8_t digest[PXA_ESP_MBEDTLS_SHA256_BYTES];
-    mbedtls_sha256_context sha;
+    mbedtls_md_context_t sha;
     if (size < PXA_ESP_PERMISSION_HEADER_BYTES || !sha256_begin(&sha)) {
         return 0;
     }
-    if (mbedtls_sha256_update(&sha, bytes, 16) != 0 ||
+    if (mbedtls_md_update(&sha, bytes, 16) != 0 ||
         (size > PXA_ESP_PERMISSION_HEADER_BYTES &&
-         mbedtls_sha256_update(
+         mbedtls_md_update(
              &sha, bytes + PXA_ESP_PERMISSION_HEADER_BYTES,
              size - PXA_ESP_PERMISSION_HEADER_BYTES) != 0)) {
-        mbedtls_sha256_free(&sha);
+        mbedtls_md_free(&sha);
         return 0;
     }
     if (!sha256_finish(&sha, digest)) {

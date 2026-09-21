@@ -7,6 +7,8 @@
 
 #include "pxa/pxa_host.h"
 
+typedef struct _lv_font_t lv_font_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -74,6 +76,8 @@ void pxa_esp_host_set_audio_sink(pxa_host_audio_submit_fn submit,
 void pxa_esp_host_set_audio_asset_sink(
     pxa_host_audio_asset_play_fn play,
     pxa_host_audio_asset_control_fn control, void *context);
+const lv_font_t *pxa_esp_host_ui_body_font(void);
+const lv_font_t *pxa_esp_host_ui_title_font(void);
 
 #ifdef __cplusplus
 }

@@ -26,6 +26,7 @@ typedef struct {
     uint16_t height;
     uint8_t opacity;
     uint8_t visible;
+    uint64_t revision;
 } pxa_esp_surface_ui_alpha_plane_t;
 
 /* A provider is called after a Surface frame lease is acquired. Its plane must
@@ -58,6 +59,7 @@ typedef struct {
     uint16_t height;
     int32_t x;
     int32_t y;
+    uint16_t format;
     uint8_t visible;
 } pxa_esp_surface_present_info_t;
 

@@ -34,6 +34,7 @@ pxsys_standard_system_t* g_system;
 pxsys_lvgl_renderer_t* g_renderer;
 pxsys_esp_pxa_bridge_t* g_bridge;
 pxsys_reference_lvgl_t* g_reference_ui;
+lv_obj_t* g_reference_ui_viewport;
 lv_font_t* g_typography_fonts[PXSYS_TYPOGRAPHY_ROLE_COUNT];
 uint32_t g_display_width = 0;
 uint32_t g_display_height = 0;
@@ -54,6 +55,43 @@ const lv_font_t* const kTypographySymbolFallbacks[
 
 void* Allocate(void*, size_t size) { return std::malloc(size); }
 void Release(void*, void* memory) { std::free(memory); }
+
+lv_obj_t* CreateReferenceUiViewport(lv_display_t* display,
+                                    uint32_t logical_width,
+                                    uint32_t logical_height) {
+    if (display == nullptr) return nullptr;
+    lv_obj_t* const layer = lv_display_get_layer_top(display);
+    if (layer == nullptr) return nullptr;
+    const int32_t panel_width = lv_display_get_horizontal_resolution(display);
+    const int32_t panel_height = lv_display_get_vertical_resolution(display);
+    if (logical_width == static_cast<uint32_t>(panel_width) &&
+        logical_height == static_cast<uint32_t>(panel_height))
+        return layer;
+    if (logical_width > static_cast<uint32_t>(panel_width) ||
+        logical_height > static_cast<uint32_t>(panel_height)) {
+        ESP_LOGE(kTag, "Logical UI %lux%lu exceeds panel %ldx%ld",
+                 static_cast<unsigned long>(logical_width),
+                 static_cast<unsigned long>(logical_height),
+                 static_cast<long>(panel_width), static_cast<long>(panel_height));
+        return nullptr;
+    }
+
+    lv_obj_t* const viewport = lv_obj_create(layer);
+    if (viewport == nullptr) return nullptr;
+    lv_obj_remove_style_all(viewport);
+    lv_obj_set_scrollable(viewport, false);
+    lv_obj_set_clickable(viewport, false);
+    lv_obj_set_size(viewport, static_cast<lv_coord_t>(logical_width),
+                    static_cast<lv_coord_t>(logical_height));
+    lv_obj_set_pos(viewport,
+                   (panel_width - static_cast<int32_t>(logical_width)) / 2,
+                   (panel_height - static_cast<int32_t>(logical_height)) / 2);
+    ESP_LOGI(kTag, "System UI viewport %lux%lu centered in %ldx%ld panel",
+             static_cast<unsigned long>(logical_width),
+             static_cast<unsigned long>(logical_height),
+             static_cast<long>(panel_width), static_cast<long>(panel_height));
+    return viewport;
+}
 
 bool ReadMemoryInfo(void*, uint64_t* available_bytes, uint64_t* total_bytes) {
     if (available_bytes == nullptr || total_bytes == nullptr) return false;
@@ -453,7 +491,12 @@ bool CreateSystem(const pxa_board_port_t* board,
     pxsys_reference_lvgl_config_t ui_config;
     pxsys_reference_lvgl_config_init(&ui_config);
     ui_config.system = g_system;
-    ui_config.parent = lv_display_get_layer_top(display);
+    ui_config.parent = CreateReferenceUiViewport(
+        display, system_config.initial_display.width,
+        system_config.initial_display.height);
+    if (ui_config.parent == nullptr) return false;
+    if (ui_config.parent != lv_display_get_layer_top(display))
+        g_reference_ui_viewport = ui_config.parent;
     for (size_t i = 0; i < PXSYS_TYPOGRAPHY_ROLE_COUNT; ++i) {
         ui_config.fonts[i] = LoadFont(profile->font_path,
                                       kTypographyFontSizes[i],
@@ -584,6 +627,10 @@ extern "C" void pxa_integration_stop(void) {
     if (g_reference_ui != nullptr) {
         (void)pxsys_reference_lvgl_destroy(g_reference_ui);
         g_reference_ui = nullptr;
+    }
+    if (g_reference_ui_viewport != nullptr) {
+        lv_obj_delete(g_reference_ui_viewport);
+        g_reference_ui_viewport = nullptr;
     }
     if (g_bridge != nullptr) {
         (void)pxsys_esp_pxa_bridge_destroy(g_bridge);

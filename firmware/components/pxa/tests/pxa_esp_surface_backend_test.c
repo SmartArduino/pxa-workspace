@@ -67,6 +67,13 @@ static bool ui_alpha_plane(void *context,
     return true;
 }
 
+static bool empty_ui_alpha_plane(void *context,
+                                 pxa_esp_surface_ui_alpha_plane_t *plane) {
+    assert(context == &notifications);
+    memset(plane, 0, sizeof(*plane));
+    return true;
+}
+
 int main(void) {
     pxa_surface_backend_t backend;
     pxa_game_render_backend_t game_backend;
@@ -162,6 +169,12 @@ int main(void) {
     assert(!pxa_esp_surface_try_resume_direct_scanout(1));
     pxa_esp_surface_require_composition();
     assert(notifications == 11 && pxa_esp_surface_composition_required());
+    g_ui_alpha_provider = empty_ui_alpha_plane;
+    g_ui_alpha_provider_context = &notifications;
+    assert(!pxa_esp_surface_composition_required());
+    g_ui_alpha_provider = NULL;
+    g_ui_alpha_provider_context = NULL;
+    assert(pxa_esp_surface_composition_required());
 
     assert(pxa_esp_surface_acquire_latest(&frame));
     assert(frame.frame_id == 2 && frame.x == 2 && frame.y == 3 &&

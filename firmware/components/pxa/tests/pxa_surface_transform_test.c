@@ -104,6 +104,92 @@ static void check_capture_round_trip(void) {
                       4 * sizeof(uint16_t)) == 0);
 }
 
+static void check_alpha_blend(void) {
+    uint16_t destination[12] = {
+        0x001f, 0x001f, 0x001f, 0x001f,
+        0x001f, 0x001f, 0x001f, 0x001f,
+        0x001f, 0x001f, 0x001f, 0x001f,
+    };
+    const uint16_t foreground[6] = {
+        0xf800, 0x07e0, 0xffff,
+        0xffff, 0xf800, 0x07e0,
+    };
+    const uint8_t alpha[6] = {0, 255, 128, 255, 0, 255};
+    uint16_t clipped[4] = {0, 0, 0, 0};
+    assert(pxa_surface_blend_rgb565_a8(
+               destination, 4, 3, 4, foreground, alpha, 3, 2, 3, 3,
+               1, 1, 255) == 4);
+    assert(destination[5] == 0x001f);
+    assert(destination[6] == 0x07e0);
+    assert(destination[7] == 0x841f);
+    assert(destination[9] == 0xffff);
+    assert(destination[10] == 0x001f);
+    assert(destination[11] == 0x07e0);
+
+    assert(pxa_surface_blend_rgb565_a8(
+               clipped, 2, 2, 2, foreground, alpha, 3, 2, 3, 3,
+               -1, 1, 255) == 2);
+    assert(clipped[2] == 0x07e0 && clipped[3] == 0x8410);
+    assert(pxa_surface_blend_rgb565_a8(
+               clipped, 2, 2, 2, foreground, alpha, 3, 2, 3, 3,
+               0, 0, 0) == 0);
+    {
+        uint16_t sparse_destination[12];
+        const uint16_t sparse_foreground[16] = {
+            0xf800, 0xf800, 0xf800, 0xf800,
+            0xf800, 0xf800, 0xf800, 0xf800,
+            0xf800, 0xf800, 0xf800, 0xf800,
+            0xf800, 0xf800, 0xf800, 0xf800,
+        };
+        const uint8_t sparse_alpha[8] = {0, 0, 0, 0, 0, 0, 0, 255};
+        memset(sparse_destination, 0, sizeof(sparse_destination));
+        assert(pxa_surface_blend_rgb565_a8(
+                   sparse_destination, 4, 3, 4,
+                   sparse_foreground + 1, sparse_alpha, 4, 2, 8, 4,
+                   0, 1, 255) == 1);
+        assert(sparse_destination[11] == 0xf800);
+        assert(sparse_destination[7] == 0);
+    }
+}
+
+static void check_alpha_spans(void) {
+    const uint8_t alpha[12] = {
+        0, 255, 128, 0, 0, 255,
+        255, 255, 0, 0, 128, 0,
+    };
+    pxa_surface_alpha_span_t spans[4];
+    assert(pxa_surface_alpha_spans(alpha, 5, 2, 6, spans, 4) == 3);
+    assert(spans[0].x == 1 && spans[0].y == 0 && spans[0].width == 2);
+    assert(spans[1].x == 0 && spans[1].y == 1 && spans[1].width == 2);
+    assert(spans[2].x == 4 && spans[2].y == 1 && spans[2].width == 1);
+    assert(pxa_surface_alpha_spans(alpha, 5, 2, 6, spans, 2) == SIZE_MAX);
+    assert(pxa_surface_alpha_spans(alpha, 5, 2, 4, spans, 4) == SIZE_MAX);
+    {
+        uint16_t colors[12];
+        uint16_t full[12];
+        uint16_t sparse[12];
+        const size_t count = pxa_surface_alpha_spans(
+            alpha, 5, 2, 6, spans, 4);
+        for (size_t index = 0; index < 12; ++index) {
+            colors[index] = 0xf800;
+            full[index] = sparse[index] = 0x001f;
+        }
+        assert(pxa_surface_blend_rgb565_a8(
+                   full, 4, 3, 4, colors, alpha, 5, 2, 6, 6,
+                   -1, 1, 255) == 4);
+        for (size_t index = 0; index < count; ++index) {
+            const pxa_surface_alpha_span_t span = spans[index];
+            (void)pxa_surface_blend_rgb565_a8(
+                sparse, 4, 3, 4,
+                colors + (size_t)span.y * 6 + span.x,
+                alpha + (size_t)span.y * 6 + span.x,
+                span.width, 1, span.width, span.width,
+                -1 + span.x, 1 + span.y, 255);
+        }
+        assert(memcmp(full, sparse, sizeof(full)) == 0);
+    }
+}
+
 int main(void) {
     assert(pxa_surface_integer_scale(296, 240, 296, 240) == 1);
     assert(pxa_surface_integer_scale(148, 120, 296, 240) == 2);
@@ -131,6 +217,8 @@ int main(void) {
     check_upscale(2);
     check_upscale(4);
     check_capture_round_trip();
+    check_alpha_blend();
+    check_alpha_spans();
     assert(!pxa_surface_transform_rgb565_270_columns(
         NULL, NULL, 4, 3, 0, 4, 2, false));
     assert(!pxa_surface_upscale_rgb565_nearest(

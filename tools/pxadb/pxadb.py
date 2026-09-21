@@ -820,6 +820,14 @@ class NormalFsClient:
             chunk_size = 192
         if binary_transfer:
             chunk_size = min(64 * 1024, chunk_size)
+        else:
+            try:
+                requested_chunk = int(os.environ.get("PXADB_UART_UPLOAD_CHUNK", "64"))
+            except ValueError as error:
+                raise PxaDbError("PXADB_UART_UPLOAD_CHUNK must be a positive integer") from error
+            if requested_chunk <= 0:
+                raise PxaDbError("PXADB_UART_UPLOAD_CHUNK must be a positive integer")
+            chunk_size = min(chunk_size, requested_chunk)
         if chunk_size <= 0:
             chunk_size = 192
         last_progress = -1

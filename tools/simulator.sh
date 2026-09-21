@@ -223,9 +223,10 @@ cmake_bin="${CMAKE:-cmake}"
 product_args=("${profile_args[0]}" "${profile_args[1]}"
               "${profile_args[2]}" "${profile_args[3]}")
 for ((profile_index = 0; profile_index < ${#profile_args[@]}; ++profile_index)); do
-  if [[ "${profile_args[profile_index]}" == "--locale" ]]; then
+  if [[ "${profile_args[profile_index]}" == "--safe-insets" ]]; then
+    product_args+=("--safe-insets" "${profile_args[profile_index + 1]}")
+  elif [[ "${profile_args[profile_index]}" == "--locale" ]]; then
     product_args+=("--locale" "${profile_args[profile_index + 1]}")
-    break
   fi
 done
 if [[ "$mode" == "ui" ]]; then

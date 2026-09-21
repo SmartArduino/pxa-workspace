@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include <driver/ppa.h>
+#include <esp_heap_caps.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_rgb.h>
 #include <esp_lvgl_port.h>
@@ -13,6 +14,7 @@
 #include <freertos/task.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_surface_transform.h>
+#include <pxa_board_api.h>
 
 #include "esp32s31_korvo_1_config.h"
 
@@ -26,15 +28,40 @@ constexpr int32_t kLockTimeoutMs = 100;
 constexpr uint32_t kVsyncTimeoutMs = 100;
 constexpr size_t kFrameBytes =
     KORVO_DISPLAY_WIDTH * KORVO_DISPLAY_HEIGHT * sizeof(uint16_t);
+constexpr size_t kArgbFrameBytes =
+    KORVO_DISPLAY_WIDTH * KORVO_DISPLAY_HEIGHT * sizeof(lv_color32_t);
+constexpr size_t kMaxUiSpans = 16384;
+constexpr uint32_t kCpuUiBlendPixelThreshold =
+    KORVO_DISPLAY_WIDTH * KORVO_DISPLAY_HEIGHT / 4;
 
 lv_display_t* g_display = nullptr;
 TaskHandle_t g_presenter_task = nullptr;
 esp_lcd_panel_handle_t g_panel = nullptr;
 SemaphoreHandle_t g_vsync_semaphore = nullptr;
 ppa_client_handle_t g_ppa_client = nullptr;
-void* g_frame_buffers[2] = {};
+ppa_client_handle_t g_ppa_blend_client = nullptr;
+pxa_surface_alpha_span_t* g_ui_spans = nullptr;
+lv_color32_t* g_ui_argb = nullptr;
+uint64_t g_ui_spans_revision = 0;
+uint64_t g_ui_argb_revision = 0;
+int32_t g_ui_argb_x = 0;
+int32_t g_ui_argb_y = 0;
+uint16_t g_ui_argb_width = 0;
+uint16_t g_ui_argb_height = 0;
+uint8_t g_ui_argb_opacity = 0;
+size_t g_ui_span_count = 0;
+bool g_ui_spans_overflow = false;
+uint32_t g_ui_visible_pixels = 0;
+void* g_frame_buffers[3] = {};
 uint8_t g_direct_buffer_index = 0;
+uint8_t g_direct_displayed_index = 0;
+uint8_t g_direct_pending_index = 0;
+bool g_direct_has_displayed_buffer = false;
+bool g_direct_submission_pending = false;
+uint64_t g_direct_pending_input_timestamp_us = 0;
 bool g_direct_active = false;
+DirectScanoutTransitionCallback g_transition_callback = nullptr;
+void* g_transition_context = nullptr;
 uint64_t g_last_direct_frame_id = 0;
 lv_area_t g_last_present_area = {};
 bool g_has_last_present_area = false;
@@ -42,8 +69,12 @@ bool g_has_last_present_area = false;
 int64_t g_compose_report_started_us = 0;
 uint32_t g_compose_frames = 0;
 uint32_t g_compose_ppa_frames = 0;
+uint32_t g_compose_ui_ppa_frames = 0;
 uint64_t g_compose_total_us = 0;
 uint32_t g_compose_max_us = 0;
+uint64_t g_compose_ui_total_us = 0;
+uint32_t g_compose_ui_max_us = 0;
+uint64_t g_compose_ui_pixels = 0;
 
 int64_t g_direct_report_started_us = 0;
 uint32_t g_direct_frames = 0;
@@ -225,8 +256,7 @@ bool TryPpaScaleToBuffer(const pxa_esp_surface_frame_t& frame,
         frame.format != PXA_SURFACE_FORMAT_RGB565 ||
         frame.stride_bytes != static_cast<uint32_t>(frame.width) *
                                   sizeof(uint16_t) ||
-        frame.opaque_ui_region_count != 0 ||
-        (frame.ui_alpha_plane.visible && frame.ui_alpha_plane.opacity != 0))
+        frame.opaque_ui_region_count != 0)
         return false;
     const SurfaceGeometry geometry = ResolveGeometry(
         frame.width, frame.height, frame.x, frame.y);
@@ -252,9 +282,246 @@ bool TryPpaScaleToBuffer(const pxa_esp_surface_frame_t& frame,
     return ppa_do_scale_rotate_mirror(g_ppa_client, &config) == ESP_OK;
 }
 
+uint8_t Expand5(uint16_t value) {
+    return static_cast<uint8_t>((value << 3) | (value >> 2));
+}
+
+uint8_t Expand6(uint16_t value) {
+    return static_cast<uint8_t>((value << 2) | (value >> 4));
+}
+
+bool RefreshUiSpans(const pxa_esp_surface_ui_alpha_plane_t& plane) {
+    if (g_ui_spans == nullptr || plane.revision == 0 ||
+        plane.alpha == nullptr || plane.alpha_stride_bytes < plane.width)
+        return false;
+    if (plane.revision == g_ui_spans_revision)
+        return !g_ui_spans_overflow;
+
+    g_ui_span_count = pxa_surface_alpha_spans(
+        plane.alpha, plane.width, plane.height, plane.alpha_stride_bytes,
+        g_ui_spans, kMaxUiSpans);
+    g_ui_spans_overflow = g_ui_span_count == SIZE_MAX;
+    g_ui_visible_pixels = 0;
+    if (g_ui_spans_overflow) {
+        g_ui_span_count = 0;
+        ESP_LOGW(kTag, "UI span capacity exceeded; scanning alpha plane");
+    } else {
+        for (size_t index = 0; index < g_ui_span_count; ++index)
+            g_ui_visible_pixels += g_ui_spans[index].width;
+    }
+    g_ui_spans_revision = plane.revision;
+    return !g_ui_spans_overflow;
+}
+
+void ClearUiArgbCache() {
+    if (g_ui_argb == nullptr || g_ui_argb_revision == 0) return;
+    if (g_ui_spans == nullptr || g_ui_spans_overflow ||
+        g_ui_spans_revision != g_ui_argb_revision) {
+        std::memset(g_ui_argb, 0, kArgbFrameBytes);
+        return;
+    }
+    for (size_t index = 0; index < g_ui_span_count; ++index) {
+        const pxa_surface_alpha_span_t& span = g_ui_spans[index];
+        const int32_t target_y =
+            g_ui_argb_y + static_cast<int32_t>(span.y);
+        if (target_y < 0 || target_y >= KORVO_DISPLAY_HEIGHT) continue;
+        const int32_t left = std::max<int32_t>(
+            g_ui_argb_x + static_cast<int32_t>(span.x), 0);
+        const int32_t right = std::min<int32_t>(
+            g_ui_argb_x + static_cast<int32_t>(span.x) + span.width,
+            KORVO_DISPLAY_WIDTH);
+        if (left >= right) continue;
+        std::memset(g_ui_argb +
+                        static_cast<size_t>(target_y) * KORVO_DISPLAY_WIDTH +
+                        left,
+                    0, static_cast<size_t>(right - left) *
+                           sizeof(lv_color32_t));
+    }
+}
+
+bool PrepareUiArgb(const pxa_esp_surface_ui_alpha_plane_t& plane) {
+    if (g_ui_argb == nullptr || plane.revision == 0 ||
+        plane.pixels == nullptr || plane.alpha == nullptr ||
+        plane.pixel_stride_bytes % sizeof(uint16_t) != 0 ||
+        plane.pixel_stride_bytes / sizeof(uint16_t) < plane.width ||
+        plane.alpha_stride_bytes < plane.width)
+        return false;
+    if (g_ui_argb_revision == plane.revision &&
+        g_ui_argb_x == plane.x && g_ui_argb_y == plane.y &&
+        g_ui_argb_width == plane.width &&
+        g_ui_argb_height == plane.height &&
+        g_ui_argb_opacity == plane.opacity)
+        return true;
+
+    ClearUiArgbCache();
+    const uint32_t color_stride =
+        plane.pixel_stride_bytes / sizeof(uint16_t);
+    if (RefreshUiSpans(plane)) {
+        for (size_t index = 0; index < g_ui_span_count; ++index) {
+            const pxa_surface_alpha_span_t& span = g_ui_spans[index];
+            const int32_t target_y =
+                plane.y + static_cast<int32_t>(span.y);
+            if (target_y < 0 || target_y >= KORVO_DISPLAY_HEIGHT) continue;
+            const int32_t first_x = std::max<int32_t>(
+                span.x, -plane.x);
+            const int32_t last_x = std::min<int32_t>(
+                static_cast<int32_t>(span.x) + span.width,
+                KORVO_DISPLAY_WIDTH - plane.x);
+            if (first_x >= last_x) continue;
+            const uint16_t* const colors =
+                plane.pixels + static_cast<size_t>(span.y) * color_stride;
+            const uint8_t* const alpha =
+                plane.alpha + static_cast<size_t>(span.y) *
+                                  plane.alpha_stride_bytes;
+            lv_color32_t* const output =
+                g_ui_argb + static_cast<size_t>(target_y) *
+                                KORVO_DISPLAY_WIDTH;
+            for (int32_t source_x = first_x; source_x < last_x; ++source_x) {
+                uint8_t effective_alpha = alpha[source_x];
+                if (plane.opacity != 255) {
+                    effective_alpha = static_cast<uint8_t>(
+                        (static_cast<uint16_t>(effective_alpha) *
+                             plane.opacity +
+                         127U) /
+                        255U);
+                }
+                if (effective_alpha == 0) continue;
+                const uint16_t color = colors[source_x];
+                lv_color32_t& pixel = output[plane.x + source_x];
+                pixel.red = Expand5(color >> 11);
+                pixel.green = Expand6((color >> 5) & 0x3fU);
+                pixel.blue = Expand5(color & 0x1fU);
+                pixel.alpha = effective_alpha;
+            }
+        }
+    } else {
+        std::memset(g_ui_argb, 0, kArgbFrameBytes);
+        g_ui_visible_pixels = 0;
+        for (uint32_t source_y = 0; source_y < plane.height; ++source_y) {
+            const int32_t target_y = plane.y + static_cast<int32_t>(source_y);
+            if (target_y < 0 || target_y >= KORVO_DISPLAY_HEIGHT) continue;
+            const uint16_t* const colors =
+                plane.pixels + static_cast<size_t>(source_y) * color_stride;
+            const uint8_t* const alpha =
+                plane.alpha + static_cast<size_t>(source_y) *
+                                  plane.alpha_stride_bytes;
+            lv_color32_t* const output =
+                g_ui_argb + static_cast<size_t>(target_y) *
+                                KORVO_DISPLAY_WIDTH;
+            for (uint32_t source_x = 0; source_x < plane.width; ++source_x) {
+                const int32_t target_x =
+                    plane.x + static_cast<int32_t>(source_x);
+                if (target_x < 0 || target_x >= KORVO_DISPLAY_WIDTH) continue;
+                uint8_t effective_alpha = alpha[source_x];
+                if (effective_alpha == 0) continue;
+                ++g_ui_visible_pixels;
+                if (plane.opacity != 255) {
+                    effective_alpha = static_cast<uint8_t>(
+                        (static_cast<uint16_t>(effective_alpha) *
+                             plane.opacity +
+                         127U) /
+                        255U);
+                }
+                if (effective_alpha == 0) continue;
+                const uint16_t color = colors[source_x];
+                lv_color32_t& pixel = output[target_x];
+                pixel.red = Expand5(color >> 11);
+                pixel.green = Expand6((color >> 5) & 0x3fU);
+                pixel.blue = Expand5(color & 0x1fU);
+                pixel.alpha = effective_alpha;
+            }
+        }
+    }
+    g_ui_argb_revision = plane.revision;
+    g_ui_argb_x = plane.x;
+    g_ui_argb_y = plane.y;
+    g_ui_argb_width = plane.width;
+    g_ui_argb_height = plane.height;
+    g_ui_argb_opacity = plane.opacity;
+    return true;
+}
+
+bool TryPpaBlendUi(const pxa_esp_surface_frame_t& frame, uint8_t* target) {
+    const auto& plane = frame.ui_alpha_plane;
+    if (g_ppa_blend_client == nullptr || target == nullptr ||
+        !plane.visible || plane.opacity == 0)
+        return false;
+    /* PPA blend always reads and writes the complete panel. Sparse overlays
+     * are cheaper to blend directly from their cached nontransparent spans. */
+    if (RefreshUiSpans(plane) &&
+        g_ui_visible_pixels <= kCpuUiBlendPixelThreshold)
+        return false;
+    if (!PrepareUiArgb(plane))
+        return false;
+    const ppa_blend_oper_config_t config = {
+        .in_bg = {.buffer = target,
+                  .pic_w = KORVO_DISPLAY_WIDTH,
+                  .pic_h = KORVO_DISPLAY_HEIGHT,
+                  .block_w = KORVO_DISPLAY_WIDTH,
+                  .block_h = KORVO_DISPLAY_HEIGHT,
+                  .blend_cm = PPA_BLEND_COLOR_MODE_RGB565},
+        .in_fg = {.buffer = g_ui_argb,
+                  .pic_w = KORVO_DISPLAY_WIDTH,
+                  .pic_h = KORVO_DISPLAY_HEIGHT,
+                  .block_w = KORVO_DISPLAY_WIDTH,
+                  .block_h = KORVO_DISPLAY_HEIGHT,
+                  .blend_cm = PPA_BLEND_COLOR_MODE_ARGB8888},
+        .out = {.buffer = target,
+                .buffer_size = kFrameBytes,
+                .pic_w = KORVO_DISPLAY_WIDTH,
+                .pic_h = KORVO_DISPLAY_HEIGHT,
+                .blend_cm = PPA_BLEND_COLOR_MODE_RGB565},
+        .bg_alpha_update_mode = PPA_ALPHA_NO_CHANGE,
+        .fg_alpha_update_mode = PPA_ALPHA_NO_CHANGE,
+        .mode = PPA_TRANS_MODE_BLOCKING,
+    };
+    return ppa_do_blend(g_ppa_blend_client, &config) == ESP_OK;
+}
+
+uint32_t BlendUiAlphaPlane(const pxa_esp_surface_frame_t& frame,
+                           uint8_t* target) {
+    const auto& plane = frame.ui_alpha_plane;
+    if (target == nullptr || !plane.visible || plane.opacity == 0 ||
+        plane.pixels == nullptr || plane.alpha == nullptr ||
+        plane.pixel_stride_bytes % sizeof(uint16_t) != 0)
+        return 0;
+    if (g_ui_spans != nullptr && plane.revision != 0 &&
+        plane.pixel_stride_bytes / sizeof(uint16_t) >= plane.width &&
+        plane.alpha_stride_bytes >= plane.width) {
+        if (RefreshUiSpans(plane)) {
+            uint32_t blended = 0;
+            const uint32_t color_stride =
+                plane.pixel_stride_bytes / sizeof(uint16_t);
+            for (size_t index = 0; index < g_ui_span_count; ++index) {
+                const pxa_surface_alpha_span_t& span = g_ui_spans[index];
+                const size_t color_offset =
+                    static_cast<size_t>(span.y) * color_stride + span.x;
+                const size_t alpha_offset =
+                    static_cast<size_t>(span.y) *
+                        plane.alpha_stride_bytes + span.x;
+                blended += pxa_surface_blend_rgb565_a8(
+                    reinterpret_cast<uint16_t*>(target),
+                    KORVO_DISPLAY_WIDTH, KORVO_DISPLAY_HEIGHT,
+                    KORVO_DISPLAY_WIDTH, plane.pixels + color_offset,
+                    plane.alpha + alpha_offset, span.width, 1,
+                    span.width, span.width, plane.x + span.x,
+                    plane.y + span.y, plane.opacity);
+            }
+            return blended;
+        }
+    }
+    return pxa_surface_blend_rgb565_a8(
+        reinterpret_cast<uint16_t*>(target), KORVO_DISPLAY_WIDTH,
+        KORVO_DISPLAY_HEIGHT, KORVO_DISPLAY_WIDTH, plane.pixels, plane.alpha,
+        plane.width, plane.height,
+        plane.pixel_stride_bytes / sizeof(uint16_t),
+        plane.alpha_stride_bytes, plane.x, plane.y, plane.opacity);
+}
+
 void ComposeFullFrame(const pxa_esp_surface_frame_t& frame, uint8_t* target) {
-    if (TryPpaScaleToBuffer(frame, target)) return;
-    ComposeRgb565(frame, target);
+    if (!TryPpaScaleToBuffer(frame, target)) ComposeRgb565(frame, target);
+    if (!TryPpaBlendUi(frame, target))
+        (void)BlendUiAlphaPlane(frame, target);
 }
 
 void SetRefreshPaused(bool paused) {
@@ -267,35 +534,55 @@ void SetRefreshPaused(bool paused) {
         lv_timer_resume(refresh_timer);
 }
 
+uint32_t CompletePendingDirectSubmission() {
+    if (!g_direct_submission_pending) return 0;
+    const int64_t started_us = esp_timer_get_time();
+    const bool vsync_ready =
+        xSemaphoreTake(g_vsync_semaphore,
+                       pdMS_TO_TICKS(kVsyncTimeoutMs)) == pdTRUE;
+    const int64_t finished_us = esp_timer_get_time();
+    if (!vsync_ready) ++g_direct_timeouts;
+    g_direct_displayed_index = g_direct_pending_index;
+    g_direct_has_displayed_buffer = true;
+    g_direct_submission_pending = false;
+    pxa_esp_surface_note_frame_presented(
+        g_direct_pending_input_timestamp_us,
+        static_cast<uint64_t>(finished_us));
+    return static_cast<uint32_t>(finished_us - started_us);
+}
+
 void PresentDirectFrame(const pxa_esp_surface_frame_t& frame) {
     if (g_panel == nullptr || g_frame_buffers[0] == nullptr ||
-        g_frame_buffers[1] == nullptr)
+        g_frame_buffers[1] == nullptr || g_frame_buffers[2] == nullptr)
         return;
-    uint8_t* target =
-        static_cast<uint8_t*>(g_frame_buffers[g_direct_buffer_index]);
+    /* Match the original framebuffer presenter: wait for the previous flip at
+     * the next submission boundary. Rasterization happens before this call, so
+     * VSYNC normally completes in parallel instead of extending every frame. */
+    const uint32_t vsync_us = CompletePendingDirectSubmission();
+    uint8_t* target = static_cast<uint8_t*>(
+        g_frame_buffers[g_direct_buffer_index]);
     const int64_t compose_started_us = esp_timer_get_time();
     ComposeFullFrame(frame, target);
+    pxa_board_performance_note_frame();
+    pxa_board_performance_draw_rgb565(
+        reinterpret_cast<uint16_t*>(target), KORVO_DISPLAY_WIDTH,
+        KORVO_DISPLAY_HEIGHT, KORVO_DISPLAY_WIDTH, 0, 0,
+        KORVO_DISPLAY_WIDTH, KORVO_DISPLAY_HEIGHT, false);
     const int64_t compose_finished_us = esp_timer_get_time();
+    (void)xSemaphoreTake(g_vsync_semaphore, 0);
     if (esp_lcd_panel_draw_bitmap(g_panel, 0, 0, KORVO_DISPLAY_WIDTH,
                                   KORVO_DISPLAY_HEIGHT,
                                   target) != ESP_OK) {
         ESP_LOGW(kTag, "Direct scanout buffer switch failed");
         return;
     }
-    (void)xSemaphoreTake(g_vsync_semaphore, 0);
-    const bool vsync_ready =
-        xSemaphoreTake(g_vsync_semaphore,
-                       pdMS_TO_TICKS(kVsyncTimeoutMs)) == pdTRUE;
-    const int64_t finished_us = esp_timer_get_time();
-    if (!vsync_ready) ++g_direct_timeouts;
-    g_direct_buffer_index ^= 1U;
-    pxa_esp_surface_note_frame_presented(
-        frame.input_timestamp_us, static_cast<uint64_t>(finished_us));
+    g_direct_pending_index = g_direct_buffer_index;
+    g_direct_pending_input_timestamp_us = frame.input_timestamp_us;
+    g_direct_submission_pending = true;
+    g_direct_buffer_index = (g_direct_buffer_index + 1U) % 3U;
 
     const uint32_t compose_us =
         static_cast<uint32_t>(compose_finished_us - compose_started_us);
-    const uint32_t vsync_us =
-        static_cast<uint32_t>(finished_us - compose_finished_us);
     ++g_direct_frames;
     g_direct_compose_total_us += compose_us;
     g_direct_compose_max_us = std::max(g_direct_compose_max_us, compose_us);
@@ -327,8 +614,33 @@ bool EnterDirectScanout() {
     if (g_direct_active) return true;
     if (!lvgl_port_lock(kLockTimeoutMs)) return false;
     SetRefreshPaused(true);
+    if (g_transition_callback != nullptr &&
+        !g_transition_callback(true, nullptr, nullptr,
+                               g_transition_context)) {
+        SetRefreshPaused(false);
+        lvgl_port_unlock();
+        ESP_LOGW(kTag, "Direct scanout transition timed out");
+        return false;
+    }
+    lv_draw_buf_t* const active = lv_display_get_buf_active(g_display);
+    uint8_t next_index = 3;
+    for (uint8_t index = 0; index < 3; ++index) {
+        if (active != nullptr && active->data == g_frame_buffers[index]) {
+            next_index = index;
+            break;
+        }
+    }
+    if (next_index >= 3) {
+        SetRefreshPaused(false);
+        lvgl_port_unlock();
+        ESP_LOGE(kTag, "Cannot resolve direct scanout start buffer");
+        return false;
+    }
     g_direct_active = true;
-    g_direct_buffer_index = 0;
+    g_direct_buffer_index = next_index;
+    g_direct_has_displayed_buffer = false;
+    g_direct_submission_pending = false;
+    g_direct_pending_input_timestamp_us = 0;
     g_last_direct_frame_id = 0;
     lvgl_port_unlock();
     ESP_LOGI(kTag, "Direct scanout engaged");
@@ -338,6 +650,12 @@ bool EnterDirectScanout() {
 void ExitDirectScanout() {
     if (!g_direct_active) return;
     if (!lvgl_port_lock(kLockTimeoutMs)) return;
+    (void)CompletePendingDirectSubmission();
+    if (g_transition_callback != nullptr && g_direct_has_displayed_buffer) {
+        (void)g_transition_callback(
+            false, g_frame_buffers[g_direct_buffer_index],
+            g_frame_buffers[g_direct_displayed_index], g_transition_context);
+    }
     g_direct_active = false;
     SetRefreshPaused(false);
     lv_obj_t* screen = lv_display_get_screen_active(g_display);
@@ -430,13 +748,17 @@ void PresenterTask(void*) {
 }  // namespace
 
 bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
-             SemaphoreHandle_t vsync_semaphore) {
+             SemaphoreHandle_t vsync_semaphore,
+             DirectScanoutTransitionCallback transition_callback,
+             void* transition_context) {
     if (display == nullptr || panel == nullptr || vsync_semaphore == nullptr ||
         g_display != nullptr)
         return false;
-    if (esp_lcd_rgb_panel_get_frame_buffer(panel, 2, &g_frame_buffers[0],
-                                           &g_frame_buffers[1]) != ESP_OK ||
-        g_frame_buffers[0] == nullptr || g_frame_buffers[1] == nullptr)
+    if (esp_lcd_rgb_panel_get_frame_buffer(
+            panel, 3, &g_frame_buffers[0], &g_frame_buffers[1],
+            &g_frame_buffers[2]) != ESP_OK ||
+        g_frame_buffers[0] == nullptr || g_frame_buffers[1] == nullptr ||
+        g_frame_buffers[2] == nullptr)
         return false;
     const ppa_client_config_t ppa_config = {
         .oper_type = PPA_OPERATION_SRM,
@@ -447,12 +769,35 @@ bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
         g_ppa_client = nullptr;
         ESP_LOGW(kTag, "PPA direct scanout scale is unavailable");
     }
+    const ppa_client_config_t blend_config = {
+        .oper_type = PPA_OPERATION_BLEND,
+        .max_pending_trans_num = 1,
+        .data_burst_length = PPA_DATA_BURST_LENGTH_128,
+    };
+    if (ppa_register_client(&blend_config, &g_ppa_blend_client) != ESP_OK) {
+        g_ppa_blend_client = nullptr;
+        ESP_LOGW(kTag, "PPA UI blending is unavailable");
+    }
+    g_ui_argb = static_cast<lv_color32_t*>(heap_caps_aligned_alloc(
+        64, kArgbFrameBytes,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
+    if (g_ui_argb == nullptr)
+        ESP_LOGW(kTag, "PPA UI blend cache is unavailable");
+    else
+        std::memset(g_ui_argb, 0, kArgbFrameBytes);
+    g_ui_spans = static_cast<pxa_surface_alpha_span_t*>(heap_caps_malloc(
+        kMaxUiSpans * sizeof(pxa_surface_alpha_span_t),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (g_ui_spans == nullptr)
+        ESP_LOGW(kTag, "UI span cache is unavailable");
     if (xTaskCreate(PresenterTask, "korvo_pxa", kPresenterStack, nullptr,
                     kPresenterPriority, &g_presenter_task) != pdPASS)
         return false;
     g_display = display;
     g_panel = panel;
     g_vsync_semaphore = vsync_semaphore;
+    g_transition_callback = transition_callback;
+    g_transition_context = transition_context;
     pxa_esp_surface_set_frame_ready_callback(FrameReady, nullptr);
     ESP_LOGI(kTag, "PXA Surface presentation installed (direct + compose)");
     return true;
@@ -466,9 +811,20 @@ void ComposeFrame(uint8_t* pixels) {
     if (!pxa_esp_surface_acquire_latest(&frame)) return;
     const int64_t started_us = esp_timer_get_time();
     bool used_ppa = false;
+    bool ui_used_ppa = false;
+    uint32_t ui_pixels = 0;
+    uint32_t ui_duration_us = 0;
     if (frame.format == PXA_SURFACE_FORMAT_RGB565 && frame.visible) {
         used_ppa = TryPpaScaleToBuffer(frame, pixels);
         if (!used_ppa) ComposeRgb565(frame, pixels);
+        const int64_t ui_started_us = esp_timer_get_time();
+        ui_used_ppa = TryPpaBlendUi(frame, pixels);
+        if (!ui_used_ppa)
+            ui_pixels = BlendUiAlphaPlane(frame, pixels);
+        else
+            ui_pixels = g_ui_visible_pixels;
+        ui_duration_us = static_cast<uint32_t>(
+            esp_timer_get_time() - ui_started_us);
     }
     const uint32_t duration_us =
         static_cast<uint32_t>(esp_timer_get_time() - started_us);
@@ -478,27 +834,44 @@ void ComposeFrame(uint8_t* pixels) {
             g_compose_report_started_us = now_us;
         ++g_compose_frames;
         if (used_ppa) ++g_compose_ppa_frames;
+        if (ui_used_ppa) ++g_compose_ui_ppa_frames;
         g_compose_total_us += duration_us;
         g_compose_max_us = std::max(g_compose_max_us, duration_us);
+        g_compose_ui_total_us += ui_duration_us;
+        g_compose_ui_max_us = std::max(g_compose_ui_max_us, ui_duration_us);
+        g_compose_ui_pixels += ui_pixels;
         if (now_us - g_compose_report_started_us >= 1000 * 1000) {
             const SurfaceGeometry geometry = ResolveGeometry(
                 frame.width, frame.height, frame.x, frame.y);
             ESP_LOGI(kTag,
-                     "PERF compose=%u ppa=%u time=%u/%u ms "
+                     "PERF compose=%u ppa=%u ui_ppa=%u time=%u/%u ms "
+                     "ui=%u/%u ms pixels=%u spans=%u "
                      "surface=%ux%u scale=%u "
                      "opaque=%u alpha=%u(%ux%u)",
                      g_compose_frames, g_compose_ppa_frames,
+                     g_compose_ui_ppa_frames,
                      static_cast<uint32_t>(
                          g_compose_total_us / g_compose_frames) / 1000,
-                     g_compose_max_us / 1000, frame.width, frame.height,
+                     g_compose_max_us / 1000,
+                     static_cast<uint32_t>(
+                         g_compose_ui_total_us / g_compose_frames) / 1000,
+                     g_compose_ui_max_us / 1000,
+                     static_cast<uint32_t>(
+                         g_compose_ui_pixels / g_compose_frames),
+                     static_cast<unsigned>(g_ui_span_count),
+                     frame.width, frame.height,
                      geometry.scale, frame.opaque_ui_region_count,
                      frame.ui_alpha_plane.visible,
                      frame.ui_alpha_plane.width, frame.ui_alpha_plane.height);
             g_compose_report_started_us = now_us;
             g_compose_frames = 0;
             g_compose_ppa_frames = 0;
+            g_compose_ui_ppa_frames = 0;
             g_compose_total_us = 0;
             g_compose_max_us = 0;
+            g_compose_ui_total_us = 0;
+            g_compose_ui_max_us = 0;
+            g_compose_ui_pixels = 0;
         }
     }
     pxa_esp_surface_note_frame_presented(

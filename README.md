@@ -100,7 +100,7 @@ each deployment and releases that USB Serial/JTAG connection before the next
 update:
 
 ```sh
-tools/dev.sh device my-app --port /dev/ttyACM0 --watch
+tools/dev.sh device my-app --port /dev/ttyACM0 --baud 2000000 --watch
 ```
 
 Combined build, deployment and runtime output is also written to

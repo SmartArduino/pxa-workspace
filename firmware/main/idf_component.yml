@@ -3,6 +3,6 @@
 dependencies:
   idf:
     version: ">=5.5.4"
-  lvgl/lvgl: "~9.5.0"
+  lvgl/lvgl: "^9.6.0~1"
   espressif/esp_lvgl_port: "~2.9.0"
   joltwallet/littlefs: "^1.22.3"

@@ -10,16 +10,26 @@ extern "C" {
 #endif
 
 #define PXA_HOST_POINTER_MAILBOX_CAPACITY 8u
+#define PXA_HOST_POINTER_MOVE_CLOCK_CAPACITY PXA_HOST_POINTER_MAILBOX_CAPACITY
+#define PXA_HOST_POINTER_DOWN_PHASE 0u
 #define PXA_HOST_POINTER_MOVE_PHASE 1u
 
 typedef struct {
-    pxa_host_pointer_event_t events[PXA_HOST_POINTER_MAILBOX_CAPACITY];
     uint64_t last_move_us;
+    uint8_t id;
+    uint8_t active;
+    uint8_t has_last_move;
+} pxa_host_pointer_move_clock_t;
+
+typedef struct {
+    pxa_host_pointer_event_t events[PXA_HOST_POINTER_MAILBOX_CAPACITY];
+    pxa_host_pointer_move_clock_t
+        move_clocks[PXA_HOST_POINTER_MOVE_CLOCK_CAPACITY];
     uint8_t count;
 } pxa_host_pointer_mailbox_t;
 
-typedef char pxa_host_pointer_mailbox_size_must_not_exceed_336_bytes[
-    sizeof(pxa_host_pointer_mailbox_t) <= 336u ? 1 : -1];
+typedef char pxa_host_pointer_mailbox_size_must_not_exceed_464_bytes[
+    sizeof(pxa_host_pointer_mailbox_t) <= 464u ? 1 : -1];
 
 void pxa_host_pointer_mailbox_init(pxa_host_pointer_mailbox_t *mailbox);
 

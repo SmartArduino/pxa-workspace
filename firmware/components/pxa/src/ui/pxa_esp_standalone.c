@@ -37,6 +37,16 @@ static uint32_t g_unresponsive_prompt_id;
 extern const lv_font_t font_puhui_basic_14_1 __attribute__((weak));
 extern const lv_font_t font_puhui_basic_20_4 __attribute__((weak));
 
+static const lv_font_t *system_body_font(void) {
+    const lv_font_t *font = pxa_esp_host_ui_body_font();
+    return font != NULL ? font : pxa_esp_ui_shell_text_font();
+}
+
+static const lv_font_t *system_title_font(void) {
+    const lv_font_t *font = pxa_esp_host_ui_title_font();
+    return font != NULL ? font : pxa_esp_ui_shell_title_font();
+}
+
 static lv_result_t schedule_on_lvgl(lv_async_cb_t callback, void *context) {
     lv_result_t result;
     lv_lock();
@@ -74,9 +84,7 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
     lv_label_set_text(title_label, title);
     lv_obj_set_width(title_label, LV_PCT(100));
     lv_obj_set_style_text_color(title_label, lv_color_hex(0xffffff), 0);
-    if (&font_puhui_basic_20_4 != NULL) {
-        lv_obj_set_style_text_font(title_label, &font_puhui_basic_20_4, 0);
-    }
+    lv_obj_set_style_text_font(title_label, system_title_font(), 0);
 
     lv_obj_t *body_label = lv_label_create(panel);
     lv_label_set_text(body_label, body);
@@ -84,9 +92,7 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
     lv_obj_set_size(body_label, LV_PCT(100), 72);
     lv_obj_align(body_label, LV_ALIGN_TOP_LEFT, 0, 30);
     lv_obj_set_style_text_color(body_label, lv_color_hex(0xdadce0), 0);
-    if (&font_puhui_basic_14_1 != NULL) {
-        lv_obj_set_style_text_font(body_label, &font_puhui_basic_14_1, 0);
-    }
+    lv_obj_set_style_text_font(body_label, system_body_font(), 0);
 
     lv_obj_t *left = lv_button_create(panel);
     lv_obj_set_size(left, 92, 36);
@@ -95,6 +101,7 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
                         (void *)(uintptr_t)0);
     lv_obj_t *left_label = lv_label_create(left);
     lv_label_set_text(left_label, left_text);
+    lv_obj_set_style_text_font(left_label, system_body_font(), 0);
     lv_obj_center(left_label);
 
     lv_obj_t *right = lv_button_create(panel);
@@ -104,6 +111,7 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
                         (void *)(uintptr_t)1);
     lv_obj_t *right_label = lv_label_create(right);
     lv_label_set_text(right_label, right_text);
+    lv_obj_set_style_text_font(right_label, system_body_font(), 0);
     lv_obj_center(right_label);
     return mask;
 }
@@ -190,9 +198,7 @@ static void show_toast(void *context) {
     lv_obj_set_style_text_color(g_toast, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_pad_all(g_toast, 9, 0);
     lv_obj_set_style_radius(g_toast, 4, 0);
-    if (&font_puhui_basic_14_1 != NULL) {
-        lv_obj_set_style_text_font(g_toast, &font_puhui_basic_14_1, 0);
-    }
+    lv_obj_set_style_text_font(g_toast, system_body_font(), 0);
     g_toast_timer = lv_timer_create(toast_timeout, copy->duration_ms, NULL);
     if (g_toast_timer != NULL) lv_timer_set_repeat_count(g_toast_timer, 1);
     free(copy);

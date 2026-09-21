@@ -1,5 +1,6 @@
 #include "pxa_board.h"
 
+#include "esp32s31_korvo_1_config.h"
 #include "esp32s31_korvo_1_hardware.h"
 #include "pxa_board_api.h"
 
@@ -10,7 +11,7 @@ bool Initialize(void*) { return g_hardware.Initialize(); }
 lv_display_t* Display(void*) { return g_hardware.display(); }
 void DisplayProfile(void*, pxsys_display_profile_t* output) {
     if (output == nullptr) return;
-    pxsys_display_profile_init(output, 800, 480);
+    pxsys_display_profile_init(output, KORVO_UI_WIDTH, KORVO_UI_HEIGHT);
     output->shape = PXSYS_DISPLAY_SHAPE_RECTANGLE;
 }
 pxsys_status_t SetNetworkEnabled(void*, pxsys_network_type_t network,

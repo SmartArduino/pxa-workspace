@@ -4,9 +4,16 @@
 #include <driver/i2c_master.h>
 #include <driver/i2s_std.h>
 
-#define KORVO_DISPLAY_WIDTH 800
-#define KORVO_DISPLAY_HEIGHT 480
-#define KORVO_DISPLAY_PIXEL_CLOCK_HZ (20 * 1000 * 1000)
+// The RGB panel timing and framebuffers must remain at the LCD's native size.
+#define KORVO_PANEL_WIDTH 800
+#define KORVO_PANEL_HEIGHT 480
+#define KORVO_DISPLAY_WIDTH KORVO_PANEL_WIDTH
+#define KORVO_DISPLAY_HEIGHT KORVO_PANEL_HEIGHT
+
+// Render the system UI at the panel's full native resolution.
+#define KORVO_UI_WIDTH KORVO_PANEL_WIDTH
+#define KORVO_UI_HEIGHT KORVO_PANEL_HEIGHT
+#define KORVO_DISPLAY_PIXEL_CLOCK_HZ ((uint32_t)(20 * 1000 * 1000))
 
 #define KORVO_I2C_PORT I2C_NUM_0
 #define KORVO_I2C_SDA GPIO_NUM_0

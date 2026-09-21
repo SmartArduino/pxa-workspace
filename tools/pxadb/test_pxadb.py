@@ -141,6 +141,42 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         self.assertIn("FSDATA 0 YWI=", writes[1])
         self.assertIn("FSDATA 2 Yw==", writes[2])
 
+    def test_uart_upload_chunk_override(self) -> None:
+        payload = b"abcdef"
+        client = fake_client([
+            encoded_frame(1, "READY", "6"),
+            encoded_frame(2, "READY", "4"),
+            encoded_frame(3, "READY", "2"),
+            encoded_frame(4, "OK", ""),
+        ])
+        client.device_info = "max_chunk=1024;fs_offset=1"
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "payload.bin"
+            source.write_bytes(payload)
+            with mock.patch.dict("os.environ", {"PXADB_UART_UPLOAD_CHUNK": "2"}):
+                pxadb.NormalFsClient(client).put(source, "pxa-state/inbox/payload.bin")
+        writes = [entry.decode("ascii") for entry in client.serial.writes]
+        self.assertEqual([int(entry.split(" ")[3]) for entry in writes[1:]],
+                         [0, 2, 4])
+
+    def test_uart_upload_defaults_to_safe_chunk(self) -> None:
+        payload = b"x" * 130
+        client = fake_client([
+            encoded_frame(1, "READY", "130"),
+            encoded_frame(2, "READY", "66"),
+            encoded_frame(3, "READY", "2"),
+            encoded_frame(4, "OK", ""),
+        ])
+        client.device_info = "max_chunk=1024;fs_offset=1"
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "payload.bin"
+            source.write_bytes(payload)
+            with mock.patch.dict("os.environ", {}, clear=True):
+                pxadb.NormalFsClient(client).put(source, "pxa-state/inbox/payload.bin")
+        writes = [entry.decode("ascii") for entry in client.serial.writes]
+        self.assertEqual([int(entry.split(" ")[3]) for entry in writes[1:]],
+                         [0, 64, 128])
+
     def test_binary_upload_keeps_file_data_unencoded(self) -> None:
         responses = [
             (pxadb.BINARY_RESPONSE, 0, 1, b"READY\x003"),
