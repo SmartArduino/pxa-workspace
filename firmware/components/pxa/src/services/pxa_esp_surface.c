@@ -119,6 +119,7 @@ static uint64_t g_direct_resume_after_frame_id;
 static uint64_t g_next_input_timestamp_us;
 static pxa_esp_surface_input_metrics_t g_input_metrics;
 static uint32_t latency_us(uint64_t started_us, uint64_t finished_us);
+static bool materialize_latest_raster_draw(void);
 
 #if CONFIG_PXA_PARALLEL_RASTER
 typedef struct {
@@ -142,8 +143,6 @@ static pxa_esp_raster_worker_job_t g_raster_worker_job;
 static uint8_t g_raster_worker_attempted;
 static uint16_t g_raster_split_row;
 static uint16_t g_raster_split_height;
-
-static bool materialize_latest_raster_draw(void);
 
 static void raster_worker_task(void *context) {
     (void)context;

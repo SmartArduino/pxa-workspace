@@ -52,11 +52,6 @@ public:
     using DirectFrameReleaseCallback = void (*)(void* context,
                                                 uint8_t buffer_index);
 
-    static bool PerformanceOverlayEnabled();
-    static void SetPerformanceOverlayEnabled(bool enabled);
-    static bool PerformanceLogEnabled();
-    static void SetPerformanceLogEnabled(bool enabled);
-
     static bool Install(lv_display_t* display,
                         esp_lcd_panel_io_handle_t panel_io,
                         esp_lcd_panel_handle_t panel) {
@@ -519,6 +514,7 @@ private:
 #endif
     };
 
+public:
     static bool PerformanceOverlayEnabled() {
         auto* context = GetContext();
         return context != nullptr && context->performance_overlay_enabled.load(
@@ -545,6 +541,7 @@ private:
                                                    std::memory_order_relaxed);
     }
 
+private:
     static Context*& GetContext() {
         static Context* context = nullptr;
         return context;
@@ -639,7 +636,7 @@ private:
             !context->performance_overlay_enabled.load(
                 std::memory_order_relaxed))
             return;
-        char line[32];
+        char line[40];
         const uint32_t fps = context->performance_fps_x10.load(
             std::memory_order_relaxed);
         const uint32_t rotate_us = context->performance_rotate_us.load(

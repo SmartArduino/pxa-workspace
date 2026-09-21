@@ -3,7 +3,6 @@
 #include "rpc701_audio.h"
 
 #include <atomic>
-#include <driver/adc_types_legacy.h>
 #include <esp_adc/adc_oneshot.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>

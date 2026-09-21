@@ -119,8 +119,9 @@ bool PaiTouchHardware::PerformanceGet(
         case PXSYS_REFERENCE_PERFORMANCE_LOG:
             return zuowei_pai_touch::ParallelSoftwareRotationFlush::
                 PerformanceLogEnabled();
+        default:
+            return false;
     }
-    return false;
 }
 
 bool PaiTouchHardware::PerformanceSet(
