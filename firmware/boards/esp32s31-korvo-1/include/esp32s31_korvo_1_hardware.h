@@ -16,6 +16,7 @@
 #include <freertos/semphr.h>
 #include <lvgl.h>
 #include <iot_button.h>
+#include <pxadb/pxadb_service.h>
 
 #include "esp32s31_korvo_1_audio.h"
 
@@ -33,10 +34,20 @@ public:
     void SetVolume(uint8_t percent);
     uint8_t volume() const { return audio_.volume(); }
     lv_display_t* display() const { return display_; }
+    /* Registers the PXADB diagnostics adapter: logical pointer injection and
+     * final visible-frame capture. Called from the board port. */
+    bool ConfigurePxadbControls();
 
 private:
     static constexpr int kTouchMaxPointers = CONFIG_ESP_LCD_TOUCH_MAX_POINTS;
     static constexpr size_t kDeferredSyncAreaCapacity = 32;
+
+    bool InjectPointer(uint16_t x, uint16_t y, bool pressed);
+    bool CancelInjectedPointer();
+    bool RouteInjectedKey(pxadb::TestControlKey key);
+    bool CaptureRgb565(uint16_t* pixels, size_t pixel_count, bool after_present,
+                       pxadb::TestControlCaptureInfo* info);
+    static void ReadInjectedPointer(lv_indev_t* indev, lv_indev_data_t* data);
 
     bool InitializeI2c();
     bool InitializeDisplay();
@@ -80,6 +91,10 @@ private:
     esp_lcd_panel_io_handle_t touch_io_ = nullptr;
     esp_lcd_touch_handle_t touch_ = nullptr;
     lv_indev_t* touch_indevs_[kTouchMaxPointers] = {};
+    lv_indev_t* injected_pointer_ = nullptr;
+    std::atomic<uint16_t> injected_pointer_x_{0};
+    std::atomic<uint16_t> injected_pointer_y_{0};
+    std::atomic<bool> injected_pointer_pressed_{false};
     portMUX_TYPE touch_lock_ = portMUX_INITIALIZER_UNLOCKED;
     bool touch_slot_pressed_[kTouchMaxPointers] = {};
     uint8_t touch_slot_id_[kTouchMaxPointers] = {};

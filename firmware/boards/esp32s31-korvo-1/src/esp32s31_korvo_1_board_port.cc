@@ -36,6 +36,10 @@ void SystemReady(void*, pxsys_standard_system_t* system,
                  pxsys_reference_lvgl_t* reference_ui) {
     g_hardware.AttachSystem(system, reference_ui);
 }
+
+bool ConfigureDiagnostics(void*) {
+    return g_hardware.ConfigurePxadbControls();
+}
 const pxa_board_port_t kPort = {
     .struct_size = sizeof(pxa_board_port_t),
     .context = nullptr,
@@ -48,7 +52,7 @@ const pxa_board_port_t kPort = {
     .performance_set = PerformanceSet,
     .system_ready = SystemReady,
     .show_initial_frame = nullptr,
-    .configure_diagnostics = nullptr,
+    .configure_diagnostics = ConfigureDiagnostics,
 };
 }
 

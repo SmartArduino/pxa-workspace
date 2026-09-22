@@ -25,6 +25,7 @@ idf_component_register(
         joltwallet__littlefs
         lvgl
         pxa
+        pxadb
         pxa_board_api
         pxa_system_reference_ui
         pxa_system_standard)

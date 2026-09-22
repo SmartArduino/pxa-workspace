@@ -1,0 +1,6 @@
+[desktop]
+width = 800
+height = 480
+locale = "zh-CN"
+theme = "dark"
+gestures = true

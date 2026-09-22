@@ -40,6 +40,7 @@ esp_lcd_panel_handle_t g_panel = nullptr;
 SemaphoreHandle_t g_frame_done_semaphore = nullptr;
 ppa_client_handle_t g_ppa_client = nullptr;
 ppa_client_handle_t g_ppa_blend_client = nullptr;
+ppa_client_handle_t g_ppa_fill_client = nullptr;
 pxa_surface_alpha_span_t* g_ui_spans = nullptr;
 lv_color32_t* g_ui_argb = nullptr;
 uint64_t g_ui_spans_revision = 0;
@@ -280,6 +281,44 @@ bool TryPpaScaleToBuffer(const pxa_esp_surface_frame_t& frame,
         .mode = PPA_TRANS_MODE_BLOCKING,
     };
     return ppa_do_scale_rotate_mirror(g_ppa_client, &config) == ESP_OK;
+}
+
+uint8_t Expand5(uint16_t value);
+uint8_t Expand6(uint16_t value);
+
+bool FillRasterBands(void*, uint16_t* pixels, uint32_t stride_pixels,
+                     uint16_t width, uint16_t height, const uint16_t* tops,
+                     const uint16_t* bottoms, const uint16_t* colors,
+                     uint8_t count) {
+    if (g_ppa_fill_client == nullptr || pixels == nullptr || tops == nullptr ||
+        bottoms == nullptr || colors == nullptr || count == 0 ||
+        stride_pixels != width)
+        return false;
+    for (uint8_t index = 0; index < count; ++index) {
+        const uint16_t color = colors[index];
+        color_pixel_argb8888_data_t argb = {};
+        argb.a = 0xff;
+        argb.r = Expand5(color >> 11);
+        argb.g = Expand6((color >> 5) & 0x3fU);
+        argb.b = Expand5(color & 0x1fU);
+        const ppa_fill_oper_config_t config = {
+            .out = {.buffer = pixels,
+                    .buffer_size = static_cast<size_t>(width) * height *
+                                   sizeof(*pixels),
+                    .pic_w = width,
+                    .pic_h = height,
+                    .block_offset_x = 0,
+                    .block_offset_y = tops[index],
+                    .fill_cm = PPA_FILL_COLOR_MODE_RGB565},
+            .fill_block_w = width,
+            .fill_block_h =
+                static_cast<uint32_t>(bottoms[index] - tops[index]),
+            .fill_argb_color = argb,
+            .mode = PPA_TRANS_MODE_BLOCKING,
+        };
+        if (ppa_do_fill(g_ppa_fill_client, &config) != ESP_OK) return false;
+    }
+    return true;
 }
 
 uint8_t Expand5(uint16_t value) {
@@ -800,6 +839,15 @@ bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
         g_ppa_blend_client = nullptr;
         ESP_LOGW(kTag, "PPA UI blending is unavailable");
     }
+    const ppa_client_config_t fill_config = {
+        .oper_type = PPA_OPERATION_FILL,
+        .max_pending_trans_num = 1,
+        .data_burst_length = PPA_DATA_BURST_LENGTH_128,
+    };
+    if (ppa_register_client(&fill_config, &g_ppa_fill_client) != ESP_OK) {
+        g_ppa_fill_client = nullptr;
+        ESP_LOGW(kTag, "PPA raster background fill is unavailable");
+    }
     g_ui_argb = static_cast<lv_color32_t*>(heap_caps_aligned_alloc(
         64, kArgbFrameBytes,
         MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
@@ -820,12 +868,80 @@ bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
     g_frame_done_semaphore = frame_done_semaphore;
     g_transition_callback = transition_callback;
     g_transition_context = transition_context;
+    // The presenter has dedicated 1x and 2x paths. Native is the board
+    // default; games may negotiate 2x for lower raster cost.
+    (void)pxa_esp_game_render_set_scale_profile(
+        PXA_GAME_RENDER_SCALE_MASK_1X | PXA_GAME_RENDER_SCALE_MASK_2X,
+        PXA_GAME_RENDER_SCALE_1X);
     pxa_esp_surface_set_frame_ready_callback(FrameReady, nullptr);
+    pxa_esp_surface_set_fill_bands_callback(FillRasterBands, nullptr);
     ESP_LOGI(kTag, "PXA Surface presentation installed (direct + compose)");
     return true;
 }
 
 bool DirectScanoutActive() { return g_direct_active; }
+
+bool SnapshotDisplayedFrame(uint16_t* pixels, size_t pixel_count,
+                            bool after_present, uint32_t timeout_ms,
+                            CompletedFrameInfo* info) {
+    constexpr size_t kFramePixels =
+        static_cast<size_t>(KORVO_DISPLAY_WIDTH) * KORVO_DISPLAY_HEIGHT;
+    if (pixels == nullptr || info == nullptr || pixel_count < kFramePixels)
+        return false;
+
+    /* Wait for a queued buffer switch to land first: the presenter only marks
+     * a submission complete after the panel raised its frame-done event, so
+     * the capture then shows a frame the user has actually seen. */
+    if (after_present && g_direct_active && g_direct_submission_pending) {
+        const int64_t deadline_us =
+            esp_timer_get_time() +
+            static_cast<int64_t>(timeout_ms == 0 ? 1000 : timeout_ms) * 1000;
+        while (g_direct_submission_pending &&
+               esp_timer_get_time() < deadline_us) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+    }
+
+    const void* source_buffer = nullptr;
+    const char* source = "unknown";
+    if (g_direct_active) {
+        /* The panel scans the completed buffer, so it is the one the viewer
+         * actually sees; the queued buffer only becomes visible at the next
+         * VSync. Prefer the completed one and fall back to the queued frame
+         * before the first switch completes. */
+        if (g_direct_has_displayed_buffer) {
+            source_buffer = g_frame_buffers[g_direct_displayed_index];
+            source = "direct-displayed";
+        } else if (g_direct_submission_pending) {
+            source_buffer = g_frame_buffers[g_direct_pending_index];
+            source = "direct-pending";
+        }
+    }
+    if (source_buffer != nullptr) {
+        std::memcpy(pixels, source_buffer,
+                    kFramePixels * sizeof(uint16_t));
+    } else {
+        if (g_display == nullptr || !lvgl_port_lock(kLockTimeoutMs))
+            return false;
+        lv_draw_buf_t* const active = lv_display_get_buf_active(g_display);
+        if (active != nullptr) source_buffer = active->data;
+        if (source_buffer != nullptr) {
+            std::memcpy(pixels, source_buffer,
+                        kFramePixels * sizeof(uint16_t));
+            source = "lvgl-active";
+        }
+        lvgl_port_unlock();
+        if (source_buffer == nullptr) return false;
+    }
+
+    info->width = KORVO_DISPLAY_WIDTH;
+    info->height = KORVO_DISPLAY_HEIGHT;
+    info->stride_bytes = KORVO_DISPLAY_WIDTH * sizeof(uint16_t);
+    info->frame_id = g_last_direct_frame_id;
+    info->completed_timestamp_us = static_cast<uint64_t>(esp_timer_get_time());
+    info->source = source;
+    return true;
+}
 
 void ComposeFrame(uint8_t* pixels) {
     if (pixels == nullptr || g_direct_active) return;
