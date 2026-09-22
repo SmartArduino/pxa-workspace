@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+#include "esp_cache.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -421,15 +422,29 @@ static pxa_status_t create_surface(
         }
     } else {
         for (index = 0; index < surface->buffer_count; ++index) {
-            surface->buffers[index] = heap_caps_calloc(
-                1, frame_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if ((desc->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) != 0) {
+                /* Cached PSRAM on purpose. The raster writes every pixel of this
+                 * buffer and the DMA-mapped PSRAM pool is several times slower
+                 * to write from the CPU (measured ~150 ns per pixel against
+                 * ~20 ns for the same store loop in cached memory). Consumers
+                 * read the frame either with the CPU (the pai-touch rotation) or
+                 * through a DMA that the writer flushes with esp_cache_msync
+                 * before handing the frame over. */
+                surface->buffers[index] = heap_caps_aligned_calloc(
+                    64, 1, frame_bytes,
+                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            } else {
+                surface->buffers[index] = heap_caps_calloc(
+                    1, frame_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            }
             if (surface->buffers[index] == NULL) {
                 destroy_surface(surface);
                 return PXA_STATUS_RESOURCE_LIMIT;
             }
         }
         if ((desc->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) != 0) {
-            surface->raster_depth_buffer = heap_caps_malloc(
+            surface->raster_depth_buffer = heap_caps_aligned_alloc(
+                64,
                 (size_t)desc->width * desc->height *
                     sizeof(*surface->raster_depth_buffer),
                 MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -1498,6 +1513,18 @@ static bool materialize_latest_raster_draw(void) {
                              &frame_telemetry, &main_us, &worker_us,
                              &split_row);
     finished_us = (uint64_t)esp_timer_get_time();
+    /* The raster wrote through the cache, so push those lines out before any
+     * consumer that is not this CPU reads the frame: the PPA compose and the
+     * direct-scanout DMA on esp32s31-korvo-1, the panel path on the others. One
+     * burst writeback per frame is far cheaper than the uncached per-pixel
+     * stores it replaces, and it is what makes the cached buffer safe. */
+    if (surface->buffers[buffer_index] != NULL) {
+        size_t frame_bytes =
+            (size_t)surface->stride_bytes * (size_t)surface->height;
+        frame_bytes = (frame_bytes + 63u) & ~(size_t)63u;
+        (void)esp_cache_msync(surface->buffers[buffer_index], frame_bytes,
+                              ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    }
 
     taskENTER_CRITICAL(&g_surface_lock);
     --surface->writer_active;
