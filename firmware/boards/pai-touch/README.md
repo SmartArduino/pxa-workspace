@@ -6,6 +6,9 @@ This directory is one ESP-IDF component, selected with `PXA_BOARD=pai-touch`.
 It contains the sample hardware implementation: JD9853 display setup, CST826
 touch, ADC buttons, battery monitor, Wi-Fi and RPC701 audio.
 
+The two CST826 contacts are exposed as independent LVGL pointer devices, so PXA
+apps receive stable `pointer_id` values for simultaneous touches.
+
 Its `sdkconfig.defaults` and `partitions.csv` are loaded only for this board.
 They define the `pxa_data` LittleFS partition, mounted at `/pxa`, separately
 from firmware flashing. The defaults also enable LVGL's LodePNG decoder

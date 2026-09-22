@@ -1613,6 +1613,11 @@ static void queue_ui_pointer(uint32_t surface, uint32_t node,
     event.instance_id = public_state.main_instance_id;
     timestamp_us = pxa_lvgl_ui_event_timestamp_us(g_host.ui_adapter);
     event.timestamp_us = timestamp_us != 0 ? timestamp_us : host_now_us(NULL);
+    if (phase != PXA_HOST_POINTER_MOVE_PHASE) {
+        ESP_LOGI(PXA_ESP_HOST_TAG, "pointer queued id=%u phase=%u x=%d y=%d",
+                 (unsigned)event.id, (unsigned)event.phase, (int)event.x,
+                 (int)event.y);
+    }
     if (enqueue_pointer_event(&event) &&
         (phase != PXA_HOST_POINTER_MOVE_PHASE ||
          pointer_move_is_due(event.timestamp_us))) {
@@ -2675,6 +2680,12 @@ static void post_pointer(const pxa_esp_host_command_t *command) {
         pxa_write_u32(value + 4, (uint32_t)event->x);
         pxa_write_u32(value + 8, (uint32_t)event->y);
         pxa_esp_surface_note_input_sample(event->timestamp_us);
+        if (event->phase != PXA_HOST_POINTER_MOVE_PHASE) {
+            ESP_LOGI(PXA_ESP_HOST_TAG,
+                     "pointer delivered id=%u phase=%u x=%d y=%d",
+                     (unsigned)event->id, (unsigned)event->phase,
+                     (int)event->x, (int)event->y);
+        }
         (void)pxa_ui_queue_event(
             g_host.activation.services.ui, g_host.activation.ui_component,
             event->surface, event->node, PXA_UI_EVENT_POINTER,

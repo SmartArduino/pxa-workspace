@@ -21,6 +21,10 @@
 #include "esp_lcd_touch_cst826.h"
 
 #define POINT_NUM_MAX       (2)
+/* Hynitron CST7xx protocol: every contact occupies six bytes
+ * (XH, XL, YH, YL, pressure_high, area) right after the touch-num register. */
+#define POINT_RECORD_BYTES  (6)
+#define POINT_REPORT_BYTES  (1 + POINT_RECORD_BYTES * POINT_NUM_MAX)
 
 #define DATA_START_REG      (0x02)
 #define CHIP_ID_REG         (0xA7)
@@ -28,8 +32,17 @@
 
 static const char *TAG = "CST826";
 
+/* The public handle stays first so it doubles as the driver-private storage
+ * for the finger ids delivered by the controller. */
+typedef struct {
+    esp_lcd_touch_t base;
+    uint8_t track_ids[POINT_NUM_MAX];
+    uint8_t last_reported;
+} cst826_t;
+
 static esp_err_t read_data(esp_lcd_touch_handle_t tp);
 static bool get_xy(esp_lcd_touch_handle_t tp, uint16_t *x, uint16_t *y, uint16_t *strength, uint8_t *point_num, uint8_t max_point_num);
+static esp_err_t get_track_id(esp_lcd_touch_handle_t tp, uint8_t *track_id, uint8_t point_num);
 static esp_err_t del(esp_lcd_touch_handle_t tp);
 
 static esp_err_t i2c_read_bytes(esp_lcd_touch_handle_t tp, uint16_t reg, uint8_t *data, uint8_t len);
@@ -45,14 +58,17 @@ esp_err_t esp_lcd_touch_new_i2c_cst826(const esp_lcd_panel_io_handle_t io, const
 
     /* Prepare main structure */
     esp_err_t ret = ESP_OK;
-    esp_lcd_touch_handle_t cst826 = calloc(1, sizeof(esp_lcd_touch_t));
-    ESP_GOTO_ON_FALSE(cst826, ESP_ERR_NO_MEM, err, TAG, "Touch handle malloc failed");
+    esp_lcd_touch_handle_t cst826 = NULL;
+    cst826_t *handle = calloc(1, sizeof(cst826_t));
+    ESP_GOTO_ON_FALSE(handle, ESP_ERR_NO_MEM, err, TAG, "Touch handle malloc failed");
+    cst826 = &handle->base;
 
     /* Communication interface */
     cst826->io = io;
     /* Only supported callbacks are set */
     cst826->read_data = read_data;
     cst826->get_xy = get_xy;
+    cst826->get_track_id = get_track_id;
     cst826->del = del;
     /* Mutex */
     cst826->data.lock.owner = portMUX_FREE_VAL;
@@ -97,42 +113,40 @@ err:
 
 static esp_err_t read_data(esp_lcd_touch_handle_t tp)
 {
-    typedef struct {
-        uint8_t num;
-        uint8_t x_h : 4;
-        uint8_t : 4;
-        uint8_t x_l;
-        uint8_t y_h : 4;
-        uint8_t : 4;
-        uint8_t y_l;
-        uint8_t x2_h : 4;
-        uint8_t : 4;
-        uint8_t x2_l;
-        uint8_t y2_h : 4;
-        uint8_t : 4;
-        uint8_t y2_l;
-    } data_t;
+    cst826_t *handle = (cst826_t *)tp;
+    uint8_t report[POINT_REPORT_BYTES] = {0};
+    ESP_RETURN_ON_ERROR(i2c_read_bytes(tp, DATA_START_REG, report, sizeof(report)), TAG, "I2C read failed");
 
-    data_t point;
-    ESP_RETURN_ON_ERROR(i2c_read_bytes(tp, DATA_START_REG, (uint8_t *)&point, sizeof(data_t)), TAG, "I2C read failed");
+    uint8_t reported = report[0] & 0x0F;
+    if (reported > POINT_NUM_MAX) reported = POINT_NUM_MAX;
 
     portENTER_CRITICAL(&tp->data.lock);
-    point.num = (point.num > POINT_NUM_MAX ? POINT_NUM_MAX : point.num);
-    tp->data.points = point.num;
-    
-    /* Fill all coordinates */
-    if (point.num >= 1) {
-        tp->data.coords[0].x = point.x_h << 8 | point.x_l;
-        tp->data.coords[0].y = point.y_h << 8 | point.y_l;
-        tp->data.coords[0].strength = 50;
+    uint8_t valid = 0;
+    for (uint8_t i = 0; i < reported; i++) {
+        const uint8_t *record = &report[1 + i * POINT_RECORD_BYTES];
+        /* event_flg 0b11 marks an unused/stale record on this family. */
+        if ((record[0] & 0xC0) == 0xC0) continue;
+        tp->data.coords[valid].x = (record[0] & 0x0F) << 8 | record[1];
+        tp->data.coords[valid].y = (record[2] & 0x0F) << 8 | record[3];
+        tp->data.coords[valid].strength = 50;
+        tp->data.coords[valid].track_id = record[2] >> 4;
+        handle->track_ids[valid] = record[2] >> 4;
+        valid++;
     }
-    if (point.num >= 2) {
-        tp->data.coords[1].x = point.x2_h << 8 | point.x2_l;
-        tp->data.coords[1].y = point.y2_h << 8 | point.y2_l;
-        tp->data.coords[1].strength = 50;
-    }
-    
+    tp->data.points = valid;
     portEXIT_CRITICAL(&tp->data.lock);
+
+    /* Log only on contact-count changes, so a second finger shows up once
+     * without flooding the console at the 5 ms polling rate. */
+    if (reported != handle->last_reported) {
+        handle->last_reported = reported;
+        if (reported > 1) {
+            ESP_LOGI(TAG, "multi-touch raw num=%u [%02X %02X %02X %02X %02X %02X] [%02X %02X %02X %02X %02X %02X]",
+                     reported,
+                     report[1], report[2], report[3], report[4], report[5], report[6],
+                     report[7], report[8], report[9], report[10], report[11], report[12]);
+        }
+    }
 
     return ESP_OK;
 }
@@ -155,6 +169,20 @@ static bool get_xy(esp_lcd_touch_handle_t tp, uint16_t *x, uint16_t *y, uint16_t
     portEXIT_CRITICAL(&tp->data.lock);
 
     return (*point_num > 0);
+}
+
+static esp_err_t get_track_id(esp_lcd_touch_handle_t tp, uint8_t *track_id, uint8_t point_num)
+{
+    ESP_RETURN_ON_FALSE(track_id, ESP_ERR_INVALID_ARG, TAG, "Invalid track_id");
+    cst826_t *handle = (cst826_t *)tp;
+
+    portENTER_CRITICAL(&tp->data.lock);
+    for (uint8_t i = 0; i < point_num && i < POINT_NUM_MAX; i++) {
+        track_id[i] = handle->track_ids[i];
+    }
+    portEXIT_CRITICAL(&tp->data.lock);
+
+    return ESP_OK;
 }
 
 static esp_err_t del(esp_lcd_touch_handle_t tp)

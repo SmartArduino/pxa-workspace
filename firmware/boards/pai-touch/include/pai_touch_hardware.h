@@ -6,6 +6,7 @@
 #include <esp_adc/adc_oneshot.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
+#include <esp_lcd_touch.h>
 #include <esp_timer.h>
 #include <lvgl.h>
 #include <pxsys/reference_lvgl.h>
@@ -39,6 +40,11 @@ public:
                         bool enabled);
 
 private:
+    /* The CST826 reports at most two simultaneous contacts. Each one gets a
+     * dedicated LVGL pointer indev so the PXA bridge publishes a stable
+     * pointer_id per finger instead of collapsing the report into one. */
+    static constexpr int kTouchMaxPointers = 2;
+
     bool InitializeDisplay();
     bool InitializeTouch();
     bool InitializeAdc();
@@ -55,6 +61,7 @@ private:
     void NavigateBack();
     void EnterWifiProvisioning();
     void PowerOff();
+    void PollTouchController();
     bool RouteInjectedPointerDown();
     bool InjectPointer(uint16_t x, uint16_t y, bool pressed);
     bool CancelInjectedPointer();
@@ -62,6 +69,7 @@ private:
     bool CaptureRgb565(uint16_t* pixels, size_t pixel_count,
                        bool after_present,
                        pxadb::TestControlCaptureInfo* info);
+    static void TouchInterrupt(esp_lcd_touch_handle_t tp);
     static void ReadInjectedPointer(lv_indev_t* indev, lv_indev_data_t* data);
     static void ReadPhysicalPointer(lv_indev_t* indev, lv_indev_data_t* data);
     static void StatusTimer(void* context);
@@ -70,9 +78,18 @@ private:
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
     lv_display_t* display_ = nullptr;
-    lv_indev_t* physical_pointer_ = nullptr;
+    esp_lcd_touch_handle_t touch_ = nullptr;
+    lv_indev_t* physical_pointers_[kTouchMaxPointers] = {};
     lv_indev_t* injected_pointer_ = nullptr;
-    lv_indev_read_cb_t physical_pointer_read_cb_ = nullptr;
+    portMUX_TYPE touch_lock_ = portMUX_INITIALIZER_UNLOCKED;
+    bool touch_slot_pressed_[kTouchMaxPointers] = {};
+    bool touch_logged_pressed_[kTouchMaxPointers] = {};
+    uint8_t touch_slot_id_[kTouchMaxPointers] = {};
+    lv_point_t touch_slot_point_[kTouchMaxPointers] = {};
+    int64_t touch_last_poll_us_ = 0;
+    int64_t touch_last_report_us_ = 0;
+    uint8_t touch_reported_points_ = 0;
+    std::atomic<bool> touch_irq_pending_{false};
     adc_oneshot_unit_handle_t adc_ = nullptr;
     AdcBatteryMonitor* battery_ = nullptr;
     AdcButton* power_button_ = nullptr;

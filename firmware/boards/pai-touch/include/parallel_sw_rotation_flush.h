@@ -94,8 +94,13 @@ public:
             static_cast<uint32_t>(esp_timer_get_time());
 
         for (uint8_t i = 0; i < kOutputBufferCount; ++i) {
-            context->outputs[i] = static_cast<uint16_t*>(heap_caps_malloc(
-                context->output_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+            /* SPI reads these buffers directly from PSRAM. Keep every frame
+             * and 4-line transfer boundary cache aligned so the driver never
+             * needs a private DMA bounce buffer. */
+            context->outputs[i] = static_cast<uint16_t*>(
+                heap_caps_aligned_alloc(kOutputDmaAlignment,
+                                        context->output_bytes,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
             if (context->outputs[i] == nullptr) {
                 ESP_LOGE(kTag, "Unable to allocate output buffer %u (%uB)",
                          static_cast<unsigned>(i),
@@ -398,6 +403,7 @@ private:
     static constexpr char kTag[] = "FastRotate";
     static constexpr uint8_t kOutputBufferCount = 2;
     static constexpr uint8_t kReadyQueueLength = 1;
+    static constexpr size_t kOutputDmaAlignment = 64;
     // LVGL is pinned to CPU1. Keep this half-frame worker on CPU0 so the two
     // halves rotate concurrently; the submit task remains unpinned and takes
     // priority when a TE-synchronized transfer is ready.

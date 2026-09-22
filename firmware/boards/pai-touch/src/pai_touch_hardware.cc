@@ -43,6 +43,9 @@ constexpr uint32_t kLcdClockHz = 80 * 1000 * 1000;
 constexpr int kLcdTransferLines = 4;
 constexpr int kLcdQueueDepth = 2;
 constexpr uint32_t kTouchPollMs = 5;
+// Release every contact when the controller stops answering, otherwise a
+// failed I2C read would leave a pointer latched down.
+constexpr int64_t kTouchReleaseTimeoutUs = 150 * 1000;
 constexpr int64_t kPowerButtonMinPressUs = 50 * 1000;
 constexpr int64_t kPowerButtonTouchGuardUs = 350 * 1000;
 constexpr char kPerformanceNamespace[] = "pxa_perf";
@@ -229,6 +232,9 @@ bool PaiTouchHardware::InitializeDisplay() {
     io.trans_queue_depth = kLcdQueueDepth;
     io.lcd_cmd_bits = 8;
     io.lcd_param_bits = 8;
+    /* Rotation buffers live in aligned PSRAM. ESP32-S3 DMA can consume them
+     * directly, avoiding two internal 1920-byte bounce buffers per frame. */
+    io.flags.psram_dma_direct = true;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(SPI2_HOST, &io, &panel_io_));
 
     esp_lcd_panel_dev_config_t panel_config = {};
@@ -307,7 +313,6 @@ bool PaiTouchHardware::InitializeDisplay() {
 bool PaiTouchHardware::InitializeTouch() {
     i2c_master_bus_handle_t bus = nullptr;
     esp_lcd_panel_io_handle_t touch_io = nullptr;
-    esp_lcd_touch_handle_t touch = nullptr;
     const i2c_master_bus_config_t bus_config = {
         .i2c_port = PAI_TOUCH_I2C_PORT,
         .sda_io_num = PAI_TOUCH_SDA,
@@ -331,22 +336,36 @@ bool PaiTouchHardware::InitializeTouch() {
         .levels = {.reset = 0, .interrupt = 0},
         .flags = {.swap_xy = false, .mirror_x = false, .mirror_y = false},
     };
-    result = esp_lcd_touch_new_i2c_cst826(touch_io, &touch_config, &touch);
+    result = esp_lcd_touch_new_i2c_cst826(touch_io, &touch_config, &touch_);
     if (result != ESP_OK) return false;
-    const lvgl_port_touch_cfg_t lvgl_touch = {.disp = display_, .handle = touch};
-    physical_pointer_ = lvgl_port_add_touch(&lvgl_touch);
-    if (physical_pointer_ == nullptr) return false;
-    if (lvgl_port_lock(100)) {
-        lv_lock();
-        physical_pointer_read_cb_ = lv_indev_get_read_cb(physical_pointer_);
-        lv_indev_set_user_data(physical_pointer_, this);
-        lv_indev_set_read_cb(physical_pointer_, ReadPhysicalPointer);
-        lv_timer_set_period(lv_indev_get_read_timer(physical_pointer_),
-                            kTouchPollMs);
-        lv_unlock();
-        lvgl_port_unlock();
+    if (PAI_TOUCH_INTERRUPT != GPIO_NUM_NC &&
+        esp_lcd_touch_register_interrupt_callback_with_data(
+            touch_, TouchInterrupt, this) != ESP_OK) {
+        ESP_LOGW(kTag, "Touch interrupt unavailable, polling only");
     }
-    ESP_LOGI(kTag, "CST826 touch initialized");
+
+    // esp_lvgl_port publishes only the first point from a multi-touch report.
+    // Give every CST826 contact a dedicated pointer indev instead, so the PXA
+    // bridge emits one stable pointer_id per finger.
+    if (!lvgl_port_lock(100)) return false;
+    lv_lock();
+    for (int i = 0; i < kTouchMaxPointers; ++i) {
+        lv_indev_t* indev = lv_indev_create();
+        if (indev == nullptr) continue;
+        lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+        lv_indev_set_read_cb(indev, ReadPhysicalPointer);
+        lv_indev_set_disp(indev, display_);
+        lv_indev_set_driver_data(indev, this);
+        lv_indev_set_user_data(
+            indev, reinterpret_cast<void*>(static_cast<intptr_t>(i)));
+        lv_timer_set_period(lv_indev_get_read_timer(indev), kTouchPollMs);
+        physical_pointers_[i] = indev;
+    }
+    lv_unlock();
+    lvgl_port_unlock();
+    if (physical_pointers_[0] == nullptr) return false;
+    ESP_LOGI(kTag, "CST826 ready: %d independent touch pointers",
+             kTouchMaxPointers);
     return true;
 }
 
@@ -584,21 +603,115 @@ void PaiTouchHardware::ReadInjectedPointer(lv_indev_t* indev,
                       : LV_INDEV_STATE_RELEASED;
 }
 
+void IRAM_ATTR PaiTouchHardware::TouchInterrupt(esp_lcd_touch_handle_t tp) {
+    auto* self = static_cast<PaiTouchHardware*>(tp->config.user_data);
+    if (self == nullptr) return;
+    self->touch_irq_pending_.store(true, std::memory_order_release);
+    // Wake the LVGL task so all pointer indevs sample the new report now
+    // instead of waiting for their next polling period.
+    (void)lvgl_port_task_wake(LVGL_PORT_EVENT_TOUCH, nullptr);
+}
+
 void PaiTouchHardware::ReadPhysicalPointer(lv_indev_t* indev,
                                            lv_indev_data_t* data) {
-    auto* self = static_cast<PaiTouchHardware*>(lv_indev_get_user_data(indev));
-    if (self == nullptr || self->physical_pointer_read_cb_ == nullptr ||
-        data == nullptr) {
-        return;
-    }
-    data->timestamp = lv_tick_get();
-    self->physical_pointer_read_cb_(indev, data);
-    if (!self->screen_enabled_.load()) {
+    auto* self = static_cast<PaiTouchHardware*>(lv_indev_get_driver_data(indev));
+    if (self == nullptr || data == nullptr) return;
+    const int slot = static_cast<int>(
+        reinterpret_cast<intptr_t>(lv_indev_get_user_data(indev)));
+    if (slot < 0 || slot >= kTouchMaxPointers) {
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
-    if (data->state == LV_INDEV_STATE_PRESSED)
-        self->last_touch_activity_us_.store(esp_timer_get_time());
+    data->timestamp = lv_tick_get();
+
+    // All indevs share one controller report. The first callback in each
+    // polling window refreshes that snapshot; the remaining callbacks merely
+    // publish their own slot and never consume another report.
+    const int64_t now_us = esp_timer_get_time();
+    if (self->touch_irq_pending_.exchange(false, std::memory_order_acquire) ||
+        now_us - self->touch_last_poll_us_ >=
+            static_cast<int64_t>(kTouchPollMs) * 1000) {
+        self->PollTouchController();
+    }
+
+    portENTER_CRITICAL(&self->touch_lock_);
+    const bool pressed =
+        self->touch_slot_pressed_[slot] && self->screen_enabled_.load();
+    data->point = self->touch_slot_point_[slot];
+    data->state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    portEXIT_CRITICAL(&self->touch_lock_);
+    if (pressed != self->touch_logged_pressed_[slot]) {
+        self->touch_logged_pressed_[slot] = pressed;
+        ESP_LOGI(kTag, "lvgl pointer %d %s x=%d y=%d", slot,
+                 pressed ? "down" : "up", (int)data->point.x,
+                 (int)data->point.y);
+    }
+    if (pressed) self->last_touch_activity_us_.store(now_us);
+}
+
+void PaiTouchHardware::PollTouchController() {
+    touch_last_poll_us_ = esp_timer_get_time();
+    if (touch_ == nullptr) return;
+    if (esp_lcd_touch_read_data(touch_) != ESP_OK) {
+        if (touch_last_poll_us_ - touch_last_report_us_ >=
+            kTouchReleaseTimeoutUs) {
+            portENTER_CRITICAL(&touch_lock_);
+            for (int slot = 0; slot < kTouchMaxPointers; ++slot) {
+                touch_slot_pressed_[slot] = false;
+            }
+            portEXIT_CRITICAL(&touch_lock_);
+        }
+        return;
+    }
+    touch_last_report_us_ = touch_last_poll_us_;
+
+    esp_lcd_touch_point_data_t points[kTouchMaxPointers] = {};
+    uint8_t point_count = 0;
+    if (esp_lcd_touch_get_data(touch_, points, &point_count,
+                               kTouchMaxPointers) != ESP_OK) {
+        return;
+    }
+    if (point_count > kTouchMaxPointers) point_count = kTouchMaxPointers;
+
+    // Log contact-count transitions only; the poll runs at 200 Hz.
+    if (point_count != touch_reported_points_) {
+        touch_reported_points_ = point_count;
+        ESP_LOGI(kTag,
+                 "touch contacts=%u p0=(x=%u y=%u id=%u) p1=(x=%u y=%u id=%u)",
+                 point_count, points[0].x, points[0].y, points[0].track_id,
+                 points[1].x, points[1].y, points[1].track_id);
+    }
+
+    bool slot_seen[kTouchMaxPointers] = {};
+    portENTER_CRITICAL(&touch_lock_);
+    for (uint8_t i = 0; i < point_count; ++i) {
+        const uint8_t track_id = points[i].track_id;
+        int slot = -1;
+        for (int candidate = 0; candidate < kTouchMaxPointers; ++candidate) {
+            if (touch_slot_pressed_[candidate] && !slot_seen[candidate] &&
+                touch_slot_id_[candidate] == track_id) {
+                slot = candidate;
+                break;
+            }
+        }
+        for (int candidate = 0; slot < 0 && candidate < kTouchMaxPointers;
+             ++candidate) {
+            if (!touch_slot_pressed_[candidate] && !slot_seen[candidate]) {
+                slot = candidate;
+                break;
+            }
+        }
+        if (slot < 0) continue;
+        slot_seen[slot] = true;
+        touch_slot_pressed_[slot] = true;
+        touch_slot_id_[slot] = track_id;
+        touch_slot_point_[slot].x = points[i].x;
+        touch_slot_point_[slot].y = points[i].y;
+    }
+    for (int slot = 0; slot < kTouchMaxPointers; ++slot) {
+        if (!slot_seen[slot]) touch_slot_pressed_[slot] = false;
+    }
+    portEXIT_CRITICAL(&touch_lock_);
 }
 
 bool PaiTouchHardware::RouteInjectedPointerDown() {
