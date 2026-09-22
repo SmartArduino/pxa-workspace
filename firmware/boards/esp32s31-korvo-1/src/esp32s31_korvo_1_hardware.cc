@@ -892,6 +892,145 @@ void Esp32S31Korvo1Hardware::PollTouchController() {
     }
 }
 
+void Esp32S31Korvo1Hardware::ReadInjectedPointer(lv_indev_t* indev,
+                                                 lv_indev_data_t* data) {
+    auto* self = static_cast<Esp32S31Korvo1Hardware*>(
+        lv_indev_get_user_data(indev));
+    if (self == nullptr || data == nullptr) return;
+    data->timestamp = lv_tick_get();
+    data->point.x = static_cast<lv_coord_t>(
+        self->injected_pointer_x_.load(std::memory_order_relaxed));
+    data->point.y = static_cast<lv_coord_t>(
+        self->injected_pointer_y_.load(std::memory_order_relaxed));
+    data->state =
+        self->injected_pointer_pressed_.load(std::memory_order_acquire)
+            ? LV_INDEV_STATE_PRESSED
+            : LV_INDEV_STATE_RELEASED;
+}
+
+bool Esp32S31Korvo1Hardware::InjectPointer(uint16_t x, uint16_t y,
+                                           bool pressed) {
+    if (display_ == nullptr || x >= KORVO_DISPLAY_WIDTH ||
+        y >= KORVO_DISPLAY_HEIGHT) {
+        return false;
+    }
+    injected_pointer_x_.store(x, std::memory_order_relaxed);
+    injected_pointer_y_.store(y, std::memory_order_relaxed);
+    injected_pointer_pressed_.store(pressed, std::memory_order_release);
+    /* The injected indev's read timer runs lv_indev_read() inside the LVGL
+     * task, which owns the display pipeline. Reading it here would run UI
+     * event callbacks on the PXADB input task while holding the LVGL lock;
+     * opening a heavy screen then stalls the whole UI for seconds. */
+    if (injected_pointer_ != nullptr) return true;
+    if (!lvgl_port_lock(1000)) return false;
+    lv_lock();
+    if (injected_pointer_ == nullptr) {
+        injected_pointer_ = lv_indev_create();
+        if (injected_pointer_ != nullptr) {
+            lv_indev_set_type(injected_pointer_, LV_INDEV_TYPE_POINTER);
+            lv_indev_set_disp(injected_pointer_, display_);
+            lv_indev_set_user_data(injected_pointer_, this);
+            lv_indev_set_read_cb(injected_pointer_, ReadInjectedPointer);
+            lv_timer_set_period(lv_indev_get_read_timer(injected_pointer_),
+                                kTouchPollMs);
+        }
+    }
+    const bool ready = injected_pointer_ != nullptr;
+    lv_unlock();
+    lvgl_port_unlock();
+    return ready;
+}
+
+bool Esp32S31Korvo1Hardware::CancelInjectedPointer() {
+    injected_pointer_pressed_.store(false, std::memory_order_release);
+    return injected_pointer_ != nullptr;
+}
+
+bool Esp32S31Korvo1Hardware::RouteInjectedKey(pxadb::TestControlKey key) {
+    switch (key) {
+        case pxadb::TestControlKey::kBack:
+        case pxadb::TestControlKey::kHome:
+            NavigateHome();
+            return true;
+        case pxadb::TestControlKey::kVolumeUp:
+            SetVolume(static_cast<uint8_t>(std::min<int>(100, volume() + 10)));
+            return true;
+        case pxadb::TestControlKey::kVolumeDown:
+            SetVolume(static_cast<uint8_t>(volume() > 10 ? volume() - 10 : 0));
+            return true;
+    }
+    return false;
+}
+
+bool Esp32S31Korvo1Hardware::CaptureRgb565(
+    uint16_t* pixels, size_t pixel_count, bool after_present,
+    pxadb::TestControlCaptureInfo* info) {
+    if (info == nullptr) return false;
+    if (!korvo_pxa_surface::DirectScanoutActive()) {
+        /* The presenter hands each composed frame straight to the LCD, so the
+         * last presented buffer is the final screen image: Surface, water/UI
+         * blending and trusted chrome included. */
+        constexpr size_t kFramePixels =
+            static_cast<size_t>(KORVO_DISPLAY_WIDTH) * KORVO_DISPLAY_HEIGHT;
+        if (latest_frame_buffer_ == nullptr || pixel_count < kFramePixels)
+            return false;
+        std::memcpy(pixels, latest_frame_buffer_,
+                    kFramePixels * sizeof(uint16_t));
+        info->width = KORVO_DISPLAY_WIDTH;
+        info->height = KORVO_DISPLAY_HEIGHT;
+        info->stride_bytes = KORVO_DISPLAY_WIDTH * sizeof(uint16_t);
+        info->frame_id = 0;
+        info->completed_timestamp_us =
+            static_cast<uint64_t>(esp_timer_get_time());
+        info->source = "panel-framebuffer";
+        return true;
+    }
+    korvo_pxa_surface::CompletedFrameInfo frame;
+    if (!korvo_pxa_surface::SnapshotDisplayedFrame(
+            pixels, pixel_count, after_present, 1000, &frame)) {
+        return false;
+    }
+    info->width = frame.width;
+    info->height = frame.height;
+    info->stride_bytes = frame.stride_bytes;
+    info->frame_id = frame.frame_id;
+    info->completed_timestamp_us = frame.completed_timestamp_us;
+    info->source = frame.source;
+    return true;
+}
+
+bool Esp32S31Korvo1Hardware::ConfigurePxadbControls() {
+    pxadb::TestControlAdapter adapter;
+    adapter.context = this;
+    adapter.width = KORVO_DISPLAY_WIDTH;
+    adapter.height = KORVO_DISPLAY_HEIGHT;
+    /* The panel is always on, so injected presses need no wake-up step. The
+     * component injects the pointer only when this hook reports "deliver":
+     * returning false swallows the whole gesture. */
+    adapter.route_pointer_down = [](void*) { return true; };
+    adapter.inject_pointer = [](void* context, uint16_t x, uint16_t y,
+                                bool pressed) {
+        return static_cast<Esp32S31Korvo1Hardware*>(context)
+            ->InjectPointer(x, y, pressed);
+    };
+    adapter.cancel_pointer = [](void* context) {
+        return static_cast<Esp32S31Korvo1Hardware*>(context)
+            ->CancelInjectedPointer();
+    };
+    adapter.route_key = [](void* context, pxadb::TestControlKey key) {
+        return static_cast<Esp32S31Korvo1Hardware*>(context)
+            ->RouteInjectedKey(key);
+    };
+    adapter.capture_rgb565 = [](
+        void* context, uint16_t* pixels, size_t pixel_count,
+        bool after_present, pxadb::TestControlCaptureInfo* info) {
+        return static_cast<Esp32S31Korvo1Hardware*>(context)->CaptureRgb565(
+            pixels, pixel_count, after_present, info);
+    };
+    const esp_err_t result = pxadb::ConfigureTestControl(&adapter);
+    return result == ESP_OK || result == ESP_ERR_NOT_SUPPORTED;
+}
+
 void Esp32S31Korvo1Hardware::ScheduleStatusUpdate() {
     if (system_ == nullptr || status_update_pending_.exchange(true)) return;
     lv_lock();

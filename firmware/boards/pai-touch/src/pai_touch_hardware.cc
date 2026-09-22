@@ -728,9 +728,13 @@ bool PaiTouchHardware::InjectPointer(uint16_t x, uint16_t y, bool pressed) {
     injected_pointer_x_.store(x, std::memory_order_relaxed);
     injected_pointer_y_.store(y, std::memory_order_relaxed);
     injected_pointer_pressed_.store(pressed, std::memory_order_release);
+    /* The injected indev's read timer runs lv_indev_read() inside the LVGL
+     * task, which owns the display pipeline. Reading it here would run UI
+     * event callbacks on the PXADB input task while holding the LVGL lock;
+     * opening a heavy screen then stalls the whole UI for seconds. */
+    if (injected_pointer_ != nullptr) return true;
     if (!lvgl_port_lock(1000)) return false;
     lv_lock();
-    bool created = false;
     if (injected_pointer_ == nullptr) {
         injected_pointer_ = lv_indev_create();
         if (injected_pointer_ != nullptr) {
@@ -738,18 +742,11 @@ bool PaiTouchHardware::InjectPointer(uint16_t x, uint16_t y, bool pressed) {
             lv_indev_set_display(injected_pointer_, display_);
             lv_indev_set_user_data(injected_pointer_, this);
             lv_indev_set_read_cb(injected_pointer_, ReadInjectedPointer);
-            created = true;
+            lv_timer_set_period(lv_indev_get_read_timer(injected_pointer_),
+                                kTouchPollMs);
         }
     }
     const bool ready = injected_pointer_ != nullptr;
-    if (ready && created) {
-        // Establish LVGL's released baseline before the first injected DOWN.
-        // Otherwise the initial tap can initialize the indev without clicking.
-        injected_pointer_pressed_.store(false, std::memory_order_release);
-        lv_indev_read(injected_pointer_);
-        injected_pointer_pressed_.store(pressed, std::memory_order_release);
-    }
-    if (ready) lv_indev_read(injected_pointer_);
     lv_unlock();
     lvgl_port_unlock();
     return ready;
@@ -757,16 +754,7 @@ bool PaiTouchHardware::InjectPointer(uint16_t x, uint16_t y, bool pressed) {
 
 bool PaiTouchHardware::CancelInjectedPointer() {
     injected_pointer_pressed_.store(false, std::memory_order_release);
-    if (!lvgl_port_lock(1000)) return false;
-    lv_lock();
-    const bool ready = injected_pointer_ != nullptr;
-    if (ready) {
-        lv_indev_read(injected_pointer_);
-        lv_indev_reset(injected_pointer_, nullptr);
-    }
-    lv_unlock();
-    lvgl_port_unlock();
-    return ready;
+    return injected_pointer_ != nullptr;
 }
 
 bool PaiTouchHardware::RouteInjectedKey(pxadb::TestControlKey key) {

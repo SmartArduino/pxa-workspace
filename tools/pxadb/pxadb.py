@@ -16,7 +16,7 @@ import sys
 import time
 import zlib
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Callable, Iterable
 
 try:
     import serial
@@ -108,6 +108,51 @@ class BinarySocketTransport:
         self.socket.close()
 
 
+class SerialLineReader:
+    """Chunked line reader for pyserial ports.
+
+    pyserial inherits ``readline`` from ``io.RawIOBase``, which issues one
+    Python ``read(1)`` call per byte. A PXADB screenshot reply carries hundreds
+    of ~320-byte frames, so that per-byte cost dominates every large transfer:
+    the same capture takes about 14 seconds instead of 0.6 seconds over USB
+    Serial/JTAG. This wrapper reads whatever the driver already buffered and
+    splits complete lines from an internal buffer, so it can replace
+    ``serial.Serial`` without changing the client's call sites.
+    """
+
+    def __init__(self, serial_port: "serial.Serial", idle_timeout: float = 0.2) -> None:
+        self.serial_port = serial_port
+        self.idle_timeout = idle_timeout
+        self.buffer = bytearray()
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.serial_port, name)
+
+    @property
+    def in_waiting(self) -> int:
+        return self.serial_port.in_waiting + len(self.buffer)
+
+    def readline(self) -> bytes:
+        deadline = time.monotonic() + self.idle_timeout
+        while True:
+            newline = self.buffer.find(b"\n")
+            if newline >= 0:
+                line = bytes(self.buffer[:newline + 1])
+                del self.buffer[:newline + 1]
+                return line
+            waiting = self.serial_port.in_waiting
+            if waiting <= 0 and time.monotonic() >= deadline:
+                # Keep any partial line buffered; a frame is never split.
+                return b""
+            chunk = self.serial_port.read(waiting if waiting > 0 else 1)
+            if chunk:
+                self.buffer.extend(chunk)
+                deadline = time.monotonic() + self.idle_timeout
+
+    def close(self) -> None:
+        self.serial_port.close()
+
+
 @dataclass(frozen=True)
 class Frame:
     sequence: int
@@ -184,6 +229,11 @@ def print_raw_serial_line(raw: bytes) -> None:
 
 
 class PxaDbClient:
+    # Optional sinks that replace the default stdout/stderr printing. The
+    # desktop GUI installs callbacks so device output lands in its log pane.
+    log_callback: Callable[[Frame], None] | None = None
+    raw_callback: Callable[[bytes], None] | None = None
+
     def __init__(self, port: str, timeout: float = 2.0) -> None:
         self.binary_transport: BinarySocketTransport | None = None
         self.tcp_token = ""
@@ -203,7 +253,7 @@ class PxaDbClient:
             baudrate = int(os.environ.get("PXADB_BAUD", "115200"))
         except ValueError:
             raise PxaDbError("PXADB_BAUD must be an integer baud rate")
-        self.serial = serial.Serial(
+        self.serial = SerialLineReader(serial.Serial(
             port,
             baudrate=baudrate,
             timeout=0.2,
@@ -213,7 +263,7 @@ class PxaDbClient:
             # has no PXADB reader. Non-blocking mode returns the actual count.
             write_timeout=0,
             exclusive=True,
-        )
+        ))
         self.timeout = timeout
         self.sequence = 0
         self.pending_frames: list[Frame] = []
@@ -221,10 +271,13 @@ class PxaDbClient:
         self.device_info = ""
 
     def close(self) -> None:
+        # Closing is best-effort: after a device reboot the port can vanish
+        # mid-call, and pyserial then raises termios.error (which is not an
+        # OSError) from tcflush or close itself.
         if self.log_subscribed:
             try:
                 self.unsubscribe_logs()
-            except (PxaDbError, OSError):
+            except Exception:
                 pass
         if getattr(self, "binary_transport", None) is not None:
             self.binary_transport.close()
@@ -233,15 +286,57 @@ class PxaDbClient:
         # roughly 30 seconds when bytes remain queued for inactive firmware.
         try:
             self.serial.reset_output_buffer()
-        except (AttributeError, OSError):
+        except Exception:
             pass
-        self.serial.close()
+        try:
+            self.serial.close()
+        except Exception:
+            pass
 
     def __enter__(self) -> "PxaDbClient":
         return self
 
     def __exit__(self, *_: object) -> None:
         self.close()
+
+    def _emit_log(self, frame: Frame) -> None:
+        if self.log_callback is not None:
+            self.log_callback(frame)
+        else:
+            print_log_frame(frame)
+
+    def _emit_raw(self, raw: bytes) -> None:
+        if self.raw_callback is not None:
+            self.raw_callback(raw)
+        else:
+            print_raw_serial_line(raw)
+
+    def pump_logs(self) -> int:
+        """Dispatch already-buffered output without sending a command.
+
+        Firmware streams subscribed logs spontaneously, but the request path
+        only reads the port while a command is in flight. An idle GUI calls
+        this between requests to keep the log view live and to keep raw console
+        output from accumulating in the device transmit buffer. Returns the
+        number of lines handled.
+        """
+        if getattr(self, "binary_transport", None) is not None:
+            return 0
+        handled = 0
+        while self.serial.in_waiting:
+            raw = self.serial.readline()
+            if not raw:
+                break
+            handled += 1
+            frame = parse_frame(raw)
+            if frame is None:
+                self._emit_raw(raw)
+                continue
+            if frame.kind in {"LOG", "DROP"}:
+                self._emit_log(frame)
+                continue
+            self.pending_frames.append(frame)
+        return handled
 
     def _next_sequence(self) -> int:
         self.sequence += 1
@@ -287,10 +382,10 @@ class PxaDbClient:
             frame = parse_frame(raw)
             if frame is None:
                 if self.log_subscribed:
-                    print_raw_serial_line(raw)
+                    self._emit_raw(raw)
                 continue
             if self.log_subscribed and frame.kind in {"LOG", "DROP"}:
-                print_log_frame(frame)
+                self._emit_log(frame)
                 continue
             if frame.sequence != sequence:
                 self.pending_frames.append(frame)
@@ -408,10 +503,10 @@ class PxaDbClient:
                     continue
                 frame = parse_frame(raw)
                 if frame is None:
-                    print_raw_serial_line(raw)
+                    self._emit_raw(raw)
                     continue
                 if frame.kind in {"LOG", "DROP"}:
-                    print_log_frame(frame)
+                    self._emit_log(frame)
                 if dump_only and not self.serial.in_waiting:
                     return 0
         except KeyboardInterrupt:
@@ -440,10 +535,13 @@ def candidate_ports():
         raise PxaDbError("pyserial is required; install with: pip install -e tools/pxadb")
     ports = sorted(list_ports.comports(), key=lambda candidate: candidate.device)
     espressif_ports = [port for port in ports if port.vid == ESPRESSIF_USB_VID]
-    if espressif_ports:
-        return espressif_ports
-    usb_ports = [port for port in ports if port.vid is not None]
-    return usb_ports or ports
+    other_usb_ports = [port for port in ports
+                       if port.vid is not None and port.vid != ESPRESSIF_USB_VID]
+    # UART-transport boards sit behind CP210x/CH340 bridges, so probe every USB
+    # serial port; ports that do not speak PXADB simply fail the HELLO probe.
+    if espressif_ports or other_usb_ports:
+        return espressif_ports + other_usb_ports
+    return ports
 
 
 def discover_devices(timeout: float) -> list[Device]:
@@ -697,7 +795,9 @@ class NormalFsClient:
         return True
 
     def _download_windowed(self, remote_path: str,
-                           expected_size: int | None) -> bytearray:
+                           expected_size: int | None,
+                           progress: Callable[[int, int | None], None] | None = None
+                           ) -> bytearray:
         # One FSREAD carries a bounded window of offset tagged DATA frames.
         # The host truncates to the first gap and re-requests that offset, so
         # a lossy link costs one window instead of the whole file.
@@ -734,6 +834,8 @@ class NormalFsClient:
                     truncated = True
                     break
                 progressed = True
+            if progressed and progress is not None:
+                progress(len(output), expected_size)
             if expected_size is not None and len(output) >= expected_size:
                 break
             status = frames[-1].payload if frames else ""
@@ -749,8 +851,9 @@ class NormalFsClient:
             failures = 0
         return output
 
-    def _download_burst(self, remote_path: str,
-                        expected_size: int | None) -> bytearray:
+    def _download_burst(self, remote_path: str, expected_size: int | None,
+                        progress: Callable[[int, int | None], None] | None = None
+                        ) -> bytearray:
         """Legacy FSGET burst used when the device has no FSREAD command."""
         frames = self.client.request(
             f"FSGET {client_encode_path(remote_path)}", timeout=120.0
@@ -765,15 +868,19 @@ class NormalFsClient:
             raise PxaDbError(
                 f"file size mismatch: expected {expected_size}, got {len(output)}"
             )
+        if progress is not None:
+            progress(len(output), expected_size)
         return output
 
-    def get(self, remote_path: str, destination: pathlib.Path) -> None:
+    def get(self, remote_path: str, destination: pathlib.Path,
+            progress: Callable[[int, int | None], None] | None = None) -> None:
         expected_sha, expected_size = self._expected_digest(remote_path)
         attempts = 3 if expected_sha is not None else 1
         last_error: PxaDbError | None = None
         for attempt in range(1, attempts + 1):
             try:
-                data = self._download_windowed(remote_path, expected_size)
+                data = self._download_windowed(remote_path, expected_size,
+                                               progress)
             except PxaDbError as error:
                 if "unknown_command" not in str(error):
                     last_error = error
@@ -787,7 +894,7 @@ class NormalFsClient:
                     )
                     continue
                 # Device firmware predates the paced read command.
-                data = self._download_burst(remote_path, expected_size)
+                data = self._download_burst(remote_path, expected_size, progress)
             if expected_sha is None:
                 destination.write_bytes(data)
                 return
@@ -808,7 +915,8 @@ class NormalFsClient:
         assert last_error is not None
         raise last_error
 
-    def put(self, source: pathlib.Path, remote_path: str) -> None:
+    def put(self, source: pathlib.Path, remote_path: str,
+            progress: Callable[[int, int], None] | None = None) -> None:
         total = source.stat().st_size
         digest = file_sha256(source)
         properties = info_properties(self.client.device_info)
@@ -833,6 +941,17 @@ class NormalFsClient:
         last_progress = -1
         recoveries = 0
 
+        def report_progress(done: int) -> None:
+            nonlocal last_progress
+            if progress is not None:
+                progress(done, total)
+                return
+            percent = 100 if total == 0 else done * 100 // total
+            percent = min(100, (percent // 10) * 10)
+            if percent > last_progress:
+                print(f"upload {percent}%", file=sys.stderr, flush=True)
+                last_progress = percent
+
         def begin_upload() -> Frame:
             nonlocal recoveries
             while True:
@@ -849,8 +968,9 @@ class NormalFsClient:
                         raise
                     time.sleep(0.1)
 
-        print(f"uploading {source} -> PXA storage/{remote_path} ({total} bytes)",
-              file=sys.stderr, flush=True)
+        if progress is None:
+            print(f"uploading {source} -> PXA storage/{remote_path} ({total} bytes)",
+                  file=sys.stderr, flush=True)
         terminal = begin_upload()
         with source.open("rb") as input_file:
             while terminal.kind == "READY":
@@ -881,14 +1001,12 @@ class NormalFsClient:
                     # its confirmed offset; legacy firmware restarts safely.
                     terminal = begin_upload()
                     continue
-                progress = 100 if total == 0 else (offset + len(chunk)) * 100 // total
-                progress = min(100, (progress // 10) * 10)
-                if progress > last_progress:
-                    print(f"upload {progress}%", file=sys.stderr, flush=True)
-                    last_progress = progress
+                report_progress(offset + len(chunk))
         if terminal.kind != "OK":
             raise PxaDbError("file upload did not complete")
-        if last_progress < 100:
+        if progress is not None:
+            progress(total, total)
+        elif last_progress < 100:
             print("upload 100%", file=sys.stderr, flush=True)
 
     def mkdir(self, remote_path: str) -> None:
@@ -984,53 +1102,63 @@ def fs_remove_tree(client: NormalFsClient, path: str, timeout: float) -> None:
         pass
 
 
-def stage_package(source: pathlib.Path, identity: str, port: str | None,
-                  timeout: float, stream_logs: bool = False) -> None:
+def stage_package_files(client: "NormalFsClient", source: pathlib.Path,
+                        identity: str, timeout: float) -> None:
+    """Stage one package through an already open file client.
+
+    The GUI owns the only connection to a device, so package installation
+    stages through the client it already holds instead of opening a second one.
+    """
     inbox = "pxa-state/inbox"
     root = f"{inbox}/{identity}"
-    client = open_file_client(port, timeout, stream_logs)
-    try:
-        for directory in ("pxa-state", inbox):
-            try:
-                fs_mkdir(client, directory)
-            except Exception:
-                pass
-        if source.is_file():
-            remote = f"{root}.pxa"
-            # A stale directory with the same identity must go too: the inbox
-            # scanner would otherwise keep whichever source it reads first.
-            fs_remove_tree(client, root, timeout)
-            try:
-                fs_remove(client, remote, timeout)
-            except Exception:
-                pass
-            client.put(source, remote)
-            return
-        # A prior single-file upload uses the same identity with a .pxa
-        # suffix. Remove it before publishing a directory package so inbox
-        # scanning cannot select the stale source first.
+    for directory in ("pxa-state", inbox):
         try:
-            fs_remove(client, f"{root}.pxa", timeout)
+            fs_mkdir(client, directory)
         except Exception:
             pass
+    if source.is_file():
+        remote = f"{root}.pxa"
+        # A stale directory with the same identity must go too: the inbox
+        # scanner would otherwise keep whichever source it reads first.
         fs_remove_tree(client, root, timeout)
-        current = ""
-        for segment in root.split("/"):
-            current = segment if not current else f"{current}/{segment}"
-            try:
-                fs_mkdir(client, current)
-            except Exception:
-                pass
-        directories = sorted({path.parent for path in iter_package_files(source) if path.parent != source})
-        for directory in directories:
-            relative = directory.relative_to(source).as_posix()
-            try:
-                fs_mkdir(client, f"{root}/{relative}")
-            except Exception:
-                pass
-        for path in iter_package_files(source):
-            relative = path.relative_to(source).as_posix()
-            client.put(path, f"{root}/{relative}")
+        try:
+            fs_remove(client, remote, timeout)
+        except Exception:
+            pass
+        client.put(source, remote)
+        return
+    # A prior single-file upload uses the same identity with a .pxa
+    # suffix. Remove it before publishing a directory package so inbox
+    # scanning cannot select the stale source first.
+    try:
+        fs_remove(client, f"{root}.pxa", timeout)
+    except Exception:
+        pass
+    fs_remove_tree(client, root, timeout)
+    current = ""
+    for segment in root.split("/"):
+        current = segment if not current else f"{current}/{segment}"
+        try:
+            fs_mkdir(client, current)
+        except Exception:
+            pass
+    directories = sorted({path.parent for path in iter_package_files(source) if path.parent != source})
+    for directory in directories:
+        relative = directory.relative_to(source).as_posix()
+        try:
+            fs_mkdir(client, f"{root}/{relative}")
+        except Exception:
+            pass
+    for path in iter_package_files(source):
+        relative = path.relative_to(source).as_posix()
+        client.put(path, f"{root}/{relative}")
+
+
+def stage_package(source: pathlib.Path, identity: str, port: str | None,
+                  timeout: float, stream_logs: bool = False) -> None:
+    client = open_file_client(port, timeout, stream_logs)
+    try:
+        stage_package_files(client, source, identity, timeout)
     finally:
         client.close()
 
@@ -1279,6 +1407,21 @@ def screenshot_bytes(frames: list[Frame]) -> bytes:
     return screenshot_capture(frames).data
 
 
+# Integrity failures mean the link dropped or corrupted a DATA line. The
+# screenshot burst has no per-offset retransmission, so the host re-requests
+# the whole frame instead of surfacing a transient loss to the user.
+RETRYABLE_SCREENSHOT_ERRORS = (
+    "chunk offset mismatch", "invalid screenshot chunk offset",
+    "invalid screenshot data", "screenshot size mismatch",
+    "screenshot SHA-256 mismatch", "empty screenshot",
+)
+
+
+def screenshot_retryable(error: BaseException) -> bool:
+    message = str(error)
+    return any(fragment in message for fragment in RETRYABLE_SCREENSHOT_ERRORS)
+
+
 def png_chunk(kind: bytes, data: bytes) -> bytes:
     return (struct.pack(">I", len(data)) + kind + data +
             struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
@@ -1321,13 +1464,38 @@ def write_screenshot(capture: Screenshot, destination: pathlib.Path,
         destination.write_bytes(capture.data)
 
 
+def device_capabilities(device_info: str) -> set[str]:
+    """Parse the comma-separated capability list from a HELLO payload."""
+    capabilities = info_properties(device_info).get("capabilities", "")
+    return {name for name in capabilities.split(",") if name}
+
+
 def command_screenshot(arguments: argparse.Namespace) -> int:
-    request = "SCREENSHOT AFTER_PRESENT" if arguments.after_present else "SCREENSHOT"
+    request = "SCREENSHOT"
+    if arguments.jpeg:
+        request += " JPEG"
+    if arguments.after_present:
+        request += " AFTER_PRESENT"
+    attempts = 3
     with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
                      arguments.timeout, arguments.logcat) as client:
-        frames = client.request(request, timeout=120.0)
-    capture = screenshot_capture(frames)
-    destination = pathlib.Path(arguments.output)
+        for attempt in range(1, attempts + 1):
+            try:
+                frames = client.request(request,
+                                        timeout=max(arguments.timeout, 600.0))
+                capture = screenshot_capture(frames)
+                break
+            except PxaDbError as error:
+                if attempt == attempts or not screenshot_retryable(error):
+                    raise
+                print(f"screenshot incomplete ({error}); retrying "
+                      f"({attempt}/{attempts})", file=sys.stderr, flush=True)
+                # Respect the device's minimum capture interval.
+                time.sleep(0.3)
+    output = arguments.output
+    if output is None:
+        output = "screenshot.jpg" if arguments.jpeg else "screenshot.png"
+    destination = pathlib.Path(output)
     write_screenshot(capture, destination, arguments.raw)
     details = ";".join(
         f"{key}={value}" for key, value in capture.metadata.items()
@@ -1368,7 +1536,10 @@ def run_device_scenario(client: PxaDbClient, script: pathlib.Path) -> None:
                 client.request("INPUT SYNC")
             elif command == "screenshot" and len(arguments) == 2:
                 capture = screenshot_capture(
-                    client.request("SCREENSHOT", timeout=120.0)
+                    client.request(
+                        "SCREENSHOT",
+                        timeout=max(arguments.timeout, 600.0),
+                    )
                 )
                 destination = pathlib.Path(arguments[1])
                 write_screenshot(capture, destination,
@@ -1484,7 +1655,14 @@ def build_parser() -> argparse.ArgumentParser:
         "screenshot", help="capture the final visible display frame"
     )
     add_connection_arguments(screenshot)
-    screenshot.add_argument("output", nargs="?", default="screenshot.png")
+    screenshot.add_argument(
+        "output", nargs="?",
+        help="output path (default screenshot.png, or .jpg with --jpeg)",
+    )
+    screenshot.add_argument(
+        "--jpeg", action="store_true",
+        help="request a device-encoded JPEG instead of RGB565",
+    )
     screenshot.add_argument(
         "--after-present", action="store_true",
         help="wait for a frame completed after the request",

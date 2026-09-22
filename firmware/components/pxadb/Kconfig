@@ -65,4 +65,15 @@ menu "PXADB development service"
             product must configure a pxadb::TestControlAdapter before starting
             the service; unavailable controls are not advertised to the host.
 
+    config PXADB_CAPTURE_MIN_INTERVAL_MS
+        int "Minimum interval between screenshot captures (ms)"
+        range 0 10000
+        default 250
+        depends on PXADB_TEST_CONTROL
+        help
+            Screenshot requests faster than this are rejected with
+            screenshot_rate_limited. Device-encoded JPEG captures are much
+            cheaper than RGB565 bursts, so a lower value gives a smoother
+            preview when the host asks for JPEG frames.
+
 endmenu

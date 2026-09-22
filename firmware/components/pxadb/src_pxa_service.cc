@@ -27,6 +27,7 @@
 #endif
 #include <esp_app_desc.h>
 #include <esp_heap_caps.h>
+#include <esp_jpeg_enc.h>
 #include <esp_log.h>
 #include <esp_mac.h>
 #include <esp_private/log_lock.h>
@@ -57,7 +58,12 @@ constexpr char kProtocol[] = "PXADB1";
 constexpr size_t kMaxCommandLength = 2048;
 constexpr size_t kMaxFramePayload = 320;
 constexpr size_t kMaxLogFramePayload = kMaxFramePayload + 12;
-constexpr size_t kMaxEncodedPayload = 448;
+constexpr size_t kMaxEncodedPayload = 2048;
+/* Capture data is a single continuous burst: the host is only reading it, so
+ * one frame can carry more than the paced FS window without the interleaved
+ * command traffic that loses frames. The META frame still carries a SHA-256,
+ * so a rare dropped frame fails loudly instead of writing a corrupt image. */
+constexpr size_t kScreenshotChunkSize = 1024;
 constexpr size_t kUsbBufferSize = 512;
 constexpr size_t kLogQueueDepth = 4;
 constexpr size_t kLogHistoryDepth = 16;
@@ -105,13 +111,18 @@ bool PowerControlAvailable() {
 }
 
 #if CONFIG_PXADB_TEST_CONTROL
-constexpr uint32_t kInputTaskStackSize = 5 * 1024;
+/* Input injection runs LVGL indev reads and their event callbacks on this
+ * task's stack, so it needs room for event dispatch and UI work, not just the
+ * mailbox loop. A 5 KiB stack overflowed during injected drags and killed the
+ * task, which left LVGL locked and froze the UI. */
+constexpr uint32_t kInputTaskStackSize = 12 * 1024;
 constexpr size_t kInputMailboxCapacity = 16;
 constexpr uint16_t kDefaultTapDurationMs = 35;
 constexpr uint16_t kInputTimeoutMs = 5000;
 constexpr uint8_t kDefaultSwipeSteps = 12;
 constexpr uint8_t kMaximumSwipeSteps = 120;
-constexpr uint32_t kCaptureMinimumIntervalMs = 250;
+constexpr uint32_t kCaptureMinimumIntervalMs =
+    CONFIG_PXADB_CAPTURE_MIN_INTERVAL_MS;
 #endif
 
 #if CONFIG_PXADB_TRANSPORT_UART
@@ -122,6 +133,7 @@ constexpr size_t kTransportTxBufferSize = 4096;
 /* The console UART is installed with a 256-byte RX ring buffer, so poll it
  * often enough to drain a full command line without overflowing. */
 constexpr uint32_t kTransportReadPollMs = 5;
+constexpr size_t kTransportWriteChunk = 1024;
 
 esp_err_t TransportStart() {
     const uart_config_t config = {
@@ -172,6 +184,8 @@ int TransportRead(uint8_t* buffer, size_t length, uint32_t timeout_ms) {
 }
 #else
 constexpr uint32_t kTransportReadPollMs = 25;
+/* A single USB Serial/JTAG write must fit the driver's TX ring buffer. */
+constexpr size_t kTransportWriteChunk = kUsbBufferSize / 2;
 
 esp_err_t TransportStart() {
     if (!usb_serial_jtag_is_driver_installed()) {
@@ -290,13 +304,25 @@ bool WriteAll(const void* data, size_t length) {
     const auto* bytes = static_cast<const uint8_t*>(data);
     size_t offset = 0;
     bool success = true;
+    /* The USB Serial/JTAG driver accepts a write only when the complete
+     * buffer fits its 512-byte TX ring, so one long frame line is split into
+     * pieces that fit and retried while the host drains. UART writes already
+     * return partial counts. */
+    const int64_t deadline_us = esp_timer_get_time() +
+        static_cast<int64_t>(kIoTimeout) * 1000000 / configTICK_RATE_HZ;
     while (offset < length) {
-        const int written = TransportWrite(bytes + offset, length - offset);
-        if (written <= 0) {
+        const size_t piece =
+            std::min(kTransportWriteChunk, length - offset);
+        const int written = TransportWrite(bytes + offset, piece);
+        if (written > 0) {
+            offset += static_cast<size_t>(written);
+            continue;
+        }
+        if (esp_timer_get_time() >= deadline_us) {
             success = false;
             break;
         }
-        offset += static_cast<size_t>(written);
+        vTaskDelay(1);
     }
     if (success) success = TransportTxDone();
     if (s_tx_mutex != nullptr) xSemaphoreGive(s_tx_mutex);
@@ -1057,7 +1083,9 @@ void SendHello(unsigned long sequence) {
     char payload[kMaxFramePayload] = {};
     const char* kTestCapabilities =
 #if CONFIG_PXADB_TEST_CONTROL
-        TestControlAvailable() ? ",input-v2,screenshot-rgb565" : "";
+        TestControlAvailable()
+            ? ",input-v2,screenshot-rgb565,screenshot-jpeg"
+            : "";
 #else
         "";
 #endif
@@ -1312,7 +1340,108 @@ bool Sha256Bytes(const uint8_t* bytes, size_t length, char output[65]) {
     return true;
 }
 
-void SendScreenshot(unsigned long sequence, bool after_present) {
+/* JPEG capture encodes the captured logical RGB565 frame. The board adapter
+ * already snapshots the final presented frame under its own rotation lock and
+ * converts it to logical orientation, so the encoder never touches the live
+ * scanout buffer and a mid-encode display update cannot tear the image.
+ *
+ * The encoder is opened and closed per capture so it stays non-resident: an
+ * idle device keeps none of its ~10 KiB DRAM state or the output buffer.
+ * task_enable=false also means no encoder task exists at any point. */
+constexpr uint8_t kJpegQuality = 70;
+
+bool EncodeJpegFrame(const uint16_t* pixels, const TestControlCaptureInfo& info,
+                     uint8_t** output, size_t* output_size) {
+    if (pixels == nullptr || output == nullptr || output_size == nullptr ||
+        info.stride_bytes != info.width * sizeof(uint16_t))
+        return false;
+    jpeg_enc_config_t config = DEFAULT_JPEG_ENC_CONFIG();
+    config.width = static_cast<int>(info.width);
+    config.height = static_cast<int>(info.height);
+    config.src_type = JPEG_PIXEL_FORMAT_RGB565_LE;
+    config.subsampling = JPEG_SUBSAMPLE_420;
+    config.quality = kJpegQuality;
+    config.rotate = JPEG_ROTATE_0D;
+    config.task_enable = false;
+    jpeg_enc_handle_t handle = nullptr;
+    if (jpeg_enc_open(&config, &handle) != JPEG_ERR_OK || handle == nullptr)
+        return false;
+    /* Worst-case JPEG output can exceed the raw frame; two raw frames of
+     * PSRAM cover that bound without a copy strategy on the common path. */
+    const size_t capacity =
+        static_cast<size_t>(info.width) * info.height * sizeof(uint16_t) * 2;
+    auto* encoded = static_cast<uint8_t*>(
+        heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (encoded == nullptr) {
+        jpeg_enc_close(handle);
+        return false;
+    }
+    int encoded_size = 0;
+    const int input_size =
+        static_cast<int>(info.width * info.height * sizeof(uint16_t));
+    const jpeg_error_t result =
+        jpeg_enc_process(handle, reinterpret_cast<const uint8_t*>(pixels),
+                         input_size, encoded, static_cast<int>(capacity),
+                         &encoded_size);
+    jpeg_enc_close(handle);
+    if (result != JPEG_ERR_OK || encoded_size <= 0) {
+        heap_caps_free(encoded);
+        return false;
+    }
+    *output = encoded;
+    *output_size = static_cast<size_t>(encoded_size);
+    return true;
+}
+
+bool SendCaptureFrames(unsigned long sequence, const uint8_t* bytes,
+                       size_t byte_count, const char* format,
+                       const TestControlCaptureInfo& info,
+                       uint32_t stride_bytes) {
+    char sha256[65] = {};
+    if (!Sha256Bytes(bytes, byte_count, sha256)) return false;
+    char metadata[kMaxFramePayload] = {};
+    if (stride_bytes != 0) {
+        snprintf(metadata, sizeof(metadata),
+                 "format=%s;width=%u;height=%u;stride=%u;orientation=logical;frame_id=%" PRIu64 ";device_us=%" PRIu64 ";source=%s;bytes=%u;sha256=%s",
+                 format, static_cast<unsigned>(info.width),
+                 static_cast<unsigned>(info.height),
+                 static_cast<unsigned>(stride_bytes), info.frame_id,
+                 info.completed_timestamp_us, info.source,
+                 static_cast<unsigned>(byte_count), sha256);
+    } else {
+        snprintf(metadata, sizeof(metadata),
+                 "format=%s;width=%u;height=%u;orientation=logical;frame_id=%" PRIu64 ";device_us=%" PRIu64 ";source=%s;bytes=%u;sha256=%s",
+                 format, static_cast<unsigned>(info.width),
+                 static_cast<unsigned>(info.height), info.frame_id,
+                 info.completed_timestamp_us, info.source,
+                 static_cast<unsigned>(byte_count), sha256);
+    }
+    if (!SendFrame(sequence, "META", metadata)) return false;
+    for (size_t offset = 0; offset < byte_count;
+         offset += kScreenshotChunkSize) {
+        const size_t count =
+            std::min(kScreenshotChunkSize, byte_count - offset);
+        char encoded[kScreenshotChunkSize * 2] = {};
+        size_t encoded_length = 0;
+        if (mbedtls_base64_encode(
+                reinterpret_cast<unsigned char*>(encoded), sizeof(encoded) - 1,
+                &encoded_length,
+                bytes + offset, count) != 0)
+            return false;
+        encoded[encoded_length] = '\0';
+        char chunk[kScreenshotChunkSize * 2 + 16] = {};
+        const int chunk_length = snprintf(chunk, sizeof(chunk), "%u\t%s",
+                                          static_cast<unsigned>(offset),
+                                          encoded);
+        if (chunk_length <= 0 ||
+            static_cast<size_t>(chunk_length) >= sizeof(chunk) ||
+            !SendFrame(sequence, "DATA", chunk))
+            return false;
+    }
+    return SendFrame(sequence, "OK", "");
+}
+
+void SendScreenshot(unsigned long sequence, bool after_present, bool jpeg) {
     const uint64_t requested_us = static_cast<uint64_t>(esp_timer_get_time());
     if (s_last_capture_us != 0 &&
         requested_us - s_last_capture_us <
@@ -1328,8 +1457,10 @@ void SendScreenshot(unsigned long sequence, bool after_present) {
     const size_t pixel_count = static_cast<size_t>(s_test_control.width) *
                                static_cast<size_t>(s_test_control.height);
     const size_t byte_count = pixel_count * sizeof(uint16_t);
-    auto* pixels = static_cast<uint16_t*>(heap_caps_malloc(
-        byte_count, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    /* The encoder uses word-sized loads on ESP32-S3, so the capture buffer
+     * keeps the 16-byte alignment the vendor examples require. */
+    auto* pixels = static_cast<uint16_t*>(heap_caps_aligned_alloc(
+        16, byte_count, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     TestControlCaptureInfo info;
     if (pixels == nullptr ||
         !s_test_control.capture_rgb565(s_test_control.context, pixels,
@@ -1345,60 +1476,32 @@ void SendScreenshot(unsigned long sequence, bool after_present) {
         SendFrame(sequence, "ERR", "screenshot_layout_changed");
         return;
     }
-    char sha256[65] = {};
-    if (!Sha256Bytes(reinterpret_cast<const uint8_t*>(pixels), byte_count,
-                     sha256)) {
+    if (jpeg) {
+        uint8_t* encoded = nullptr;
+        size_t encoded_size = 0;
+        const bool encoded_ok =
+            EncodeJpegFrame(pixels, info, &encoded, &encoded_size);
         heap_caps_free(pixels);
-        SendFrame(sequence, "ERR", "screenshot_checksum_failed");
-        return;
-    }
-    char metadata[kMaxFramePayload] = {};
-    snprintf(metadata, sizeof(metadata),
-             "format=rgb565le;width=%u;height=%u;stride=%u;orientation=logical;frame_id=%" PRIu64 ";device_us=%" PRIu64 ";source=%s;bytes=%u;sha256=%s",
-             static_cast<unsigned>(info.width),
-             static_cast<unsigned>(info.height),
-             static_cast<unsigned>(info.stride_bytes), info.frame_id,
-             info.completed_timestamp_us, info.source,
-             static_cast<unsigned>(byte_count), sha256);
-    if (!SendFrame(sequence, "META", metadata)) {
-        heap_caps_free(pixels);
-        return;
-    }
-    const auto* bytes = reinterpret_cast<const uint8_t*>(pixels);
-    for (size_t offset = 0; offset < byte_count;
-         offset += kFsDataChunkSize) {
-        const size_t count = std::min(kFsDataChunkSize, byte_count - offset);
-        char encoded[kFsDataChunkSize * 2] = {};
-        size_t encoded_length = 0;
-        if (mbedtls_base64_encode(
-                reinterpret_cast<unsigned char*>(encoded), sizeof(encoded) - 1,
-                &encoded_length,
-                bytes + offset, count) != 0) {
-            heap_caps_free(pixels);
+        if (!encoded_ok) {
             SendFrame(sequence, "ERR", "screenshot_encode_failed");
             return;
         }
-        encoded[encoded_length] = '\0';
-        char chunk[kMaxFramePayload] = {};
-        const int chunk_length = snprintf(chunk, sizeof(chunk), "%u\t%s",
-                                          static_cast<unsigned>(offset),
-                                          encoded);
-        if (chunk_length <= 0 ||
-            static_cast<size_t>(chunk_length) >= sizeof(chunk) ||
-            !SendFrame(sequence, "DATA", chunk)) {
-            heap_caps_free(pixels);
-            return;
-        }
+        if (!SendCaptureFrames(sequence, encoded, encoded_size, "jpeg", info, 0))
+            ESP_LOGE(kTag, "PXADB JPEG screenshot transmit failed");
+        heap_caps_free(encoded);
+        return;
     }
+    if (!SendCaptureFrames(sequence, reinterpret_cast<const uint8_t*>(pixels),
+                           byte_count, "rgb565le", info, info.stride_bytes))
+        ESP_LOGE(kTag, "PXADB screenshot transmit failed");
     heap_caps_free(pixels);
-    SendFrame(sequence, "OK", "");
 }
 #else
 void HandleInput(unsigned long sequence, char* const*, size_t) {
     SendFrame(sequence, "ERR", "test_control_disabled");
 }
 
-void SendScreenshot(unsigned long sequence, bool) {
+void SendScreenshot(unsigned long sequence, bool, bool) {
     SendFrame(sequence, "ERR", "test_control_disabled");
 }
 #endif
@@ -1626,15 +1729,27 @@ void HandleCommand(char* line) {
     } else if (strcmp(command, "INPUT") == 0) {
         HandleInput(sequence, arguments, argument_count);
     } else if (strcmp(command, "SCREENSHOT") == 0) {
-        const bool legacy_quality = argument != nullptr &&
-            argument[0] >= '0' && argument[0] <= '9';
-        if (argument_count > 1 ||
-            (argument != nullptr && !legacy_quality &&
-             strcmp(argument, "AFTER_PRESENT") != 0)) {
+        bool jpeg = false;
+        bool after_present = false;
+        bool valid = true;
+        for (size_t index = 0; index < argument_count; ++index) {
+            const char* value = arguments[index];
+            if (strcmp(value, "JPEG") == 0 && !jpeg) {
+                jpeg = true;
+            } else if (strcmp(value, "AFTER_PRESENT") == 0 && !after_present) {
+                after_present = true;
+            } else if (index == 0 && value[0] >= '0' && value[0] <= '9') {
+                /* Legacy screenshot quality argument; the device captures
+                 * lossless RGB565 and JPEG uses its configured quality. */
+            } else {
+                valid = false;
+                break;
+            }
+        }
+        if (!valid) {
             SendFrame(sequence, "ERR", "invalid_screenshot_mode");
         } else {
-            SendScreenshot(sequence, argument != nullptr &&
-                                     strcmp(argument, "AFTER_PRESENT") == 0);
+            SendScreenshot(sequence, after_present, jpeg);
         }
     } else if (strcmp(command, "FSLIST") == 0 && argument != nullptr) {
         SendFsList(sequence, argument);

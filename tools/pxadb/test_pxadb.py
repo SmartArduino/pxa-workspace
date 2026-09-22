@@ -7,6 +7,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 import zlib
 
@@ -23,9 +24,12 @@ class FakeSerial:
     def __init__(self, lines: list[bytes]) -> None:
         self.lines = list(lines)
         self.writes: list[bytes] = []
-        self.in_waiting = 0
         self.closed = False
         self.output_resets = 0
+
+    @property
+    def in_waiting(self) -> int:
+        return len(self.lines)
 
     def write(self, value: bytes) -> int:
         self.writes.append(value)
@@ -70,6 +74,53 @@ def fake_client(lines: list[bytes]) -> pxadb.PxaDbClient:
     return client
 
 
+class FakeBufferedSerial:
+    """Driver-like stub that never returns more than the requested size."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = list(chunks)
+        self.read_sizes: list[int] = []
+        self.closed = False
+
+    @property
+    def in_waiting(self) -> int:
+        return len(self.chunks[0]) if self.chunks else 0
+
+    def read(self, size: int) -> bytes:
+        self.read_sizes.append(size)
+        if not self.chunks:
+            return b""
+        chunk = self.chunks[0]
+        if len(chunk) > size:
+            self.chunks[0] = chunk[size:]
+            return chunk[:size]
+        self.chunks.pop(0)
+        return chunk
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class SerialLineReaderTest(unittest.TestCase):
+    def test_reassembles_lines_without_byte_reads(self) -> None:
+        port = FakeBufferedSerial([
+            b"PXADB1 1 OK YQ", b"==\nPXADB1 2 LOG eA==\n",
+        ])
+        reader = pxadb.SerialLineReader(port, idle_timeout=0.01)
+        self.assertEqual(reader.readline(), b"PXADB1 1 OK YQ==\n")
+        self.assertEqual(reader.readline(), b"PXADB1 2 LOG eA==\n")
+        self.assertGreater(min(port.read_sizes), 1)
+
+    def test_partial_line_stays_buffered_until_complete(self) -> None:
+        port = FakeBufferedSerial([b"PXADB1 1 LOG eA"])
+        reader = pxadb.SerialLineReader(port, idle_timeout=0.01)
+        self.assertEqual(reader.readline(), b"")
+        self.assertEqual(reader.in_waiting, 15)
+        port.chunks.append(b"==\n")
+        self.assertEqual(reader.readline(), b"PXADB1 1 LOG eA==\n")
+        self.assertEqual(reader.in_waiting, 0)
+
+
 class PxaDbLogStreamingTest(unittest.TestCase):
     def test_request_ignores_raw_console_output_before_response(self) -> None:
         client = fake_client([
@@ -98,6 +149,23 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertTrue(all(value is not None and value <= client.timeout
                             for value in timeouts))
+
+    def test_close_tolerates_a_dead_port(self) -> None:
+        class DeadPortError(Exception):
+            pass
+
+        class DeadSerial:
+            def reset_output_buffer(self) -> None:
+                raise DeadPortError(5, "Input/output error")
+
+            def close(self) -> None:
+                raise DeadPortError(5, "Input/output error")
+
+        client = object.__new__(pxadb.PxaDbClient)
+        client.serial = DeadSerial()
+        client.log_subscribed = False
+        client.binary_transport = None
+        client.close()
 
     def test_command_write_does_not_wait_for_driver_flush(self) -> None:
         client = fake_client([])
@@ -203,6 +271,19 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         arguments = pxadb.build_parser().parse_args(["doctor", "--port", "/dev/ttyACM1"])
         self.assertEqual(arguments.command, "doctor")
         self.assertEqual(arguments.port, "/dev/ttyACM1")
+
+    def test_candidate_ports_include_uart_bridges(self) -> None:
+        ports = [
+            SimpleNamespace(device="/dev/ttyACM0", vid=pxadb.ESPRESSIF_USB_VID,
+                            description="USB JTAG"),
+            SimpleNamespace(device="/dev/ttyUSB0", vid=0x10C4,
+                            description="CP210x"),
+        ]
+        with mock.patch.object(pxadb, "list_ports") as list_ports:
+            list_ports.comports.return_value = ports
+            candidates = pxadb.candidate_ports()
+        self.assertEqual([candidate.device for candidate in candidates],
+                         ["/dev/ttyACM0", "/dev/ttyUSB0"])
 
     def test_simulator_parser_selects_a_unix_socket(self) -> None:
         arguments = pxadb.build_parser().parse_args([
@@ -334,6 +415,42 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         self.assertTrue(client.log_subscribed)
         self.assertIn("boot complete", stdout.getvalue())
 
+    def test_request_prefers_callbacks_over_console_output(self) -> None:
+        client = fake_client([
+            encoded_frame(0, "LOG", "123\tinstall started"),
+            b"Guru Meditation Error: Core  0 panic'ed\r\n",
+            encoded_frame(1, "OK", "done"),
+        ])
+        client.log_subscribed = True
+        logs: list[pxadb.Frame] = []
+        raw: list[bytes] = []
+        client.log_callback = logs.append
+        client.raw_callback = raw.append
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            frames = client.request("PACKAGES")
+        self.assertEqual([frame.kind for frame in frames], ["OK"])
+        self.assertEqual([frame.payload for frame in logs], ["123\tinstall started"])
+        self.assertEqual(raw, [b"Guru Meditation Error: Core  0 panic'ed\r\n"])
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_pump_dispatches_buffered_output_between_requests(self) -> None:
+        client = fake_client([
+            encoded_frame(0, "LOG", "123\tinstall started"),
+            b"raw console text\r\n",
+        ])
+        client.log_subscribed = True
+        logs: list[pxadb.Frame] = []
+        raw: list[bytes] = []
+        client.log_callback = logs.append
+        client.raw_callback = raw.append
+        self.assertEqual(client.pump_logs(), 2)
+        self.assertEqual([frame.payload for frame in logs], ["123\tinstall started"])
+        self.assertEqual(raw, [b"raw console text\r\n"])
+        self.assertEqual(client.pump_logs(), 0)
+
     def test_install_accepts_logcat_option(self) -> None:
         arguments = pxadb.build_parser().parse_args([
             "package", "install", "package.pxa", "--logcat"
@@ -376,6 +493,74 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         ])
         self.assertEqual((screenshot.output, screenshot.after_present),
                          ("capture.png", True))
+
+    def test_device_capabilities_parses_the_hello_list(self) -> None:
+        info = ("protocol=1;capabilities=info,fs,reboot,input-v2,"
+                "screenshot-rgb565,screenshot-jpeg;max_chunk=1024")
+        self.assertEqual(pxadb.device_capabilities(info),
+                         {"info", "fs", "reboot", "input-v2",
+                          "screenshot-rgb565", "screenshot-jpeg"})
+        self.assertEqual(pxadb.device_capabilities(""), set())
+
+    def test_screenshot_jpeg_option_requests_a_jpeg_frame(self) -> None:
+        arguments = pxadb.build_parser().parse_args(["screenshot", "--jpeg"])
+        self.assertTrue(arguments.jpeg)
+        self.assertIsNone(arguments.output)
+        client = mock.MagicMock()
+        with mock.patch.object(pxadb, "resolve_pxadb_port",
+                               return_value="/dev/ttyACM0"), \
+                mock.patch.object(pxadb, "open_client", return_value=client), \
+                mock.patch.object(pxadb, "screenshot_capture",
+                                  return_value=pxadb.Screenshot(b"", {})), \
+                mock.patch.object(pxadb, "write_screenshot") as write:
+            pxadb.command_screenshot(arguments)
+        client.__enter__().request.assert_called_once_with(
+            "SCREENSHOT JPEG", timeout=600.0)
+        self.assertEqual(write.call_args.args[1],
+                         pathlib.Path("screenshot.jpg"))
+
+    def test_screenshot_jpeg_after_present_combines_both_modes(self) -> None:
+        arguments = pxadb.build_parser().parse_args(
+            ["screenshot", "frame.jpg", "--jpeg", "--after-present"])
+        client = mock.MagicMock()
+        with mock.patch.object(pxadb, "resolve_pxadb_port",
+                               return_value="/dev/ttyACM0"), \
+                mock.patch.object(pxadb, "open_client", return_value=client), \
+                mock.patch.object(pxadb, "screenshot_capture",
+                                  return_value=pxadb.Screenshot(b"", {})):
+            pxadb.command_screenshot(arguments)
+        client.__enter__().request.assert_called_once_with(
+            "SCREENSHOT JPEG AFTER_PRESENT", timeout=600.0)
+
+    def test_screenshot_retryable_only_covers_integrity_failures(self) -> None:
+        self.assertTrue(pxadb.screenshot_retryable(pxadb.PxaDbError(
+            "screenshot chunk offset mismatch: expected 2048, got 3072")))
+        self.assertTrue(pxadb.screenshot_retryable(pxadb.PxaDbError(
+            "screenshot SHA-256 mismatch")))
+        self.assertTrue(pxadb.screenshot_retryable(pxadb.PxaDbError(
+            "device returned an empty screenshot")))
+        self.assertFalse(pxadb.screenshot_retryable(pxadb.PxaDbError(
+            "screenshot_rate_limited")))
+        self.assertFalse(pxadb.screenshot_retryable(pxadb.PxaDbError(
+            "device did not respond to SCREENSHOT")))
+
+    def test_screenshot_retries_an_incomplete_frame(self) -> None:
+        arguments = pxadb.build_parser().parse_args(["screenshot", "capture.png"])
+        client = mock.MagicMock()
+        with mock.patch.object(pxadb, "resolve_pxadb_port",
+                               return_value="/dev/ttyACM0"), \
+                mock.patch.object(pxadb, "open_client", return_value=client), \
+                mock.patch.object(pxadb, "screenshot_capture", side_effect=[
+                    pxadb.PxaDbError(
+                        "screenshot chunk offset mismatch: expected 2048, "
+                        "got 3072"),
+                    pxadb.Screenshot(b"", {}),
+                ]), \
+                mock.patch.object(pxadb, "write_screenshot"), \
+                mock.patch.object(pxadb.time, "sleep") as sleep:
+            self.assertEqual(pxadb.command_screenshot(arguments), 0)
+        self.assertEqual(client.__enter__().request.call_count, 2)
+        sleep.assert_called_once_with(0.3)
 
     def test_screenshot_data_frames_decode_binary(self) -> None:
         payload = b"\xff\xd8\x00\xff\xd9"
@@ -526,6 +711,45 @@ class PxaDbFileTransferTest(unittest.TestCase):
             client._append_data_frame(frame, output, require_offset=False)
         )
         self.assertEqual(output, b"legacy")
+
+    def test_upload_reports_progress_through_callback(self) -> None:
+        payload = b"abcdef"
+        client = fake_client([
+            encoded_frame(1, "READY", "6"),
+            encoded_frame(2, "READY", "4"),
+            encoded_frame(3, "READY", "2"),
+            encoded_frame(4, "OK", ""),
+        ])
+        client.device_info = "max_chunk=2;fs_offset=1"
+        updates: list[tuple[int, int]] = []
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "payload.bin"
+            source.write_bytes(payload)
+            with contextlib.redirect_stderr(stderr):
+                pxadb.NormalFsClient(client).put(
+                    source, "pxa-state/inbox/payload.bin",
+                    progress=lambda done, total: updates.append((done, total)),
+                )
+        self.assertEqual(updates[0], (2, 6))
+        self.assertEqual(updates[-1], (6, 6))
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_download_reports_progress_through_callback(self) -> None:
+        client = self.client([
+            [
+                self.data_frame(0, b"payload"),
+                pxadb.Frame(1, "OK", "eof"),
+            ],
+        ])
+        client.client.device_info = ""
+        updates: list[tuple[int, int | None]] = []
+        with tempfile.TemporaryDirectory() as directory:
+            destination = pathlib.Path(directory) / "payload.bin"
+            client.get("pxa-state/inbox/x", destination,
+                       progress=lambda done, total: updates.append((done, total)))
+            self.assertEqual(destination.read_bytes(), b"payload")
+        self.assertEqual(updates, [(7, None)])
 
     def test_fs_unlock_requests_system_unlock(self) -> None:
         arguments = pxadb.build_parser().parse_args([

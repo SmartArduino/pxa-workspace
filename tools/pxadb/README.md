@@ -29,6 +29,17 @@ register a controllable power latch also advertise `poweroff` and accept
 `pxadb poweroff --port /dev/ttyACM0`; unsupported boards report that software
 power-off is unavailable rather than restarting.
 
+Capture the final visible frame with `pxadb screenshot`. Firmware that
+advertises the `screenshot-jpeg` capability also accepts `--jpeg`, which asks
+the device to encode the frame on-board (about 10 KB instead of a 142 KB
+RGB565 burst):
+
+```sh
+pxadb screenshot capture.png --port /dev/ttyACM0
+pxadb screenshot --jpeg capture.jpg --port /dev/ttyACM0
+pxadb screenshot --jpeg capture.jpg --after-present --port /dev/ttyACM0
+```
+
 For the product simulator, start its local service and select a profile instead
 of a serial port:
 
@@ -62,6 +73,10 @@ Use `--instance` to run isolated copies of one profile; PXADB addresses that
 copy as `PROFILE@INSTANCE`. `--listen HOST:auto` asks the OS to choose a free
 TCP port and records the actual listener in `local/simulator/PROFILE@INSTANCE/pxadb2.tcp`.
 
+A desktop GUI built on this same client is available as `tools/pxadb-gui.sh`;
+see [PXADB GUI](../pxadb-gui/README.md) for live preview, remote control, file
+transfer and package management.
+
 ## 简体中文
 
 PXADB 是本工作区固件 PXADB USB Serial/JTAG 服务的主机客户端。它可安装独立构建的
@@ -89,6 +104,15 @@ Package 事务提交。传入 `--yes` 可进行非交互式替换。只有一个
 可通过 `pxadb reboot --port /dev/ttyACM0` 重启设备。具有可控电源锁存的板子会声明
 `poweroff` 能力，并支持 `pxadb poweroff --port /dev/ttyACM0`；不支持的软件关机板子
 会明确提示不可用，不会被重启替代。
+
+`pxadb screenshot` 抓取最终显示帧。声明 `screenshot-jpeg` 能力的固件还接受
+`--jpeg`，由设备端直接编码 JPEG（约 10 KB，而 RGB565 突发是 142 KB）：
+
+```sh
+pxadb screenshot capture.png --port /dev/ttyACM0
+pxadb screenshot --jpeg capture.jpg --port /dev/ttyACM0
+pxadb screenshot --jpeg capture.jpg --after-present --port /dev/ttyACM0
+```
 
 产品模拟器可启动本地服务，并用 Profile 代替串口：
 
@@ -119,3 +143,6 @@ TCP token 认证不加密流量。仅 UI 的桌面模拟器仍没有 PXADB 端�
 可启动同一 Profile 的隔离副本，PXADB 地址写为 `PROFILE@INSTANCE`。`--listen HOST:auto`
 会让系统选择空闲 TCP 端口，并把实际 listener 写入
 `local/simulator/PROFILE@INSTANCE/pxadb2.tcp`。
+
+基于同一客户端的桌面 GUI 位于 `tools/pxadb-gui.sh`，支持实时预览、远程操纵、
+文件传输和 Package 管理，详见 [PXADB GUI](../pxadb-gui/README.md)。

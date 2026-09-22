@@ -135,7 +135,7 @@ dependencies:
     component_hash: e1e7e6991193c41ed6c9fc386702aa7821433319e7aa9c3147cd3236310cd69c
     dependencies: []
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     targets:
     - esp32
@@ -237,10 +237,11 @@ direct_dependencies:
 - espressif/esp_lcd_touch_gt1151
 - espressif/esp_lv_decoder
 - espressif/esp_lvgl_port
+- espressif/esp_new_jpeg
 - espressif/freetype
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: 7697e061c2fd98c07af2d5084ce85565718dd3e7a640e503f536a08f1fe954fe
+manifest_hash: b0d40a1cf5a1adccab591dbeaf07aa0b620775595be71aaa49d3a8d190a134ac
 target: esp32s31
 version: 3.0.0

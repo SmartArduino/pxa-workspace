@@ -4,6 +4,7 @@ set(PXADB_PRIV_REQUIRES
     esp_driver_uart
     esp_driver_usb_serial_jtag
     esp_hw_support
+    esp_new_jpeg
     esp_psram
     esp_system
     esp_timer
