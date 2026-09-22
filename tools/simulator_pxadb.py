@@ -18,6 +18,7 @@ import struct
 import subprocess
 import threading
 import time
+import zlib
 
 
 FRAME_HEADER = struct.Struct("!IBBI")
@@ -28,6 +29,8 @@ MAX_FRAME_BYTES = 1024 * 1024
 MAX_UPLOAD_BYTES = 128 * 1024 * 1024
 MAX_CHUNK_BYTES = 64 * 1024
 MAX_SCREENSHOT_BYTES = 32 * 1024 * 1024
+# One FSREAD response carries this many raw bytes, split into DATA frames.
+FS_READ_WINDOW_BYTES = 4 * MAX_CHUNK_BYTES
 
 
 class ServiceError(RuntimeError):
@@ -218,7 +221,9 @@ class SimulatorPxaDb:
 
     def storage_path(self, remote: str) -> pathlib.Path:
         normalized = pathlib.PurePosixPath(remote.strip("/"))
-        if (not remote or str(normalized) in {".", ""} or normalized.is_absolute() or
+        if str(normalized) in {"", "."}:
+            return self.state_root
+        if (not remote or normalized.is_absolute() or
                 ".." in normalized.parts):
             raise ServiceError("path must remain inside simulator PXA storage")
         return self.state_root.joinpath(*normalized.parts)
@@ -290,6 +295,91 @@ class SimulatorPxaDb:
         del self.uploads[upload_key]
         self.send(connection, sequence, "OK")
 
+    def file_list(self, connection: "BinaryHandler", sequence: int,
+                  arguments: list[str]) -> None:
+        if len(arguments) != 1:
+            raise ServiceError("invalid_file_list")
+        directory = self.storage_path(decode_path(arguments[0]))
+        if not directory.is_dir():
+            raise ServiceError("path_not_found")
+        for entry in sorted(directory.iterdir(), key=lambda item: item.name):
+            try:
+                metadata = entry.stat()
+            except OSError:
+                continue
+            kind = "D" if entry.is_dir() else "F"
+            size = min(metadata.st_size, 0xFFFFFFFF)
+            self.send(connection, sequence, "ENTRY",
+                      f"{kind}\t{size}\t{entry.name}")
+        self.send(connection, sequence, "OK")
+
+    def file_digest(self, connection: "BinaryHandler", sequence: int,
+                    arguments: list[str]) -> None:
+        if len(arguments) != 1:
+            raise ServiceError("invalid_file_digest")
+        path = self.storage_path(decode_path(arguments[0]))
+        if not path.is_file():
+            raise ServiceError("file_not_found")
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            with path.open("rb") as file:
+                while chunk := file.read(MAX_CHUNK_BYTES):
+                    digest.update(chunk)
+                    size += len(chunk)
+        except OSError as error:
+            raise ServiceError("file_read_failed") from error
+        self.send(connection, sequence, "OK",
+                  f"sha256={digest.hexdigest()};bytes={size}")
+
+    def file_read(self, connection: "BinaryHandler", sequence: int,
+                  arguments: list[str]) -> None:
+        if len(arguments) not in {1, 2}:
+            raise ServiceError("invalid_file_read")
+        path = self.storage_path(decode_path(arguments[0]))
+        try:
+            offset = int(arguments[1]) if len(arguments) == 2 else 0
+        except ValueError as error:
+            raise ServiceError("invalid_offset") from error
+        if offset < 0:
+            raise ServiceError("invalid_offset")
+        if not path.is_file():
+            raise ServiceError("file_not_found")
+        if offset > path.stat().st_size:
+            raise ServiceError("invalid_offset")
+        try:
+            with path.open("rb") as file:
+                file.seek(offset)
+                window = file.read(FS_READ_WINDOW_BYTES)
+        except OSError as error:
+            raise ServiceError("file_read_failed") from error
+        eof = offset + len(window) >= path.stat().st_size
+        for start in range(0, len(window), MAX_CHUNK_BYTES):
+            chunk = window[start:start + MAX_CHUNK_BYTES]
+            encoded = base64.b64encode(chunk).decode("ascii")
+            checksum = zlib.crc32(chunk) & 0xFFFFFFFF
+            self.send(connection, sequence, "DATA",
+                      f"{offset + start}\t{checksum:08x}\t{encoded}")
+        self.send(connection, sequence, "OK", "eof" if eof else "more")
+
+    def file_remove_tree(self, connection: "BinaryHandler", sequence: int,
+                         arguments: list[str]) -> None:
+        if len(arguments) != 1:
+            raise ServiceError("invalid_file_remove")
+        path = self.storage_path(decode_path(arguments[0]))
+        if path == self.state_root:
+            raise ServiceError("invalid_path")
+        try:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except FileNotFoundError as error:
+            raise ServiceError("file_not_found") from error
+        except OSError as error:
+            raise ServiceError("file_remove_failed") from error
+        self.send(connection, sequence, "OK", "removed")
+
     def deploy(self, connection: "BinaryHandler", sequence: int, identity: str) -> None:
         if not safe_identity(identity):
             raise ServiceError("invalid_identity")
@@ -323,8 +413,8 @@ class SimulatorPxaDb:
             transport = "tcp" if connection.server.require_token else "unix"  # type: ignore[attr-defined]
             self.send(connection, sequence, "OK",
                       f"protocol=2;transport={transport};fs_offset=1;"
-                      f"max_chunk={MAX_CHUNK_BYTES};binary=1;simulator=1;"
-                      "screenshot=png;input=pointer,key")
+                      f"fs_sha256=1;max_chunk={MAX_CHUNK_BYTES};binary=1;"
+                      "simulator=1;screenshot=png;input=pointer,key")
         elif command == "INFO":
             self.send(connection, sequence, "OK", "kind=simulator;package_installer=posix;protocol=2;debug_control=1")
         elif command in {"PING", "BYE"}:
@@ -345,11 +435,21 @@ class SimulatorPxaDb:
             self.send(connection, sequence, "OK")
         elif command == "FSRM" and len(arguments) == 1:
             path = self.storage_path(decode_path(arguments[0]))
+            if path == self.state_root:
+                raise ServiceError("invalid_path")
             if path.is_dir() and not path.is_symlink():
                 shutil.rmtree(path)
             else:
                 path.unlink(missing_ok=True)
             self.send(connection, sequence, "OK")
+        elif command == "FSLIST" and len(arguments) == 1:
+            self.file_list(connection, sequence, arguments)
+        elif command == "FSSHA" and len(arguments) == 1:
+            self.file_digest(connection, sequence, arguments)
+        elif command == "FSREAD" and len(arguments) in {1, 2}:
+            self.file_read(connection, sequence, arguments)
+        elif command == "FSRMTREE" and len(arguments) == 1:
+            self.file_remove_tree(connection, sequence, arguments)
         elif command == "PACKAGE" and len(arguments) == 2 and arguments[0] == "deploy":
             self.deploy(connection, sequence, arguments[1])
         else:
