@@ -107,6 +107,25 @@ Combined build, deployment and runtime output is also written to
 `local/dev-logs/<mode>/<app-id>.log`. This is a fast WASM/AOT reload loop, not
 runtime hot reload, so each source update restarts the App process.
 
+## PXADB GUI
+
+`tools/pxadb-gui.sh` opens a desktop front end for the same `pxadb` client used
+by the CLI. It discovers USB devices and running product simulators, streams
+device screenshots into a live preview, injects taps, drags and keys, browses
+and transfers files, shows device logs and manages packages. The preview runs
+at roughly 3-4 FPS on USB firmware using device-encoded JPEG and 15-20 FPS on
+the product simulator; drags pause preview captures so input stays responsive.
+
+```sh
+tools/pxadb-gui.sh
+tools/pxadb-gui.sh --port /dev/ttyACM0
+tools/pxadb-gui.sh --simulator pai-touch
+```
+
+Because PXADB owns the serial port exclusively, close the GUI before using
+`pxadb` or `tools/dev.sh device` on the same port. See
+[PXADB GUI](tools/pxadb-gui/README.md).
+
 ## Simulator
 
 `tools/simulator.sh` runs the imported SDL/LVGL standard UI simulator with the

@@ -15,3 +15,6 @@
 /tools/__pycache__/
 /tools/pxadb/__pycache__/
 /tools/pxadb/*.egg-info/
+/tools/pxadb-gui/__pycache__/
+/tools/pxadb-gui/pxadb_gui/__pycache__/
+/tools/pxadb-gui/*.egg-info/

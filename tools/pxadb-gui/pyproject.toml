@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pxadb-gui"
+version = "0.1.0"
+description = "Desktop GUI for PXADB devices and the product simulator"
+requires-python = ">=3.10"
+# pxadb is resolved from the workspace or an editable install of tools/pxadb;
+# see the workspace README for the supported setup.
+dependencies = ["PySide6>=6.6"]
+
+[project.scripts]
+pxadb-gui = "pxadb_gui.__main__:main"
+
+[tool.setuptools]
+packages = ["pxadb_gui"]

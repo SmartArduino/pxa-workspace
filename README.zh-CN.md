@@ -90,6 +90,22 @@ tools/dev.sh device my-app --port /dev/ttyACM0 --baud 2000000 --watch
 所有构建、部署和运行器输出同时保存在 `local/dev-logs/<mode>/<app-id>.log`。这是重新加载
 WASM/AOT 应用的快速循环，而非运行时热重载，因此每次代码更新会重新启动该 App 窗口。
 
+## PXADB GUI
+
+`tools/pxadb-gui.sh` 为 CLI 所用的同一个 `pxadb` 客户端提供桌面界面：发现 USB 设备与
+正在运行的产品模拟器，把设备截图流式显示为实时预览，注入点击、拖动和按键，浏览并传输
+文件，显示设备日志，管理 Package。预览在 USB 固件上通过设备端 JPEG 约 3~4 FPS，在产品
+模拟器上约 15~20 FPS；拖动时会暂停截图采集，保证操控响应。
+
+```sh
+tools/pxadb-gui.sh
+tools/pxadb-gui.sh --port /dev/ttyACM0
+tools/pxadb-gui.sh --simulator pai-touch
+```
+
+PXADB 独占串口，请在打开 GUI 前关闭正在使用同一端口的 `pxadb` 命令或
+`tools/dev.sh device`。详见 [PXADB GUI](tools/pxadb-gui/README.md)。
+
 ## 模拟器
 
 `tools/simulator.sh` 启动引入的 SDL/LVGL 标准 UI 模拟器，未指定时使用默认的
