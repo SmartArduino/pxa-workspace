@@ -860,8 +860,13 @@ bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (g_ui_spans == nullptr)
         ESP_LOGW(kTag, "UI span cache is unavailable");
-    if (xTaskCreate(PresenterTask, "korvo_pxa", kPresenterStack, nullptr,
-                    kPresenterPriority, &g_presenter_task) != pdPASS)
+    /* The parallel raster worker is pinned to core 0, so the presenter has to
+     * stay on core 1 for the row split to actually run on two cores. An
+     * unpinned presenter is often scheduled on core 0, which serializes both
+     * halves and doubled the measured raster time (35 -> 84 ms). */
+    if (xTaskCreatePinnedToCore(PresenterTask, "korvo_pxa", kPresenterStack,
+                                nullptr, kPresenterPriority,
+                                &g_presenter_task, 1) != pdPASS)
         return false;
     g_display = display;
     g_panel = panel;
