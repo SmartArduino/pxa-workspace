@@ -25,7 +25,7 @@ constexpr char kTag[] = "KorvoPxa";
 constexpr uint32_t kPresenterStack = 12288;
 constexpr UBaseType_t kPresenterPriority = 3;
 constexpr int32_t kLockTimeoutMs = 100;
-constexpr uint32_t kVsyncTimeoutMs = 100;
+constexpr uint32_t kFrameDoneTimeoutMs = 100;
 constexpr size_t kFrameBytes =
     KORVO_DISPLAY_WIDTH * KORVO_DISPLAY_HEIGHT * sizeof(uint16_t);
 constexpr size_t kArgbFrameBytes =
@@ -37,7 +37,7 @@ constexpr uint32_t kCpuUiBlendPixelThreshold =
 lv_display_t* g_display = nullptr;
 TaskHandle_t g_presenter_task = nullptr;
 esp_lcd_panel_handle_t g_panel = nullptr;
-SemaphoreHandle_t g_vsync_semaphore = nullptr;
+SemaphoreHandle_t g_frame_done_semaphore = nullptr;
 ppa_client_handle_t g_ppa_client = nullptr;
 ppa_client_handle_t g_ppa_blend_client = nullptr;
 pxa_surface_alpha_span_t* g_ui_spans = nullptr;
@@ -80,8 +80,8 @@ int64_t g_direct_report_started_us = 0;
 uint32_t g_direct_frames = 0;
 uint64_t g_direct_compose_total_us = 0;
 uint32_t g_direct_compose_max_us = 0;
-uint64_t g_direct_vsync_total_us = 0;
-uint32_t g_direct_vsync_max_us = 0;
+uint64_t g_direct_wait_total_us = 0;
+uint32_t g_direct_wait_max_us = 0;
 uint32_t g_direct_timeouts = 0;
 
 bool AreasEqual(const lv_area_t& lhs, const lv_area_t& rhs) {
@@ -534,33 +534,39 @@ void SetRefreshPaused(bool paused) {
         lv_timer_resume(refresh_timer);
 }
 
-uint32_t CompletePendingDirectSubmission() {
-    if (!g_direct_submission_pending) return 0;
+bool CompletePendingDirectSubmission(uint32_t* wait_us) {
+    if (wait_us != nullptr) *wait_us = 0;
+    if (!g_direct_submission_pending) return true;
     const int64_t started_us = esp_timer_get_time();
-    const bool vsync_ready =
-        xSemaphoreTake(g_vsync_semaphore,
-                       pdMS_TO_TICKS(kVsyncTimeoutMs)) == pdTRUE;
+    const bool frame_done =
+        xSemaphoreTake(g_frame_done_semaphore,
+                       pdMS_TO_TICKS(kFrameDoneTimeoutMs)) == pdTRUE;
     const int64_t finished_us = esp_timer_get_time();
-    if (!vsync_ready) ++g_direct_timeouts;
+    if (wait_us != nullptr) {
+        *wait_us = static_cast<uint32_t>(finished_us - started_us);
+    }
+    if (!frame_done) {
+        ++g_direct_timeouts;
+        return false;
+    }
     g_direct_displayed_index = g_direct_pending_index;
     g_direct_has_displayed_buffer = true;
     g_direct_submission_pending = false;
     pxa_esp_surface_note_frame_presented(
         g_direct_pending_input_timestamp_us,
         static_cast<uint64_t>(finished_us));
-    return static_cast<uint32_t>(finished_us - started_us);
+    return true;
 }
 
-void PresentDirectFrame(const pxa_esp_surface_frame_t& frame) {
+bool PresentDirectFrame(const pxa_esp_surface_frame_t& frame) {
     if (g_panel == nullptr || g_frame_buffers[0] == nullptr ||
         g_frame_buffers[1] == nullptr || g_frame_buffers[2] == nullptr)
-        return;
-    /* Match the original framebuffer presenter: wait for the previous flip at
-     * the next submission boundary. Rasterization happens before this call, so
-     * VSYNC normally completes in parallel instead of extending every frame. */
-    const uint32_t vsync_us = CompletePendingDirectSubmission();
+        return false;
     uint8_t* target = static_cast<uint8_t*>(
         g_frame_buffers[g_direct_buffer_index]);
+    /* Triple buffering leaves this target independent from both the live
+     * scanout buffer and the pending buffer. Compose first so LCD scanout and
+     * PPA/CPU composition overlap, then wait before queueing another switch. */
     const int64_t compose_started_us = esp_timer_get_time();
     ComposeFullFrame(frame, target);
     pxa_board_performance_note_frame();
@@ -569,12 +575,21 @@ void PresentDirectFrame(const pxa_esp_surface_frame_t& frame) {
         KORVO_DISPLAY_HEIGHT, KORVO_DISPLAY_WIDTH, 0, 0,
         KORVO_DISPLAY_WIDTH, KORVO_DISPLAY_HEIGHT, false);
     const int64_t compose_finished_us = esp_timer_get_time();
-    (void)xSemaphoreTake(g_vsync_semaphore, 0);
+    uint32_t wait_us = 0;
+    if (!CompletePendingDirectSubmission(&wait_us)) {
+        ESP_LOGW(kTag, "Direct scanout frame completion timed out");
+        return false;
+    }
+    /* Consume callbacks left by the idle scan before queuing this switch.
+     * Draining after draw_bitmap() can erase the completion notification for
+     * the switch that was just queued, leaving the triple-buffer pipeline
+     * stalled until a later link-switch event. */
+    (void)xSemaphoreTake(g_frame_done_semaphore, 0);
     if (esp_lcd_panel_draw_bitmap(g_panel, 0, 0, KORVO_DISPLAY_WIDTH,
                                   KORVO_DISPLAY_HEIGHT,
                                   target) != ESP_OK) {
         ESP_LOGW(kTag, "Direct scanout buffer switch failed");
-        return;
+        return false;
     }
     g_direct_pending_index = g_direct_buffer_index;
     g_direct_pending_input_timestamp_us = frame.input_timestamp_us;
@@ -586,28 +601,29 @@ void PresentDirectFrame(const pxa_esp_surface_frame_t& frame) {
     ++g_direct_frames;
     g_direct_compose_total_us += compose_us;
     g_direct_compose_max_us = std::max(g_direct_compose_max_us, compose_us);
-    g_direct_vsync_total_us += vsync_us;
-    g_direct_vsync_max_us = std::max(g_direct_vsync_max_us, vsync_us);
+    g_direct_wait_total_us += wait_us;
+    g_direct_wait_max_us = std::max(g_direct_wait_max_us, wait_us);
     const int64_t now_us = esp_timer_get_time();
     if (g_direct_report_started_us == 0) g_direct_report_started_us = now_us;
     if (now_us - g_direct_report_started_us >= 1000 * 1000) {
         ESP_LOGI(kTag,
-                 "PERF direct=%u compose=%u/%u ms vsync=%u/%u ms timeout=%u",
+                 "PERF direct=%u compose=%u/%u ms wait=%u/%u ms timeout=%u",
                  g_direct_frames,
                  static_cast<uint32_t>(
                      g_direct_compose_total_us / g_direct_frames) / 1000,
                  g_direct_compose_max_us / 1000,
                  static_cast<uint32_t>(
-                     g_direct_vsync_total_us / g_direct_frames) / 1000,
-                 g_direct_vsync_max_us / 1000, g_direct_timeouts);
+                     g_direct_wait_total_us / g_direct_frames) / 1000,
+                 g_direct_wait_max_us / 1000, g_direct_timeouts);
         g_direct_report_started_us = now_us;
         g_direct_frames = 0;
         g_direct_compose_total_us = 0;
         g_direct_compose_max_us = 0;
-        g_direct_vsync_total_us = 0;
-        g_direct_vsync_max_us = 0;
+        g_direct_wait_total_us = 0;
+        g_direct_wait_max_us = 0;
         g_direct_timeouts = 0;
     }
+    return true;
 }
 
 bool EnterDirectScanout() {
@@ -650,7 +666,13 @@ bool EnterDirectScanout() {
 void ExitDirectScanout() {
     if (!g_direct_active) return;
     if (!lvgl_port_lock(kLockTimeoutMs)) return;
-    (void)CompletePendingDirectSubmission();
+    uint32_t wait_us = 0;
+    if (!CompletePendingDirectSubmission(&wait_us)) {
+        lvgl_port_unlock();
+        ESP_LOGW(kTag, "Keeping direct scanout after completion timeout");
+        if (g_presenter_task != nullptr) xTaskNotifyGive(g_presenter_task);
+        return;
+    }
     if (g_transition_callback != nullptr && g_direct_has_displayed_buffer) {
         (void)g_transition_callback(
             false, g_frame_buffers[g_direct_buffer_index],
@@ -716,8 +738,8 @@ void PresenterTask(void*) {
             const bool eligible = DirectFrameEligible(frame);
             const bool is_new = frame.frame_id != g_last_direct_frame_id;
             if (eligible && is_new) {
-                g_last_direct_frame_id = frame.frame_id;
-                PresentDirectFrame(frame);
+                if (PresentDirectFrame(frame))
+                    g_last_direct_frame_id = frame.frame_id;
                 pxa_esp_surface_release_frame(frame.lease);
                 continue;
             }
@@ -733,8 +755,8 @@ void PresenterTask(void*) {
             pxa_esp_surface_frame_t frame;
             if (pxa_esp_surface_acquire_latest_for_direct(&frame)) {
                 if (DirectFrameEligible(frame) && EnterDirectScanout()) {
-                    g_last_direct_frame_id = frame.frame_id;
-                    PresentDirectFrame(frame);
+                    if (PresentDirectFrame(frame))
+                        g_last_direct_frame_id = frame.frame_id;
                     pxa_esp_surface_release_frame(frame.lease);
                     continue;
                 }
@@ -748,11 +770,11 @@ void PresenterTask(void*) {
 }  // namespace
 
 bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
-             SemaphoreHandle_t vsync_semaphore,
+             SemaphoreHandle_t frame_done_semaphore,
              DirectScanoutTransitionCallback transition_callback,
              void* transition_context) {
-    if (display == nullptr || panel == nullptr || vsync_semaphore == nullptr ||
-        g_display != nullptr)
+    if (display == nullptr || panel == nullptr ||
+        frame_done_semaphore == nullptr || g_display != nullptr)
         return false;
     if (esp_lcd_rgb_panel_get_frame_buffer(
             panel, 3, &g_frame_buffers[0], &g_frame_buffers[1],
@@ -795,7 +817,7 @@ bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
         return false;
     g_display = display;
     g_panel = panel;
-    g_vsync_semaphore = vsync_semaphore;
+    g_frame_done_semaphore = frame_done_semaphore;
     g_transition_callback = transition_callback;
     g_transition_context = transition_context;
     pxa_esp_surface_set_frame_ready_callback(FrameReady, nullptr);

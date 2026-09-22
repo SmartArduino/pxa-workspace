@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 
 #include <driver/i2c_master.h>
@@ -35,10 +36,15 @@ public:
 
 private:
     static constexpr int kTouchMaxPointers = CONFIG_ESP_LCD_TOUCH_MAX_POINTS;
+    static constexpr size_t kDeferredSyncAreaCapacity = 32;
 
     bool InitializeI2c();
     bool InitializeDisplay();
     void SyncFrameBuffers(lv_display_t* display, const lv_area_t* area);
+    void RecordDeferredSyncArea(const lv_area_t* area);
+    void SyncReleasedFrameBuffer(void* next_frame_buffer);
+    void CopyFrameBufferArea(void* source, void* destination,
+                             const lv_area_t* area);
     bool InitializeTouch();
     void PollTouchController();
     static void TouchReadCallback(lv_indev_t* indev, lv_indev_data_t* data);
@@ -62,9 +68,6 @@ private:
     static void FlushDisplay(lv_display_t* display, const lv_area_t* area,
                              uint8_t* pixels);
     static void SyncDisplay(lv_display_t* display, const lv_area_t* area);
-    static bool OnVsync(esp_lcd_panel_handle_t panel,
-                        const esp_lcd_rgb_panel_event_data_t* event_data,
-                        void* context);
     static bool OnFrameBufferComplete(
         esp_lcd_panel_handle_t panel,
         const esp_lcd_rgb_panel_event_data_t* event_data, void* context);
@@ -88,8 +91,9 @@ private:
     void* frame_buffers_[3] = {};
     lv_draw_buf_t draw_buffers_[3] = {};
     void* latest_frame_buffer_ = nullptr;
+    lv_area_t deferred_sync_areas_[kDeferredSyncAreaCapacity] = {};
+    size_t deferred_sync_area_count_ = 0;
     ppa_client_handle_t sync_ppa_client_ = nullptr;
-    SemaphoreHandle_t vsync_sem_ = nullptr;
     SemaphoreHandle_t frame_done_sem_ = nullptr;
     bool frame_switch_pending_ = false;
     int64_t render_started_us_ = 0;

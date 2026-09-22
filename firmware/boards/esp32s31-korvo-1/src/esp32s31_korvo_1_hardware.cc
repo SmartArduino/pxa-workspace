@@ -298,13 +298,11 @@ bool Esp32S31Korvo1Hardware::InitializeDisplay() {
         sync_ppa_client_ = nullptr;
         ESP_LOGW(kTag, "PPA framebuffer sync unavailable; using CPU copies");
     }
-    vsync_sem_ = xSemaphoreCreateBinaryWithCaps(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     frame_done_sem_ =
         xSemaphoreCreateBinaryWithCaps(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (vsync_sem_ == nullptr || frame_done_sem_ == nullptr) return false;
+    if (frame_done_sem_ == nullptr) return false;
 
     const esp_lcd_rgb_panel_event_callbacks_t callbacks = {
-        .on_vsync = OnVsync,
         .on_frame_buf_complete = OnFrameBufferComplete,
     };
     if (esp_lcd_rgb_panel_register_event_callbacks(panel_, &callbacks, this) != ESP_OK)
@@ -359,7 +357,7 @@ bool Esp32S31Korvo1Hardware::InitializeDisplay() {
     lv_display_set_flush_cb(display_, FlushDisplay);
     lv_display_set_sync_cb(display_, SyncDisplay);
     lv_display_add_event_cb(display_, OnDisplayEvent, LV_EVENT_ALL, this);
-    if (!korvo_pxa_surface::Install(display_, panel_, vsync_sem_,
+    if (!korvo_pxa_surface::Install(display_, panel_, frame_done_sem_,
                                     OnDirectScanoutTransition, this)) {
         ESP_LOGW(kTag, "Continuing without PXA Surface presentation");
     }
@@ -440,17 +438,85 @@ void Esp32S31Korvo1Hardware::SyncFrameBuffers(lv_display_t* display,
                                                const lv_area_t* area) {
     if (display == nullptr || area == nullptr) return;
     lv_draw_buf_t* const draw_buffer = lv_display_get_buf_active(display);
-    uint8_t* const destination = draw_buffer != nullptr ? draw_buffer->data : nullptr;
-    uint8_t* const source = static_cast<uint8_t*>(latest_frame_buffer_);
+    void* const destination = draw_buffer != nullptr ? draw_buffer->data : nullptr;
+    void* const source = latest_frame_buffer_;
     if (source == nullptr || destination == nullptr) {
         ESP_LOGE(kTag, "Cannot resolve RGB framebuffer sync buffers");
         lv_display_sync_ready(display);
         return;
     }
+    RecordDeferredSyncArea(area);
     if (source == destination) {
         lv_display_sync_ready(display);
         return;
     }
+
+    CopyFrameBufferArea(source, destination, area);
+    lv_display_sync_ready(display);
+}
+
+void Esp32S31Korvo1Hardware::RecordDeferredSyncArea(
+    const lv_area_t* area) {
+    if (area == nullptr) return;
+    for (size_t index = 0; index < deferred_sync_area_count_; ++index) {
+        lv_area_t& recorded = deferred_sync_areas_[index];
+        const bool separated =
+            area->x2 < recorded.x1 || area->x1 > recorded.x2 ||
+            area->y2 < recorded.y1 || area->y1 > recorded.y2;
+        if (!separated) {
+            recorded.x1 = std::min(recorded.x1, area->x1);
+            recorded.y1 = std::min(recorded.y1, area->y1);
+            recorded.x2 = std::max(recorded.x2, area->x2);
+            recorded.y2 = std::max(recorded.y2, area->y2);
+            return;
+        }
+    }
+    if (deferred_sync_area_count_ < kDeferredSyncAreaCapacity) {
+        deferred_sync_areas_[deferred_sync_area_count_++] = *area;
+        return;
+    }
+
+    // Preserve correctness if LVGL produces more regions than its normal
+    // invalidation capacity by folding overflow into the last rectangle.
+    lv_area_t& recorded =
+        deferred_sync_areas_[kDeferredSyncAreaCapacity - 1];
+    recorded.x1 = std::min(recorded.x1, area->x1);
+    recorded.y1 = std::min(recorded.y1, area->y1);
+    recorded.x2 = std::max(recorded.x2, area->x2);
+    recorded.y2 = std::max(recorded.y2, area->y2);
+}
+
+void Esp32S31Korvo1Hardware::SyncReleasedFrameBuffer(
+    void* next_frame_buffer) {
+    if (deferred_sync_area_count_ == 0 || latest_frame_buffer_ == nullptr ||
+        next_frame_buffer == nullptr)
+        return;
+
+    void* released_buffer = nullptr;
+    for (void* frame_buffer : frame_buffers_) {
+        if (frame_buffer != latest_frame_buffer_ &&
+            frame_buffer != next_frame_buffer) {
+            released_buffer = frame_buffer;
+            break;
+        }
+    }
+    if (released_buffer == nullptr) {
+        ESP_LOGE(kTag, "Cannot resolve released RGB framebuffer");
+        return;
+    }
+
+    for (size_t index = 0; index < deferred_sync_area_count_; ++index) {
+        CopyFrameBufferArea(latest_frame_buffer_, released_buffer,
+                            &deferred_sync_areas_[index]);
+    }
+    deferred_sync_area_count_ = 0;
+}
+
+void Esp32S31Korvo1Hardware::CopyFrameBufferArea(
+    void* source_buffer, void* destination_buffer, const lv_area_t* area) {
+    if (source_buffer == nullptr || destination_buffer == nullptr ||
+        source_buffer == destination_buffer || area == nullptr)
+        return;
 
     const int64_t started_us = esp_timer_get_time();
     const uint32_t width = static_cast<uint32_t>(area->x2 - area->x1 + 1);
@@ -458,7 +524,7 @@ void Esp32S31Korvo1Hardware::SyncFrameBuffers(lv_display_t* display,
     bool copied_by_ppa = false;
     if (sync_ppa_client_ != nullptr && width != 0 && height != 0) {
         const ppa_srm_oper_config_t config = {
-            .in = {.buffer = source,
+            .in = {.buffer = source_buffer,
                    .pic_w = KORVO_DISPLAY_WIDTH,
                    .pic_h = KORVO_DISPLAY_HEIGHT,
                    .block_w = width,
@@ -466,7 +532,7 @@ void Esp32S31Korvo1Hardware::SyncFrameBuffers(lv_display_t* display,
                    .block_offset_x = static_cast<uint32_t>(area->x1),
                    .block_offset_y = static_cast<uint32_t>(area->y1),
                    .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
-            .out = {.buffer = destination,
+            .out = {.buffer = destination_buffer,
                     .buffer_size = kFrameBufferBytes,
                     .pic_w = KORVO_DISPLAY_WIDTH,
                     .pic_h = KORVO_DISPLAY_HEIGHT,
@@ -482,6 +548,8 @@ void Esp32S31Korvo1Hardware::SyncFrameBuffers(lv_display_t* display,
             ppa_do_scale_rotate_mirror(sync_ppa_client_, &config) == ESP_OK;
     }
     if (!copied_by_ppa) {
+        auto* const source = static_cast<uint8_t*>(source_buffer);
+        auto* const destination = static_cast<uint8_t*>(destination_buffer);
         const size_t row_bytes = static_cast<size_t>(width) * sizeof(uint16_t);
         for (uint32_t row = 0; row < height; ++row) {
             const size_t offset =
@@ -497,7 +565,6 @@ void Esp32S31Korvo1Hardware::SyncFrameBuffers(lv_display_t* display,
         static_cast<uint32_t>(esp_timer_get_time() - started_us);
     perf_sync_total_us_ += duration_us;
     perf_sync_max_us_ = std::max(perf_sync_max_us_, duration_us);
-    lv_display_sync_ready(display);
 }
 
 void Esp32S31Korvo1Hardware::FlushDisplay(lv_display_t* display,
@@ -541,12 +608,15 @@ void Esp32S31Korvo1Hardware::FlushDisplay(lv_display_t* display,
             lv_display_flush_ready(display);
             return;
         }
-        /* Remove callbacks belonging to idle scan cycles. The next signal is
-         * the completion of the buffer switch queued below. */
-        (void)xSemaphoreTake(hardware->frame_done_sem_, 0);
+        /* The previous flip has completed, so the third buffer is no longer
+         * scanned by the panel. Propagate the prior frame's dirty regions to
+         * it before this frame is queued. This keeps all three direct-mode
+         * buffers coherent without writing into the live scanout buffer. */
+        hardware->SyncReleasedFrameBuffer(pixels);
         /* pixels is one of the panel frame buffers, so this only writes back
          * the CPU cache and queues the buffer for the next VSYNC; the RGB
          * driver switches buffers without copying any pixels. */
+        (void)xSemaphoreTake(hardware->frame_done_sem_, 0);
         const bool submitted =
             esp_lcd_panel_draw_bitmap(hardware->panel_, 0, 0,
                                       KORVO_DISPLAY_WIDTH,
@@ -624,6 +694,7 @@ void Esp32S31Korvo1Hardware::AlignAfterDirectScanout(
     }
     latest_frame_buffer_ = displayed_buffer;
     frame_switch_pending_ = false;
+    deferred_sync_area_count_ = 0;
     (void)xSemaphoreTake(frame_done_sem_, 0);
 }
 
@@ -634,15 +705,6 @@ bool Esp32S31Korvo1Hardware::OnDirectScanoutTransition(
     if (entering) return hardware->WaitForPendingFrame();
     hardware->AlignAfterDirectScanout(next_buffer, displayed_buffer);
     return true;
-}
-
-bool Esp32S31Korvo1Hardware::OnVsync(
-    esp_lcd_panel_handle_t, const esp_lcd_rgb_panel_event_data_t*, void* context) {
-    auto* hardware = static_cast<Esp32S31Korvo1Hardware*>(context);
-    if (hardware == nullptr || hardware->vsync_sem_ == nullptr) return false;
-    BaseType_t task_woken = pdFALSE;
-    xSemaphoreGiveFromISR(hardware->vsync_sem_, &task_woken);
-    return task_woken == pdTRUE;
 }
 
 bool Esp32S31Korvo1Hardware::OnFrameBufferComplete(
