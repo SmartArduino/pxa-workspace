@@ -111,6 +111,10 @@ static pxa_esp_surface_frame_ready_fn g_release_notify;
 static void *g_release_notify_context;
 static pxa_esp_surface_ui_alpha_provider_fn g_ui_alpha_provider;
 static void *g_ui_alpha_provider_context;
+static pxa_esp_surface_fill_bands_fn g_fill_bands;
+static void *g_fill_bands_context;
+static pxa_game_render_target_profile_t g_game_render_scale_profile = {
+    0, 0, PXA_GAME_RENDER_SCALE_MASK_1X, PXA_GAME_RENDER_SCALE_1X};
 static bool g_host_visible = true;
 static bool g_composition_required;
 static bool g_system_overlay_visible;
@@ -230,6 +234,67 @@ static void update_raster_split(uint16_t height, uint16_t split,
     g_raster_split_row = target;
 }
 #endif
+
+#define PXA_ESP_RASTER_BACKGROUND_BANDS 16u
+
+static uint32_t prefill_raster_background(
+    const uint8_t *bytes, const pxa_raster_draw_list_view_t *list,
+    pxa_raster_target_t *target) {
+    uint16_t tops[PXA_ESP_RASTER_BACKGROUND_BANDS];
+    uint16_t bottoms[PXA_ESP_RASTER_BACKGROUND_BANDS];
+    uint16_t colors[PXA_ESP_RASTER_BACKGROUND_BANDS];
+    uint32_t offset = PXA_RASTER_DRAW_HEADER_BYTES;
+    uint32_t cursor = 0;
+    uint8_t count = 0;
+    if (g_fill_bands == NULL || bytes == NULL || list == NULL ||
+        target == NULL || target->pixels == NULL)
+        return 0;
+    while (count < PXA_ESP_RASTER_BACKGROUND_BANDS &&
+           count < list->command_count) {
+        const uint8_t *record = bytes + offset;
+        const uint16_t size = pxa_read_u16(record + 2);
+        int16_t x0;
+        int16_t y0;
+        int16_t x1;
+        int16_t y1;
+        int16_t x2;
+        int16_t y2;
+        int16_t x3;
+        int16_t y3;
+        uint32_t bottom;
+        if (record[0] != PXA_RASTER_RECORD_FLAT_QUAD ||
+            size != PXA_RASTER_FLAT_QUAD_BYTES)
+            return 0;
+        x0 = (int16_t)pxa_read_u16(record + 8);
+        y0 = (int16_t)pxa_read_u16(record + 10);
+        x1 = (int16_t)pxa_read_u16(record + 12);
+        y1 = (int16_t)pxa_read_u16(record + 14);
+        x2 = (int16_t)pxa_read_u16(record + 16);
+        y2 = (int16_t)pxa_read_u16(record + 18);
+        x3 = (int16_t)pxa_read_u16(record + 20);
+        y3 = (int16_t)pxa_read_u16(record + 22);
+        if (x0 != 0 || x3 != 0 ||
+            x1 != (int32_t)target->width * 16 || x2 != x1 ||
+            y0 != (int32_t)cursor * 16 || y1 != y0 || y2 != y3 ||
+            y2 <= y0 || (y2 & 15) != 0)
+            return 0;
+        bottom = (uint32_t)y2 >> 4;
+        if (bottom > target->height) return 0;
+        tops[count] = (uint16_t)cursor;
+        bottoms[count] = (uint16_t)bottom;
+        colors[count] = pxa_read_u16(record + 4);
+        cursor = bottom;
+        ++count;
+        offset += size;
+        if (cursor == target->height) break;
+    }
+    if (cursor != target->height || count == 0) return 0;
+    if (!g_fill_bands(g_fill_bands_context, target->pixels,
+                      target->stride_pixels, target->width, target->height,
+                      tops, bottoms, colors, count))
+        return 0;
+    return count;
+}
 static uint32_t
     g_input_latency_histograms[3][PXA_ESP_SURFACE_LATENCY_BUCKETS];
 
@@ -816,9 +881,19 @@ static pxa_status_t raster_upload_surface(void *context,
     (void)context;
     if (surface == NULL || bytes == NULL) return PXA_STATUS_INVALID_ARGUMENT;
     status = pxa_raster_decode_upload(bytes, size, &upload);
-    if (status != PXA_STATUS_OK) return status;
+    if (status != PXA_STATUS_OK) {
+        ESP_LOGE(PXA_ESP_SURFACE_TAG,
+                 "Raster upload decode failed: status=%d size=%u",
+                 (int)status, (unsigned)size);
+        return status;
+    }
     replacement = allocate_raster_resource(upload.payload_bytes);
-    if (replacement == NULL) return PXA_STATUS_RESOURCE_LIMIT;
+    if (replacement == NULL) {
+        ESP_LOGE(PXA_ESP_SURFACE_TAG,
+                 "Raster upload allocation failed: kind=%u slot=%u bytes=%u",
+                 upload.kind, upload.slot, (unsigned)upload.payload_bytes);
+        return PXA_STATUS_RESOURCE_LIMIT;
+    }
     if (upload.kind == PXA_RASTER_UPLOAD_PALETTE_RGB565 ||
         upload.kind == PXA_RASTER_UPLOAD_LIT_PALETTE_RGB565) {
         uint32_t index;
@@ -838,6 +913,9 @@ static pxa_status_t raster_upload_surface(void *context,
         surface->raster_draw_writing != PXA_ESP_SURFACE_NONE) {
         taskEXIT_CRITICAL(&g_surface_lock);
         heap_caps_free(replacement);
+        ESP_LOGE(PXA_ESP_SURFACE_TAG,
+                 "Raster upload rejected by surface state: kind=%u slot=%u",
+                 upload.kind, upload.slot);
         return PXA_STATUS_BAD_STATE;
     }
     if (upload.kind == PXA_RASTER_UPLOAD_PALETTE_RGB565 ||
@@ -853,6 +931,11 @@ static pxa_status_t raster_upload_surface(void *context,
     }
     taskEXIT_CRITICAL(&g_surface_lock);
     heap_caps_free(previous);
+    if (upload.kind == PXA_RASTER_UPLOAD_PALETTE_RGB565 ||
+        upload.kind == PXA_RASTER_UPLOAD_LIT_PALETTE_RGB565)
+        ESP_LOGI(PXA_ESP_SURFACE_TAG,
+                 "Raster palette ready: levels=%u bytes=%u", upload.height,
+                 (unsigned)upload.payload_bytes);
     return PXA_STATUS_OK;
 }
 
@@ -899,6 +982,7 @@ static pxa_status_t raster_submit_surface(void *context,
     target.depth_stride_pixels = surface->width;
     target.width = surface->width;
     target.height = surface->height;
+    target.prefilled_commands = 0;
     replaced_pending = surface->raster_draw_pending;
     mailbox_index = replaced_pending;
     if (mailbox_index == PXA_ESP_SURFACE_NONE)
@@ -999,13 +1083,11 @@ static pxa_status_t raster_submit_surface(void *context,
     ++surface->raster_telemetry.submitted_frames;
     taskEXIT_CRITICAL(&g_surface_lock);
     heap_caps_free(previous);
-    /* Keep GameRender's execution model aligned with the original HostSurface:
-     * rasterize on the submitting runtime task, then hand the completed buffer
-     * to the independent presenter. This lets the next frame's CPU raster work
-     * overlap the previous frame's PPA copy instead of serializing both stages
-     * in the presenter task. acquire_latest() retains its materialize call as a
-     * fallback when no output buffer was free at submission time. */
-    (void)materialize_latest_raster_draw();
+    /* Do not rasterize on the submitting runtime task: the Guest call would
+     * then block for the whole raster (measured 40 ms of a 73 ms frame on
+     * esp32s31), serializing Guest frame building with Host raster work.
+     * acquire_latest() materializes the queued list on the presenter side, so
+     * the Guest builds the next frame while the raster and compose overlap. */
     notify_frame_ready();
     return PXA_STATUS_OK;
 }
@@ -1199,6 +1281,28 @@ void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend) {
     backend->close = close_surface;
 }
 
+bool pxa_esp_game_render_set_scale_profile(uint8_t supported_scale_mask,
+                                           uint8_t default_scale) {
+    if (default_scale == 0 || default_scale > PXA_GAME_RENDER_MAX_SCALE ||
+        (supported_scale_mask & ~PXA_GAME_RENDER_KNOWN_SCALE_MASK) != 0 ||
+        (supported_scale_mask &
+         PXA_GAME_RENDER_SCALE_MASK(default_scale)) == 0)
+        return false;
+    taskENTER_CRITICAL(&g_surface_lock);
+    g_game_render_scale_profile.supported_scale_mask = supported_scale_mask;
+    g_game_render_scale_profile.default_scale = default_scale;
+    taskEXIT_CRITICAL(&g_surface_lock);
+    return true;
+}
+
+void pxa_esp_game_render_get_scale_profile(
+    pxa_game_render_target_profile_t *profile) {
+    if (profile == NULL) return;
+    taskENTER_CRITICAL(&g_surface_lock);
+    *profile = g_game_render_scale_profile;
+    taskEXIT_CRITICAL(&g_surface_lock);
+}
+
 void pxa_esp_surface_set_frame_ready_callback(
     pxa_esp_surface_frame_ready_fn callback, void *context) {
     taskENTER_CRITICAL(&g_surface_lock);
@@ -1222,6 +1326,14 @@ void pxa_esp_surface_set_ui_alpha_provider(
     g_ui_alpha_provider_context = context;
     taskEXIT_CRITICAL(&g_surface_lock);
     notify_frame_ready();
+}
+
+void pxa_esp_surface_set_fill_bands_callback(
+    pxa_esp_surface_fill_bands_fn callback, void *context) {
+    taskENTER_CRITICAL(&g_surface_lock);
+    g_fill_bands = callback;
+    g_fill_bands_context = context;
+    taskEXIT_CRITICAL(&g_surface_lock);
 }
 
 void pxa_esp_surface_require_composition(void) {
@@ -1507,9 +1619,12 @@ static bool materialize_latest_raster_draw(void) {
     target.depth_stride_pixels = surface->width;
     target.width = surface->width;
     target.height = surface->height;
+    target.prefilled_commands = 0;
     taskEXIT_CRITICAL(&g_surface_lock);
 
     started_us = (uint64_t)esp_timer_get_time();
+    target.prefilled_commands =
+        prefill_raster_background(draw_bytes, &list, &target);
     memset(&frame_telemetry, 0, sizeof(frame_telemetry));
     execute_raster_draw_list(draw_bytes, &list, &target, &resources,
                              &frame_telemetry, &main_us, &worker_us,
@@ -1811,6 +1926,17 @@ void pxa_esp_surface_backend(pxa_surface_backend_t *backend) {
 void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend) {
     if (backend != NULL) backend->struct_size = 0;
 }
+bool pxa_esp_game_render_set_scale_profile(uint8_t supported_scale_mask,
+                                           uint8_t default_scale) {
+    (void)supported_scale_mask;
+    (void)default_scale;
+    return false;
+}
+void pxa_esp_game_render_get_scale_profile(
+    pxa_game_render_target_profile_t *profile) {
+    if (profile != NULL)
+        *profile = (pxa_game_render_target_profile_t){0};
+}
 void pxa_esp_surface_set_frame_ready_callback(
     pxa_esp_surface_frame_ready_fn callback, void *context) {
     (void)callback;
@@ -1823,6 +1949,11 @@ void pxa_esp_surface_set_release_ready_callback(
 }
 void pxa_esp_surface_set_ui_alpha_provider(
     pxa_esp_surface_ui_alpha_provider_fn callback, void *context) {
+    (void)callback;
+    (void)context;
+}
+void pxa_esp_surface_set_fill_bands_callback(
+    pxa_esp_surface_fill_bands_fn callback, void *context) {
     (void)callback;
     (void)context;
 }
