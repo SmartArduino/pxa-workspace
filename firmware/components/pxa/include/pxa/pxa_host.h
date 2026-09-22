@@ -84,6 +84,18 @@ typedef enum {
     PXA_HOST_APP_ACTION_DISABLE,
 } pxa_host_app_action_t;
 
+/* Declared permission of an installed package. Entries keep manifest order, so
+ * permission_index stays stable while the package remains installed. The text
+ * buffer includes the NUL terminator. */
+#define PXA_HOST_PERMISSION_TEXT_MAX 97
+
+typedef struct {
+    char name[PXA_HOST_PERMISSION_TEXT_MAX];
+    char scope[PXA_HOST_PERMISSION_TEXT_MAX];
+    bool required;
+    bool granted;
+} pxa_host_app_permission_t;
+
 typedef enum {
     PXA_HOST_KEY_VOLUME_UP = 1,
     PXA_HOST_KEY_VOLUME_DOWN = 2,
@@ -160,6 +172,14 @@ bool pxa_host_deploy_package_detailed(
     const char *identity_key, pxa_host_package_deploy_result_t *result);
 bool pxa_host_manage_app(pxa_host_app_action_t action,
                          const char *identity_key);
+/* Two-phase enumeration like pxa_host_list_packages: permissions == NULL
+ * returns the declared permission count without touching capacity. */
+size_t pxa_host_list_app_permissions(const char *identity_key,
+                                     pxa_host_app_permission_t *permissions,
+                                     size_t capacity);
+/* Applies one declared permission; permission_index matches the list above. */
+bool pxa_host_set_app_permission(const char *identity_key,
+                                 size_t permission_index, bool granted);
 bool pxa_host_ready(void);
 bool pxa_host_is_active(const char *identity_key);
 bool pxa_host_captures_volume_keys(void);

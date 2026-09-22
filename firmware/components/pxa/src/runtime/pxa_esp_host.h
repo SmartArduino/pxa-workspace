@@ -66,6 +66,9 @@ bool pxa_esp_host_deploy_package_detailed(
     const char *identity, pxa_host_package_deploy_result_t *result);
 bool pxa_esp_host_manage_app(pxa_host_app_action_t action,
                              const char *identity);
+size_t pxa_esp_host_list_app_permissions(const char *identity,
+                                         pxa_host_app_permission_t *permissions,
+                                         size_t capacity);
 bool pxa_esp_host_set_permission(const char *identity,
                                  size_t permission_index, bool granted);
 bool pxa_esp_host_respond_permission(uint32_t prompt_id, bool granted);

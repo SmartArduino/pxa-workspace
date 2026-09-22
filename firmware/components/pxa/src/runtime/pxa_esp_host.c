@@ -130,6 +130,11 @@
 #error "PXA ESP host target is not defined for this IDF target"
 #endif
 
+/* The public permission projection owns one text buffer per field. */
+typedef char pxa_esp_host_permission_text_must_fit[
+    PXA_ESP_PACKAGE_PERMISSION_TEXT_BYTES <= PXA_HOST_PERMISSION_TEXT_MAX ? 1
+                                                                          : -1];
+
 static size_t runtime_task_stack_size(void) {
     size_t configured = CONFIG_PXA_RUNTIME_TASK_STACK_SIZE;
 
@@ -4142,6 +4147,46 @@ bool pxa_esp_host_manage_app(pxa_host_app_action_t action,
         default:
             return false;
     }
+}
+
+typedef struct {
+    pxa_host_app_permission_t *permissions;
+    size_t capacity;
+    size_t count;
+} pxa_esp_host_permission_projection_t;
+
+static bool project_public_permission(
+    const pxa_esp_package_permission_info_t *permission, void *user_data) {
+    pxa_esp_host_permission_projection_t *projection = user_data;
+    pxa_host_app_permission_t *target;
+    if (permission == NULL || projection == NULL ||
+        projection->count >= projection->capacity) {
+        return false;
+    }
+    target = &projection->permissions[projection->count++];
+    memset(target, 0, sizeof(*target));
+    snprintf(target->name, sizeof(target->name), "%s", permission->name);
+    snprintf(target->scope, sizeof(target->scope), "%s", permission->scope);
+    target->required = permission->required;
+    target->granted = permission->granted;
+    return projection->count < projection->capacity;
+}
+
+size_t pxa_esp_host_list_app_permissions(
+    const char *identity, pxa_host_app_permission_t *permissions,
+    size_t capacity) {
+    pxa_esp_host_permission_projection_t projection;
+    if (!g_host.initialized || identity == NULL || identity[0] == '\0')
+        return 0;
+    if (permissions == NULL && capacity == 0)
+        return pxa_esp_package_store_permission_count(identity);
+    if (permissions == NULL || capacity == 0) return 0;
+    projection.permissions = permissions;
+    projection.capacity = capacity;
+    projection.count = 0;
+    (void)pxa_esp_package_store_visit_permissions(
+        identity, project_public_permission, &projection);
+    return projection.count;
 }
 
 bool pxa_esp_host_set_permission(const char *identity,

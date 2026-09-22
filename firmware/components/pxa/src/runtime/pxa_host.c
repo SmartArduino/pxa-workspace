@@ -327,6 +327,22 @@ bool pxa_host_manage_app(pxa_host_app_action_t action,
     return success;
 }
 
+size_t pxa_host_list_app_permissions(const char *identity_key,
+                                     pxa_host_app_permission_t *permissions,
+                                     size_t capacity) {
+    if (!g_host_ready || identity_key == NULL || identity_key[0] == '\0')
+        return 0;
+    return pxa_esp_host_list_app_permissions(identity_key, permissions,
+                                             capacity);
+}
+
+bool pxa_host_set_app_permission(const char *identity_key,
+                                 size_t permission_index, bool granted) {
+    if (!g_host_ready || identity_key == NULL || identity_key[0] == '\0')
+        return false;
+    return pxa_esp_host_set_permission(identity_key, permission_index, granted);
+}
+
 bool pxa_host_ready(void) {
     return g_host_ready;
 }

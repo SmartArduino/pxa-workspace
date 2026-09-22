@@ -327,6 +327,44 @@ bool ManageApp(void*, const char* identity,
     return pxa_host_manage_app(mapped, identity);
 }
 
+static_assert(PXA_HOST_PERMISSION_TEXT_MAX <=
+                  PXSYS_REFERENCE_APP_PERMISSION_TEXT_MAX,
+              "PXA host permission text must fit the reference UI buffers");
+
+size_t ListAppPermissions(void*, const char* identity,
+                          pxsys_reference_app_permission_t* permissions,
+                          size_t capacity) {
+    /* The host fills a whole list per call; the LVGL thread calls this once
+     * per detail-dialog rebuild, so one scratch buffer is enough. */
+    static pxa_host_app_permission_t host_permissions[
+        PXSYS_REFERENCE_APP_PERMISSION_MAX];
+    size_t count;
+    size_t index;
+    if (identity == nullptr || identity[0] == '\0') return 0;
+    if (permissions == nullptr)
+        return pxa_host_list_app_permissions(identity, nullptr, 0);
+    if (capacity > PXSYS_REFERENCE_APP_PERMISSION_MAX)
+        capacity = PXSYS_REFERENCE_APP_PERMISSION_MAX;
+    if (capacity == 0) return 0;
+    count = pxa_host_list_app_permissions(identity, host_permissions, capacity);
+    for (index = 0; index < count; ++index) {
+        CopyText(permissions[index].name, sizeof(permissions[index].name),
+                 host_permissions[index].name);
+        CopyText(permissions[index].scope, sizeof(permissions[index].scope),
+                 host_permissions[index].scope);
+        permissions[index].required =
+            host_permissions[index].required ? 1 : 0;
+        permissions[index].granted = host_permissions[index].granted ? 1 : 0;
+    }
+    return count;
+}
+
+bool SetAppPermission(void*, const char* identity, size_t permission_index,
+                      bool granted) {
+    if (identity == nullptr || identity[0] == '\0') return false;
+    return pxa_host_set_app_permission(identity, permission_index, granted);
+}
+
 bool BuildAbsolutePath(const char* logical, char* output, size_t capacity) {
     if (logical == nullptr || std::strstr(logical, "..") != nullptr)
         return false;
@@ -526,6 +564,9 @@ bool CreateSystem(const pxa_board_port_t* board,
     ui_config.device_info = FillDeviceInfo;
     ui_config.app_list = ListManagedApps;
     ui_config.app_action = ManageApp;
+    ui_config.app_permission_context = nullptr;
+    ui_config.app_permission_list = ListAppPermissions;
+    ui_config.app_permission_set = SetAppPermission;
     ui_config.file_list = ListFiles;
     ui_config.file_action = ManageFile;
 #endif
