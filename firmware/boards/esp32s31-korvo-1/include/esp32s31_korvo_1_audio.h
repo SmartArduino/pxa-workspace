@@ -12,6 +12,10 @@
 
 class Esp32S31Korvo1Audio {
 public:
+    /* One Host audio frame is 320 mono samples; keep room for a few of them so
+     * a larger frame never truncates. */
+    static constexpr size_t kMaxWriteSamples = 1024;
+
     bool Initialize(i2c_master_bus_handle_t i2c_bus);
     void SetVolume(uint8_t percent);
     uint8_t volume() const { return volume_.load(); }
@@ -27,5 +31,7 @@ private:
     const audio_codec_data_if_t* data_if_ = nullptr;
     esp_codec_dev_handle_t speaker_ = nullptr;
     SemaphoreHandle_t mutex_ = nullptr;
+    /* Mono Host samples expanded to interleaved stereo for the codec. */
+    int16_t stereo_[kMaxWriteSamples * 2] = {};
     std::atomic<uint8_t> volume_{70};
 };

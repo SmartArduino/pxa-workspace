@@ -119,10 +119,22 @@ void Esp32S31Korvo1Audio::Flush(void* context, uint8_t voice) {
 }
 
 bool Esp32S31Korvo1Audio::Write(const int16_t* pcm, size_t samples) {
-    if (speaker_ == nullptr || mutex_ == nullptr) return false;
+    if (speaker_ == nullptr || mutex_ == nullptr || pcm == nullptr ||
+        samples == 0)
+        return false;
+    if (samples > kMaxWriteSamples) return false;
+    /* The Host streams mono PCM at the session rate while the ES8389 output and
+     * the I2S bus are opened as interleaved stereo. Writing the mono samples
+     * straight through makes the codec consume two samples per frame, which
+     * plays the stream at double rate with a starved DMA (fast, chopped audio).
+     * Duplicate each sample into the left and right slots instead. */
+    for (size_t index = 0; index < samples; ++index) {
+        stereo_[index * 2] = pcm[index];
+        stereo_[index * 2 + 1] = pcm[index];
+    }
     xSemaphoreTake(mutex_, portMAX_DELAY);
     const esp_err_t result = esp_codec_dev_write(
-        speaker_, const_cast<int16_t*>(pcm), samples * sizeof(*pcm));
+        speaker_, stereo_, samples * 2u * sizeof(*pcm));
     xSemaphoreGive(mutex_);
     return result == ESP_OK;
 }
