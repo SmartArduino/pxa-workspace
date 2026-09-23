@@ -1653,6 +1653,13 @@ static void on_ui_event(uint32_t surface, uint32_t node,
     command.payload.ui_event.instance_id = public_state.main_instance_id;
     command.payload.ui_event.value =
         value_size >= 4 ? (int32_t)pxa_read_u32(value) : 0;
+    if (kind == PXA_UI_EVENT_TEXT && value != NULL && value_size != 0) {
+        size_t copy = value_size < PXA_HOST_UI_EVENT_TEXT_BYTES
+                          ? value_size
+                          : PXA_HOST_UI_EVENT_TEXT_BYTES;
+        memcpy(command.payload.ui_event.text, value, copy);
+        command.payload.ui_event.text_size = (uint16_t)copy;
+    }
     timestamp_us = pxa_lvgl_ui_event_timestamp_us(g_host.ui_adapter);
     command.payload.ui_event.timestamp_us =
         timestamp_us != 0 ? timestamp_us : host_now_us(NULL);
@@ -2461,6 +2468,7 @@ static int start_verified(const char *identity) {
             if (service_ids[index] == PXA_UI_SERVICE_ID) {
                 service_capabilities[index].features =
                     PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
+        PXA_UI_FEATURE_GRID |
                     PXA_UI_FEATURE_RGB565_BITMAP |
                     PXA_UI_FEATURE_CONTROLLER_INPUT |
                     PXA_UI_FEATURE_CANVAS_STREAM_IO;
@@ -2708,6 +2716,8 @@ static void post_ui_event(const pxa_esp_host_command_t *command) {
     const int has_value = event->kind == PXA_UI_EVENT_VALUE_CHANGED ||
                           event->kind == PXA_UI_EVENT_SCROLL ||
                           event->kind == PXA_UI_EVENT_KEY;
+    const int has_text = event->kind == PXA_UI_EVENT_TEXT &&
+                         event->text_size != 0;
     if (g_host.activation.services.ui == NULL || g_host.activation.ui_component == PXA_COMPONENT_INVALID)
         return;
     if (event->instance_id == 0 ||
@@ -2718,8 +2728,10 @@ static void post_ui_event(const pxa_esp_host_command_t *command) {
         g_host.activation.services.ui, g_host.activation.ui_component,
         event->surface, event->node, event->kind, event->flags,
         event->timestamp_us,
-        has_value ? &event->value : NULL,
-        has_value ? sizeof(event->value) : 0);
+        has_text ? (const void *)event->text
+                 : has_value ? &event->value : NULL,
+        has_text ? event->text_size
+                 : has_value ? sizeof(event->value) : 0);
     drain_active_events();
 }
 
@@ -3596,7 +3608,8 @@ bool pxa_esp_host_initialize(void) {
     ui_config.primary_environment.color_scheme = g_host.color_scheme;
     ui_config.primary_environment.features =
         PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
-        PXA_UI_FEATURE_RGB565_BITMAP | PXA_UI_FEATURE_CONTROLLER_INPUT;
+        PXA_UI_FEATURE_GRID | PXA_UI_FEATURE_RGB565_BITMAP |
+        PXA_UI_FEATURE_CONTROLLER_INPUT;
     workspace_size = pxa_lvgl_ui_workspace_size();
     if (workspace_size == 0) {
         failed_stage = "size-lvgl-workspace";

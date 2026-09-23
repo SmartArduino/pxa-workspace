@@ -1,2 +1,7 @@
 # Cross-board defaults intentionally stay empty. Each board provides its own
 # target, flash, memory, partition and peripheral overlay under firmware/boards/<id>/.
+
+# System input method: pinyin with the nine key layout on narrow panels.
+CONFIG_LV_USE_IME_PINYIN=y
+CONFIG_LV_IME_PINYIN_USE_K9_MODE=y
+CONFIG_LV_IME_PINYIN_USE_DEFAULT_DICT=y

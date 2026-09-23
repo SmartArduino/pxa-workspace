@@ -578,6 +578,14 @@ static pxa_status_t initialize_bounded_services(
     game_render_config.max_contexts_per_component = 1;
     game_render_config.min_buffer_count = 2;
     game_render_config.max_buffer_count = 3;
+    pxa_esp_game_render_get_scale_profile(
+        &game_render_config.auto_target_profile);
+    game_render_config.auto_target_profile.display_width =
+        host->primary_width == 0 || host->primary_width > UINT16_MAX
+            ? 320u : (uint16_t)host->primary_width;
+    game_render_config.auto_target_profile.display_height =
+        host->primary_height == 0 || host->primary_height > UINT16_MAX
+            ? 240u : (uint16_t)host->primary_height;
     game_render_config.backend = game_render_backend;
     workspace_size =
         pxa_game_render_service_workspace_size(&game_render_config);
@@ -775,6 +783,7 @@ static pxa_status_t initialize_window_ui(
     config.max_transaction_bytes = SIZE_MAX;
     config.max_canvas_bytes = SIZE_MAX;
     config.features = PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
+                      PXA_UI_FEATURE_GRID |
                       PXA_UI_FEATURE_RGB565_BITMAP |
                       PXA_UI_FEATURE_CONTROLLER_INPUT |
                       PXA_UI_FEATURE_CANVAS_STREAM_IO;

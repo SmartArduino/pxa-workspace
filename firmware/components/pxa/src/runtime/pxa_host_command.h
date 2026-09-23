@@ -10,6 +10,9 @@ extern "C" {
 /* 64 publisher-root hex bytes, ':', 64-byte App ID, NUL. */
 #define PXA_HOST_COMMAND_MAX_IDENTITY_BYTES 130u
 
+/* Text events carry the current UTF-8 text of a text input, no terminator. */
+#define PXA_HOST_UI_EVENT_TEXT_BYTES 64u
+
 typedef enum {
     PXA_ESP_HOST_CMD_START = 1,
     PXA_ESP_HOST_CMD_BACK,
@@ -50,6 +53,8 @@ typedef struct {
     int32_t value;
     uint16_t kind;
     uint16_t flags;
+    uint16_t text_size;
+    uint8_t text[PXA_HOST_UI_EVENT_TEXT_BYTES];
 } pxa_host_ui_event_t;
 
 typedef struct {
