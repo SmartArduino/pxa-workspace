@@ -21,7 +21,10 @@
 #define PXA_ESP_SURFACE_NONE (-1)
 #define PXA_ESP_SURFACE_MAGIC UINT32_C(0x45504753)
 #define PXA_ESP_SURFACE_LATENCY_BUCKETS 64u
-#define PXA_ESP_RASTER_MAILBOX_SLOTS 2u
+/* Three slots let the Guest queue one frame while the presenter renders the
+ * previous one; a fourth submission replaces the pending list instead, which
+ * keeps latency bounded without stalling the Guest. */
+#define PXA_ESP_RASTER_MAILBOX_SLOTS 3u
 #define PXA_ESP_RASTER_MAILBOX_MIN_BYTES UINT32_C(4096)
 #define PXA_ESP_RASTER_MAILBOX_GROW_BYTES UINT32_C(4096)
 #define PXA_ESP_SURFACE_FLAG_GAME_RENDER UINT8_C(8)
@@ -984,9 +987,24 @@ static pxa_status_t raster_submit_surface(void *context,
     target.height = surface->height;
     target.prefilled_commands = 0;
     replaced_pending = surface->raster_draw_pending;
-    mailbox_index = replaced_pending;
+    mailbox_index = PXA_ESP_SURFACE_NONE;
+    {
+        /* Prefer a slot that is neither being rendered nor holding the pending
+         * list so the Guest can queue ahead of the rasterizer. */
+        int candidate;
+        for (candidate = 0; candidate < (int)PXA_ESP_RASTER_MAILBOX_SLOTS;
+             ++candidate) {
+            if (candidate != surface->raster_draw_rendering &&
+                candidate != replaced_pending) {
+                mailbox_index = candidate;
+                break;
+            }
+        }
+    }
     if (mailbox_index == PXA_ESP_SURFACE_NONE)
-        mailbox_index = surface->raster_draw_rendering == 0 ? 1 : 0;
+        mailbox_index = replaced_pending != PXA_ESP_SURFACE_NONE
+                            ? replaced_pending
+                            : (surface->raster_draw_rendering == 0 ? 1 : 0);
     input_timestamp_us =
         g_next_input_timestamp_us != 0
             ? g_next_input_timestamp_us
