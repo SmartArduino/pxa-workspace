@@ -2,6 +2,7 @@
 #define PXA_BOARD_API_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <lvgl.h>
@@ -38,6 +39,8 @@ typedef struct {
                          pxsys_reference_lvgl_t* reference_ui);
     void (*show_initial_frame)(void* context);
     bool (*configure_diagnostics)(void* context);
+    bool (*capture_displayed_rgb565)(void* context, uint16_t* pixels,
+                                     size_t pixel_count);
 } pxa_board_port_t;
 
 bool pxa_board_register(const pxa_board_port_t* port);

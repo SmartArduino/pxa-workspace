@@ -2,6 +2,7 @@
 #include "pxa_board.h"
 
 #include "pai_touch_hardware.h"
+#include "parallel_sw_rotation_flush.h"
 #include "pxa_board_api.h"
 
 namespace {
@@ -64,6 +65,12 @@ bool ConfigureDiagnostics(void*) {
     return g_hardware.ConfigurePxadbControls();
 }
 
+bool CaptureDisplayedRgb565(void*, uint16_t* pixels, size_t pixel_count) {
+    zuowei_pai_touch::ParallelSoftwareRotationFlush::CompletedFrameInfo info;
+    return zuowei_pai_touch::ParallelSoftwareRotationFlush::SnapshotCompletedFrame(
+        pixels, pixel_count, false, pdMS_TO_TICKS(30), &info);
+}
+
 const pxa_board_port_t kPort = {
     .struct_size = sizeof(pxa_board_port_t),
     .context = nullptr,
@@ -77,6 +84,7 @@ const pxa_board_port_t kPort = {
     .system_ready = SystemReady,
     .show_initial_frame = ShowInitialFrame,
     .configure_diagnostics = ConfigureDiagnostics,
+    .capture_displayed_rgb565 = CaptureDisplayedRgb565,
 };
 }  // namespace
 

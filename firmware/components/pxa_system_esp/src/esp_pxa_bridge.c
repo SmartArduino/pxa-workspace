@@ -1234,6 +1234,10 @@ static pxsys_status_t backend_foreground(void* context, void* backend_instance) 
         return PXSYS_STATUS_INVALID_ARGUMENT;
     resume_window_session(bridge);
     pxa_esp_surface_set_host_visible(true);
+    const uint8_t state = PXA_HOST_SYSTEM_LIFECYCLE_FOREGROUND;
+    (void)pxa_host_post_app_system_event(
+        ((esp_pxa_instance_t*)backend_instance)->identity_key,
+        PXA_HOST_SYSTEM_LIFECYCLE_EVENT, &state, sizeof(state));
     ESP_LOGI(PXSYS_ESP_PXA_TAG, "Application foregrounded: %s",
              ((esp_pxa_instance_t*)backend_instance)->identity_key);
     return PXSYS_STATUS_OK;
@@ -1244,6 +1248,10 @@ static pxsys_status_t backend_background(void* context, void* backend_instance) 
     if (backend_instance == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
     pxa_esp_surface_set_host_visible(false);
+    const uint8_t state = PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND;
+    (void)pxa_host_post_app_system_event(
+        ((esp_pxa_instance_t*)backend_instance)->identity_key,
+        PXA_HOST_SYSTEM_LIFECYCLE_EVENT, &state, sizeof(state));
     reset_window(bridge);
     ESP_LOGI(PXSYS_ESP_PXA_TAG, "Application backgrounded: %s",
              ((esp_pxa_instance_t*)backend_instance)->identity_key);

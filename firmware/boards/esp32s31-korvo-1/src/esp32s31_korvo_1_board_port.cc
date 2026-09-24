@@ -2,6 +2,7 @@
 
 #include "esp32s31_korvo_1_config.h"
 #include "esp32s31_korvo_1_hardware.h"
+#include "esp32s31_korvo_1_pxa_surface.h"
 #include "pxa_board_api.h"
 
 namespace {
@@ -40,6 +41,12 @@ void SystemReady(void*, pxsys_standard_system_t* system,
 bool ConfigureDiagnostics(void*) {
     return g_hardware.ConfigurePxadbControls();
 }
+bool CaptureDisplayedRgb565(void*, uint16_t* pixels, size_t pixel_count) {
+    if (!korvo_pxa_surface::DirectScanoutActive()) return false;
+    korvo_pxa_surface::CompletedFrameInfo info;
+    return korvo_pxa_surface::SnapshotDisplayedFrame(
+        pixels, pixel_count, false, 30, &info);
+}
 const pxa_board_port_t kPort = {
     .struct_size = sizeof(pxa_board_port_t),
     .context = nullptr,
@@ -53,6 +60,7 @@ const pxa_board_port_t kPort = {
     .system_ready = SystemReady,
     .show_initial_frame = nullptr,
     .configure_diagnostics = ConfigureDiagnostics,
+    .capture_displayed_rgb565 = CaptureDisplayedRgb565,
 };
 }
 

@@ -32,6 +32,15 @@ void *heap_caps_calloc(size_t count, size_t size, unsigned caps) {
     if (memory != NULL) ++allocations;
     return memory;
 }
+void *heap_caps_aligned_alloc(size_t alignment, size_t size, unsigned caps) {
+    (void)alignment;
+    return heap_caps_malloc(size, caps);
+}
+void *heap_caps_aligned_calloc(size_t alignment, size_t count, size_t size,
+                               unsigned caps) {
+    (void)alignment;
+    return heap_caps_calloc(count, size, caps);
+}
 void heap_caps_free(void *memory) {
     if (memory != NULL) {
         assert(allocations != 0);
@@ -193,6 +202,12 @@ int main(void) {
     pxa_esp_surface_release_frame(lease);
     assert(((pxa_esp_surface_t *)(uintptr_t)surface)
                ->current_frame_id == 2);
+    assert(pxa_esp_surface_acquire_current_for_preview(&probe) &&
+           probe.frame_id == 2 &&
+           memcmp(probe.pixels, second, sizeof(second)) == 0);
+    assert(pxa_esp_surface_has_pending_frame());
+    pxa_esp_surface_release_frame(probe.lease);
+    assert(pxa_esp_surface_has_pending_frame());
     assert(backend.query(backend.context, surface, &state) == PXA_STATUS_OK &&
            state.presented_frames == 1 && state.free_buffers == 1);
 
@@ -212,6 +227,21 @@ int main(void) {
     pxa_esp_surface_release_frame(lease);
     assert(allocations == 0 && notifications == 13 && lock_depth == 0);
 
+    g_ui_alpha_provider = empty_ui_alpha_plane;
+    g_ui_alpha_provider_context = &notifications;
+    assert(!pxa_esp_surface_composition_required());
+    pxa_esp_surface_set_power_overlay_visible(true);
+    pxa_esp_surface_set_system_overlay_visible(true);
+    pxa_esp_surface_set_power_overlay_visible(false);
+    assert(pxa_esp_surface_composition_required());
+    pxa_esp_surface_set_system_overlay_visible(false);
+    assert(!pxa_esp_surface_composition_required());
+    g_ui_alpha_provider = NULL;
+    g_ui_alpha_provider_context = NULL;
+
+    pxa_esp_surface_set_host_visible(false);
+    pxa_esp_surface_set_display_unlocked(false);
+    pxa_esp_surface_set_host_visible(true);
     desc.format = PXA_SURFACE_FORMAT_ARGB8888_PREMULTIPLIED;
     desc.flags = PXA_SURFACE_FLAG_PREMULTIPLIED_ALPHA;
     desc.buffer_count = 2;
@@ -222,6 +252,11 @@ int main(void) {
     assert(!pxa_esp_surface_composition_required());
     assert(backend.configure(backend.context, surface, &layer) ==
            PXA_STATUS_OK);
+    assert(pxa_esp_surface_get_present_info(&present_info) &&
+           !present_info.visible && !pxa_esp_surface_acquire_latest(&probe));
+    pxa_esp_surface_set_display_unlocked(true);
+    assert(pxa_esp_surface_get_present_info(&present_info) &&
+           present_info.visible);
     assert(backend.write(backend.context, surface, alpha_pixels,
                          sizeof(alpha_pixels)) == PXA_STATUS_OK);
     assert(backend.queue(backend.context, surface, 4, NULL, 0) ==

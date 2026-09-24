@@ -478,7 +478,7 @@ void PaiTouchHardware::AttachSystem(pxsys_standard_system_t* system,
         (void)pxsys_reference_lvgl_set_power_menu_changed_callback(
             reference_ui_, nullptr,
             [](void*, bool visible) {
-                pxa_esp_surface_set_system_overlay_visible(visible);
+                pxa_esp_surface_set_power_overlay_visible(visible);
             });
     }
     PublishStatus();
@@ -860,7 +860,7 @@ void PaiTouchHardware::StatusOnLvgl(void* context) {
 void PaiTouchHardware::SetScreenEnabled(bool enabled) {
     const bool previous = screen_enabled_.exchange(enabled);
     if (previous == enabled) return;
-    pxa_esp_surface_set_host_visible(false);
+    pxa_esp_surface_set_display_unlocked(false);
     if (!enabled) {
         ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
         ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
@@ -952,7 +952,7 @@ void PaiTouchHardware::HandlePowerButtonPressUp() {
 }
 
 void PaiTouchHardware::OnLockChanged(bool locked) {
-    pxa_esp_surface_set_host_visible(!locked);
+    pxa_esp_surface_set_display_unlocked(!locked && screen_enabled_.load());
 }
 
 void PaiTouchHardware::NavigateBack() {

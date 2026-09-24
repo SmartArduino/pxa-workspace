@@ -119,8 +119,10 @@ static void *g_fill_bands_context;
 static pxa_game_render_target_profile_t g_game_render_scale_profile = {
     0, 0, PXA_GAME_RENDER_SCALE_MASK_1X, PXA_GAME_RENDER_SCALE_1X};
 static bool g_host_visible = true;
+static bool g_display_unlocked = true;
 static bool g_composition_required;
 static bool g_system_overlay_visible;
+static bool g_power_overlay_visible;
 static uint32_t g_runtime_modal_count;
 static bool g_direct_resume_barrier;
 static uint64_t g_direct_resume_after_frame_id;
@@ -1368,7 +1370,8 @@ bool pxa_esp_surface_composition_required(void) {
     void *ui_alpha_provider_context;
     pxa_esp_surface_ui_alpha_plane_t ui_alpha_plane;
     taskENTER_CRITICAL(&g_surface_lock);
-    required = g_system_overlay_visible || g_runtime_modal_count != 0;
+    required = g_system_overlay_visible || g_power_overlay_visible ||
+               g_runtime_modal_count != 0;
     ui_required = g_composition_required;
     ui_alpha_provider = g_ui_alpha_provider;
     ui_alpha_provider_context = g_ui_alpha_provider_context;
@@ -1389,6 +1392,19 @@ void pxa_esp_surface_set_system_overlay_visible(bool visible) {
     taskENTER_CRITICAL(&g_surface_lock);
     changed = g_system_overlay_visible != visible;
     g_system_overlay_visible = visible;
+    if (changed && !visible && g_surface != NULL) {
+        g_direct_resume_barrier = true;
+        g_direct_resume_after_frame_id = latest_frame_id_locked(g_surface);
+    }
+    taskEXIT_CRITICAL(&g_surface_lock);
+    if (changed) notify_frame_ready();
+}
+
+void pxa_esp_surface_set_power_overlay_visible(bool visible) {
+    bool changed;
+    taskENTER_CRITICAL(&g_surface_lock);
+    changed = g_power_overlay_visible != visible;
+    g_power_overlay_visible = visible;
     if (changed && !visible && g_surface != NULL) {
         g_direct_resume_barrier = true;
         g_direct_resume_after_frame_id = latest_frame_id_locked(g_surface);
@@ -1423,16 +1439,18 @@ void pxa_esp_surface_runtime_modal_leave(void) {
     if (changed) notify_frame_ready();
 }
 
-void pxa_esp_surface_set_host_visible(bool visible) {
+static void set_visibility_gate(bool *gate, bool visible) {
     bool changed;
+    bool effective;
     taskENTER_CRITICAL(&g_surface_lock);
-    changed = g_host_visible != visible;
-    g_host_visible = visible;
-    if (changed && visible && g_surface != NULL) {
+    effective = g_host_visible && g_display_unlocked;
+    *gate = visible;
+    changed = effective != (g_host_visible && g_display_unlocked);
+    if (changed && g_host_visible && g_display_unlocked && g_surface != NULL) {
         g_direct_resume_barrier = true;
         g_direct_resume_after_frame_id = latest_frame_id_locked(g_surface);
     }
-    if (!visible) {
+    if (!g_host_visible || !g_display_unlocked) {
         g_next_input_timestamp_us = 0;
         if (g_surface != NULL) {
             g_surface->pending_input_timestamp_us = 0;
@@ -1444,11 +1462,21 @@ void pxa_esp_surface_set_host_visible(bool visible) {
     if (changed) notify_frame_ready();
 }
 
+void pxa_esp_surface_set_host_visible(bool visible) {
+    set_visibility_gate(&g_host_visible, visible);
+}
+
+void pxa_esp_surface_set_display_unlocked(bool unlocked) {
+    set_visibility_gate(&g_display_unlocked, unlocked);
+}
+
 bool pxa_esp_surface_try_resume_direct_scanout(uint64_t frame_id) {
     bool allowed;
     taskENTER_CRITICAL(&g_surface_lock);
     allowed = g_surface != NULL && frame_id != 0 && g_host_visible &&
-              !g_system_overlay_visible && g_runtime_modal_count == 0 &&
+              g_display_unlocked &&
+              !g_system_overlay_visible && !g_power_overlay_visible &&
+              g_runtime_modal_count == 0 &&
               (!g_direct_resume_barrier ||
                frame_id > g_direct_resume_after_frame_id);
     if (allowed) {
@@ -1754,7 +1782,8 @@ static bool materialize_latest_raster_draw(void) {
     return true;
 }
 
-static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only) {
+static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
+                           bool current_only) {
     pxa_esp_surface_t *surface;
     pxa_esp_surface_ui_alpha_provider_fn ui_alpha_provider;
     void *ui_alpha_provider_context;
@@ -1763,15 +1792,17 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only) {
     if (frame == NULL) return false;
     memset(frame, 0, sizeof(*frame));
     if (direct_only && pxa_esp_surface_composition_required()) return false;
-    (void)materialize_latest_raster_draw();
+    if (!current_only) (void)materialize_latest_raster_draw();
     taskENTER_CRITICAL(&g_surface_lock);
     surface = g_surface;
-    if (!g_host_visible || surface == NULL || surface->closing ||
+    if (!g_host_visible || !g_display_unlocked || surface == NULL ||
+        surface->closing ||
         !surface->layer.visible ||
         g_acquired_surface != NULL ||
         surface->acquire_active ||
-        (surface->pending == PXA_ESP_SURFACE_NONE &&
-         surface->current == PXA_ESP_SURFACE_NONE)) {
+        (current_only ? surface->current == PXA_ESP_SURFACE_NONE :
+         (surface->pending == PXA_ESP_SURFACE_NONE &&
+          surface->current == PXA_ESP_SURFACE_NONE))) {
         taskEXIT_CRITICAL(&g_surface_lock);
         return false;
     }
@@ -1779,7 +1810,8 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only) {
                              ? surface->pending_frame_id
                              : surface->current_frame_id;
     if (direct_only &&
-        (g_system_overlay_visible || g_runtime_modal_count != 0 ||
+        (g_system_overlay_visible || g_power_overlay_visible ||
+         g_runtime_modal_count != 0 ||
          surface->opaque_ui_region_count != 0 ||
          (g_direct_resume_barrier &&
           candidate_frame_id <= g_direct_resume_after_frame_id))) {
@@ -1790,7 +1822,8 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only) {
         g_direct_resume_barrier = false;
         g_direct_resume_after_frame_id = 0;
     }
-    surface->acquire_new = surface->pending != PXA_ESP_SURFACE_NONE;
+    surface->acquire_new = !current_only &&
+                           surface->pending != PXA_ESP_SURFACE_NONE;
     if (surface->acquire_new) {
         index = surface->pending;
         surface->pending = PXA_ESP_SURFACE_NONE;
@@ -1819,7 +1852,7 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only) {
     frame->y = surface->layer.y;
     frame->z = surface->layer.z;
     frame->visible = surface->layer.visible;
-    if (g_system_overlay_visible) {
+    if (g_system_overlay_visible || g_power_overlay_visible) {
         /* The host modal is already rendered into LVGL's framebuffer. Keep
          * that framebuffer over the app Surface for the duration of the
          * modal, then restore the app's own trusted-UI regions. */
@@ -1831,7 +1864,8 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only) {
     } else {
         frame->opaque_ui_region_count = surface->opaque_ui_region_count;
     }
-    if (!g_system_overlay_visible && frame->opaque_ui_region_count != 0)
+    if (!g_system_overlay_visible && !g_power_overlay_visible &&
+        frame->opaque_ui_region_count != 0)
         memcpy(frame->opaque_ui_regions, surface->opaque_ui_regions,
                (size_t)frame->opaque_ui_region_count *
                    sizeof(frame->opaque_ui_regions[0]));
@@ -1848,18 +1882,24 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only) {
 }
 
 bool pxa_esp_surface_acquire_latest(pxa_esp_surface_frame_t *frame) {
-    return acquire_latest(frame, false);
+    return acquire_latest(frame, false, false);
+}
+
+bool pxa_esp_surface_acquire_current_for_preview(
+    pxa_esp_surface_frame_t *frame) {
+    return acquire_latest(frame, false, true);
 }
 
 bool pxa_esp_surface_acquire_latest_for_direct(
     pxa_esp_surface_frame_t *frame) {
-    return acquire_latest(frame, true);
+    return acquire_latest(frame, true, false);
 }
 
 bool pxa_esp_surface_has_pending_frame(void) {
     bool pending;
     taskENTER_CRITICAL(&g_surface_lock);
-    pending = g_host_visible && g_surface != NULL && !g_surface->closing &&
+    pending = g_host_visible && g_display_unlocked && g_surface != NULL &&
+              !g_surface->closing &&
               g_surface->layer.visible &&
               (g_surface->pending != PXA_ESP_SURFACE_NONE ||
                g_surface->raster_draw_pending != PXA_ESP_SURFACE_NONE);
@@ -1883,7 +1923,8 @@ bool pxa_esp_surface_get_present_info(
     info->x = surface->layer.x;
     info->y = surface->layer.y;
     info->format = surface->format;
-    info->visible = surface->layer.visible && g_host_visible;
+    info->visible = surface->layer.visible && g_host_visible &&
+                    g_display_unlocked;
     taskEXIT_CRITICAL(&g_surface_lock);
     return true;
 }
@@ -1980,9 +2021,15 @@ bool pxa_esp_surface_composition_required(void) { return false; }
 void pxa_esp_surface_set_system_overlay_visible(bool visible) {
     (void)visible;
 }
+void pxa_esp_surface_set_power_overlay_visible(bool visible) {
+    (void)visible;
+}
 void pxa_esp_surface_runtime_modal_enter(void) {}
 void pxa_esp_surface_runtime_modal_leave(void) {}
 void pxa_esp_surface_set_host_visible(bool visible) { (void)visible; }
+void pxa_esp_surface_set_display_unlocked(bool unlocked) {
+    (void)unlocked;
+}
 bool pxa_esp_surface_try_resume_direct_scanout(uint64_t frame_id) {
     (void)frame_id;
     return false;
@@ -2005,6 +2052,11 @@ void pxa_esp_surface_take_input_metrics(
     if (metrics != NULL) *metrics = (pxa_esp_surface_input_metrics_t){0};
 }
 bool pxa_esp_surface_acquire_latest(pxa_esp_surface_frame_t *frame) {
+    (void)frame;
+    return false;
+}
+bool pxa_esp_surface_acquire_current_for_preview(
+    pxa_esp_surface_frame_t *frame) {
     (void)frame;
     return false;
 }

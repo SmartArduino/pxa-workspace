@@ -92,12 +92,14 @@ void pxa_esp_surface_require_composition(void);
 bool pxa_esp_surface_composition_required(void);
 /* Temporarily compose a host-owned system overlay above the Surface. */
 void pxa_esp_surface_set_system_overlay_visible(bool visible);
+void pxa_esp_surface_set_power_overlay_visible(bool visible);
 /* Runtime-owned modal prompts can overlap shell-managed overlays. Calls must
  * be balanced; direct scanout resumes only after the final leave and a fresh
  * complete Surface frame. */
 void pxa_esp_surface_runtime_modal_enter(void);
 void pxa_esp_surface_runtime_modal_leave(void);
 void pxa_esp_surface_set_host_visible(bool visible);
+void pxa_esp_surface_set_display_unlocked(bool unlocked);
 /* A modal/visibility transition arms a barrier at the last submitted frame.
  * Direct scanout may resume only with a newer complete frame; LVGL composition
  * remains able to acquire the old frame while the barrier is armed. */
@@ -112,6 +114,8 @@ void pxa_esp_surface_note_frame_presented(uint64_t timestamp_us,
 void pxa_esp_surface_take_input_metrics(
     pxa_esp_surface_input_metrics_t *metrics);
 bool pxa_esp_surface_acquire_latest(pxa_esp_surface_frame_t *frame);
+bool pxa_esp_surface_acquire_current_for_preview(
+    pxa_esp_surface_frame_t *frame);
 /* Atomically acquires only a frame eligible to resume direct scanout. Unlike
  * the composition acquire path, this never consumes a modal-barrier frame. */
 bool pxa_esp_surface_acquire_latest_for_direct(

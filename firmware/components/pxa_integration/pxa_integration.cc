@@ -15,6 +15,7 @@
 #include <esp_log.h>
 #include <esp_lvgl_port.h>
 #include <pxa/pxa_host.h>
+#include <pxa/pxa_esp_surface.h>
 #include <pxa/version.h>
 #include <pxadb/pxadb_service.h>
 #include <pxsys/esp_pxa_bridge.h>
@@ -103,6 +104,67 @@ bool ReadMemoryInfo(void*, uint64_t* available_bytes, uint64_t* total_bytes) {
         heap_caps_get_total_size(internal_caps) +
         heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
     return *total_bytes != 0;
+}
+
+void OverlaySurfacePreview(void*, lv_draw_buf_t* image, int32_t screen_x,
+                           int32_t screen_y, uint32_t content_width,
+                           uint32_t content_height, uint32_t padding,
+                           uint16_t display_width, uint16_t display_height) {
+    pxa_esp_surface_frame_t frame = {};
+    uint16_t* captured = nullptr;
+    const uint8_t* pixels = nullptr;
+    uint32_t stride = 0;
+    uint32_t scale = 1;
+    if (pxa_esp_surface_acquire_current_for_preview(&frame)) {
+        if (frame.visible && frame.format == PXA_SURFACE_FORMAT_RGB565 &&
+            (frame.flags & PXA_SURFACE_FLAG_PREFER_DIRECT_SCANOUT) != 0 &&
+            frame.x == 0 && frame.y == 0 && frame.width != 0 &&
+            frame.height != 0 && display_width % frame.width == 0 &&
+            display_height % frame.height == 0 &&
+            display_width / frame.width == display_height / frame.height &&
+            frame.opaque_ui_region_count == 0 &&
+            frame.stride_bytes >= frame.width * sizeof(uint16_t)) {
+            pixels = frame.pixels;
+            stride = frame.stride_bytes;
+            scale = display_width / frame.width;
+        }
+    } else {
+        pxa_esp_surface_present_info_t info = {};
+        const auto* board = pxa_board_current();
+        const size_t count = static_cast<size_t>(display_width) * display_height;
+        if (board != nullptr && board->capture_displayed_rgb565 != nullptr &&
+            pxa_esp_surface_get_present_info(&info) && info.visible &&
+            info.format == PXA_SURFACE_FORMAT_RGB565 &&
+            !pxa_esp_surface_composition_required()) {
+            captured = static_cast<uint16_t*>(heap_caps_malloc(
+                count * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+            if (captured != nullptr &&
+                board->capture_displayed_rgb565(board->context, captured,
+                                                 count)) {
+                pixels = reinterpret_cast<const uint8_t*>(captured);
+                stride = static_cast<uint32_t>(display_width) * sizeof(uint16_t);
+            }
+        }
+    }
+    if (pixels != nullptr) {
+        const int32_t right = screen_x + static_cast<int32_t>(content_width);
+        const int32_t bottom = screen_y + static_cast<int32_t>(content_height);
+        const int32_t start_x = screen_x > 0 ? screen_x : 0;
+        const int32_t start_y = screen_y > 0 ? screen_y : 0;
+        const int32_t end_x = right < display_width ? right : display_width;
+        const int32_t end_y = bottom < display_height ? bottom : display_height;
+        for (int32_t y = start_y; y < end_y; ++y) {
+            const auto* row_pixels = reinterpret_cast<const uint16_t*>(
+                pixels + (y / scale) * stride);
+            auto* destination = static_cast<uint16_t*>(lv_draw_buf_goto_xy(
+                image, padding + start_x - screen_x,
+                padding + y - screen_y));
+            for (int32_t x = start_x; x < end_x; ++x)
+                destination[x - start_x] = row_pixels[x / scale];
+        }
+    }
+    if (frame.lease != 0) pxa_esp_surface_release_frame(frame.lease);
+    if (captured != nullptr) heap_caps_free(captured);
 }
 
 bool DeveloperGet(void* context, pxsys_reference_performance_option_t option) {
@@ -582,6 +644,13 @@ bool CreateSystem(const pxa_board_port_t* board,
     ui_config.app_icon_context = g_bridge;
     ui_config.resolve_app_icon = ResolveAppIcon;
     ui_config.memory_info = ReadMemoryInfo;
+    ui_config.preview_overlay = OverlaySurfacePreview;
+    ui_config.system_overlay_changed = [](void*, bool visible) {
+        if (visible)
+            pxa_esp_surface_runtime_modal_enter();
+        else
+            pxa_esp_surface_runtime_modal_leave();
+    };
     ui_config.performance_context = const_cast<pxa_board_port_t*>(board);
     ui_config.performance_get = DeveloperGet;
     ui_config.performance_set = DeveloperSet;

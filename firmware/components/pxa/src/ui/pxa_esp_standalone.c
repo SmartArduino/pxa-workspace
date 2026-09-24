@@ -11,6 +11,7 @@
 #include "lvgl.h"
 
 #include "pxa_esp_host.h"
+#include "pxa/pxa_esp_surface.h"
 
 #define PXA_STANDALONE_UI_TAG "PxaUiShell"
 
@@ -31,6 +32,7 @@ static lv_obj_t *g_permission_dialog;
 static lv_obj_t *g_unresponsive_dialog;
 static lv_obj_t *g_toast;
 static lv_timer_t *g_toast_timer;
+static bool g_toast_overlay_active;
 static uint32_t g_permission_prompt_id;
 static uint32_t g_unresponsive_prompt_id;
 
@@ -57,6 +59,7 @@ static lv_result_t schedule_on_lvgl(lv_async_cb_t callback, void *context) {
 
 static void close_dialog(lv_obj_t **dialog) {
     if (*dialog == NULL) return;
+    lv_obj_add_flag(*dialog, LV_OBJ_FLAG_HIDDEN);
     lv_obj_delete_async(*dialog);
     *dialog = NULL;
 }
@@ -179,6 +182,10 @@ static void toast_timeout(lv_timer_t *timer) {
     (void)timer;
     close_dialog(&g_toast);
     g_toast_timer = NULL;
+    if (g_toast_overlay_active) {
+        g_toast_overlay_active = false;
+        pxa_esp_surface_runtime_modal_leave();
+    }
 }
 
 static void show_toast(void *context) {
@@ -188,6 +195,10 @@ static void show_toast(void *context) {
         g_toast_timer = NULL;
     }
     close_dialog(&g_toast);
+    if (!g_toast_overlay_active) {
+        g_toast_overlay_active = true;
+        pxa_esp_surface_runtime_modal_enter();
+    }
     g_toast = lv_label_create(lv_layer_top());
     lv_label_set_text(g_toast, copy->message);
     lv_label_set_long_mode(g_toast, LV_LABEL_LONG_WRAP);
@@ -200,7 +211,13 @@ static void show_toast(void *context) {
     lv_obj_set_style_radius(g_toast, 4, 0);
     lv_obj_set_style_text_font(g_toast, system_body_font(), 0);
     g_toast_timer = lv_timer_create(toast_timeout, copy->duration_ms, NULL);
-    if (g_toast_timer != NULL) lv_timer_set_repeat_count(g_toast_timer, 1);
+    if (g_toast_timer != NULL)
+        lv_timer_set_repeat_count(g_toast_timer, 1);
+    else {
+        close_dialog(&g_toast);
+        g_toast_overlay_active = false;
+        pxa_esp_surface_runtime_modal_leave();
+    }
     free(copy);
 }
 
