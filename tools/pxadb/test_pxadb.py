@@ -351,6 +351,18 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         client.__enter__().request.assert_called_once_with(
             "PACKAGE stop pxa-voxel-craft")
 
+    def test_package_install_uses_requested_deploy_timeout(self) -> None:
+        arguments = pxadb.build_parser().parse_args([
+            "package", "install", "pxa-pixel-dungeon", "--port", "/dev/ttyACM0",
+            "--timeout", "180", "--yes"
+        ])
+        client = mock.MagicMock()
+        client.__enter__().request.side_effect = [[], []]
+        with mock.patch.object(pxadb, "open_client", return_value=client):
+            self.assertEqual(pxadb.command_package_install(arguments), 0)
+        client.__enter__().request.assert_any_call(
+            "PACKAGE deploy pxa-pixel-dungeon", timeout=180.0)
+
     def test_staging_directory_removes_same_identity_pxa_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = pathlib.Path(directory) / "pxa-example"

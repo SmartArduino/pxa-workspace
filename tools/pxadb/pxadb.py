@@ -1206,7 +1206,8 @@ def command_package_install(arguments: argparse.Namespace) -> int:
             )
             if answer.strip().lower() not in {"y", "yes"}:
                 raise PxaDbError("installation cancelled")
-        client.request(f"PACKAGE deploy {identity}", timeout=60.0)
+        client.request(f"PACKAGE deploy {identity}",
+                       timeout=max(arguments.timeout, 60.0))
 
     source = pathlib.Path(arguments.package)
     if source.is_dir() or source.is_file():
