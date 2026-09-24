@@ -20,6 +20,7 @@
 #define PXA_STORE_UNINSTALL_REQUEST UINT16_C(8)
 #define PXA_STORE_DOWNLOAD_PROGRESS UINT16_C(0x8001)
 #define PXA_STORE_DOWNLOAD_MAX_BYTES UINT64_C(4194304)
+#define PXA_STORE_WORKER_STACK_BYTES (10u * 1024u)
 
 typedef struct pxa_esp_store_job {
     uint32_t request_id;

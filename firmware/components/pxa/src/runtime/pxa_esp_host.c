@@ -260,7 +260,39 @@ static struct {
     uint32_t request_id;
     uint64_t instance_id;
     char identity[PXA_ESP_PACKAGE_ID_BYTES];
+    char name[PXA_ESP_PACKAGE_NAME_BYTES];
 } g_store_uninstall;
+static struct {
+    uint32_t prompt_id;
+    char identity[PXA_ESP_PACKAGE_ID_BYTES];
+} g_store_result;
+
+static void copy_utf8_c_string(char *output, size_t capacity,
+                               const char *value);
+
+static void show_store_result(bool is_uninstall, const char *name,
+                              const char *identity) {
+    pxa_esp_ui_store_result_t result = {0};
+    if (g_store_result.prompt_id != 0) {
+        pxa_esp_ui_shell_dismiss_store_result(g_store_result.prompt_id);
+        pxa_esp_surface_runtime_modal_leave();
+        memset(&g_store_result, 0, sizeof(g_store_result));
+    }
+    result.prompt_id = ++g_host.activation.next_permission_prompt_id;
+    if (result.prompt_id == 0)
+        result.prompt_id = ++g_host.activation.next_permission_prompt_id;
+    result.is_uninstall = is_uninstall ? 1u : 0u;
+    copy_utf8_c_string(result.app_name, sizeof(result.app_name), name);
+    g_store_result.prompt_id = result.prompt_id;
+    if (!is_uninstall)
+        snprintf(g_store_result.identity, sizeof(g_store_result.identity),
+                 "%s", identity);
+    pxa_esp_surface_runtime_modal_enter();
+    if (!pxa_esp_ui_shell_post_store_result(&result)) {
+        pxa_esp_surface_runtime_modal_leave();
+        memset(&g_store_result, 0, sizeof(g_store_result));
+    }
+}
 typedef struct {
     char filename[20];
     char app_id[65];
@@ -352,6 +384,10 @@ const lv_font_t *pxa_esp_host_ui_body_font(void) {
 
 const lv_font_t *pxa_esp_host_ui_title_font(void) {
     return g_host.ui_title_font;
+}
+
+uint32_t pxa_esp_host_ui_color(uint8_t index) {
+    return index < 10u ? g_host.ui_theme.rgba[index] : 0u;
 }
 
 static lv_font_t *load_ui_font(uint16_t size,
@@ -1026,14 +1062,16 @@ static pxa_status_t host_store_install_control(
                  chinese ? "卸载 %.36s (%.20s)？" : "Uninstall %.36s (%.20s)?",
                  app_id, target.version);
         snprintf(prompt.scope, sizeof(prompt.scope),
-                 chinese ? "确认后删除此应用；可再次下载安装" :
-                           "This app will be removed; you can reinstall it later");
+                 chinese ? "确认后将从设备中删除此应用" :
+                           "This app will be removed from this device");
         g_store_uninstall.prompt_id = prompt.prompt_id;
         g_store_uninstall.component = component;
         g_store_uninstall.request_id = message->request_id;
         g_store_uninstall.instance_id = g_host.activation.active_instance_id;
         snprintf(g_store_uninstall.identity, sizeof(g_store_uninstall.identity),
                  "%s", target.identity);
+        copy_utf8_c_string(g_store_uninstall.name,
+                           sizeof(g_store_uninstall.name), target.name);
         pxa_esp_surface_runtime_modal_enter();
         if (!pxa_esp_ui_shell_post_permission_prompt(&prompt)) {
             pxa_esp_surface_runtime_modal_leave();
@@ -1063,7 +1101,8 @@ static pxa_status_t host_store_install_control(
         job->separate = 2u;
         job->notify = store_install_notify;
         g_store_install = job;
-        if (xTaskCreate(pxa_esp_store_worker, "pxa-store-install", 12 * 1024,
+        if (xTaskCreate(pxa_esp_store_worker, "pxa-store-install",
+                        PXA_STORE_WORKER_STACK_BYTES,
                         job, 3, &job->worker) != pdPASS) {
             g_store_install = NULL;
             (void)pxa_request_cancel(runtime, component, message->request_id);
@@ -1105,7 +1144,8 @@ static pxa_status_t host_store_install_control(
     ESP_LOGI(PXA_ESP_HOST_TAG, "Store worker start: internal_free=%u largest=%u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-    if (xTaskCreate(pxa_esp_store_worker, "pxa-store-install", 12 * 1024,
+    if (xTaskCreate(pxa_esp_store_worker, "pxa-store-install",
+                    PXA_STORE_WORKER_STACK_BYTES,
                     job, 3, &job->worker) != pdPASS) {
         ESP_LOGW(PXA_ESP_HOST_TAG,
                  "Store worker allocation failed: internal_free=%u largest=%u",
@@ -1344,6 +1384,10 @@ bool pxa_esp_host_respond_permission(uint32_t prompt_id, bool granted) {
     ESP_LOGW(PXA_ESP_HOST_TAG, "Permission decision queue full: prompt=%u",
              (unsigned)prompt_id);
     return false;
+}
+
+bool pxa_esp_host_respond_store_result(uint32_t prompt_id, bool open) {
+    return pxa_esp_host_respond_permission(prompt_id, open);
 }
 
 bool pxa_esp_host_respond_unresponsive(uint32_t prompt_id, bool wait) {
@@ -2677,6 +2721,11 @@ static void stop_active(pxa_stop_reason_t reason) {
                                      g_store_uninstall.request_id);
         memset(&g_store_uninstall, 0, sizeof(g_store_uninstall));
     }
+    if (g_store_result.prompt_id != 0) {
+        pxa_esp_ui_shell_dismiss_store_result(g_store_result.prompt_id);
+        pxa_esp_surface_runtime_modal_leave();
+        memset(&g_store_result, 0, sizeof(g_store_result));
+    }
     unpublish_active_state();
     dismiss_runtime_permission_prompt();
     dismiss_unresponsive_prompt();
@@ -3543,6 +3592,16 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
                                                 bool granted) {
     pxa_esp_host_permission_prompt_t pending;
     pxa_status_t status;
+    if (g_store_result.prompt_id == prompt_id) {
+        char identity[PXA_ESP_PACKAGE_ID_BYTES];
+        snprintf(identity, sizeof(identity), "%s", g_store_result.identity);
+        pxa_esp_ui_shell_dismiss_store_result(prompt_id);
+        pxa_esp_surface_runtime_modal_leave();
+        memset(&g_store_result, 0, sizeof(g_store_result));
+        if (granted && identity[0] != '\0')
+            (void)pxa_esp_host_launch(identity);
+        return;
+    }
     if (g_store_install != NULL && g_store_install->prompt_id == prompt_id) {
         pxa_esp_ui_shell_dismiss_permission_prompt(prompt_id);
         pxa_esp_surface_runtime_modal_leave();
@@ -3561,7 +3620,9 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
         const uint32_t request_id = g_store_uninstall.request_id;
         const uint64_t instance_id = g_store_uninstall.instance_id;
         char identity[PXA_ESP_PACKAGE_ID_BYTES];
+        char name[PXA_ESP_PACKAGE_NAME_BYTES];
         snprintf(identity, sizeof(identity), "%s", g_store_uninstall.identity);
+        snprintf(name, sizeof(name), "%s", g_store_uninstall.name);
         pxa_esp_ui_shell_dismiss_permission_prompt(prompt_id);
         pxa_esp_surface_runtime_modal_leave();
         memset(&g_store_uninstall, 0, sizeof(g_store_uninstall));
@@ -3579,7 +3640,10 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
             }
             (void)pxa_request_complete(g_host.activation.runtime, component,
                                        request_id, status, NULL, 0);
-            if (status == PXA_STATUS_OK) pxa_esp_ui_shell_refresh_apps();
+            if (status == PXA_STATUS_OK) {
+                pxa_esp_ui_shell_refresh_apps();
+                show_store_result(true, name, identity);
+            }
         }
         return;
     }
@@ -3711,6 +3775,8 @@ static void handle_store_install_event(pxa_esp_store_job_t *job,
                                        job->filename : NULL,
                                    job->separate == 1u && job->status == PXA_STATUS_OK ?
                                        strlen(job->filename) : 0u);
+        if (job->separate != 1u && job->status == PXA_STATUS_OK)
+            show_store_result(false, job->preview.name, job->preview.id);
     }
     free(job);
 }

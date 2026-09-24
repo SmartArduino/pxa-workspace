@@ -75,6 +75,7 @@ size_t pxa_esp_host_list_app_permissions(const char *identity,
 bool pxa_esp_host_set_permission(const char *identity,
                                  size_t permission_index, bool granted);
 bool pxa_esp_host_respond_permission(uint32_t prompt_id, bool granted);
+bool pxa_esp_host_respond_store_result(uint32_t prompt_id, bool open);
 bool pxa_esp_host_respond_unresponsive(uint32_t prompt_id, bool wait);
 void pxa_esp_host_set_audio_sink(pxa_host_audio_submit_fn submit,
                                  pxa_host_audio_flush_fn flush,
@@ -84,6 +85,7 @@ void pxa_esp_host_set_audio_asset_sink(
     pxa_host_audio_asset_control_fn control, void *context);
 const lv_font_t *pxa_esp_host_ui_body_font(void);
 const lv_font_t *pxa_esp_host_ui_title_font(void);
+uint32_t pxa_esp_host_ui_color(uint8_t index);
 
 #ifdef __cplusplus
 }

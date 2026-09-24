@@ -239,6 +239,8 @@ done:
     if (descriptor >= 0) { close(descriptor); unlink(path); }
     if (!downloaded && job->status == PXA_STATUS_IO_ERROR)
         job->status = PXA_STATUS_UNAVAILABLE;
+    ESP_LOGI("PxaStore", "Worker stack spare: %u bytes",
+             (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t)));
     job->notify(job, 2u);
     vTaskDelete(NULL);
 }

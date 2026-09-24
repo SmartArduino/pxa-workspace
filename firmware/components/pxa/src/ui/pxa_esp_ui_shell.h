@@ -26,6 +26,12 @@ typedef struct {
     char app_name[PXA_ESP_UI_SHELL_APP_NAME_BYTES];
 } pxa_esp_ui_unresponsive_prompt_t;
 
+typedef struct {
+    uint32_t prompt_id;
+    uint8_t is_uninstall;
+    char app_name[PXA_ESP_UI_SHELL_APP_NAME_BYTES];
+} pxa_esp_ui_store_result_t;
+
 void pxa_esp_ui_shell_bind(void);
 
 int pxa_esp_ui_shell_post_permission_prompt(
@@ -35,6 +41,9 @@ void pxa_esp_ui_shell_dismiss_permission_prompt(uint32_t prompt_id);
 int pxa_esp_ui_shell_post_unresponsive_prompt(
     const pxa_esp_ui_unresponsive_prompt_t *prompt);
 void pxa_esp_ui_shell_dismiss_unresponsive_prompt(uint32_t prompt_id);
+
+int pxa_esp_ui_shell_post_store_result(const pxa_esp_ui_store_result_t *result);
+void pxa_esp_ui_shell_dismiss_store_result(uint32_t prompt_id);
 
 void pxa_esp_ui_shell_post_toast(const char *message, uint32_t duration_ms);
 void pxa_esp_ui_shell_dismiss_app_launch(void);
