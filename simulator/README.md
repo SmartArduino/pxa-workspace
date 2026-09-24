@@ -35,9 +35,9 @@ provide a pxadb endpoint.
 engine and host services. It is the desktop entry point for Guest App debugging:
 
 ```sh
-tools/app.sh build arcade --target simulator --source-root deps/pxa-system/apps/pxa
+tools/app.sh build pixel-dungeon --target simulator --source-root local/pxa-apps
 tools/simulator.sh product --profile pai-touch \
-  --package local/app-output/pai-touch/pxa-arcade \
+  --package local/app-output/pai-touch/pxa-pixel-dungeon \
   --publisher-key deps/pxa-system/apps/pxa/.dev-signing/publisher-public.der
 ```
 
@@ -151,9 +151,9 @@ manifest 只会生成启动器条目。UI 模拟器不会执行这些卡片，�
 目录，是调试 Guest App 的桌面入口：
 
 ```sh
-tools/app.sh build arcade --target simulator --source-root deps/pxa-system/apps/pxa
+tools/app.sh build pixel-dungeon --target simulator --source-root local/pxa-apps
 tools/simulator.sh product --profile pai-touch \
-  --package local/app-output/pai-touch/pxa-arcade \
+  --package local/app-output/pai-touch/pxa-pixel-dungeon \
   --publisher-key deps/pxa-system/apps/pxa/.dev-signing/publisher-public.der
 ```
 

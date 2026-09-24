@@ -34,5 +34,20 @@ class DeviceLaunchTest(unittest.TestCase):
         sleep.assert_not_called()
 
 
+class SimulatorProfileTest(unittest.TestCase):
+    def test_board_selects_matching_profile(self) -> None:
+        with mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon",
+                                             "--board", "sensecap-watcher"]):
+            args = dev.parse_arguments()
+        self.assertEqual(args.profile, "sensecap-watcher")
+
+    def test_explicit_profile_overrides_board(self) -> None:
+        with mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon",
+                                             "--board", "sensecap-watcher",
+                                             "--profile", "pai-touch"]):
+            args = dev.parse_arguments()
+        self.assertEqual(args.profile, "pai-touch")
+
+
 if __name__ == "__main__":
     unittest.main()

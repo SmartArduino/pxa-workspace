@@ -18,9 +18,15 @@ firmware/boards/             Per-board drivers, defaults and partitions
 simulator/                   Desktop UI/display-profile simulation profiles
 factory/                     Reproducible board-specific factory profiles
 tools/                       Firmware, App, simulator and factory entry points
-local/                       Ignored local App catalog, overrides and outputs
+local/pxa-apps/              Separate pxa-apps Git checkout (ignored by this workspace)
+local/                       Ignored App catalog, overrides and outputs
 deps/pxa-system/             Imported upstream system and package tooling
 ```
+
+Clone the product App repository into `local/pxa-apps`; this workspace ignores
+that checkout. The imported system also has App examples and signing fixtures
+in `deps/pxa-system/apps/pxa`. The workspace App tooling detects the local
+source root automatically, or accepts `--source-root` explicitly.
 
 `firmware/boards/pai-touch` is itself an ESP-IDF component. Select another board with
 the CMake cache value `PXA_BOARD`; no global board-type Kconfig choice is
@@ -92,7 +98,11 @@ terminal:
 tools/dev.sh sim my-app --watch
 # Or without a local catalog:
 tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
+tools/dev.sh sim --board sensecap-watcher pixel-dungeon
 ```
+
+Simulator mode selects the display profile matching `--board` by default;
+pass `--profile` to override it.
 
 Device mode independently builds an `esp32s3` package and replaces the App in
 the existing firmware without reflashing it. It starts `pxadb logcat` after
@@ -141,9 +151,9 @@ do not execute Guest bytecode. For package-level App work, build a desktop
 artifact and run its signed package directory with `product` mode:
 
 ```sh
-tools/app.sh build arcade --target simulator --source-root deps/pxa-system/apps/pxa
+tools/app.sh build pixel-dungeon --target simulator --source-root local/pxa-apps
 tools/simulator.sh product --profile pai-touch \
-  --package local/app-output/pai-touch/pxa-arcade \
+  --package local/app-output/pai-touch/pxa-pixel-dungeon \
   --publisher-key deps/pxa-system/apps/pxa/.dev-signing/publisher-public.der
 ```
 

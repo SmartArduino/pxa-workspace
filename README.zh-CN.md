@@ -55,7 +55,12 @@ idf.py -C firmware -B build/firmware/pai-touch -DPXA_BOARD=pai-touch build
 
 ## PXA 应用交付
 
-固件构建和 PXA 应用交付被刻意拆开。App 源码根目录由被忽略的 `local/apps.toml` 解析，
+产品应用源码放在独立的 `local/pxa-apps` Git 仓库；本工作区忽略该目录。
+`deps/pxa-system/apps/pxa` 仍包含系统示例应用和开发签名夹具。
+工作区的 App 工具会自动发现 `local/pxa-apps`，也可显式传入 `--source-root`。
+
+固件构建和 PXA 应用交付被刻意拆开。App 源码根目录优先由被忽略的 `local/apps.toml` 解析，
+未配置时使用 `local/pxa-apps`；
 私有 App 不会污染本工程。常规固件编译与烧录既不会打包应用，也不会写入 PXA 数据分区。
 详见 [PXA 应用交付](docs/zh-CN/pxa-app-delivery.md)。
 目录职责与日常流程见 [工作区结构](docs/zh-CN/workspace-layout.md)。
@@ -78,7 +83,11 @@ source_root = "/home/me/work/pxa-apps"
 tools/dev.sh sim my-app --watch
 # 或者不登记本机 catalog：
 tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
+# 使用 Watcher 的 412×412 圆屏配置：
+tools/dev.sh sim --board sensecap-watcher pixel-dungeon
 ```
+
+模拟器默认使用与 `--board` 同名的屏幕 profile；需要单独覆盖时传入 `--profile`。
 
 设备模式独立构建 `esp32s3` 包并覆盖安装到现有固件，不会重新烧录固件；部署后默认会显示
 `pxadb logcat`，下一次更新前会自动暂时关闭它以释放 USB Serial/JTAG 连接：
@@ -120,9 +129,9 @@ tools/simulator.sh --profile pai-touch
 再通过 `product` 模式运行已签名的 Package 目录：
 
 ```sh
-tools/app.sh build arcade --target simulator --source-root deps/pxa-system/apps/pxa
+tools/app.sh build pixel-dungeon --target simulator --source-root local/pxa-apps
 tools/simulator.sh product --profile pai-touch \
-  --package local/app-output/pai-touch/pxa-arcade \
+  --package local/app-output/pai-touch/pxa-pixel-dungeon \
   --publisher-key deps/pxa-system/apps/pxa/.dev-signing/publisher-public.der
 ```
 

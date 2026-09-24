@@ -58,6 +58,7 @@ container_output="${PXA_CONTAINER_OUTPUT:-$output_root/pxa-$app_id.pxa}"
 provenance_output="${PXA_PROVENANCE_OUTPUT:-$container_output.provenance.json}"
 
 PXA_APP_SOURCE_ROOT="${PXA_APP_SOURCE_ROOT:-$pxsys_root/apps/pxa}" \
+PXA_SIGNING_KEY="${PXA_SIGNING_KEY:-$pxsys_root/apps/pxa/.dev-signing/publisher-private.pem}" \
 PXA_PACKAGE_OUTPUT_ROOT="$output_root" \
 PXA_CONTAINER_OUTPUT="$container_output" \
 PXA_PROVENANCE_OUTPUT="$provenance_output" \

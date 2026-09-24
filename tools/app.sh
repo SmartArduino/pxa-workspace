@@ -72,8 +72,12 @@ PYTHON
 )"
 fi
 if [[ -z "$source_root" ]]; then
-  echo "No source root for '$app_id'. Use --source-root or local/apps.toml." >&2
-  exit 2
+  if [[ -f "$project_root/local/pxa-apps/$app_id/package.json" ]]; then
+    source_root="$project_root/local/pxa-apps"
+  else
+    echo "No source root for '$app_id'. Clone local/pxa-apps, use --source-root, or configure local/apps.toml." >&2
+    exit 2
+  fi
 fi
 if [[ -z "$output_root" ]]; then
   output_root="$project_root/local/app-output/$board"

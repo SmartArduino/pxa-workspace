@@ -117,18 +117,20 @@ def app_source_root(app_id: str, supplied_root: str | None) -> pathlib.Path:
         root = pathlib.Path(supplied_root).expanduser().resolve()
     else:
         catalog = ROOT / "local" / "apps.toml"
-        if not catalog.is_file():
+        if catalog.is_file():
+            with catalog.open("rb") as source:
+                entry = tomllib.load(source).get("apps", {}).get(app_id, {})
+            value = entry.get("source_root") if isinstance(entry, dict) else None
+        else:
+            value = None
+        if isinstance(value, str) and value:
+            root = pathlib.Path(value).expanduser().resolve()
+        elif (ROOT / "local/pxa-apps" / app_id / "package.json").is_file():
+            root = (ROOT / "local/pxa-apps").resolve()
+        else:
             raise DevError(
-                f"no source root for '{app_id}'; add local/apps.toml or pass --source-root"
+                f"no source root for '{app_id}'; clone local/pxa-apps or pass --source-root"
             )
-        with catalog.open("rb") as source:
-            entry = tomllib.load(source).get("apps", {}).get(app_id, {})
-        value = entry.get("source_root") if isinstance(entry, dict) else None
-        if not isinstance(value, str) or not value:
-            raise DevError(
-                f"no source root for '{app_id}'; add local/apps.toml or pass --source-root"
-            )
-        root = pathlib.Path(value).expanduser().resolve()
     app_dir = root / app_id
     if not app_dir.is_dir():
         raise DevError(f"app source directory is unavailable: {app_dir}")
@@ -271,7 +273,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("app_id", help="App ID, whose directory is <source-root>/<app-id>")
     parser.add_argument("--source-root", help="parent directory containing the App directory")
     parser.add_argument("--board", default="pai-touch", help="PXA board profile (default: pai-touch)")
-    parser.add_argument("--profile", default="pai-touch", help="simulator profile (default: pai-touch)")
+    parser.add_argument("--profile", help="simulator profile (default: --board)")
     parser.add_argument("--port", help="PXADB USB Serial/JTAG port for device mode")
     parser.add_argument("--baud", type=int, help="PXADB UART baud rate for device mode")
     parser.add_argument("--watch", action="store_true", help="rebuild and restart after source changes")
@@ -286,10 +288,12 @@ def parse_arguments() -> argparse.Namespace:
         parser.error("--port is only valid in device mode")
     if args.mode == "sim" and args.baud:
         parser.error("--baud is only valid in device mode")
-    if args.mode == "device" and args.profile != "pai-touch":
+    if args.mode == "device" and args.profile is not None:
         parser.error("--profile is only valid in sim mode")
     if args.baud is not None and args.baud <= 0:
         parser.error("--baud must be positive")
+    if args.mode == "sim" and args.profile is None:
+        args.profile = args.board
     return args
 
 

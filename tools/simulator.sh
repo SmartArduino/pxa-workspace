@@ -17,13 +17,13 @@ Examples:
   tools/simulator.sh ui --profile pai-touch
   tools/simulator.sh ui build --profile pai-touch
   tools/simulator.sh ui --profile pai-touch -- --launch pxa-weather
-  tools/app.sh build arcade --target simulator --source-root deps/pxa-system/apps/pxa
+  tools/app.sh build pixel-dungeon --target simulator --source-root local/pxa-apps
   tools/simulator.sh product --profile pai-touch \
-    --package local/app-output/pai-touch/pxa-arcade \
+    --package local/app-output/pai-touch/pxa-pixel-dungeon \
     --publisher-key deps/pxa-system/apps/pxa/.dev-signing/publisher-public.der
   tools/simulator.sh service start --profile pai-touch
-  pxadb package install local/app-output/pai-touch/pxa-arcade.pxa --simulator pai-touch
-  tools/simulator.sh product --profile pai-touch --installed pxa-arcade
+  pxadb package install local/app-output/pai-touch/pxa-pixel-dungeon.pxa --simulator pai-touch
+  tools/simulator.sh product --profile pai-touch --installed pxa-pixel-dungeon
   tools/simulator.sh service start --profile pai-touch --listen 0.0.0.0:auto
   tools/simulator.sh ui --profile pai-touch --instance demo-a --listen 127.0.0.1:auto
 EOF
@@ -65,7 +65,8 @@ fi
 log_success() { printf '%s%s%s\n' "$log_green" "$1" "$log_reset"; }
 log_info() { printf '%s%s%s\n' "$log_cyan" "$1" "$log_reset"; }
 log_notice() { printf '%s%s%s\n' "$log_yellow" "$1" "$log_reset"; }
-app_root="${PXA_SIMULATOR_APP_SOURCE_ROOT:-$pxsys_root/apps/pxa}"
+app_root="${PXA_SIMULATOR_APP_SOURCE_ROOT:-$project_root/local/pxa-apps}"
+[[ -d "$app_root" ]] || app_root="$pxsys_root/apps/pxa"
 package_path=""
 installed_id=""
 state_root=""
@@ -151,7 +152,7 @@ state_root="$(realpath -m -- "$state_root")"
 socket_root="${PXA_SIMULATOR_SOCKET_ROOT:-/tmp/pxa-simulator-${UID}}"
 control_socket="$socket_root/$simulator_id.control.sock"
 if [[ -z "$publisher_key" ]]; then
-  publisher_key="$app_root/.dev-signing/publisher-public.der"
+  publisher_key="$pxsys_root/apps/pxa/.dev-signing/publisher-public.der"
 fi
 if [[ -n "$installed_id" && ! "$installed_id" =~ ^pxa-[a-z0-9._-]{1,60}$ ]]; then
   echo "Invalid installed PXA app ID: $installed_id" >&2
@@ -225,6 +226,12 @@ product_args=("${profile_args[0]}" "${profile_args[1]}"
 for ((profile_index = 0; profile_index < ${#profile_args[@]}; ++profile_index)); do
   if [[ "${profile_args[profile_index]}" == "--safe-insets" ]]; then
     product_args+=("--safe-insets" "${profile_args[profile_index + 1]}")
+  elif [[ "${profile_args[profile_index]}" == "--corner-radius" ]]; then
+    product_args+=("--corner-radius" "${profile_args[profile_index + 1]}")
+  elif [[ "${profile_args[profile_index]}" == "--round" ]]; then
+    product_args+=("--round")
+  elif [[ "${profile_args[profile_index]}" == "--shape-background" ]]; then
+    product_args+=("--shape-background" "${profile_args[profile_index + 1]}")
   elif [[ "${profile_args[profile_index]}" == "--locale" ]]; then
     product_args+=("--locale" "${profile_args[profile_index + 1]}")
   fi
