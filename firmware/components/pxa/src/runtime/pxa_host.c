@@ -327,7 +327,8 @@ bool pxa_host_manage_app(pxa_host_app_action_t action,
         return false;
     }
     success = pxa_esp_host_manage_app(action, identity_key);
-    if (success) notify_catalog_changed();
+    if (success || action == PXA_HOST_APP_ACTION_UNINSTALL)
+        notify_catalog_changed();
     return success;
 }
 
@@ -373,6 +374,10 @@ bool pxa_host_set_color_scheme(pxa_host_color_scheme_t color_scheme) {
 
 bool pxa_host_set_ui_palette(const uint32_t rgba[10]) {
     return g_host_ready && pxa_esp_host_set_ui_palette(rgba);
+}
+
+bool pxa_host_set_ui_palette_extended(const uint32_t rgba[32]) {
+    return g_host_ready && pxa_esp_host_set_ui_palette_extended(rgba);
 }
 
 bool pxa_host_set_locale(const char *locale, uint8_t text_direction) {

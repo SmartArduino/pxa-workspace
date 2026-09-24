@@ -95,8 +95,13 @@ static int map_action(app_pages_app_action_t action,
 static bool action_cb(app_pages_app_action_t action, const char *identity,
                       void *user_data) {
     pxa_host_app_action_t mapped;
+    bool success;
     (void)user_data;
-    return map_action(action, &mapped) && pxa_host_manage_app(mapped, identity);
+    if (!map_action(action, &mapped)) return false;
+    success = pxa_host_manage_app(mapped, identity);
+    if (action == APP_PAGES_APP_ACTION_UNINSTALL)
+        pxa_esp_ui_shell_refresh_apps();
+    return success;
 }
 
 static bool install_package_cb(const char *path, void *user_data) {

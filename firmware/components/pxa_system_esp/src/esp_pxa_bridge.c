@@ -14,6 +14,7 @@
 #include "pxa/package_icon.h"
 #include "pxa/pxa_esp_surface.h"
 #include "pxa/pxa_host.h"
+#include "pxa/ui.h"
 #include "pxsys/pxa_gateway_wire.h"
 #include "pxsys/pxa_runtime.h"
 
@@ -539,22 +540,34 @@ static void catalog_changed(void* context) {
 }
 
 static void theme_changed(void* context, const pxsys_theme_snapshot_t* snapshot) {
-    static const pxsys_color_token_t tokens[10] = {
+    static const pxsys_color_token_t tokens[PXA_UI_THEME_ROLE_COUNT] = {
         PXSYS_COLOR_BACKGROUND, PXSYS_COLOR_SURFACE,
         PXSYS_COLOR_ACCENT, PXSYS_COLOR_ON_ACCENT,
         PXSYS_COLOR_TEXT_PRIMARY, PXSYS_COLOR_TEXT_SECONDARY,
         PXSYS_COLOR_BORDER, PXSYS_COLOR_SUCCESS,
         PXSYS_COLOR_WARNING, PXSYS_COLOR_ERROR,
+        PXSYS_COLOR_SURFACE_CONTAINER_LOW, PXSYS_COLOR_SURFACE_CONTAINER,
+        PXSYS_COLOR_SURFACE_CONTAINER_HIGH,
+        PXSYS_COLOR_SURFACE_CONTAINER_HIGHEST,
+        PXSYS_COLOR_SURFACE_VARIANT, PXSYS_COLOR_ON_SURFACE_VARIANT,
+        PXSYS_COLOR_PRIMARY_CONTAINER, PXSYS_COLOR_ON_PRIMARY_CONTAINER,
+        PXSYS_COLOR_SECONDARY, PXSYS_COLOR_ON_SECONDARY,
+        PXSYS_COLOR_SECONDARY_CONTAINER, PXSYS_COLOR_ON_SECONDARY_CONTAINER,
+        PXSYS_COLOR_TERTIARY, PXSYS_COLOR_ON_TERTIARY,
+        PXSYS_COLOR_TERTIARY_CONTAINER, PXSYS_COLOR_ON_TERTIARY_CONTAINER,
+        PXSYS_COLOR_OUTLINE_VARIANT, PXSYS_COLOR_ERROR_CONTAINER,
+        PXSYS_COLOR_ON_ERROR_CONTAINER, PXSYS_COLOR_INVERSE_SURFACE,
+        PXSYS_COLOR_INVERSE_ON_SURFACE, PXSYS_COLOR_INVERSE_PRIMARY,
     };
-    uint32_t rgba[10];
+    uint32_t rgba[PXA_UI_THEME_ROLE_COUNT];
     (void)context;
     if (snapshot == NULL)
         return;
-    for (size_t index = 0; index < 10u; ++index) {
+    for (size_t index = 0; index < PXA_UI_THEME_ROLE_COUNT; ++index) {
         uint32_t argb = snapshot->colors[tokens[index]];
         rgba[index] = (argb << 8u) | (argb >> 24u);
     }
-    (void)pxa_host_set_ui_palette(rgba);
+    (void)pxa_host_set_ui_palette_extended(rgba);
     (void)pxa_host_set_color_scheme(
         snapshot->effective_scheme == PXSYS_COLOR_SCHEME_DARK
             ? PXA_HOST_COLOR_SCHEME_DARK

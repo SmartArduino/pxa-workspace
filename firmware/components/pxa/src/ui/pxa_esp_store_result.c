@@ -10,6 +10,7 @@
 
 #include "pxa_esp_host.h"
 #include "pxa_esp_dialog_layout.h"
+#include "pxa/ui.h"
 
 static lv_obj_t *g_result_dialog;
 static uint32_t g_result_prompt_id;
@@ -79,9 +80,11 @@ static void show_result(void *context) {
     lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(panel, 16, 0);
     lv_obj_set_style_pad_all(panel, 14, 0);
-    lv_obj_set_style_bg_color(panel, theme_color(1), 0);
+    lv_obj_set_style_bg_color(panel,
+        theme_color(PXA_UI_THEME_SURFACE_CONTAINER_HIGH), 0);
     lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(panel, theme_color(6), 0);
+    lv_obj_set_style_border_color(panel,
+        theme_color(PXA_UI_THEME_OUTLINE_VARIANT), 0);
     lv_obj_set_style_border_width(panel, 1, 0);
     primary = theme_color(2);
 

@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "pxa/permission.h"
+#include "pxa/package.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,9 @@ pxa_status_t pxa_esp_permission_store_load(
 pxa_status_t pxa_esp_permission_store_save(
     void *context, pxa_bytes_t app_identity, pxa_bytes_t name,
     pxa_bytes_t scope, pxa_permission_decision_t decision);
+pxa_status_t pxa_esp_permission_store_clear_app(
+    pxa_bytes_t app_identity, const pxa_package_permission_t *permissions,
+    size_t permission_count);
 
 /* Populate a pxa_permission_store_t (context left NULL; the load/save
  * callbacks above are used directly). */

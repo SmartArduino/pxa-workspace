@@ -890,6 +890,33 @@ pxa_status_t pxa_esp_permission_store_save(
     return status;
 }
 
+pxa_status_t pxa_esp_permission_store_clear_app(
+    pxa_bytes_t app_identity, const pxa_package_permission_t *permissions,
+    size_t permission_count) {
+    char path[PXA_ESP_PERMISSION_PATH_BYTES];
+    pxa_status_t status = PXA_STATUS_OK;
+    size_t index;
+    int slot;
+    if (app_identity.data == NULL || app_identity.size == 0 ||
+        (permission_count != 0 && permissions == NULL))
+        return PXA_STATUS_INVALID_ARGUMENT;
+    pthread_mutex_lock(&g_permission_store_mutex);
+    for (slot = 0; slot < 2; ++slot) {
+        if (!build_slot_path(app_identity, slot, path, sizeof(path))) {
+            status = PXA_STATUS_INTERNAL;
+            break;
+        }
+        if (unlink(path) != 0 && errno != ENOENT) status = PXA_STATUS_IO_ERROR;
+    }
+    for (index = 0; index < permission_count; ++index) {
+        (void)legacy_nvs_erase(app_identity, permissions[index].name,
+                               permissions[index].scope);
+    }
+    if (g_permission_cache != NULL) permission_cache_clear(g_permission_cache);
+    pthread_mutex_unlock(&g_permission_store_mutex);
+    return status;
+}
+
 void pxa_esp_permission_store_bind(pxa_permission_store_t *store) {
     if (store == NULL) return;
     memset(store, 0, sizeof(*store));

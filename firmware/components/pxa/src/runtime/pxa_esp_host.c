@@ -221,7 +221,7 @@ typedef struct {
     lv_font_t *ui_display_font;
     pxa_lvgl_ui_theme_t ui_theme;
     uint32_t ui_theme_generation;
-    uint32_t pending_ui_palette[10];
+    uint32_t pending_ui_palette[PXA_UI_THEME_ROLE_COUNT];
     uint8_t ui_palette_pending;
 
     uint64_t last_clock_us;
@@ -387,7 +387,8 @@ const lv_font_t *pxa_esp_host_ui_title_font(void) {
 }
 
 uint32_t pxa_esp_host_ui_color(uint8_t index) {
-    return index < 10u ? g_host.ui_theme.rgba[index] : 0u;
+    return index < PXA_UI_THEME_ROLE_COUNT ?
+           g_host.ui_theme.rgba[index] : 0u;
 }
 
 static lv_font_t *load_ui_font(uint16_t size,
@@ -1195,7 +1196,7 @@ static int take_pending_color_scheme(pxa_ui_color_scheme_t *color_scheme) {
     return pending;
 }
 
-static int take_pending_ui_palette(uint32_t rgba[10]) {
+static int take_pending_ui_palette(uint32_t rgba[PXA_UI_THEME_ROLE_COUNT]) {
     int pending;
     portENTER_CRITICAL(&g_process_state_lock);
     pending = g_host.ui_palette_pending != 0;
@@ -3363,7 +3364,7 @@ static void apply_color_scheme(pxa_ui_color_scheme_t color_scheme) {
         drain_active_events();
 }
 
-static void apply_ui_palette(const uint32_t rgba[10]) {
+static void apply_ui_palette(const uint32_t rgba[PXA_UI_THEME_ROLE_COUNT]) {
     if (memcmp(g_host.ui_theme.rgba, rgba,
                sizeof(g_host.pending_ui_palette)) == 0) return;
     memcpy(g_host.ui_theme.rgba, rgba, sizeof(g_host.pending_ui_palette));
@@ -3923,7 +3924,7 @@ static void run(void) {
             apply_color_scheme(color_scheme);
             handled = 1;
         }
-        uint32_t rgba[10];
+        uint32_t rgba[PXA_UI_THEME_ROLE_COUNT];
         if (take_pending_ui_palette(rgba)) {
             apply_ui_palette(rgba);
             handled = 1;
@@ -4773,6 +4774,28 @@ bool pxa_esp_host_set_color_scheme(pxa_host_color_scheme_t color_scheme) {
 }
 
 bool pxa_esp_host_set_ui_palette(const uint32_t rgba[10]) {
+    if (!g_host.initialized || rgba == NULL) return false;
+    uint32_t extended[PXA_UI_THEME_ROLE_COUNT];
+    size_t index;
+    memcpy(extended, rgba, 10u * sizeof(uint32_t));
+    for (index = PXA_UI_THEME_COLOR_COUNT;
+         index < PXA_UI_THEME_ROLE_COUNT; ++index)
+        extended[index] = rgba[1];
+    extended[16] = extended[18] = extended[20] = rgba[2];
+    extended[22] = extended[24] = rgba[2];
+    extended[17] = extended[19] = extended[23] = rgba[3];
+    extended[21] = extended[25] = rgba[3];
+    extended[15] = rgba[5];
+    extended[26] = rgba[6];
+    extended[27] = rgba[9];
+    extended[28] = rgba[3];
+    extended[30] = rgba[4];
+    extended[31] = rgba[2];
+    return pxa_esp_host_set_ui_palette_extended(extended);
+}
+
+bool pxa_esp_host_set_ui_palette_extended(
+    const uint32_t rgba[PXA_UI_THEME_ROLE_COUNT]) {
     if (!g_host.initialized || rgba == NULL) return false;
     portENTER_CRITICAL(&g_process_state_lock);
     memcpy(g_host.pending_ui_palette, rgba, sizeof(g_host.pending_ui_palette));

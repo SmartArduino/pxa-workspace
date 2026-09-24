@@ -2005,9 +2005,13 @@ bool pxa_esp_package_store_uninstall(const char *identity) {
     char canonical[PXA_ESP_PACKAGE_MAX_IDENTITY];
     char installed_root[PXA_ESP_PACKAGE_MAX_PATH];
     char verified_root[PXA_ESP_PACKAGE_MAX_PATH];
+    char data_path[PXA_ESP_PACKAGE_MAX_PATH];
+    char storage_key[PXA_ESP_PACKAGE_MAX_IDENTITY];
     size_t manifest_size;
     size_t id_size;
     size_t index;
+    bool cleanup_ok;
+    bool clear_legacy;
     if (!store_is_initialized() || identity == NULL) return false;
     if (!take_lock(g_store->transaction_lock)) return false;
     if (!take_lock(g_store->metadata_lock)) {
@@ -2031,6 +2035,15 @@ bool pxa_esp_package_store_uninstall(const char *identity) {
     snprintf(installed_root, sizeof(installed_root), "%s", entry->root);
     snprintf(app_id, sizeof(app_id), "%s", entry->id);
     snprintf(canonical, sizeof(canonical), "%s", entry->identity);
+    snprintf(storage_key, sizeof(storage_key), "%s", entry->storage_key);
+    clear_legacy = legacy_owner_matches(app_id, publisher_key_id);
+    if (storage_key[0] == '\0' ||
+        snprintf(data_path, sizeof(data_path), "%s/%s", g_store->data_root,
+                 storage_key) >= (int)sizeof(data_path)) {
+        release_lock(g_store->metadata_lock);
+        release_lock(g_store->transaction_lock);
+        return false;
+    }
     manifest_size = manifest_size_at_root(installed_root);
     if (manifest_size == 0 || !ensure_encoded_capacity(manifest_size)) {
         release_lock(g_store->metadata_lock);
@@ -2072,10 +2085,25 @@ bool pxa_esp_package_store_uninstall(const char *identity) {
         release_lock(g_store->transaction_lock);
         return false;
     }
+    status = pxa_posix_fs_remove_tree(data_path);
+    cleanup_ok = status == PXA_STATUS_OK || status == PXA_STATUS_NOT_FOUND;
+    if (!cleanup_ok)
+        ESP_LOGW(PXA_ESP_PACKAGE_TAG, "Private data cleanup failed for %s",
+                 canonical);
+    if (pxa_esp_permission_store_clear_app(
+            (pxa_bytes_t){(const uint8_t *)canonical, strlen(canonical)},
+            manifest->permissions, manifest->permission_count) != PXA_STATUS_OK)
+        cleanup_ok = false;
+    if (clear_legacy && pxa_esp_permission_store_clear_app(
+            (pxa_bytes_t){id_bytes, id_size}, manifest->permissions,
+            manifest->permission_count) != PXA_STATUS_OK)
+        cleanup_ok = false;
     if (!take_lock(g_store->metadata_lock)) {
         release_lock(g_store->transaction_lock);
         return false;
     }
+    if (!pxa_esp_package_policy_set_enabled(canonical, true))
+        cleanup_ok = false;
     for (index = 0; index < g_store->entry_count; ++index) {
         if (strcmp(g_store->entries[index].identity, canonical) == 0) {
             remove_entry_at(index);
@@ -2085,7 +2113,7 @@ bool pxa_esp_package_store_uninstall(const char *identity) {
     (void)scan_inbox();
     release_lock(g_store->metadata_lock);
     release_lock(g_store->transaction_lock);
-    return true;
+    return cleanup_ok;
 }
 
 bool pxa_esp_package_store_clear_data(const char *identity) {

@@ -32,6 +32,7 @@ bool pxa_esp_host_captures_volume_keys(void);
 bool pxa_esp_host_post_key(uint16_t key);
 bool pxa_esp_host_set_color_scheme(pxa_host_color_scheme_t color_scheme);
 bool pxa_esp_host_set_ui_palette(const uint32_t rgba[10]);
+bool pxa_esp_host_set_ui_palette_extended(const uint32_t rgba[32]);
 bool pxa_esp_host_set_locale(const char *locale, uint8_t text_direction);
 bool pxa_esp_host_locale_is_chinese(void);
 bool pxa_esp_host_set_window_insets(const pxa_window_insets_t *safe_insets,

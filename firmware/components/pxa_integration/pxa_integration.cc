@@ -19,6 +19,7 @@
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <nvs.h>
 #include <pxa/pxa_host.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/version.h>
@@ -305,6 +306,30 @@ bool ResolveAppIcon(void* context, const pxsys_app_descriptor_t* app,
 void RefreshLauncherApps(void*) {
     if (g_reference_ui != nullptr)
         pxsys_reference_lvgl_refresh_apps(g_reference_ui);
+}
+
+bool LoadLauncherOrder(void*, char* order, size_t capacity) {
+    nvs_handle_t handle;
+    size_t size = capacity;
+    if (order == nullptr || capacity < 2 ||
+        nvs_open("pxa_home", NVS_READONLY, &handle) != ESP_OK)
+        return false;
+    const esp_err_t status = nvs_get_blob(handle, "order", order, &size);
+    nvs_close(handle);
+    if (status != ESP_OK || size == 0 || size > capacity ||
+        order[size - 1] != '\0')
+        return false;
+    return true;
+}
+
+void SaveLauncherOrder(void*, const char* order) {
+    nvs_handle_t handle;
+    if (order == nullptr ||
+        nvs_open("pxa_home", NVS_READWRITE, &handle) != ESP_OK)
+        return;
+    if (nvs_set_blob(handle, "order", order, std::strlen(order) + 1) == ESP_OK)
+        (void)nvs_commit(handle);
+    nvs_close(handle);
 }
 
 const lv_font_t* LoadFont(const char* path, uint16_t size, lv_font_t** owned,
@@ -716,6 +741,8 @@ bool CreateSystem(const pxa_board_port_t* board,
     ui_config.device_info = FillDeviceInfo;
     ui_config.app_list = ListManagedApps;
     ui_config.app_action = ManageApp;
+    ui_config.launcher_order_load = LoadLauncherOrder;
+    ui_config.launcher_order_save = SaveLauncherOrder;
     ui_config.app_permission_context = nullptr;
     ui_config.app_permission_list = ListAppPermissions;
     ui_config.app_permission_set = SetAppPermission;

@@ -189,6 +189,7 @@ bool pxa_host_post_key(pxa_host_key_t key);
 /* Thread-safe. Active and subsequently launched UI components inherit it. */
 bool pxa_host_set_color_scheme(pxa_host_color_scheme_t color_scheme);
 bool pxa_host_set_ui_palette(const uint32_t rgba[10]);
+bool pxa_host_set_ui_palette_extended(const uint32_t rgba[32]);
 /* Thread-safe locale snapshot used for startup configuration and subsequent
  * configuration events. locale is a canonical BCP 47 tag. */
 bool pxa_host_set_locale(const char *locale, uint8_t text_direction);

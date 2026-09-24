@@ -12,6 +12,7 @@
 
 #include "pxa_esp_host.h"
 #include "pxa_esp_dialog_layout.h"
+#include "pxa/ui.h"
 #include "pxa/pxa_esp_surface.h"
 
 #define PXA_STANDALONE_UI_TAG "PxaUiShell"
@@ -88,9 +89,11 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
     lv_obj_center(panel);
     lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(panel, 16, 0);
-    lv_obj_set_style_bg_color(panel, system_color(1), 0);
+    lv_obj_set_style_bg_color(panel,
+        system_color(PXA_UI_THEME_SURFACE_CONTAINER_HIGH), 0);
     lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(panel, system_color(6), 0);
+    lv_obj_set_style_border_color(panel,
+        system_color(PXA_UI_THEME_OUTLINE_VARIANT), 0);
     lv_obj_set_style_border_width(panel, 1, 0);
     lv_obj_set_style_pad_all(panel, 14, 0);
 
