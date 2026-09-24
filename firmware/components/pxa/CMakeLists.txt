@@ -16,6 +16,7 @@ set(PXA_SRCS
     "src/package/pxa_esp_package_icon.c"
     "src/package/pxa_esp_package_policy.c"
     "src/package/pxa_esp_package_store.c"
+    "src/package/pxa_esp_store_download.c"
     "src/package/pxa_esp_permission_store.c"
     "src/ui/pxa_esp_ui_assets.c")
 

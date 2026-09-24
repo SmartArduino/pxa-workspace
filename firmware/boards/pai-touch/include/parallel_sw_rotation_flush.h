@@ -175,6 +175,12 @@ public:
 
         GetContext() = context;
 #if CONFIG_PXA_ENABLED
+        // Rotation handles integer-scaled direct frames. Keep native output as
+        // the board default while allowing GameRender apps to request 2x.
+        (void)pxa_esp_game_render_set_scale_profile(
+            PXA_GAME_RENDER_SCALE_MASK_1X |
+                PXA_GAME_RENDER_SCALE_MASK_2X,
+            PXA_GAME_RENDER_SCALE_1X);
         pxa_esp_surface_set_frame_ready_callback(SurfaceFrameReady, context);
 #endif
         lv_display_set_flush_cb(display, FlushCallback);

@@ -34,6 +34,13 @@ typedef struct {
 typedef bool (*pxa_esp_surface_ui_alpha_provider_fn)(
     void *context, pxa_esp_surface_ui_alpha_plane_t *plane);
 
+/* Optional board accelerator for a full-frame stack of horizontal RGB565
+ * bands. The callback completes synchronously before CPU rasterization. */
+typedef bool (*pxa_esp_surface_fill_bands_fn)(
+    void *context, uint16_t *pixels, uint32_t stride_pixels,
+    uint16_t width, uint16_t height, const uint16_t *tops,
+    const uint16_t *bottoms, const uint16_t *colors, uint8_t count);
+
 typedef struct {
     const uint8_t *pixels;
     uint32_t stride_bytes;
@@ -80,12 +87,21 @@ typedef struct {
 
 void pxa_esp_surface_backend(pxa_surface_backend_t *backend);
 void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend);
+/* Board presenters register their supported integer scale set before an app
+ * launches. The profile applies to subsequently initialized GameRender
+ * services; the default is native 1x. */
+bool pxa_esp_game_render_set_scale_profile(uint8_t supported_scale_mask,
+                                           uint8_t default_scale);
+void pxa_esp_game_render_get_scale_profile(
+    pxa_game_render_target_profile_t *profile);
 void pxa_esp_surface_set_frame_ready_callback(
     pxa_esp_surface_frame_ready_fn callback, void *context);
 void pxa_esp_surface_set_release_ready_callback(
     pxa_esp_surface_frame_ready_fn callback, void *context);
 void pxa_esp_surface_set_ui_alpha_provider(
     pxa_esp_surface_ui_alpha_provider_fn callback, void *context);
+void pxa_esp_surface_set_fill_bands_callback(
+    pxa_esp_surface_fill_bands_fn callback, void *context);
 /* Trusted LVGL content changed and must be composed above the Surface until
  * that Surface closes. Direct-mode applications must not use retained UI. */
 void pxa_esp_surface_require_composition(void);

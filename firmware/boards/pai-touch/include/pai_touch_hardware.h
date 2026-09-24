@@ -59,6 +59,7 @@ private:
     bool IsTouchInteractionRecent() const;
     void OnLockChanged(bool locked);
     void NavigateBack();
+    void NavigateHome();
     void EnterWifiProvisioning();
     void PowerOff();
     void PollTouchController();

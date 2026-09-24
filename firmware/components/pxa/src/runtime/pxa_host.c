@@ -294,6 +294,10 @@ bool pxa_host_runtime_stop(const char *identity_key) {
     return g_host_ready && pxa_esp_host_stop(identity_key);
 }
 
+bool pxa_host_active_identity(char *identity, size_t capacity) {
+    return g_host_ready && pxa_esp_host_active_identity(identity, capacity);
+}
+
 bool pxa_host_deploy_package(const char *identity_key) {
     return pxa_host_deploy_package_detailed(identity_key, NULL);
 }
@@ -367,6 +371,10 @@ bool pxa_host_set_color_scheme(pxa_host_color_scheme_t color_scheme) {
     return g_host_ready && pxa_esp_host_set_color_scheme(color_scheme);
 }
 
+bool pxa_host_set_ui_palette(const uint32_t rgba[10]) {
+    return g_host_ready && pxa_esp_host_set_ui_palette(rgba);
+}
+
 bool pxa_host_set_locale(const char *locale, uint8_t text_direction) {
     return g_host_ready && pxa_esp_host_set_locale(locale, text_direction);
 }
@@ -386,6 +394,10 @@ bool pxa_host_set_window_insets(const pxa_window_insets_t *safe_insets,
     ready = g_host_ready;
     portEXIT_CRITICAL(&g_callback_lock);
     return !ready || pxa_esp_host_set_window_insets(&safe, &bars);
+}
+
+bool pxa_host_set_display_geometry(uint32_t shape, const uint16_t radii[4]) {
+    return g_host_ready && pxa_esp_host_set_display_geometry(shape, radii);
 }
 
 void pxa_host_set_runtime_event_callback(pxa_host_runtime_event_fn callback,

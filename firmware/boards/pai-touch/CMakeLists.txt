@@ -22,6 +22,7 @@ idf_component_register(
         espressif__button
         espressif__esp_lcd_touch
         espressif__esp_lvgl_port
+        espressif__gmf_audio
         esp_lcd_touch_cst826
         joltwallet__littlefs
         lvgl

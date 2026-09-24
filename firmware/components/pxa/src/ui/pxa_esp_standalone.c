@@ -130,12 +130,25 @@ static void permission_response(lv_event_t *event) {
 static void show_permission(void *context) {
     permission_prompt_copy_t *copy = (permission_prompt_copy_t *)context;
     char body[300];
+    const bool chinese = pxa_esp_host_locale_is_chinese();
     close_dialog(&g_permission_dialog);
     snprintf(body, sizeof(body), "%s\n%s\n%s", copy->prompt.app_name,
              copy->prompt.permission_name, copy->prompt.scope);
     g_permission_prompt_id = copy->prompt.prompt_id;
-    g_permission_dialog = create_dialog("Permission request", body, "Deny",
-                                        permission_response, "Allow",
+    g_permission_dialog = create_dialog(copy->prompt.is_uninstall ?
+                                            (chinese ? "卸载确认" : "Uninstall confirmation") :
+                                        copy->prompt.is_install ?
+                                            (chinese ? "安装确认" : "Install confirmation") :
+                                            (chinese ? "权限请求" : "Permission request"),
+                                        body, copy->prompt.is_install ||
+                                              copy->prompt.is_uninstall ?
+                                            (chinese ? "取消" : "Cancel") :
+                                            (chinese ? "拒绝" : "Deny"),
+                                        permission_response, copy->prompt.is_uninstall ?
+                                            (chinese ? "卸载" : "Uninstall") :
+                                        copy->prompt.is_install ?
+                                            (chinese ? "安装" : "Install") :
+                                            (chinese ? "允许" : "Allow"),
                                         permission_response);
     free(copy);
 }
@@ -161,11 +174,13 @@ static void show_unresponsive(void *context) {
         (unresponsive_prompt_copy_t *)context;
     char body[160];
     close_dialog(&g_unresponsive_dialog);
-    snprintf(body, sizeof(body), "%s is not responding.",
+    const bool chinese = pxa_esp_host_locale_is_chinese();
+    snprintf(body, sizeof(body), chinese ? "%s 无响应。" : "%s is not responding.",
              copy->prompt.app_name);
     g_unresponsive_prompt_id = copy->prompt.prompt_id;
-    g_unresponsive_dialog = create_dialog("App not responding", body, "Stop",
-                                          unresponsive_response, "Wait",
+    g_unresponsive_dialog = create_dialog(chinese ? "应用无响应" : "App not responding",
+                                          body, chinese ? "停止" : "Stop",
+                                          unresponsive_response, chinese ? "等待" : "Wait",
                                           unresponsive_response);
     free(copy);
 }

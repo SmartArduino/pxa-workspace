@@ -70,6 +70,12 @@ void pxa_esp_game_render_backend(pxa_game_render_backend_t *output) {
     memset(output, 0, sizeof(*output));
 }
 
+void pxa_esp_game_render_get_scale_profile(
+    pxa_game_render_target_profile_t *profile) {
+    *profile = (pxa_game_render_target_profile_t){
+        0, 0, PXA_GAME_RENDER_SCALE_MASK_1X, PXA_GAME_RENDER_SCALE_1X};
+}
+
 static void *test_allocate(void *context, size_t size) {
     void *memory;
     (void)context;

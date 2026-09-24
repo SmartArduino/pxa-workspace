@@ -416,9 +416,11 @@ int main(void) {
         assert(game_backend.create(game_backend.context, &game_desc, &surface,
                                    &capabilities) == PXA_STATUS_OK);
         assert((capabilities & (PXA_RASTER_CAP_SPRITE_BATCH |
-                                PXA_RASTER_CAP_TRIANGLE_BATCH)) ==
+                                PXA_RASTER_CAP_TRIANGLE_BATCH |
+                                PXA_RASTER_CAP_COVERAGE_MASK)) ==
                (PXA_RASTER_CAP_SPRITE_BATCH |
-                PXA_RASTER_CAP_TRIANGLE_BATCH));
+                PXA_RASTER_CAP_TRIANGLE_BATCH |
+                PXA_RASTER_CAP_COVERAGE_MASK));
         assert(allocations == 7);
         assert(((pxa_esp_surface_t *)(uintptr_t)surface)
                        ->raster_draw_capacities[0] ==

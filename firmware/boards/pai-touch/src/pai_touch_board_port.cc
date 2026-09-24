@@ -20,7 +20,7 @@ void DisplayProfile(void*, pxsys_display_profile_t* output) {
     if (output == nullptr) return;
     pxsys_display_profile_init(output, 296, 240);
     output->shape = PXSYS_DISPLAY_SHAPE_ROUNDED_RECTANGLE;
-    output->corner_radii = {48, 48, 48, 48};
+    output->corner_radii = {58, 58, 58, 58};
     output->safe_insets = {8, 10, 8, 10};
 }
 

@@ -134,11 +134,10 @@ static int asset_sink_snapshot(pxa_esp_audio_state_t *audio,
     return sink->play != NULL && sink->control != NULL;
 }
 
-static int asset_path_is_ogg(const uint8_t *path, size_t size) {
-    static const char suffix[] = ".ogg";
-    return path != NULL && size > sizeof(suffix) - 1u &&
-           memcmp(path + size - (sizeof(suffix) - 1u), suffix,
-                  sizeof(suffix) - 1u) == 0;
+static int asset_path_is_audio(const uint8_t *path, size_t size) {
+    return path != NULL && size > 4u &&
+           (memcmp(path + size - 4u, ".ogg", 4u) == 0 ||
+            memcmp(path + size - 4u, ".pcm", 4u) == 0);
 }
 
 static pxa_status_t audio_open(void *context, uint16_t usage,
@@ -319,7 +318,7 @@ static pxa_status_t audio_play_asset(void *context,
     int slot_index;
     int accepted;
     if (audio != &g_audio || asset == NULL || asset->path == NULL ||
-        asset->path_size == 0 || !asset_path_is_ogg(asset->path,
+        asset->path_size == 0 || !asset_path_is_audio(asset->path,
                                                     asset->path_size) ||
         !asset_sink_snapshot(audio, &sink)) {
         return PXA_STATUS_UNSUPPORTED;

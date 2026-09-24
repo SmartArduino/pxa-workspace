@@ -37,6 +37,8 @@ typedef struct esp_pxa_instance {
     char identity_key[PXA_HOST_PACKAGE_ID_MAX];
     uint8_t* launch_event;
     size_t launch_event_size;
+    pxa_window_configuration_t window_configuration;
+    uint8_t window_configured;
 } esp_pxa_instance_t;
 
 typedef struct {
@@ -97,6 +99,8 @@ struct pxsys_esp_pxa_bridge {
     uint32_t magic;
     uint32_t generation;
     uint32_t window_generation;
+    esp_pxa_instance_t* window_instance;
+    char window_identity[PXA_HOST_PACKAGE_ID_MAX];
     size_t capacity;
     size_t subscription_capacity;
     size_t endpoint_capacity;
@@ -147,21 +151,6 @@ static uint32_t advance_window_generation(pxsys_esp_pxa_bridge_t* bridge) {
     return bridge->window_generation;
 }
 
-static void begin_window_session(pxsys_esp_pxa_bridge_t* bridge) {
-    if (!bridge_valid(bridge)) return;
-    portENTER_CRITICAL(&g_bridge_lock);
-    advance_window_generation(bridge);
-    bridge->window_accepting = 1;
-    portEXIT_CRITICAL(&g_bridge_lock);
-}
-
-static void resume_window_session(pxsys_esp_pxa_bridge_t* bridge) {
-    if (!bridge_valid(bridge)) return;
-    portENTER_CRITICAL(&g_bridge_lock);
-    bridge->window_accepting = 1;
-    portEXIT_CRITICAL(&g_bridge_lock);
-}
-
 static void reset_window(pxsys_esp_pxa_bridge_t* bridge) {
     pxsys_window_snapshot_t window;
     if (!bridge_valid(bridge)) return;
@@ -170,17 +159,66 @@ static void reset_window(pxsys_esp_pxa_bridge_t* bridge) {
      * and make the home screen full-screen again. */
     portENTER_CRITICAL(&g_bridge_lock);
     bridge->window_accepting = 0;
+    bridge->window_identity[0] = '\0';
     advance_window_generation(bridge);
     portEXIT_CRITICAL(&g_bridge_lock);
+    bridge->window_instance = NULL;
     pxsys_window_snapshot_init(&window);
     (void)pxsys_window_service_update(
         pxsys_standard_system_window(bridge->system), &window);
 }
 
+static void apply_window_configuration(
+    pxsys_esp_pxa_bridge_t* bridge,
+    const pxa_window_configuration_t* configuration) {
+    pxsys_window_snapshot_t window;
+    pxsys_window_snapshot_init(&window);
+    window.edge_to_edge = configuration->edge_to_edge;
+    window.status_bar_mode =
+        (pxsys_window_bar_mode_t)configuration->status_bar_mode;
+    window.navigation_bar_mode =
+        (pxsys_window_bar_mode_t)configuration->navigation_bar_mode;
+    window.status_bar_icons =
+        (pxsys_window_icon_style_t)configuration->status_bar_icons;
+    window.navigation_bar_icons =
+        (pxsys_window_icon_style_t)configuration->navigation_bar_icons;
+    window.status_bar_color = configuration->status_bar_color;
+    window.navigation_bar_color = configuration->navigation_bar_color;
+    (void)pxsys_window_service_update(
+        pxsys_standard_system_window(bridge->system), &window);
+}
+
+static void begin_window_session(pxsys_esp_pxa_bridge_t* bridge,
+                                 esp_pxa_instance_t* instance) {
+    if (!bridge_valid(bridge) || instance == NULL) return;
+    if (bridge->window_instance != instance)
+        reset_window(bridge);
+    portENTER_CRITICAL(&g_bridge_lock);
+    snprintf(bridge->window_identity, sizeof(bridge->window_identity), "%s",
+             instance->identity_key);
+    advance_window_generation(bridge);
+    bridge->window_accepting = 1;
+    portEXIT_CRITICAL(&g_bridge_lock);
+    bridge->window_instance = instance;
+}
+
+static void resume_window_session(pxsys_esp_pxa_bridge_t* bridge,
+                                  esp_pxa_instance_t* instance) {
+    if (!bridge_valid(bridge) || instance == NULL) return;
+    if (bridge->window_instance != instance) {
+        begin_window_session(bridge, instance);
+        if (instance->window_configured)
+            apply_window_configuration(bridge, &instance->window_configuration);
+    } else {
+        portENTER_CRITICAL(&g_bridge_lock);
+        bridge->window_accepting = 1;
+        portEXIT_CRITICAL(&g_bridge_lock);
+    }
+}
+
 static void apply_window_on_owner(void* context) {
     window_change_t* change = (window_change_t*)context;
     pxsys_esp_pxa_bridge_t* bridge = g_bridge;
-    pxsys_window_snapshot_t window;
     int current = 0;
     if (change == NULL) return;
     portENTER_CRITICAL(&g_bridge_lock);
@@ -193,35 +231,28 @@ static void apply_window_on_owner(void* context) {
         free(change);
         return;
     }
-    pxsys_window_snapshot_init(&window);
-    window.edge_to_edge = change->configuration.edge_to_edge;
-    window.status_bar_mode =
-        (pxsys_window_bar_mode_t)change->configuration.status_bar_mode;
-    window.navigation_bar_mode =
-        (pxsys_window_bar_mode_t)change->configuration.navigation_bar_mode;
-    window.status_bar_icons =
-        (pxsys_window_icon_style_t)change->configuration.status_bar_icons;
-    window.navigation_bar_icons =
-        (pxsys_window_icon_style_t)change->configuration.navigation_bar_icons;
-    window.status_bar_color = change->configuration.status_bar_color;
-    window.navigation_bar_color = change->configuration.navigation_bar_color;
-    (void)pxsys_window_service_update(
-        pxsys_standard_system_window(bridge->system), &window);
+    if (bridge->window_instance != NULL) {
+        bridge->window_instance->window_configuration = change->configuration;
+        bridge->window_instance->window_configured = 1;
+        apply_window_configuration(bridge, &change->configuration);
+    }
     free(change);
 }
 
 static void window_changed(
-    void* context, const pxa_window_configuration_t* configuration) {
+    void* context, const char* identity_key,
+    const pxa_window_configuration_t* configuration) {
     pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
     window_change_t* change;
     uint32_t generation = 0;
     uint32_t window_generation = 0;
-    if (configuration == NULL) return;
+    if (configuration == NULL || identity_key == NULL) return;
     change = (window_change_t*)malloc(sizeof(*change));
     if (change == NULL) return;
     portENTER_CRITICAL(&g_bridge_lock);
     if (g_bridge == bridge && bridge_valid(bridge) &&
-        bridge->window_accepting) {
+        bridge->window_accepting &&
+        strcmp(bridge->window_identity, identity_key) == 0) {
         generation = bridge->generation;
         window_generation = advance_window_generation(bridge);
     }
@@ -508,9 +539,22 @@ static void catalog_changed(void* context) {
 }
 
 static void theme_changed(void* context, const pxsys_theme_snapshot_t* snapshot) {
+    static const pxsys_color_token_t tokens[10] = {
+        PXSYS_COLOR_BACKGROUND, PXSYS_COLOR_SURFACE,
+        PXSYS_COLOR_ACCENT, PXSYS_COLOR_ON_ACCENT,
+        PXSYS_COLOR_TEXT_PRIMARY, PXSYS_COLOR_TEXT_SECONDARY,
+        PXSYS_COLOR_BORDER, PXSYS_COLOR_SUCCESS,
+        PXSYS_COLOR_WARNING, PXSYS_COLOR_ERROR,
+    };
+    uint32_t rgba[10];
     (void)context;
     if (snapshot == NULL)
         return;
+    for (size_t index = 0; index < 10u; ++index) {
+        uint32_t argb = snapshot->colors[tokens[index]];
+        rgba[index] = (argb << 8u) | (argb >> 24u);
+    }
+    (void)pxa_host_set_ui_palette(rgba);
     (void)pxa_host_set_color_scheme(
         snapshot->effective_scheme == PXSYS_COLOR_SCHEME_DARK
             ? PXA_HOST_COLOR_SCHEME_DARK
@@ -1217,10 +1261,10 @@ static pxsys_status_t backend_start(void* context, void* backend_instance,
     /* Guest startup can configure its window before the runtime reports that
      * it is ready to foreground. Accept that initial configuration as part of
      * this launch's window session. */
-    begin_window_session(bridge);
+    begin_window_session(bridge, instance);
     if (pxa_host_runtime_launch(instance->identity_key))
         return PXSYS_STATUS_PENDING;
-    reset_window(bridge);
+    if (bridge->window_instance == instance) reset_window(bridge);
     bridge->allocator.release(bridge->allocator.context,
                               instance->launch_event);
     instance->launch_event = NULL;
@@ -1230,16 +1274,24 @@ static pxsys_status_t backend_start(void* context, void* backend_instance,
 
 static pxsys_status_t backend_foreground(void* context, void* backend_instance) {
     pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
+    esp_pxa_instance_t* instance = (esp_pxa_instance_t*)backend_instance;
+    char active_identity[PXA_HOST_PACKAGE_ID_MAX];
     if (backend_instance == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
-    resume_window_session(bridge);
+    if (!pxa_host_active_identity(active_identity, sizeof(active_identity)) ||
+        strcmp(active_identity, instance->identity_key) != 0) {
+        if (bridge->window_instance == instance) reset_window(bridge);
+        pxa_esp_surface_set_host_visible(false);
+        return PXSYS_STATUS_OK;
+    }
+    resume_window_session(bridge, instance);
     pxa_esp_surface_set_host_visible(true);
     const uint8_t state = PXA_HOST_SYSTEM_LIFECYCLE_FOREGROUND;
     (void)pxa_host_post_app_system_event(
-        ((esp_pxa_instance_t*)backend_instance)->identity_key,
+        instance->identity_key,
         PXA_HOST_SYSTEM_LIFECYCLE_EVENT, &state, sizeof(state));
     ESP_LOGI(PXSYS_ESP_PXA_TAG, "Application foregrounded: %s",
-             ((esp_pxa_instance_t*)backend_instance)->identity_key);
+             instance->identity_key);
     return PXSYS_STATUS_OK;
 }
 
@@ -1247,12 +1299,13 @@ static pxsys_status_t backend_background(void* context, void* backend_instance) 
     pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
     if (backend_instance == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
-    pxa_esp_surface_set_host_visible(false);
+    if (bridge->window_instance == backend_instance)
+        pxa_esp_surface_set_host_visible(false);
     const uint8_t state = PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND;
     (void)pxa_host_post_app_system_event(
         ((esp_pxa_instance_t*)backend_instance)->identity_key,
         PXA_HOST_SYSTEM_LIFECYCLE_EVENT, &state, sizeof(state));
-    reset_window(bridge);
+    if (bridge->window_instance == backend_instance) reset_window(bridge);
     ESP_LOGI(PXSYS_ESP_PXA_TAG, "Application backgrounded: %s",
              ((esp_pxa_instance_t*)backend_instance)->identity_key);
     return PXSYS_STATUS_OK;
@@ -1288,10 +1341,11 @@ static void backend_stop(void* context, void* backend_instance, pxsys_stop_reaso
     pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
     (void)reason;
     if (instance != NULL) {
-        pxa_esp_surface_set_host_visible(false);
+        if (bridge->window_instance == instance)
+            pxa_esp_surface_set_host_visible(false);
         (void)pxa_host_runtime_stop(instance->identity_key);
     }
-    reset_window(bridge);
+    if (bridge->window_instance == instance) reset_window(bridge);
 }
 
 static pxsys_status_t backend_request_stop(void* context, void* backend_instance,
@@ -1301,8 +1355,9 @@ static pxsys_status_t backend_request_stop(void* context, void* backend_instance
     (void)reason;
     if (instance == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
-    pxa_esp_surface_set_host_visible(false);
-    reset_window(bridge);
+    if (bridge->window_instance == instance)
+        pxa_esp_surface_set_host_visible(false);
+    if (bridge->window_instance == instance) reset_window(bridge);
     return pxa_host_runtime_stop(instance->identity_key) ? PXSYS_STATUS_PENDING
                                                      : PXSYS_STATUS_UNAVAILABLE;
 }
@@ -1313,6 +1368,10 @@ static void backend_destroy(void* context, void* backend_instance) {
     esp_pxa_instance_t** cursor;
     if (!bridge_valid(bridge) || instance == NULL)
         return;
+    if (bridge->window_instance == instance) {
+        pxa_esp_surface_set_host_visible(false);
+        reset_window(bridge);
+    }
     remove_component_subscriptions(bridge, instance);
     remove_app_endpoints(bridge, instance);
     bridge->allocator.release(bridge->allocator.context,
@@ -1530,6 +1589,12 @@ pxsys_status_t pxsys_esp_pxa_bridge_create(const pxsys_esp_pxa_bridge_config_t* 
     pxa_host_set_launch_request_callback(launch_requested, bridge);
     pxa_host_set_system_request_callback(system_request, bridge);
     pxa_host_set_window_changed_callback(window_changed, bridge);
+    {
+        pxsys_theme_snapshot_t theme;
+        if (pxsys_theme_service_get(
+                pxsys_standard_system_theme(bridge->system), &theme) == PXSYS_STATUS_OK)
+            theme_changed(bridge, &theme);
+    }
     (void)pxsys_esp_pxa_bridge_sync(bridge);
     *output = bridge;
     return PXSYS_STATUS_OK;

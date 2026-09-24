@@ -844,8 +844,11 @@ static uint32_t raster_capabilities(void) {
            PXA_RASTER_CAP_LIT_PALETTE_DEPTH |
            PXA_RASTER_CAP_DEPTH_CUTOUT |
            PXA_RASTER_CAP_FIXED_ALPHA_BLEND |
+           PXA_RASTER_CAP_COVERAGE_MASK |
            PXA_RASTER_CAP_SPRITE_PALETTE_RAMP |
-           PXA_RASTER_CAP_SPRITE_TEXEL_ALPHA;
+           PXA_RASTER_CAP_SPRITE_TEXEL_ALPHA |
+           PXA_RASTER_CAP_PAINTER_PERSPECTIVE |
+           PXA_RASTER_CAP_PAINTER_DEPTH;
 }
 
 static uint8_t *allocate_raster_resource(size_t size) {

@@ -14,6 +14,8 @@ extern "C" {
 
 typedef struct {
     uint32_t prompt_id;
+    uint8_t is_install;
+    uint8_t is_uninstall;
     char app_name[PXA_ESP_UI_SHELL_APP_NAME_BYTES];
     char permission_name[PXA_ESP_UI_SHELL_PERMISSION_TEXT_BYTES];
     char scope[PXA_ESP_UI_SHELL_PERMISSION_TEXT_BYTES];

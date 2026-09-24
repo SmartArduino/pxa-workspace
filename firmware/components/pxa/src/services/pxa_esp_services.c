@@ -42,6 +42,16 @@
 #define PXA_ESP_SERVICES_PATH_BYTES 160
 #define PXA_ESP_GUEST_LOG_TAG "PXA-App"
 
+#if defined(CONFIG_IDF_TARGET_ESP32S31)
+#define PXA_DEVICE_TARGET "esp32-s31"
+#define PXA_DEVICE_ARCH "riscv32"
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+#define PXA_DEVICE_TARGET "esp32-s3"
+#define PXA_DEVICE_ARCH "xtensa"
+#else
+#error "PXA device target is not defined for this IDF target"
+#endif
+
 static pxa_status_t write_guest_log(
     void *context, pxa_component_t component, pxa_bytes_t app_id,
     pxa_log_level_t level, pxa_bytes_t message) {
@@ -482,6 +492,11 @@ static pxa_status_t initialize_bounded_services(
     device_config.struct_size = sizeof(device_config);
     device_config.get_mac = esp_get_mac;
     device_config.permissions = services->permission;
+    device_config.target = PXA_DEVICE_TARGET;
+    device_config.architecture = PXA_DEVICE_ARCH;
+    device_config.engine = "wamr";
+    device_config.engine_abi = PXSYS_WAMR_ENGINE_ABI;
+    device_config.formats = PXA_DEVICE_FORMAT_WASM | PXA_DEVICE_FORMAT_AOT;
     workspace_size = pxa_device_service_workspace_size(&device_config);
     status = allocate_workspace(host, workspace_size, &services->device_workspace,
                                 result, "allocate-device-service");
@@ -791,6 +806,9 @@ static pxa_status_t initialize_window_ui(
     config.primary_height = host->primary_height != 0 ? host->primary_height : 240;
     for (uint8_t index = 0; index < 4; ++index)
         config.safe_insets[index] = host->safe_insets[index];
+    config.display_shape = host->display_shape;
+    for (uint8_t index = 0; index < 4; ++index)
+        config.corner_radii[index] = host->corner_radii[index];
     config.color_scheme = host->color_scheme;
     workspace_size = pxa_ui_service_workspace_size();
     status = allocate_workspace(host, workspace_size, &services->ui_workspace,

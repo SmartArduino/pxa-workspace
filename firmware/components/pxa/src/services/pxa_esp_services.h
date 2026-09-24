@@ -125,6 +125,8 @@ typedef struct {
     uint32_t primary_width;
     uint32_t primary_height;
     uint32_t safe_insets[4];
+    uint32_t display_shape;
+    uint32_t corner_radii[4];
 } pxa_esp_services_config_t;
 
 typedef struct {

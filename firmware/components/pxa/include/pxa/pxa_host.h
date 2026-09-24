@@ -119,7 +119,8 @@ typedef void (*pxa_host_runtime_event_fn)(void *context,
                                           const char *identity_key);
 typedef void (*pxa_host_catalog_changed_fn)(void *context);
 typedef void (*pxa_host_window_changed_fn)(
-    void *context, const pxa_window_configuration_t *configuration);
+    void *context, const char *identity_key,
+    const pxa_window_configuration_t *configuration);
 typedef bool (*pxa_host_launch_request_fn)(
     void *context,
     const uint8_t publisher_root[PXA_HOST_PUBLISHER_ROOT_BYTES],
@@ -167,6 +168,7 @@ bool pxa_host_runtime_launch_app(
     const char *app_id);
 bool pxa_host_runtime_back(void);
 bool pxa_host_runtime_stop(const char *identity_key);
+bool pxa_host_active_identity(char *identity, size_t capacity);
 bool pxa_host_deploy_package(const char *identity_key);
 bool pxa_host_deploy_package_detailed(
     const char *identity_key, pxa_host_package_deploy_result_t *result);
@@ -186,6 +188,7 @@ bool pxa_host_captures_volume_keys(void);
 bool pxa_host_post_key(pxa_host_key_t key);
 /* Thread-safe. Active and subsequently launched UI components inherit it. */
 bool pxa_host_set_color_scheme(pxa_host_color_scheme_t color_scheme);
+bool pxa_host_set_ui_palette(const uint32_t rgba[10]);
 /* Thread-safe locale snapshot used for startup configuration and subsequent
  * configuration events. locale is a canonical BCP 47 tag. */
 bool pxa_host_set_locale(const char *locale, uint8_t text_direction);
@@ -196,6 +199,8 @@ bool pxa_host_set_locale(const char *locale, uint8_t text_direction);
  * logical pixels and may be updated when chrome visibility changes. */
 bool pxa_host_set_window_insets(const pxa_window_insets_t *safe_insets,
                                 const pxa_window_insets_t *system_bar_insets);
+/* Shape values match the PXSYS display profile. Radii are TL, TR, BR, BL. */
+bool pxa_host_set_display_geometry(uint32_t shape, const uint16_t radii[4]);
 /* Runtime events originate on the PXA worker. The consumer must marshal them
  * before mutating thread-confined application-system state. */
 void pxa_host_set_runtime_event_callback(pxa_host_runtime_event_fn callback,

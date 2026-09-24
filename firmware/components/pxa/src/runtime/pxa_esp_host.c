@@ -50,6 +50,7 @@
 #include "pxa/window.h"
 #include "pxa/wire.h"
 #include "pxa_esp_package_store.h"
+#include "pxa_esp_store_download.h"
 #include "pxa_esp_permission_store.h"
 #include "pxa_esp_services.h"
 #include "pxa_esp_ui_shell.h"
@@ -65,7 +66,7 @@
 #define PXA_ESP_HOST_TAG "PxaHost"
 #define PXA_ESP_HOST_MAX_APP_ID PXA_HOST_COMMAND_MAX_IDENTITY_BYTES
 #define PXA_ESP_HOST_MAX_PATH 160
-#define PXA_ESP_HOST_MAX_SERVICES 18
+#define PXA_ESP_HOST_MAX_SERVICES 19
 #define PXA_ESP_HOST_EVENT_DRAIN_ROUNDS 3
 #define PXA_ESP_HOST_BACK_EVENT_DRAIN_LIMIT 32
 #define PXA_ESP_HOST_CLOCK_PERIOD_US 5000
@@ -214,6 +215,14 @@ typedef struct {
     pxa_ui_backend_t ui_backend;
     lv_font_t *ui_body_font;
     lv_font_t *ui_title_font;
+    lv_font_t *ui_caption_font;
+    lv_font_t *ui_label_font;
+    lv_font_t *ui_headline_font;
+    lv_font_t *ui_display_font;
+    pxa_lvgl_ui_theme_t ui_theme;
+    uint32_t ui_theme_generation;
+    uint32_t pending_ui_palette[10];
+    uint8_t ui_palette_pending;
 
     uint64_t last_clock_us;
     uint64_t next_maintenance_us;
@@ -231,6 +240,8 @@ typedef struct {
     pxa_window_insets_t safe_insets;
     pxa_window_insets_t system_bar_insets;
     uint8_t window_insets_valid;
+    uint32_t display_shape;
+    uint32_t corner_radii[4];
     uint64_t work_epoch;
     uint64_t last_instance_id;
     uint32_t next_unresponsive_prompt_id;
@@ -242,6 +253,89 @@ typedef struct {
 } pxa_esp_host_t;
 
 static pxa_esp_host_t g_host;
+static pxa_esp_store_job_t *g_store_install;
+static struct {
+    uint32_t prompt_id;
+    uint32_t component;
+    uint32_t request_id;
+    uint64_t instance_id;
+    char identity[PXA_ESP_PACKAGE_ID_BYTES];
+} g_store_uninstall;
+typedef struct {
+    char filename[20];
+    char app_id[65];
+    char owner[PXA_ESP_PACKAGE_ID_BYTES];
+} pxa_esp_store_download_entry_t;
+#define PXA_ESP_STORE_DOWNLOAD_SLOTS 8u
+static pxa_esp_store_download_entry_t g_store_downloads[PXA_ESP_STORE_DOWNLOAD_SLOTS];
+
+static bool store_download_filename_valid(const char *name) {
+    if (name == NULL || strlen(name) != 19u ||
+        strncmp(name, ".store-", 7u) != 0 || strcmp(name + 15u, ".pxa") != 0)
+        return false;
+    for (size_t index = 7u; index < 15u; ++index)
+        if (!((name[index] >= '0' && name[index] <= '9') ||
+              (name[index] >= 'a' && name[index] <= 'f'))) return false;
+    return true;
+}
+
+static bool store_registry_save(void) {
+    const char *path = CONFIG_PXA_MOUNT_POINT "/" CONFIG_PXA_STATE_ROOT "/.store-index";
+    const char *temporary = CONFIG_PXA_MOUNT_POINT "/" CONFIG_PXA_STATE_ROOT "/.store-index.tmp";
+    FILE *file = fopen(temporary, "wb");
+    bool saved;
+    if (file == NULL) return false;
+    saved = fwrite("PXADL1", 1u, 6u, file) == 6u &&
+            fwrite(g_store_downloads, sizeof(g_store_downloads), 1u, file) == 1u &&
+            fflush(file) == 0 && fsync(fileno(file)) == 0;
+    if (fclose(file) != 0) saved = false;
+    if (saved) saved = rename(temporary, path) == 0;
+    if (!saved) (void)unlink(temporary);
+    return saved;
+}
+
+static void store_registry_load(void) {
+    const char *path = CONFIG_PXA_MOUNT_POINT "/" CONFIG_PXA_STATE_ROOT "/.store-index";
+    FILE *file = fopen(path, "rb");
+    char magic[6];
+    memset(g_store_downloads, 0, sizeof(g_store_downloads));
+    if (file == NULL) return;
+    if (fread(magic, 1u, sizeof(magic), file) != sizeof(magic) ||
+        memcmp(magic, "PXADL1", sizeof(magic)) != 0 ||
+        fread(g_store_downloads, sizeof(g_store_downloads), 1u, file) != 1u ||
+        fgetc(file) != EOF) {
+        memset(g_store_downloads, 0, sizeof(g_store_downloads));
+    }
+    (void)fclose(file);
+    for (size_t index = 0; index < PXA_ESP_STORE_DOWNLOAD_SLOTS; ++index) {
+        pxa_esp_store_download_entry_t *entry = &g_store_downloads[index];
+        char filename[20];
+        char full_path[160];
+        struct stat metadata;
+        if (entry->filename[0] == '\0') continue;
+        if (memchr(entry->filename, '\0', sizeof(entry->filename)) == NULL ||
+            memchr(entry->app_id, '\0', sizeof(entry->app_id)) == NULL ||
+            memchr(entry->owner, '\0', sizeof(entry->owner)) == NULL ||
+            !store_download_filename_valid(entry->filename) ||
+            entry->app_id[0] == '\0' || entry->owner[0] == '\0') {
+            memset(entry, 0, sizeof(*entry));
+            continue;
+        }
+        snprintf(filename, sizeof(filename), "%s", entry->filename);
+        if (snprintf(full_path, sizeof(full_path), "%s/%s/%s",
+                     CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT,
+                     filename) >= (int)sizeof(full_path) ||
+            stat(full_path, &metadata) != 0 || !S_ISREG(metadata.st_mode))
+            memset(entry, 0, sizeof(*entry));
+    }
+}
+
+static int store_registry_keep(const char *filename, void *context) {
+    (void)context;
+    for (size_t index = 0; index < PXA_ESP_STORE_DOWNLOAD_SLOTS; ++index)
+        if (strcmp(g_store_downloads[index].filename, filename) == 0) return 1;
+    return 0;
+}
 static pxa_host_runtime_event_fn g_runtime_event_callback;
 static void *g_runtime_event_context;
 static portMUX_TYPE g_runtime_event_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -277,13 +371,25 @@ static lv_font_t *load_ui_font(uint16_t size,
 
 static void release_ui_fonts(void) {
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+    if (g_host.ui_display_font != NULL)
+        lv_freetype_font_delete(g_host.ui_display_font);
+    if (g_host.ui_headline_font != NULL)
+        lv_freetype_font_delete(g_host.ui_headline_font);
     if (g_host.ui_title_font != NULL)
         lv_freetype_font_delete(g_host.ui_title_font);
     if (g_host.ui_body_font != NULL)
         lv_freetype_font_delete(g_host.ui_body_font);
+    if (g_host.ui_label_font != NULL)
+        lv_freetype_font_delete(g_host.ui_label_font);
+    if (g_host.ui_caption_font != NULL)
+        lv_freetype_font_delete(g_host.ui_caption_font);
 #endif
+    g_host.ui_display_font = NULL;
+    g_host.ui_headline_font = NULL;
     g_host.ui_title_font = NULL;
     g_host.ui_body_font = NULL;
+    g_host.ui_label_font = NULL;
+    g_host.ui_caption_font = NULL;
 }
 
 typedef struct {
@@ -709,6 +815,310 @@ static int post_command(const pxa_esp_host_command_t *command) {
     return posted;
 }
 
+static void store_install_notify(pxa_esp_store_job_t *job, uint8_t phase) {
+    pxa_esp_host_command_t command = {0};
+    command.type = (uint8_t)PXA_ESP_HOST_CMD_STORE_INSTALL;
+    command.payload.store_install.job = job;
+    command.payload.store_install.phase = phase;
+    if (phase == 4u)
+        command.payload.store_install.downloaded_bytes = job->downloaded_bytes;
+    if (g_host.queue != NULL &&
+        xQueueSendToBack(g_host.queue, &command,
+                         phase == 4u ? 0 : portMAX_DELAY) == pdTRUE)
+        wake_runtime_thread();
+}
+
+static pxa_esp_store_download_entry_t *store_download_find(
+    const uint8_t *filename, size_t length) {
+    if (filename == NULL || length != 19u) return NULL;
+    for (size_t index = 0; index < PXA_ESP_STORE_DOWNLOAD_SLOTS; ++index) {
+        pxa_esp_store_download_entry_t *entry = &g_store_downloads[index];
+        if (strlen(entry->filename) == length &&
+            memcmp(entry->filename, filename, length) == 0 &&
+            strcmp(entry->owner, g_host.activation.active_identity) == 0)
+            return entry;
+    }
+    return NULL;
+}
+
+static pxa_esp_store_download_entry_t *store_download_free(void) {
+    for (size_t index = 0; index < PXA_ESP_STORE_DOWNLOAD_SLOTS; ++index)
+        if (g_store_downloads[index].filename[0] == '\0')
+            return &g_store_downloads[index];
+    return NULL;
+}
+
+typedef struct {
+    uint8_t payload[3072];
+    size_t length;
+    size_t count;
+    const char *app_id;
+    char identity[PXA_ESP_PACKAGE_ID_BYTES];
+} store_inventory_t;
+
+typedef struct {
+    const char *app_id;
+    char identity[PXA_ESP_PACKAGE_ID_BYTES];
+    char name[PXA_ESP_PACKAGE_NAME_BYTES];
+    char version[PXA_ESP_PACKAGE_VERSION_BYTES];
+    uint8_t matches;
+    bool built_in;
+} store_uninstall_target_t;
+
+static bool store_uninstall_target_visit(const pxa_esp_package_record_t *record,
+                                         void *context) {
+    store_uninstall_target_t *target = context;
+    if (!record->installed || strcmp(record->app_id, target->app_id) != 0)
+        return true;
+    if (++target->matches != 1u) return false;
+    snprintf(target->identity, sizeof(target->identity), "%s", record->id);
+    snprintf(target->name, sizeof(target->name), "%s", record->name);
+    snprintf(target->version, sizeof(target->version), "%s", record->version);
+    target->built_in = record->built_in;
+    return true;
+}
+
+static bool store_inventory_visit(const pxa_esp_package_record_t *record,
+                                  void *context) {
+    store_inventory_t *inventory = context;
+    size_t app_length, version_length, identity_length;
+    if (!record->installed) return true;
+    if (inventory->app_id != NULL) {
+        if (strcmp(record->app_id, inventory->app_id) == 0)
+            snprintf(inventory->identity, sizeof(inventory->identity), "%s", record->id);
+        return inventory->identity[0] == '\0';
+    }
+    app_length = strlen(record->app_id);
+    version_length = strlen(record->version);
+    identity_length = strlen(record->id);
+    if (app_length > 64u || version_length > 31u || identity_length > 129u ||
+        inventory->length + 12u + app_length + version_length + identity_length >
+            sizeof(inventory->payload) || inventory->count == 12u) return false;
+    uint8_t *out = inventory->payload + inventory->length;
+    out[0] = (uint8_t)app_length;
+    out[1] = (uint8_t)version_length;
+    out[2] = (uint8_t)identity_length;
+    for (size_t byte = 0; byte < 8u; ++byte)
+        out[3u + byte] = (uint8_t)(record->release_sequence >> (byte * 8u));
+    out[11] = record->built_in ? 0u : 1u;
+    memcpy(out + 12u, record->app_id, app_length);
+    memcpy(out + 12u + app_length, record->version, version_length);
+    memcpy(out + 12u + app_length + version_length, record->id, identity_length);
+    inventory->length += 12u + app_length + version_length + identity_length;
+    inventory->count++;
+    return true;
+}
+
+static pxa_status_t store_complete_now(pxa_runtime_t *runtime,
+                                       pxa_component_t component,
+                                       const pxa_message_view_t *message,
+                                       const void *payload, size_t length) {
+    pxa_status_t result = pxa_request_begin(runtime, component, message->request_id,
+                            PXA_STORE_INSTALL_SERVICE_ID, message->opcode, 0);
+    if (result != PXA_STATUS_OK) return result;
+    return pxa_request_complete(runtime, component, message->request_id,
+                                PXA_STATUS_OK, payload, length);
+}
+
+static void copy_utf8_c_string(char *output, size_t capacity,
+                               const char *value);
+
+static pxa_status_t host_store_install_control(
+    void *context, pxa_runtime_t *runtime, pxa_component_t component,
+    const pxa_message_view_t *message) {
+    pxa_esp_store_job_t *job;
+    pxa_status_t status;
+    (void)context;
+    if (message == NULL || message->request_id == 0)
+        return PXA_STATUS_INVALID_ARGUMENT;
+    if (message->opcode == PXA_STORE_INSTALLED_LIST_REQUEST) {
+        store_inventory_t *inventory;
+        if (message->payload.size != 0) return PXA_STATUS_INVALID_ARGUMENT;
+        inventory = calloc(1, sizeof(*inventory));
+        if (inventory == NULL) return PXA_STATUS_RESOURCE_LIMIT;
+        inventory->length = 1u;
+        (void)pxa_esp_package_store_visit(PXA_ESP_PACKAGE_VIEW_MANAGED,
+                                          store_inventory_visit, inventory);
+        inventory->payload[0] = (uint8_t)inventory->count;
+        status = store_complete_now(runtime, component, message,
+                                    inventory->payload, inventory->length);
+        free(inventory);
+        return status;
+    }
+    if (message->opcode == PXA_STORE_DOWNLOAD_LIST_REQUEST) {
+        uint8_t payload[1u + PXA_ESP_STORE_DOWNLOAD_SLOTS * 85u] = {0};
+        size_t length = 1u;
+        if (message->payload.size != 0) return PXA_STATUS_INVALID_ARGUMENT;
+        for (size_t index = 0; index < PXA_ESP_STORE_DOWNLOAD_SLOTS; ++index) {
+            pxa_esp_store_download_entry_t *entry = &g_store_downloads[index];
+            if (entry->filename[0] == '\0' ||
+                strcmp(entry->owner, g_host.activation.active_identity) != 0) continue;
+            const size_t app_length = strlen(entry->app_id);
+            payload[length++] = (uint8_t)app_length;
+            memcpy(payload + length, entry->filename, 19u);
+            length += 19u;
+            memcpy(payload + length, entry->app_id, app_length);
+            length += app_length;
+            ++payload[0];
+        }
+        return store_complete_now(runtime, component, message, payload, length);
+    }
+    if (message->opcode == PXA_STORE_DELETE_REQUEST) {
+        pxa_esp_store_download_entry_t *entry;
+        char path[160];
+        if (g_store_install != NULL) return PXA_STATUS_BUSY;
+        entry = store_download_find(message->payload.data, message->payload.size);
+        if (entry == NULL) return PXA_STATUS_NOT_FOUND;
+        if (snprintf(path, sizeof(path), "%s/%s/%s", CONFIG_PXA_MOUNT_POINT,
+                     CONFIG_PXA_STATE_ROOT, entry->filename) >= (int)sizeof(path))
+            return PXA_STATUS_INVALID_ARGUMENT;
+        if (unlink(path) != 0) return PXA_STATUS_IO_ERROR;
+        memset(entry, 0, sizeof(*entry));
+        (void)store_registry_save();
+        return store_complete_now(runtime, component, message, NULL, 0);
+    }
+    if (message->opcode == PXA_STORE_LAUNCH_REQUEST) {
+        store_inventory_t inventory = {0};
+        char app_id[65];
+        if (message->payload.size == 0 || message->payload.size > 64u)
+            return PXA_STATUS_INVALID_ARGUMENT;
+        memcpy(app_id, message->payload.data, message->payload.size);
+        app_id[message->payload.size] = '\0';
+        inventory.app_id = app_id;
+        (void)pxa_esp_package_store_visit(PXA_ESP_PACKAGE_VIEW_RUNNABLE,
+                                          store_inventory_visit, &inventory);
+        if (inventory.identity[0] == '\0') return PXA_STATUS_NOT_FOUND;
+        status = store_complete_now(runtime, component, message, NULL, 0);
+        if (status == PXA_STATUS_OK)
+            (void)pxa_host_request_launch(inventory.identity);
+        return status;
+    }
+    if (message->opcode == PXA_STORE_UNINSTALL_REQUEST) {
+        store_uninstall_target_t target = {0};
+        pxa_esp_ui_permission_prompt_t prompt = {0};
+        char app_id[65];
+        if (message->payload.size == 0 || message->payload.size > 64u ||
+            memchr(message->payload.data, '\0', message->payload.size) != NULL)
+            return PXA_STATUS_INVALID_ARGUMENT;
+        if (g_store_install != NULL || g_store_uninstall.prompt_id != 0 ||
+            g_host.activation.permission_prompt.active)
+            return PXA_STATUS_BUSY;
+        memcpy(app_id, message->payload.data, message->payload.size);
+        app_id[message->payload.size] = '\0';
+        target.app_id = app_id;
+        (void)pxa_esp_package_store_visit(PXA_ESP_PACKAGE_VIEW_MANAGED,
+                                          store_uninstall_target_visit, &target);
+        if (target.matches == 0u) return PXA_STATUS_NOT_FOUND;
+        if (target.matches != 1u || target.built_in ||
+            strcmp(target.identity, g_host.activation.active_identity) == 0)
+            return PXA_STATUS_DENIED;
+        status = pxa_request_begin(runtime, component, message->request_id,
+                                   PXA_STORE_INSTALL_SERVICE_ID,
+                                   PXA_STORE_UNINSTALL_REQUEST, 0);
+        if (status != PXA_STATUS_OK) return status;
+        prompt.prompt_id = ++g_host.activation.next_permission_prompt_id;
+        if (prompt.prompt_id == 0)
+            prompt.prompt_id = ++g_host.activation.next_permission_prompt_id;
+        prompt.is_uninstall = 1u;
+        copy_utf8_c_string(prompt.app_name, sizeof(prompt.app_name), target.name);
+        const bool chinese = g_host.locale[0] == 'z' && g_host.locale[1] == 'h';
+        snprintf(prompt.permission_name, sizeof(prompt.permission_name),
+                 chinese ? "卸载 %.36s (%.20s)？" : "Uninstall %.36s (%.20s)?",
+                 app_id, target.version);
+        snprintf(prompt.scope, sizeof(prompt.scope),
+                 chinese ? "确认后删除此应用；可再次下载安装" :
+                           "This app will be removed; you can reinstall it later");
+        g_store_uninstall.prompt_id = prompt.prompt_id;
+        g_store_uninstall.component = component;
+        g_store_uninstall.request_id = message->request_id;
+        g_store_uninstall.instance_id = g_host.activation.active_instance_id;
+        snprintf(g_store_uninstall.identity, sizeof(g_store_uninstall.identity),
+                 "%s", target.identity);
+        pxa_esp_surface_runtime_modal_enter();
+        if (!pxa_esp_ui_shell_post_permission_prompt(&prompt)) {
+            pxa_esp_surface_runtime_modal_leave();
+            memset(&g_store_uninstall, 0, sizeof(g_store_uninstall));
+            (void)pxa_request_cancel(runtime, component, message->request_id);
+            return PXA_STATUS_RESOURCE_LIMIT;
+        }
+        return PXA_STATUS_OK;
+    }
+    if (message->opcode == PXA_STORE_INSTALL_FILE_REQUEST) {
+        pxa_esp_store_download_entry_t *entry;
+        if (g_store_install != NULL || g_store_uninstall.prompt_id != 0)
+            return PXA_STATUS_BUSY;
+        entry = store_download_find(message->payload.data, message->payload.size);
+        if (entry == NULL) return PXA_STATUS_DENIED;
+        job = calloc(1, sizeof(*job));
+        if (job == NULL) return PXA_STATUS_RESOURCE_LIMIT;
+        snprintf(job->filename, sizeof(job->filename), "%s", entry->filename);
+        snprintf(job->app_id, sizeof(job->app_id), "%s", entry->app_id);
+        status = pxa_request_begin(runtime, component, message->request_id,
+                                   PXA_STORE_INSTALL_SERVICE_ID,
+                                   PXA_STORE_INSTALL_FILE_REQUEST, 0);
+        if (status != PXA_STATUS_OK) { free(job); return status; }
+        job->component = component;
+        job->request_id = message->request_id;
+        job->instance_id = g_host.activation.active_instance_id;
+        job->separate = 2u;
+        job->notify = store_install_notify;
+        g_store_install = job;
+        if (xTaskCreate(pxa_esp_store_worker, "pxa-store-install", 12 * 1024,
+                        job, 3, &job->worker) != pdPASS) {
+            g_store_install = NULL;
+            (void)pxa_request_cancel(runtime, component, message->request_id);
+            free(job);
+            return PXA_STATUS_RESOURCE_LIMIT;
+        }
+        return PXA_STATUS_OK;
+    }
+    if (message->opcode != PXA_STORE_INSTALL_REQUEST &&
+        message->opcode != PXA_STORE_DOWNLOAD_REQUEST)
+        return PXA_STATUS_INVALID_ARGUMENT;
+    if (g_store_install != NULL || g_store_uninstall.prompt_id != 0)
+        return PXA_STATUS_BUSY;
+    if (message->opcode == PXA_STORE_DOWNLOAD_REQUEST && store_download_free() == NULL)
+        return PXA_STATUS_RESOURCE_LIMIT;
+    job = calloc(1, sizeof(*job));
+    if (job == NULL) return PXA_STATUS_RESOURCE_LIMIT;
+    if (!pxa_esp_store_job_decode(job, message->payload.data,
+                                  message->payload.size)) {
+        ESP_LOGW(PXA_ESP_HOST_TAG, "Store install request rejected: invalid payload");
+        free(job);
+        return PXA_STATUS_INVALID_ARGUMENT;
+    }
+    status = pxa_request_begin(runtime, component, message->request_id,
+                               PXA_STORE_INSTALL_SERVICE_ID,
+                               message->opcode, 0);
+    if (status != PXA_STATUS_OK) {
+        ESP_LOGW(PXA_ESP_HOST_TAG, "Store request allocation failed: status=%ld",
+                 (long)status);
+        free(job);
+        return status;
+    }
+    job->component = component;
+    job->request_id = message->request_id;
+    job->separate = message->opcode == PXA_STORE_DOWNLOAD_REQUEST;
+    job->instance_id = g_host.activation.active_instance_id;
+    job->notify = store_install_notify;
+    g_store_install = job;
+    ESP_LOGI(PXA_ESP_HOST_TAG, "Store worker start: internal_free=%u largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (xTaskCreate(pxa_esp_store_worker, "pxa-store-install", 12 * 1024,
+                    job, 3, &job->worker) != pdPASS) {
+        ESP_LOGW(PXA_ESP_HOST_TAG,
+                 "Store worker allocation failed: internal_free=%u largest=%u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        g_store_install = NULL;
+        (void)pxa_request_cancel(runtime, component, message->request_id);
+        free(job);
+        return PXA_STATUS_RESOURCE_LIMIT;
+    }
+    return PXA_STATUS_OK;
+}
+
 static int post_maintenance(pxa_esp_host_command_type_t type) {
     pxa_esp_host_command_t command;
     memset(&command, 0, sizeof(command));
@@ -741,6 +1151,17 @@ static int take_pending_color_scheme(pxa_ui_color_scheme_t *color_scheme) {
     if (pending && color_scheme != NULL)
         *color_scheme = g_host.pending_color_scheme;
     g_host.color_scheme_pending = 0;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    return pending;
+}
+
+static int take_pending_ui_palette(uint32_t rgba[10]) {
+    int pending;
+    portENTER_CRITICAL(&g_process_state_lock);
+    pending = g_host.ui_palette_pending != 0;
+    if (pending) memcpy(rgba, g_host.pending_ui_palette,
+                        sizeof(g_host.pending_ui_palette));
+    g_host.ui_palette_pending = 0;
     portEXIT_CRITICAL(&g_process_state_lock);
     return pending;
 }
@@ -866,7 +1287,8 @@ static pxa_status_t request_runtime_permission_prompt(
         app_identity.size != strlen(g_host.activation.active_identity) ||
         app_identity.size == 0 ||
         memcmp(app_identity.data, g_host.activation.active_identity, app_identity.size) != 0 ||
-        g_host.activation.permission_prompt.active) {
+        (g_host.activation.permission_prompt.active ||
+         (g_store_install != NULL && g_store_install->prompt_id != 0))) {
         return PXA_STATUS_BUSY;
     }
     prompt_id = ++g_host.activation.next_permission_prompt_id;
@@ -880,8 +1302,22 @@ static pxa_status_t request_runtime_permission_prompt(
             : g_host.activation.active_name);
     copy_permission_prompt_text(prompt.permission_name,
                                 sizeof(prompt.permission_name), name,
-                                "未知权限");
+                                pxa_esp_host_locale_is_chinese() ?
+                                    "未知权限" : "Unknown permission");
     copy_permission_prompt_text(prompt.scope, sizeof(prompt.scope), scope, "-");
+    if (pxa_esp_host_locale_is_chinese()) {
+        if (strcmp(prompt.permission_name, "net.client") == 0)
+            snprintf(prompt.permission_name, sizeof(prompt.permission_name),
+                     "网络访问 (net.client)");
+        else if (strcmp(prompt.permission_name, "device.identity") == 0)
+            snprintf(prompt.permission_name, sizeof(prompt.permission_name),
+                     "设备标识 (device.identity)");
+        else if (strcmp(prompt.permission_name, "audio.playback") == 0)
+            snprintf(prompt.permission_name, sizeof(prompt.permission_name),
+                     "音频播放");
+        if (strcmp(prompt.scope, "media") == 0)
+            snprintf(prompt.scope, sizeof(prompt.scope), "媒体音频");
+    }
     g_host.activation.permission_prompt.active = 1;
     g_host.activation.permission_prompt.prompt_id = prompt_id;
     g_host.activation.permission_prompt.component = component;
@@ -1049,11 +1485,23 @@ static const pxa_package_service_capability_t *find_service_capability(
     return NULL;
 }
 
+static const char *activation_service_name(uint16_t service_id) {
+    switch (service_id) {
+        case PXA_WINDOW_SERVICE_ID: return "Window";
+        case PXA_UI_SERVICE_ID: return "UI";
+        case PXA_DEVICE_SERVICE_ID: return "Device";
+        case PXA_STORE_INSTALL_SERVICE_ID: return "Installer";
+        default: return "Service";
+    }
+}
+
 static void log_activation_compatibility(
     const pxa_package_manifest_t *manifest,
     const pxa_package_activation_profile_t *capabilities,
-    const pxa_package_host_profile_t *host) {
+    const pxa_package_host_profile_t *host,
+    char *reason, size_t reason_size) {
     uint16_t component_index;
+    if (reason_size != 0) reason[0] = '\0';
     for (component_index = 0; component_index < manifest->component_count;
          ++component_index) {
         const pxa_package_component_t *component =
@@ -1067,6 +1515,10 @@ static void log_activation_compatibility(
             const pxa_package_service_capability_t *capability =
                 find_service_capability(capabilities, requirement->service);
             if (capability == NULL) {
+                if (reason_size != 0 && reason[0] == '\0')
+                    snprintf(reason, reason_size, "%s(%u) 服务不可用",
+                             activation_service_name(requirement->service),
+                             (unsigned)requirement->service);
                 ESP_LOGE(PXA_ESP_HOST_TAG,
                          "Compatibility: component=%.*s service=%u is absent",
                          (int)component->id.size,
@@ -1079,6 +1531,25 @@ static void log_activation_compatibility(
                 capability->version.minor < requirement->min_version.minor ||
                 capability->version.minor > requirement->max_version.minor ||
                 (requirement->required_features & ~capability->features) != 0) {
+                if (reason_size != 0 && reason[0] == '\0') {
+                    if (capability->version.major != requirement->min_version.major ||
+                        capability->version.minor < requirement->min_version.minor ||
+                        capability->version.minor > requirement->max_version.minor) {
+                        snprintf(reason, reason_size,
+                                 "%s(%u) 需要 %u.%u，设备为 %u.%u",
+                                 activation_service_name(requirement->service),
+                                 (unsigned)requirement->service,
+                                 (unsigned)requirement->min_version.major,
+                                 (unsigned)requirement->min_version.minor,
+                                 (unsigned)capability->version.major,
+                                 (unsigned)capability->version.minor);
+                    } else {
+                        snprintf(reason, reason_size,
+                                 "%s(%u) 缺少所需能力",
+                                 activation_service_name(requirement->service),
+                                 (unsigned)requirement->service);
+                    }
+                }
                 ESP_LOGE(PXA_ESP_HOST_TAG,
                          "Compatibility: component=%.*s service=%u "
                          "requires=%u.%u-%u.%u features=0x%08x%08x "
@@ -1102,6 +1573,9 @@ static void log_activation_compatibility(
             const pxa_package_artifact_t *artifact = NULL;
             if (pxa_package_artifact_select(component, host, &artifact) !=
                 PXA_STATUS_OK) {
+                if (reason_size != 0 && reason[0] == '\0')
+                    snprintf(reason, reason_size, "没有适用于 %.*s 的安装包",
+                             (int)host->target.size, (const char *)host->target.data);
                 ESP_LOGE(PXA_ESP_HOST_TAG,
                          "Compatibility: component=%.*s has no artifact for "
                          "target=%.*s engine=%.*s abi=%.*s",
@@ -1680,7 +2154,15 @@ static pxa_status_t host_window_apply(
     callback = g_window_changed_callback;
     callback_context = g_window_changed_context;
     portEXIT_CRITICAL(&g_window_changed_lock);
-    if (callback != NULL) callback(callback_context, configuration);
+    if (callback != NULL)
+        callback(callback_context, g_host.activation.active_identity, configuration);
+    return PXA_STATUS_OK;
+}
+
+static pxa_status_t host_window_toast(void *context, const char *text,
+                                      uint32_t duration_ms) {
+    (void)context;
+    pxa_esp_ui_shell_post_toast(text, duration_ms);
     return PXA_STATUS_OK;
 }
 
@@ -2037,6 +2519,15 @@ static pxa_status_t reset_runtime(uint16_t max_components) {
     status = pxa_service_register(g_host.activation.runtime, &operations);
     if (status != PXA_STATUS_OK) goto failed;
 
+    memset(&operations, 0, sizeof(operations));
+    operations.struct_size = sizeof(operations);
+    operations.service_id = PXA_STORE_INSTALL_SERVICE_ID;
+    operations.major = PXA_STORE_INSTALL_SERVICE_MAJOR;
+    operations.minor = PXA_STORE_INSTALL_SERVICE_MINOR;
+    operations.control = host_store_install_control;
+    status = pxa_service_register(g_host.activation.runtime, &operations);
+    if (status != PXA_STATUS_OK) goto failed;
+
     if (g_host.engine != NULL) {
         pxa_wamr_engine_set_runtime(g_host.engine, g_host.activation.runtime);
     }
@@ -2164,6 +2655,28 @@ static void stop_active(pxa_stop_reason_t reason) {
     public_state_snapshot(&public_state);
     snprintf(stopped_identity, sizeof(stopped_identity), "%s",
              g_host.activation.active_identity);
+    if (g_store_install != NULL && g_store_install->prompt_id != 0) {
+        pxa_esp_ui_shell_dismiss_permission_prompt(g_store_install->prompt_id);
+        pxa_esp_surface_runtime_modal_leave();
+        g_store_install->prompt_id = 0;
+        g_store_install->approved = 0;
+        xTaskNotifyGive(g_store_install->worker);
+    }
+    if (g_store_install != NULL && g_store_install->separate &&
+        g_store_install->ready) {
+        g_store_install->ready = 0;
+        g_store_install->approved = 0;
+        xTaskNotifyGive(g_store_install->worker);
+    }
+    if (g_store_uninstall.prompt_id != 0) {
+        pxa_esp_ui_shell_dismiss_permission_prompt(g_store_uninstall.prompt_id);
+        pxa_esp_surface_runtime_modal_leave();
+        if (g_host.activation.runtime != NULL)
+            (void)pxa_request_cancel(g_host.activation.runtime,
+                                     g_store_uninstall.component,
+                                     g_store_uninstall.request_id);
+        memset(&g_store_uninstall, 0, sizeof(g_store_uninstall));
+    }
     unpublish_active_state();
     dismiss_runtime_permission_prompt();
     dismiss_unresponsive_prompt();
@@ -2378,6 +2891,9 @@ static int start_verified(const char *identity) {
             services_config.safe_insets[2] = g_host.safe_insets.bottom;
             services_config.safe_insets[3] = g_host.safe_insets.left;
         }
+        services_config.display_shape = g_host.display_shape;
+        memcpy(services_config.corner_radii, g_host.corner_radii,
+               sizeof(services_config.corner_radii));
         portEXIT_CRITICAL(&g_process_state_lock);
     }
     status = pxa_esp_services_initialize(
@@ -2404,6 +2920,17 @@ static int start_verified(const char *identity) {
                                           : services_result.stage,
             status);
     }
+    if (g_host.activation.services.ui != NULL) {
+        pxa_ui_theme_snapshot_t theme = {0};
+        static const uint16_t sizes[PXA_UI_THEME_FONT_COUNT] = {
+            12u, 14u, 16u, 20u, 24u, 28u
+        };
+        theme.generation = g_host.ui_theme_generation;
+        theme.color_scheme = g_host.color_scheme;
+        memcpy(theme.rgba, g_host.ui_theme.rgba, sizeof(theme.rgba));
+        memcpy(theme.typography_px, sizes, sizeof(sizes));
+        (void)pxa_ui_update_theme(g_host.activation.services.ui, &theme);
+    }
     if (!allocate_job_slots(
             g_host.activation.services.job_component_count)) {
         PXA_ESP_START_FAIL("allocate-job-slots", PXA_STATUS_RESOURCE_LIMIT);
@@ -2420,52 +2947,50 @@ static int start_verified(const char *identity) {
     host_profile.memory_model = PXA_MEMORY_WASM32;
     memset(&capabilities, 0, sizeof(capabilities));
     {
-        static const uint16_t service_ids[] = {
-            PXA_CORE_SERVICE_ID, PXA_WINDOW_SERVICE_ID, PXA_UI_SERVICE_ID,
-            PXA_CLOCK_SERVICE_ID, PXA_FS_SERVICE_ID, PXA_STORAGE_SERVICE_ID,
-            PXA_IPC_SERVICE_ID, PXA_SENSOR_SERVICE_ID, PXA_NET_SERVICE_ID,
-            PXA_AUDIO_SERVICE_ID, PXA_PERMISSION_SERVICE_ID,
-            PXA_WORK_SERVICE_ID, PXA_SURFACE_SERVICE_ID,
-            PXA_GAME_RENDER_SERVICE_ID, PXA_LOG_SERVICE_ID,
+#define HOST_SERVICE_VERSION(name) \
+    { PXA_##name##_SERVICE_ID, \
+      { PXA_##name##_SERVICE_MAJOR, PXA_##name##_SERVICE_MINOR }, 0 }
+        static const pxa_package_service_capability_t registered_versions[] = {
+            HOST_SERVICE_VERSION(CORE),
+            HOST_SERVICE_VERSION(WINDOW),
+            HOST_SERVICE_VERSION(UI),
+            { PXA_CLOCK_SERVICE_ID,
+              { PXA_CORE_SERVICE_MAJOR, PXA_CORE_SERVICE_MINOR }, 0 },
+            HOST_SERVICE_VERSION(FS),
+            HOST_SERVICE_VERSION(STORAGE),
+            HOST_SERVICE_VERSION(IPC),
+            HOST_SERVICE_VERSION(SENSOR),
+            HOST_SERVICE_VERSION(NET),
+            HOST_SERVICE_VERSION(AUDIO),
+            HOST_SERVICE_VERSION(PERMISSION),
+            HOST_SERVICE_VERSION(WORK),
+            HOST_SERVICE_VERSION(SURFACE),
+            HOST_SERVICE_VERSION(GAME_RENDER),
+            HOST_SERVICE_VERSION(LOG),
 #ifdef CONFIG_PXA_WASI_LIBC
-            PXA_WASI_SERVICE_ID,
+            HOST_SERVICE_VERSION(WASI),
 #endif
-            PXA_DEVICE_SERVICE_ID,
-            PXA_HOST_SYSTEM_SERVICE_ID,
+            HOST_SERVICE_VERSION(DEVICE),
+            HOST_SERVICE_VERSION(HOST_SYSTEM),
+            HOST_SERVICE_VERSION(STORE_INSTALL),
         };
-        memset(service_capabilities, 0, sizeof(service_capabilities));
+#undef HOST_SERVICE_VERSION
+        memcpy(service_capabilities, registered_versions,
+               sizeof(registered_versions));
         capabilities.core_version.major = PXA_CORE_VERSION_MAJOR;
         capabilities.core_version.minor = PXA_CORE_VERSION_MINOR;
         capabilities.services = service_capabilities;
         capabilities.service_count =
-            (uint16_t)(sizeof(service_ids) / sizeof(service_ids[0]));
+            (uint16_t)(sizeof(registered_versions) /
+                       sizeof(registered_versions[0]));
         for (index = 0; index < capabilities.service_count; ++index) {
-            service_capabilities[index].service = service_ids[index];
-            service_capabilities[index].version.major =
-                PXA_CORE_SERVICE_MAJOR;
-            service_capabilities[index].version.minor =
-                service_ids[index] == PXA_UI_SERVICE_ID
-                    ? PXA_UI_SERVICE_MINOR
-                    : service_ids[index] == PXA_NET_SERVICE_ID
-                    ? PXA_NET_SERVICE_MINOR
-                    : service_ids[index] == PXA_AUDIO_SERVICE_ID
-                          ? PXA_AUDIO_SERVICE_MINOR
-                    : service_ids[index] == PXA_WORK_SERVICE_ID
-                          ? PXA_WORK_SERVICE_MINOR
-                    : service_ids[index] == PXA_SURFACE_SERVICE_ID
-                          ? PXA_SURFACE_SERVICE_MINOR
-                    : service_ids[index] == PXA_GAME_RENDER_SERVICE_ID
-                          ? PXA_GAME_RENDER_SERVICE_MINOR
-                    : service_ids[index] == PXA_LOG_SERVICE_ID
-                          ? PXA_LOG_SERVICE_MINOR
-                          : PXA_CORE_SERVICE_MINOR;
 #ifdef CONFIG_PXA_WASI_LIBC
-            if (service_ids[index] == PXA_WASI_SERVICE_ID) {
+            if (service_capabilities[index].service == PXA_WASI_SERVICE_ID) {
                 service_capabilities[index].features =
                     PXA_WASI_FEATURE_CLOCKS | PXA_WASI_FEATURE_RANDOM;
             }
 #endif
-            if (service_ids[index] == PXA_UI_SERVICE_ID) {
+            if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {
                 service_capabilities[index].features =
                     PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
         PXA_UI_FEATURE_GRID |
@@ -2489,8 +3014,11 @@ static int start_verified(const char *identity) {
             strlen(g_host.activation.active_package_root)},
         &plan);
     if (status != PXA_STATUS_OK) {
-        log_activation_compatibility(manifest, &capabilities, &host_profile);
-        pxa_esp_ui_shell_post_toast("应用与设备不兼容", 1800);
+        char reason[128];
+        log_activation_compatibility(manifest, &capabilities, &host_profile,
+                                     reason, sizeof(reason));
+        pxa_esp_ui_shell_post_toast(
+            reason[0] != '\0' ? reason : "应用与设备不兼容", 5000);
         toast_posted = 1;
         PXA_ESP_START_FAIL("prepare-activation-plan", status);
     }
@@ -2757,7 +3285,18 @@ static void post_controller(const pxa_esp_host_command_t *command) {
 
 static void apply_color_scheme(pxa_ui_color_scheme_t color_scheme) {
     pxa_ui_environment_t environment;
+    if (g_host.color_scheme == color_scheme) return;
     g_host.color_scheme = color_scheme;
+    if (g_host.activation.services.ui != NULL) {
+        pxa_ui_theme_snapshot_t theme;
+        if (pxa_ui_get_theme(g_host.activation.services.ui, &theme) == PXA_STATUS_OK) {
+            theme.color_scheme = color_scheme;
+            theme.generation = ++g_host.ui_theme_generation;
+            if (theme.generation == 0) theme.generation = ++g_host.ui_theme_generation;
+            (void)pxa_ui_update_theme(g_host.activation.services.ui, &theme);
+            drain_active_events();
+        }
+    }
     if (g_host.activation.services.ui == NULL ||
         g_host.activation.ui_component == PXA_COMPONENT_INVALID)
         return;
@@ -2775,9 +3314,33 @@ static void apply_color_scheme(pxa_ui_color_scheme_t color_scheme) {
         drain_active_events();
 }
 
+static void apply_ui_palette(const uint32_t rgba[10]) {
+    if (memcmp(g_host.ui_theme.rgba, rgba,
+               sizeof(g_host.pending_ui_palette)) == 0) return;
+    memcpy(g_host.ui_theme.rgba, rgba, sizeof(g_host.pending_ui_palette));
+    if (g_host.ui_adapter != NULL)
+        (void)pxa_lvgl_ui_set_theme(g_host.ui_adapter, &g_host.ui_theme);
+    if (g_host.activation.services.ui != NULL) {
+        pxa_ui_theme_snapshot_t theme;
+        if (pxa_ui_get_theme(g_host.activation.services.ui, &theme) == PXA_STATUS_OK) {
+            theme.color_scheme = g_host.color_scheme;
+            theme.generation = ++g_host.ui_theme_generation;
+            if (theme.generation == 0) theme.generation = ++g_host.ui_theme_generation;
+            memcpy(theme.rgba, rgba, sizeof(theme.rgba));
+            (void)pxa_ui_update_theme(g_host.activation.services.ui, &theme);
+            drain_active_events();
+        }
+    } else {
+        ++g_host.ui_theme_generation;
+        if (g_host.ui_theme_generation == 0) ++g_host.ui_theme_generation;
+    }
+}
+
 static void apply_window_insets(const pxa_window_insets_t *safe_insets,
                                 const pxa_window_insets_t *system_bar_insets) {
     pxa_ui_environment_t environment;
+    uint32_t display_shape;
+    uint32_t corner_radii[4];
     lv_display_t *display;
     lv_lock();
     display = lv_display_get_default();
@@ -2786,6 +3349,8 @@ static void apply_window_insets(const pxa_window_insets_t *safe_insets,
     if (safe_insets != NULL) g_host.safe_insets = *safe_insets;
     if (system_bar_insets != NULL) g_host.system_bar_insets = *system_bar_insets;
     g_host.window_insets_valid = 1;
+    display_shape = g_host.display_shape;
+    memcpy(corner_radii, g_host.corner_radii, sizeof(corner_radii));
     portEXIT_CRITICAL(&g_process_state_lock);
     if (g_host.activation.services.ui == NULL ||
         g_host.activation.ui_component == PXA_COMPONENT_INVALID ||
@@ -2804,6 +3369,9 @@ static void apply_window_insets(const pxa_window_insets_t *safe_insets,
         environment.safe_insets[2] = safe_insets->bottom;
         environment.safe_insets[3] = safe_insets->left;
     }
+    environment.display_shape = display_shape;
+    memcpy(environment.corner_radii, corner_radii,
+           sizeof(environment.corner_radii));
     (void)pxa_ui_update_environment(g_host.activation.services.ui,
                                     g_host.activation.ui_component,
                                     &environment);
@@ -2975,6 +3543,46 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
                                                 bool granted) {
     pxa_esp_host_permission_prompt_t pending;
     pxa_status_t status;
+    if (g_store_install != NULL && g_store_install->prompt_id == prompt_id) {
+        pxa_esp_ui_shell_dismiss_permission_prompt(prompt_id);
+        pxa_esp_surface_runtime_modal_leave();
+        g_store_install->prompt_id = 0;
+        g_store_install->approved = granted &&
+            g_host.activation.runtime != NULL &&
+            g_store_install->instance_id == g_host.activation.active_instance_id &&
+            pxa_request_commit(g_host.activation.runtime,
+                               g_store_install->component,
+                               g_store_install->request_id) == PXA_STATUS_OK;
+        xTaskNotifyGive(g_store_install->worker);
+        return;
+    }
+    if (g_store_uninstall.prompt_id == prompt_id) {
+        const uint32_t component = g_store_uninstall.component;
+        const uint32_t request_id = g_store_uninstall.request_id;
+        const uint64_t instance_id = g_store_uninstall.instance_id;
+        char identity[PXA_ESP_PACKAGE_ID_BYTES];
+        snprintf(identity, sizeof(identity), "%s", g_store_uninstall.identity);
+        pxa_esp_ui_shell_dismiss_permission_prompt(prompt_id);
+        pxa_esp_surface_runtime_modal_leave();
+        memset(&g_store_uninstall, 0, sizeof(g_store_uninstall));
+        if (g_host.activation.runtime != NULL &&
+            instance_id == g_host.activation.active_instance_id &&
+            pxa_request_is_active(g_host.activation.runtime, component,
+                                  request_id)) {
+            status = PXA_STATUS_DENIED;
+            if (granted) {
+                status = pxa_request_commit(g_host.activation.runtime,
+                                            component, request_id);
+                if (status == PXA_STATUS_OK)
+                    status = pxa_esp_package_store_uninstall(identity) ?
+                             PXA_STATUS_OK : PXA_STATUS_IO_ERROR;
+            }
+            (void)pxa_request_complete(g_host.activation.runtime, component,
+                                       request_id, status, NULL, 0);
+            if (status == PXA_STATUS_OK) pxa_esp_ui_shell_refresh_apps();
+        }
+        return;
+    }
     if (!g_host.activation.permission_prompt.active ||
         g_host.activation.permission_prompt.prompt_id != prompt_id ||
         g_host.activation.services.permission == NULL) {
@@ -2999,6 +3607,112 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
                  (unsigned)prompt_id, (int)status);
     }
     pxa_esp_surface_runtime_modal_leave();
+}
+
+static void handle_store_install_event(pxa_esp_store_job_t *job,
+                                        uint8_t phase, uint64_t downloaded_bytes) {
+    pxa_esp_ui_permission_prompt_t prompt = {0};
+    if (job == NULL || job != g_store_install) return;
+    if (phase == 4u) {
+        uint8_t payload[20];
+        if (g_host.activation.runtime == NULL ||
+            job->instance_id != g_host.activation.active_instance_id ||
+            !pxa_request_is_active(g_host.activation.runtime, job->component,
+                                   job->request_id)) return;
+        for (uint8_t index = 0; index < 4u; ++index)
+            payload[index] = (uint8_t)(job->request_id >> (index * 8u));
+        for (uint8_t index = 0; index < 8u; ++index) {
+            payload[4u + index] = (uint8_t)(downloaded_bytes >> (index * 8u));
+            payload[12u + index] = (uint8_t)(job->size >> (index * 8u));
+        }
+        (void)pxa_event_post_message(
+            g_host.activation.runtime, job->component,
+            PXA_STORE_INSTALL_SERVICE_ID, PXA_STORE_DOWNLOAD_PROGRESS, 0,
+            (pxa_bytes_t){payload, sizeof(payload)}, 0,
+            ((uint64_t)PXA_STORE_INSTALL_SERVICE_ID << 32) |
+                PXA_STORE_DOWNLOAD_PROGRESS);
+        return;
+    }
+    if (phase == 3u) {
+        pxa_esp_store_download_entry_t *entry = store_download_free();
+        bool saved = false;
+        if (g_host.activation.runtime != NULL &&
+            job->instance_id == g_host.activation.active_instance_id &&
+            entry != NULL) {
+            snprintf(entry->filename, sizeof(entry->filename), "%s", job->filename);
+            snprintf(entry->app_id, sizeof(entry->app_id), "%s", job->app_id);
+            snprintf(entry->owner, sizeof(entry->owner), "%s",
+                     g_host.activation.active_identity);
+            saved = store_registry_save();
+        }
+        if (!saved) {
+            if (entry != NULL) {
+                memset(entry, 0, sizeof(*entry));
+                (void)store_registry_save();
+            }
+            char path[160];
+            if (snprintf(path, sizeof(path), "%s/%s/%s", CONFIG_PXA_MOUNT_POINT,
+                         CONFIG_PXA_STATE_ROOT, job->filename) < (int)sizeof(path))
+                (void)unlink(path);
+            job->status = PXA_STATUS_IO_ERROR;
+        }
+        return;
+    }
+    if (phase == 1u) {
+        if (g_host.activation.runtime == NULL ||
+            job->instance_id != g_host.activation.active_instance_id ||
+            !pxa_request_is_active(g_host.activation.runtime, job->component,
+                                   job->request_id) ||
+            g_host.activation.permission_prompt.active) {
+            job->approved = 0;
+            xTaskNotifyGive(job->worker);
+            return;
+        }
+        prompt.prompt_id = ++g_host.activation.next_permission_prompt_id;
+        if (prompt.prompt_id == 0)
+            prompt.prompt_id = ++g_host.activation.next_permission_prompt_id;
+        prompt.is_install = 1u;
+        copy_utf8_c_string(prompt.app_name, sizeof(prompt.app_name),
+                           job->preview.name);
+        const bool chinese = g_host.locale[0] == 'z' && g_host.locale[1] == 'h';
+        snprintf(prompt.permission_name, sizeof(prompt.permission_name),
+                 chinese ? "安装应用 %.36s (%.20s)？" :
+                           "Install app %.36s (%.20s)?",
+                 job->app_id, job->preview.version);
+        const char *requester = strrchr(g_host.activation.active_identity, ':');
+        requester = requester == NULL ? g_host.activation.active_identity
+                                      : requester + 1;
+        snprintf(prompt.scope, sizeof(prompt.scope),
+                 chinese ? "请求方 %.24s；发布者 %.16s…；%u 项权限" :
+                           "Requester %.24s; publisher %.16s...; %u permissions",
+                 requester, job->preview.id, (unsigned)job->preview.permission_count);
+        job->prompt_id = prompt.prompt_id;
+        pxa_esp_surface_runtime_modal_enter();
+        if (!pxa_esp_ui_shell_post_permission_prompt(&prompt)) {
+            job->prompt_id = 0;
+            pxa_esp_surface_runtime_modal_leave();
+            job->approved = 0;
+            xTaskNotifyGive(job->worker);
+        }
+        return;
+    }
+    if (job->prompt_id != 0) {
+        pxa_esp_ui_shell_dismiss_permission_prompt(job->prompt_id);
+        pxa_esp_surface_runtime_modal_leave();
+    }
+    g_store_install = NULL;
+    if (g_host.activation.runtime != NULL &&
+        job->instance_id == g_host.activation.active_instance_id &&
+        pxa_request_is_active(g_host.activation.runtime, job->component,
+                              job->request_id)) {
+        (void)pxa_request_complete(g_host.activation.runtime, job->component,
+                                   job->request_id, job->status,
+                                   job->separate == 1u && job->status == PXA_STATUS_OK ?
+                                       job->filename : NULL,
+                                   job->separate == 1u && job->status == PXA_STATUS_OK ?
+                                       strlen(job->filename) : 0u);
+    }
+    free(job);
 }
 
 static void maintain_scheduler(void) {
@@ -3143,6 +3857,11 @@ static void run(void) {
             apply_color_scheme(color_scheme);
             handled = 1;
         }
+        uint32_t rgba[10];
+        if (take_pending_ui_palette(rgba)) {
+            apply_ui_palette(rgba);
+            handled = 1;
+        }
         if (take_pending_window_insets(&pending_safe_insets,
                                        &pending_system_bar_insets)) {
             apply_window_insets(&pending_safe_insets,
@@ -3214,6 +3933,11 @@ static void run(void) {
                 break;
             case PXA_ESP_HOST_CMD_SYSTEM_EVENT:
                 post_system_event(command.payload.system_event.event);
+                break;
+            case PXA_ESP_HOST_CMD_STORE_INSTALL:
+                handle_store_install_event(command.payload.store_install.job,
+                                           command.payload.store_install.phase,
+                                           command.payload.store_install.downloaded_bytes);
                 break;
             case PXA_ESP_HOST_CMD_TICK:
                 /* The guest measures frame delta from delivery time. A tick
@@ -3463,6 +4187,7 @@ static pxa_status_t prepare_start(void *context, pxa_component_t component,
     memset(&backend, 0, sizeof(backend));
     backend.struct_size = sizeof(backend);
     backend.apply = host_window_apply;
+    backend.show_toast = host_window_toast;
     status = pxa_window_bind(g_host.activation.services.window, component, &backend);
     if (status != PXA_STATUS_OK) return status;
     status = pxa_ui_bind(g_host.activation.services.ui, component, &g_host.ui_backend);
@@ -3557,6 +4282,9 @@ bool pxa_esp_host_initialize(void) {
         ESP_LOGE(PXA_ESP_HOST_TAG, "Package store initialization failed");
         return false;
     }
+    store_registry_load();
+    pxa_esp_store_cleanup_interrupted(store_registry_keep, NULL);
+    (void)store_registry_save();
 
     /* Retained LVGL UI backend. */
     memset(&ui_config, 0, sizeof(ui_config));
@@ -3566,18 +4294,33 @@ bool pxa_esp_host_initialize(void) {
     ui_config.release = esp_ui_free;
     ui_config.execute = esp_lvgl_execute;
     pxa_lvgl_ui_theme_init(&ui_config.theme);
+    g_host.ui_caption_font = load_ui_font(12, pxa_esp_ui_shell_text_font());
+    g_host.ui_label_font = load_ui_font(14, pxa_esp_ui_shell_text_font());
     g_host.ui_body_font = load_ui_font(16, pxa_esp_ui_shell_text_font());
     g_host.ui_title_font = load_ui_font(20, pxa_esp_ui_shell_title_font());
-    ui_config.theme.caption_font = g_host.ui_body_font != NULL
-                                       ? g_host.ui_body_font
+    g_host.ui_headline_font = load_ui_font(24, pxa_esp_ui_shell_title_font());
+    g_host.ui_display_font = load_ui_font(28, pxa_esp_ui_shell_title_font());
+    ui_config.theme.caption_font = g_host.ui_caption_font != NULL
+                                       ? g_host.ui_caption_font
                                        : pxa_esp_ui_shell_text_font();
+    ui_config.theme.label_font = g_host.ui_label_font != NULL
+                                     ? g_host.ui_label_font
+                                     : ui_config.theme.caption_font;
     ui_config.theme.body_font = g_host.ui_body_font != NULL
                                     ? g_host.ui_body_font
                                     : pxa_esp_ui_shell_text_font();
     ui_config.theme.title_font = g_host.ui_title_font != NULL
                                      ? g_host.ui_title_font
                                      : pxa_esp_ui_shell_title_font();
+    ui_config.theme.headline_font = g_host.ui_headline_font != NULL
+                                        ? g_host.ui_headline_font
+                                        : ui_config.theme.title_font;
+    ui_config.theme.display_font = g_host.ui_display_font != NULL
+                                       ? g_host.ui_display_font
+                                       : ui_config.theme.title_font;
     ui_config.theme.icon_font = pxa_esp_ui_shell_icon_font();
+    g_host.ui_theme = ui_config.theme;
+    g_host.ui_theme_generation = 1u;
     ui_config.resolve_asset = pxa_esp_ui_asset_resolve;
     ui_config.release_asset = pxa_esp_ui_asset_release;
     ui_config.event_callback = on_ui_event;
@@ -3808,7 +4551,7 @@ bool pxa_esp_host_active_identity(char *identity, size_t capacity) {
     size_t identity_size;
     if (!g_host.initialized || identity == NULL || capacity == 0) return false;
     public_state_snapshot(&public_state);
-    if (!public_state.package_active) {
+    if (!public_state.package_active || !public_state.main_active) {
         identity[0] = '\0';
         return false;
     }
@@ -3963,6 +4706,16 @@ bool pxa_esp_host_set_color_scheme(pxa_host_color_scheme_t color_scheme) {
     return true;
 }
 
+bool pxa_esp_host_set_ui_palette(const uint32_t rgba[10]) {
+    if (!g_host.initialized || rgba == NULL) return false;
+    portENTER_CRITICAL(&g_process_state_lock);
+    memcpy(g_host.pending_ui_palette, rgba, sizeof(g_host.pending_ui_palette));
+    g_host.ui_palette_pending = 1;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    wake_runtime_thread();
+    return true;
+}
+
 bool pxa_esp_host_set_locale(const char *locale, uint8_t text_direction) {
     size_t size;
     if (!g_host.initialized || locale == NULL || text_direction > 1u) {
@@ -3978,6 +4731,14 @@ bool pxa_esp_host_set_locale(const char *locale, uint8_t text_direction) {
     return true;
 }
 
+bool pxa_esp_host_locale_is_chinese(void) {
+    bool chinese;
+    portENTER_CRITICAL(&g_process_state_lock);
+    chinese = g_host.locale[0] == 'z' && g_host.locale[1] == 'h';
+    portEXIT_CRITICAL(&g_process_state_lock);
+    return chinese;
+}
+
 bool pxa_esp_host_set_window_insets(const pxa_window_insets_t *safe_insets,
                                     const pxa_window_insets_t *system_bar_insets) {
     if (!g_host.initialized ||
@@ -3987,6 +4748,20 @@ bool pxa_esp_host_set_window_insets(const pxa_window_insets_t *safe_insets,
     if (safe_insets != NULL) g_host.pending_safe_insets = *safe_insets;
     if (system_bar_insets != NULL)
         g_host.pending_system_bar_insets = *system_bar_insets;
+    g_host.window_insets_pending = 1;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    wake_runtime_thread();
+    return true;
+}
+
+bool pxa_esp_host_set_display_geometry(uint32_t shape, const uint16_t radii[4]) {
+    if (!g_host.initialized || radii == NULL ||
+        shape > PXA_UI_DISPLAY_SHAPE_CUSTOM)
+        return false;
+    portENTER_CRITICAL(&g_process_state_lock);
+    g_host.display_shape = shape;
+    for (uint8_t index = 0; index < 4; ++index)
+        g_host.corner_radii[index] = radii[index];
     g_host.window_insets_pending = 1;
     portEXIT_CRITICAL(&g_process_state_lock);
     wake_runtime_thread();

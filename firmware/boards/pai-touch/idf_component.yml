@@ -6,3 +6,4 @@ dependencies:
   espressif/button: "^4.1.7"
   espressif/esp_lcd_touch: "^1.2.1"
   espressif/freetype: "^2.14.3~1"
+  espressif/gmf_audio: "^1.0.1~1"

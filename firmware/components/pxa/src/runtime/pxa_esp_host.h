@@ -31,9 +31,12 @@ bool pxa_esp_host_is_active(const char *identity);
 bool pxa_esp_host_captures_volume_keys(void);
 bool pxa_esp_host_post_key(uint16_t key);
 bool pxa_esp_host_set_color_scheme(pxa_host_color_scheme_t color_scheme);
+bool pxa_esp_host_set_ui_palette(const uint32_t rgba[10]);
 bool pxa_esp_host_set_locale(const char *locale, uint8_t text_direction);
+bool pxa_esp_host_locale_is_chinese(void);
 bool pxa_esp_host_set_window_insets(const pxa_window_insets_t *safe_insets,
                                     const pxa_window_insets_t *system_bar_insets);
+bool pxa_esp_host_set_display_geometry(uint32_t shape, const uint16_t radii[4]);
 bool pxa_esp_host_post_controller_state(uint8_t controller, bool connected,
                                         uint32_t buttons);
 bool pxa_esp_host_active_identity(char *identity, size_t capacity);

@@ -75,7 +75,7 @@ public:
     int GetRssi() const;
     int GetChannel() const;
     std::string GetMacAddress() const;
-    bool ScanNetworks(std::vector<WifiNetwork>* networks);
+    bool ScanNetworks(std::vector<WifiNetwork>* networks, bool force_refresh = false);
     bool Connect(const std::string& ssid, const std::string& password);
 
     // ==================== Config AP Mode ====================

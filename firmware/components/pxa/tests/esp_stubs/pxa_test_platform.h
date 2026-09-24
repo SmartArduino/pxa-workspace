@@ -51,6 +51,7 @@ enum { HTTP_EVENT_ON_HEADER, HTTP_EVENT_ON_DATA };
 #define MALLOC_CAP_SPIRAM 1
 #define MALLOC_CAP_8BIT 2
 #define MALLOC_CAP_INTERNAL 4
+#define MALLOC_CAP_DMA 8
 #define ESP_LOGI(...) test_log(__VA_ARGS__)
 #define ESP_LOGW(...) test_log(__VA_ARGS__)
 #define ESP_LOGE(...) test_log(__VA_ARGS__)
@@ -70,6 +71,8 @@ void test_enter(void);
 void test_leave(void);
 void *heap_caps_malloc(size_t, unsigned);
 void *heap_caps_calloc(size_t, size_t, unsigned);
+void *heap_caps_aligned_alloc(size_t, size_t, unsigned);
+void *heap_caps_aligned_calloc(size_t, size_t, size_t, unsigned);
 void heap_caps_free(void *);
 QueueHandle_t xQueueCreateWithCaps(unsigned, size_t, unsigned);
 int xQueueReceive(QueueHandle_t, void *, uint32_t);

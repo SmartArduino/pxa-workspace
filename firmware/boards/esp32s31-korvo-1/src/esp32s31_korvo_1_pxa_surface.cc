@@ -23,7 +23,13 @@ namespace {
 
 constexpr char kTag[] = "KorvoPxa";
 constexpr uint32_t kPresenterStack = 12288;
-constexpr UBaseType_t kPresenterPriority = 3;
+/* Above the PXA runtime task, which shares core 1. At equal priority the two
+ * round-robin every tick, so the Guest's frame building time-sliced the raster
+ * it had already queued and inflated the measured raster time several fold.
+ * The Guest still runs: the presenter only has work once a frame is pending,
+ * and it produced more frames than the rasterizer consumed. Pai Touch has
+ * used priority 4 for the same reason since its presenter was written. */
+constexpr UBaseType_t kPresenterPriority = 4;
 constexpr int32_t kLockTimeoutMs = 100;
 constexpr uint32_t kFrameDoneTimeoutMs = 100;
 constexpr size_t kFrameBytes =
@@ -64,6 +70,8 @@ bool g_direct_active = false;
 DirectScanoutTransitionCallback g_transition_callback = nullptr;
 void* g_transition_context = nullptr;
 uint64_t g_last_direct_frame_id = 0;
+/* The panel frame buffer the viewer currently sees, for capture. */
+const uint8_t* g_direct_displayed_buffer = nullptr;
 lv_area_t g_last_present_area = {};
 bool g_has_last_present_area = false;
 
@@ -634,6 +642,7 @@ bool PresentDirectFrame(const pxa_esp_surface_frame_t& frame) {
     g_direct_pending_input_timestamp_us = frame.input_timestamp_us;
     g_direct_submission_pending = true;
     g_direct_buffer_index = (g_direct_buffer_index + 1U) % 3U;
+    g_direct_displayed_buffer = static_cast<const uint8_t*>(target);
 
     const uint32_t compose_us =
         static_cast<uint32_t>(compose_finished_us - compose_started_us);

@@ -31,6 +31,7 @@
 #include <pxa/pxa_host.h>
 #include <pxsys/reference_lvgl.h>
 #include <pxsys/standard_system.h>
+#include <pxsys/task_manager.h>
 #include <wifi_manager.h>
 
 #include "parallel_sw_rotation_flush.h"
@@ -760,8 +761,10 @@ bool PaiTouchHardware::CancelInjectedPointer() {
 bool PaiTouchHardware::RouteInjectedKey(pxadb::TestControlKey key) {
     switch (key) {
         case pxadb::TestControlKey::kBack:
-        case pxadb::TestControlKey::kHome:
             NavigateBack();
+            return true;
+        case pxadb::TestControlKey::kHome:
+            NavigateHome();
             return true;
         case pxadb::TestControlKey::kVolumeUp:
             SetVolume(std::min<int>(100, volume() + 10));
@@ -956,6 +959,26 @@ void PaiTouchHardware::OnLockChanged(bool locked) {
 }
 
 void PaiTouchHardware::NavigateBack() {
+    if (!screen_enabled_.load()) {
+        SetScreenEnabled(true);
+        return;
+    }
+    if (reference_ui_ != nullptr &&
+        pxsys_reference_lvgl_is_locked(reference_ui_))
+        return;
+    lv_lock();
+    lv_async_call([](void* context) {
+        auto* self = static_cast<PaiTouchHardware*>(context);
+        if (self->system_ != nullptr) {
+            pxsys_back_result_t result;
+            (void)pxsys_task_manager_back(
+                pxsys_standard_system_tasks(self->system_), &result);
+        }
+    }, this);
+    lv_unlock();
+}
+
+void PaiTouchHardware::NavigateHome() {
     if (!screen_enabled_.load()) {
         SetScreenEnabled(true);
         return;

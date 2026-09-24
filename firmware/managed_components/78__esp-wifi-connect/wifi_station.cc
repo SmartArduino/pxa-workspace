@@ -54,27 +54,64 @@ void WifiStation::AddAuth(const std::string &&ssid, const std::string &&password
     ssid_manager.AddSsid(ssid, password);
 }
 
-bool WifiStation::ScanNetworks(std::vector<WifiNetwork>* networks) {
+static void collect_visible_networks(const wifi_ap_record_t* records,
+                                     size_t count,
+                                     std::vector<WifiNetwork>* networks) {
+    networks->clear();
+    for (size_t index = 0; index < count; ++index) {
+        const wifi_ap_record_t& record = records[index];
+        const char* ssid = reinterpret_cast<const char*>(record.ssid);
+        if (ssid[0] == '\0') continue;
+        const auto existing = std::find_if(
+            networks->begin(), networks->end(),
+            [ssid](const WifiNetwork& network) { return network.ssid == ssid; });
+        if (existing == networks->end())
+            networks->push_back({ssid, record.rssi, record.authmode});
+    }
+}
+
+bool WifiStation::ScanNetworks(std::vector<WifiNetwork>* networks, bool force_refresh) {
     if (networks == nullptr) return false;
     networks->clear();
     {
         std::lock_guard<std::mutex> lock(manual_scan_mutex_);
+        if (!force_refresh && !cached_scan_results_.empty() && cached_scan_at_us_ > 0 &&
+            esp_timer_get_time() - cached_scan_at_us_ < 15 * 1000 * 1000) {
+            *networks = cached_scan_results_;
+            return true;
+        }
         manual_scan_results_.clear();
         manual_scan_pending_ = true;
     }
     xEventGroupClearBits(event_group_, WIFI_EVENT_SCAN_DONE_BIT);
-    esp_wifi_scan_stop();
-    const esp_err_t result = esp_wifi_scan_start(nullptr, true);
-    if (result != ESP_OK) {
+    const esp_err_t result = esp_wifi_scan_start(nullptr, false);
+    if (result != ESP_OK && result != ESP_ERR_WIFI_STATE) {
+        ESP_LOGW(TAG, "Manual scan failed: %s", esp_err_to_name(result));
         std::lock_guard<std::mutex> lock(manual_scan_mutex_);
         manual_scan_pending_ = false;
         return false;
     }
-    (void)xEventGroupWaitBits(event_group_, WIFI_EVENT_SCAN_DONE_BIT,
-                              pdTRUE, pdFALSE, pdMS_TO_TICKS(1000));
+    if (result == ESP_ERR_WIFI_STATE)
+        ESP_LOGI(TAG, "Waiting for an ongoing WiFi scan");
+    const EventBits_t bits = xEventGroupWaitBits(
+        event_group_, WIFI_EVENT_SCAN_DONE_BIT, pdTRUE, pdFALSE,
+        pdMS_TO_TICKS(15000));
+    if ((bits & WIFI_EVENT_SCAN_DONE_BIT) == 0) {
+        ESP_LOGW(TAG, "Manual scan timed out");
+        std::lock_guard<std::mutex> lock(manual_scan_mutex_);
+        manual_scan_pending_ = false;
+        if (!cached_scan_results_.empty() && cached_scan_at_us_ > 0 &&
+            esp_timer_get_time() - cached_scan_at_us_ < 5 * 60 * 1000 * 1000) {
+            *networks = cached_scan_results_;
+            return true;
+        }
+        return false;
+    }
+    HandleManualScanResult();
     std::lock_guard<std::mutex> lock(manual_scan_mutex_);
     *networks = manual_scan_results_;
     manual_scan_pending_ = false;
+    ESP_LOGI(TAG, "Manual scan found %u networks", (unsigned)networks->size());
     return true;
 }
 
@@ -217,6 +254,13 @@ void WifiStation::HandleScanResult() {
     std::sort(ap_records, ap_records + ap_num, [](const wifi_ap_record_t& a, const wifi_ap_record_t& b) {
         return a.rssi > b.rssi;
     });
+    {
+        std::lock_guard<std::mutex> lock(manual_scan_mutex_);
+        collect_visible_networks(ap_records, ap_num, &cached_scan_results_);
+        cached_scan_at_us_ = esp_timer_get_time();
+        ESP_LOGI(TAG, "Background scan found %u networks",
+                 (unsigned)cached_scan_results_.size());
+    }
 
     auto& ssid_manager = SsidManager::GetInstance();
     auto ssid_list = ssid_manager.GetSsidList();
@@ -264,16 +308,9 @@ void WifiStation::HandleManualScanResult() {
                   return a.rssi > b.rssi;
               });
     std::lock_guard<std::mutex> lock(manual_scan_mutex_);
-    manual_scan_results_.clear();
-    for (const wifi_ap_record_t& record : records) {
-        const char* ssid = reinterpret_cast<const char*>(record.ssid);
-        if (ssid[0] == '\0') continue;
-        const auto existing = std::find_if(
-            manual_scan_results_.begin(), manual_scan_results_.end(),
-            [ssid](const WifiNetwork& network) { return network.ssid == ssid; });
-        if (existing == manual_scan_results_.end())
-            manual_scan_results_.push_back({ssid, record.rssi, record.authmode});
-    }
+    collect_visible_networks(records.data(), ap_num, &manual_scan_results_);
+    cached_scan_results_ = manual_scan_results_;
+    cached_scan_at_us_ = esp_timer_get_time();
 }
 
 void WifiStation::StartConnect() {
@@ -389,7 +426,6 @@ void WifiStation::WifiEventHandler(void* arg, esp_event_base_t event_base, int32
             manual_scan = this_->manual_scan_pending_;
         }
         if (manual_scan) {
-            this_->HandleManualScanResult();
             xEventGroupSetBits(this_->event_group_, WIFI_EVENT_SCAN_DONE_BIT);
             return;
         }

@@ -201,14 +201,14 @@ int WifiManager::GetChannel() const {
     return station_->GetChannel();
 }
 
-bool WifiManager::ScanNetworks(std::vector<WifiNetwork>* networks) {
+bool WifiManager::ScanNetworks(std::vector<WifiNetwork>* networks, bool force_refresh) {
     WifiStation* station = nullptr;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!initialized_ || !station_active_ || !station_) return false;
         station = station_.get();
     }
-    return station->ScanNetworks(networks);
+    return station->ScanNetworks(networks, force_refresh);
 }
 
 bool WifiManager::Connect(const std::string& ssid, const std::string& password) {

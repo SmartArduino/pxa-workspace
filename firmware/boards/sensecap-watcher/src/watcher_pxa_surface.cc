@@ -380,6 +380,11 @@ bool Install(lv_display_t* display) {
         return false;
     }
     g_display = display;
+    // The compositor implements fast native and 2x RGB565 paths. The round
+    // panel remains native by default, while a Guest can explicitly request 2x.
+    (void)pxa_esp_game_render_set_scale_profile(
+        PXA_GAME_RENDER_SCALE_MASK_1X | PXA_GAME_RENDER_SCALE_MASK_2X,
+        PXA_GAME_RENDER_SCALE_1X);
     pxa_esp_surface_set_frame_ready_callback(FrameReady, nullptr);
     // A Surface may already exist when the board installs the presenter;
     // repaint once so its first frame is composed even without a new submit.

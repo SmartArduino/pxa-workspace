@@ -184,6 +184,13 @@ menu "PXA Development Apps"
             help
                 Logical regular-file byte quota for one signed PXA App identity.
 
+        config PXA_STORE_ORIGIN
+            string "Trusted HTTPS origin for Host-managed App Store downloads"
+            default "https://app.doit.am"
+            help
+                Host only downloads signed PXA containers from this origin.
+                Keep it aligned with the Store App catalog origin.
+
         config PXA_PRIVATE_FS_MAX_OPEN_HANDLES
             int "Per-App private FS open Handle limit"
             range 1 32

@@ -32,6 +32,7 @@ typedef enum {
     PXA_ESP_HOST_CMD_STOP,
     PXA_ESP_HOST_CMD_SYSTEM_COMPLETE,
     PXA_ESP_HOST_CMD_SYSTEM_EVENT,
+    PXA_ESP_HOST_CMD_STORE_INSTALL,
 } pxa_esp_host_command_type_t;
 
 typedef struct {
@@ -78,6 +79,12 @@ typedef struct {
 } pxa_host_system_event_command_t;
 
 typedef struct {
+    void *job;
+    uint8_t phase;
+    uint64_t downloaded_bytes;
+} pxa_host_store_install_command_t;
+
+typedef struct {
     uint64_t instance_id;
 } pxa_host_instance_command_t;
 
@@ -108,6 +115,7 @@ typedef union {
     pxa_host_permission_set_command_t permission_set;
     pxa_host_system_complete_command_t system_complete;
     pxa_host_system_event_command_t system_event;
+    pxa_host_store_install_command_t store_install;
 } pxa_esp_host_command_payload_t;
 
 typedef struct {

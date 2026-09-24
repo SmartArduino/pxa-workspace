@@ -48,7 +48,7 @@ public:
     WifiStation& operator=(const WifiStation&) = delete;
 
     void AddAuth(const std::string &&ssid, const std::string &&password);
-    bool ScanNetworks(std::vector<WifiNetwork>* networks);
+    bool ScanNetworks(std::vector<WifiNetwork>* networks, bool force_refresh = false);
     bool Connect(const std::string& ssid, const std::string& password);
     void Start();
     void Stop();
@@ -89,6 +89,8 @@ private:
     std::function<void()> on_scan_begin_;
     std::vector<WifiApRecord> connect_queue_;
     std::vector<WifiNetwork> manual_scan_results_;
+    std::vector<WifiNetwork> cached_scan_results_;
+    int64_t cached_scan_at_us_ = 0;
     std::mutex manual_scan_mutex_;
     bool manual_scan_pending_ = false;
     bool was_connected_ = false;  // Track if we were connected before disconnection

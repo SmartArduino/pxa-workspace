@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
+#include <vector>
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -14,6 +16,8 @@
 #include <esp_littlefs.h>
 #include <esp_log.h>
 #include <esp_lvgl_port.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <pxa/pxa_host.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/version.h>
@@ -36,6 +40,7 @@ pxsys_lvgl_renderer_t* g_renderer;
 pxsys_esp_pxa_bridge_t* g_bridge;
 pxsys_reference_lvgl_t* g_reference_ui;
 lv_obj_t* g_reference_ui_viewport;
+bool g_display_observer_registered;
 lv_font_t* g_typography_fonts[PXSYS_TYPOGRAPHY_ROLE_COUNT];
 uint32_t g_display_width = 0;
 uint32_t g_display_height = 0;
@@ -186,17 +191,55 @@ bool DeveloperSet(void* context, pxsys_reference_performance_option_t option,
            board->performance_set(board->context, option, enabled);
 }
 
+std::mutex g_wifi_scan_mutex;
+std::vector<WifiNetwork> g_wifi_scan_results;
+bool g_wifi_scan_running = false;
+bool g_wifi_scan_again = false;
+bool g_wifi_scan_failed = false;
+
+void WifiScanTask(void*) {
+    for (;;) {
+        std::vector<WifiNetwork> found;
+        const bool success = WifiManager::GetInstance().ScanNetworks(&found, true);
+        std::lock_guard<std::mutex> lock(g_wifi_scan_mutex);
+        if (g_wifi_scan_again) {
+            g_wifi_scan_again = false;
+            continue;
+        }
+        g_wifi_scan_results = std::move(found);
+        g_wifi_scan_failed = !success;
+        g_wifi_scan_running = false;
+        break;
+    }
+    vTaskDelete(nullptr);
+}
+
+void StartWifiScan(void*) {
+    std::lock_guard<std::mutex> lock(g_wifi_scan_mutex);
+    if (g_wifi_scan_running) {
+        g_wifi_scan_again = true;
+        return;
+    }
+    g_wifi_scan_running = true;
+    g_wifi_scan_results.clear();
+    if (xTaskCreate(WifiScanTask, "wifi_scan_ui", 6144, nullptr, 4, nullptr) != pdPASS) {
+        g_wifi_scan_running = false;
+        g_wifi_scan_failed = true;
+    }
+}
+
 size_t ScanWifi(void*, pxsys_reference_wifi_network_t* networks,
                 size_t capacity) {
+    std::lock_guard<std::mutex> lock(g_wifi_scan_mutex);
+    if (g_wifi_scan_running) return PXSYS_REFERENCE_WIFI_SCANNING;
+    if (g_wifi_scan_failed) return PXSYS_REFERENCE_WIFI_SCAN_FAILED;
     if (networks == nullptr || capacity == 0) return 0;
-    std::vector<WifiNetwork> found;
-    if (!WifiManager::GetInstance().ScanNetworks(&found)) return 0;
-    const size_t count = found.size() < capacity ? found.size() : capacity;
+    const size_t count = g_wifi_scan_results.size() < capacity ? g_wifi_scan_results.size() : capacity;
     for (size_t index = 0; index < count; ++index) {
         std::snprintf(networks[index].ssid, sizeof(networks[index].ssid), "%s",
-                      found[index].ssid.c_str());
-        networks[index].rssi = found[index].rssi;
-        networks[index].secured = found[index].authmode != WIFI_AUTH_OPEN;
+                      g_wifi_scan_results[index].ssid.c_str());
+        networks[index].rssi = g_wifi_scan_results[index].rssi;
+        networks[index].secured = g_wifi_scan_results[index].authmode != WIFI_AUTH_OPEN;
     }
     return count;
 }
@@ -520,6 +563,40 @@ bool ManageFile(void*, const char* path,
 }
 #endif  // CONFIG_PXSYS_REFERENCE_UI_BUILTIN_SETTINGS
 
+void PublishDisplayProfile(void*, const pxsys_display_profile_t* display) {
+    if (display == nullptr) return;
+    g_display_width = display->width;
+    g_display_height = display->height;
+    pxsys_reference_layout_t layout;
+    pxa_window_insets_t safe = {};
+    pxa_window_insets_t bars = {};
+    safe.top = display->safe_insets.top;
+    safe.right = display->safe_insets.right;
+    safe.bottom = display->safe_insets.bottom;
+    safe.left = display->safe_insets.left;
+    if (pxsys_reference_layout_compute(display, &layout) == PXSYS_STATUS_OK) {
+        bars.top = layout.status_bar.y + layout.status_bar.height;
+#if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
+#if CONFIG_PXSYS_REFERENCE_UI_GESTURE_HANDLE
+        bars.bottom =
+            pxsys_reference_layout_gesture_strip_height(layout.size_class);
+#endif
+        bars.left = pxsys_reference_layout_back_gesture_width();
+#else
+        bars.bottom = display->height - layout.navigation_bar.y;
+#endif
+    }
+    (void)pxa_host_set_window_insets(&safe, &bars);
+    const uint16_t radii[4] = {
+        display->corner_radii.top_left,
+        display->corner_radii.top_right,
+        display->corner_radii.bottom_right,
+        display->corner_radii.bottom_left,
+    };
+    (void)pxa_host_set_display_geometry(static_cast<uint32_t>(display->shape),
+                                         radii);
+}
+
 bool CreateSystem(const pxa_board_port_t* board,
                   const pxa_product_profile_t* profile) {
     pxsys_allocator_t allocator = {};
@@ -655,6 +732,7 @@ bool CreateSystem(const pxa_board_port_t* board,
     ui_config.performance_get = DeveloperGet;
     ui_config.performance_set = DeveloperSet;
     ui_config.wifi_scan = ScanWifi;
+    ui_config.wifi_scan_start = StartWifiScan;
     ui_config.wifi_connect = ConnectWifi;
     status = pxsys_reference_lvgl_create(&ui_config, &g_reference_ui);
     if (status == PXSYS_STATUS_OK)
@@ -664,28 +742,12 @@ bool CreateSystem(const pxa_board_port_t* board,
         return false;
     }
 
-    pxsys_reference_layout_t layout;
-    pxa_window_insets_t safe = {};
-    pxa_window_insets_t bars = {};
-    safe.top = system_config.initial_display.safe_insets.top;
-    safe.right = system_config.initial_display.safe_insets.right;
-    safe.bottom = system_config.initial_display.safe_insets.bottom;
-    safe.left = system_config.initial_display.safe_insets.left;
-    if (pxsys_reference_layout_compute(&system_config.initial_display, &layout) ==
-        PXSYS_STATUS_OK) {
-        bars.top = layout.status_bar.y + layout.status_bar.height;
-#if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
-        /* Gesture mode reserves an invisible Home strip at the bottom and a
-         * Back strip at the left edge. Report both so fullscreen applications
-         * keep their controls out of the system gesture zones. */
-        bars.bottom =
-            pxsys_reference_layout_gesture_strip_height(layout.size_class);
-        bars.left = pxsys_reference_layout_back_gesture_width();
-#else
-        bars.bottom = system_config.initial_display.height - layout.navigation_bar.y;
-#endif
-    }
-    (void)pxa_host_set_window_insets(&safe, &bars);
+    status = pxsys_display_service_subscribe(
+        pxsys_standard_system_display(g_system), nullptr,
+        PublishDisplayProfile);
+    if (status != PXSYS_STATUS_OK) return false;
+    g_display_observer_registered = true;
+    PublishDisplayProfile(nullptr, &system_config.initial_display);
     if (board->system_ready != nullptr)
         board->system_ready(board->context, g_system, g_reference_ui);
     return true;
@@ -734,6 +796,12 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
 }
 
 extern "C" void pxa_integration_stop(void) {
+    if (g_display_observer_registered && g_system != nullptr) {
+        (void)pxsys_display_service_unsubscribe(
+            pxsys_standard_system_display(g_system), nullptr,
+            PublishDisplayProfile);
+        g_display_observer_registered = false;
+    }
     if (g_reference_ui != nullptr) {
         (void)pxsys_reference_lvgl_destroy(g_reference_ui);
         g_reference_ui = nullptr;

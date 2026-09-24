@@ -27,3 +27,7 @@ has four calibrated ADC keys on GPIO42: MODE returns to the launcher, SET
 starts Wi-Fi provisioning, and VOL-/VOL+ control the active app or system
 volume. The LCD subboard has no routed backlight PWM, so brightness is
 intentionally reported as unsupported.
+
+For on-device Wi-Fi setup, open **Settings → Wi-Fi**, select a scanned
+network, and enter its password using the on-screen keyboard. Use **Scan again**
+to refresh the list; the SET key remains an alternative provisioning method.
