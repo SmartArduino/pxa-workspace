@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage: tools/app.sh build <app-id> [--board <board>] [--target <target>[,<target>...]]
-                           [--source-root <root>] [--output <dir>]
+                           [--source-root <root>] [--output <dir>] [--aot-only]
 
 Build a signed .pxa without configuring firmware. Without --source-root, the
 App is resolved from local/apps.toml, which is intentionally ignored by Git.
@@ -13,7 +13,7 @@ Targets (comma separated, or 'all'):
   esp32s3    Xtensa ESP32-S3 AOT            artifacts/main.esp32-s3.aot
   esp32s31   RISC-V32 ILP32F ESP32-S31 AOT  artifacts/main.esp32-s31.aot
   simulator  x86_64 AOT                     artifacts/main.linux-x86_64.aot
-  wasm       WebAssembly interpreter build  artifacts/main.wasm
+  wasm       Portable WASM-only Package       artifacts/main.wasm
 
 Aliases: xtensa -> esp32s3; riscv32, riscv32-ilp32f -> esp32s31;
          x86, x86_64, linux-x86_64 -> simulator.
@@ -23,6 +23,9 @@ The first AOT target signs the package and names the primary artifact; the
 remaining AOT targets are built into the same package as extra architecture
 artifacts. The wasm artifact is included whenever the App declares artifact
 mode "both" (the default) or "wasm" in package.json.
+
+--aot-only omits the default WASM fallback in AOT packages. Explicitly
+declared WASM-only Components remain included.
 
 Default target: the board's own target (pai-touch -> esp32s3,
 esp32s31-korvo-1 -> esp32s31).
@@ -41,12 +44,14 @@ board="${PXA_BOARD:-pai-touch}"
 target_spec=""
 source_root="${PXA_APP_SOURCE_ROOT:-}"
 output_root=""
+aot_only=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --board) board="$2"; shift 2 ;;
     --target) target_spec="$2"; shift 2 ;;
     --source-root) source_root="$2"; shift 2 ;;
     --output) output_root="$2"; shift 2 ;;
+    --aot-only) aot_only=1; shift ;;
     *) usage >&2; exit 2 ;;
   esac
 done
@@ -150,8 +155,13 @@ if [[ "$requested_wasm" -eq 1 && ${#targets[@]} -gt 1 ]]; then
   echo "Building architectures: wasm, ${targets[*]}" >&2
 fi
 if [[ "$target_spec" =~ ^[[:space:]]*wasm[[:space:]]*$ ]]; then
-  echo "wasm is included with an AOT target; signing with board default '$primary_target'." >&2
-  echo "A wasm-only package requires \"artifact\": \"wasm\" in package.json." >&2
+  if [[ "$aot_only" -eq 1 ]]; then
+    echo "--aot-only cannot be used with --target wasm." >&2
+    exit 2
+  fi
+  export PXA_PACKAGE_ARTIFACT_MODE=wasm
+elif [[ "$aot_only" -eq 1 ]]; then
+  export PXA_PACKAGE_ARTIFACT_MODE=aot
 fi
 
 if [[ ${#targets[@]} -eq 1 ]]; then
@@ -174,7 +184,7 @@ else
     PXA_PACKAGE_OUTPUT_ROOT="$extra_root" \
     PXA_CONTAINER_OUTPUT="$work_dir/$app_id-$target.pxa" \
     PXA_PROVENANCE_OUTPUT="$work_dir/$app_id-$target.provenance.json" \
-    "$script_dir/pxa/package_app.sh" "$app_id" "$extra_output" "$board"
+    "$script_dir/pxa/package_app.sh" "$app_id" "$extra_root" "$board"
     for artifact in "$extra_output"/artifacts/*.aot; do
       [[ -f "$artifact" ]] || continue
       cp "$artifact" "$extra_aot_dir/"
