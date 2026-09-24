@@ -16,6 +16,7 @@
 #include <esp_littlefs.h>
 #include <esp_log.h>
 #include <esp_lvgl_port.h>
+#include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <pxa/pxa_host.h>
@@ -247,6 +248,18 @@ size_t ScanWifi(void*, pxsys_reference_wifi_network_t* networks,
 bool ConnectWifi(void*, const char* ssid, const char* password) {
     return ssid != nullptr && WifiManager::GetInstance().Connect(
         ssid, password != nullptr ? password : "");
+}
+
+bool CurrentWifi(void*, char* ssid, size_t capacity) {
+    wifi_ap_record_t access_point = {};
+    if (ssid == nullptr || capacity == 0) return false;
+    ssid[0] = '\0';
+    if (!WifiManager::GetInstance().IsConnected() ||
+        esp_wifi_sta_get_ap_info(&access_point) != ESP_OK)
+        return false;
+    std::snprintf(ssid, capacity, "%.*s", 32,
+                  reinterpret_cast<const char*>(access_point.ssid));
+    return ssid[0] != '\0';
 }
 
 bool MountPxaStorage() {
@@ -734,6 +747,7 @@ bool CreateSystem(const pxa_board_port_t* board,
     ui_config.wifi_scan = ScanWifi;
     ui_config.wifi_scan_start = StartWifiScan;
     ui_config.wifi_connect = ConnectWifi;
+    ui_config.wifi_current = CurrentWifi;
     status = pxsys_reference_lvgl_create(&ui_config, &g_reference_ui);
     if (status == PXSYS_STATUS_OK)
         status = pxsys_reference_lvgl_start(g_reference_ui);
