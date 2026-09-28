@@ -1006,7 +1006,7 @@ void SensecapWatcherHardware::ShowInitialFrame() {
         lv_unlock();
         lvgl_port_unlock();
     }
-    SetBrightness(kDefaultBrightness);
+    SetBrightness(brightness());
 }
 
 void SensecapWatcherHardware::ScheduleStatusUpdate() {
@@ -1160,7 +1160,8 @@ void SensecapWatcherHardware::OnLockChanged(bool locked) {
 
 void SensecapWatcherHardware::PowerOff() {
     ESP_LOGI(kTag, "Releasing the power latch");
-    SetBrightness(0);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL, 0);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL);
     io_expander_.SetOutputs(WATCHER_IO_PWR_SYSTEM, false);
     vTaskDelay(pdMS_TO_TICKS(1000));
     // With USB attached the rails stay up; restart instead of hanging dark.

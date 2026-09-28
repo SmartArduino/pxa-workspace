@@ -36,6 +36,18 @@
 
 namespace {
 constexpr char kTag[] = "pxa_integration";
+constexpr char kPreferencesNamespace[] = "pxa_user";
+
+struct UserPreferences {
+    bool has_scheme = false;
+    bool has_palette = false;
+    bool has_volume = false;
+    bool has_brightness = false;
+    uint8_t scheme = 0;
+    uint8_t palette = 0;
+    uint8_t volume = 0;
+    uint8_t brightness = 0;
+};
 
 pxsys_standard_system_t* g_system;
 pxsys_lvgl_renderer_t* g_renderer;
@@ -46,6 +58,114 @@ bool g_display_observer_registered;
 lv_font_t* g_typography_fonts[PXSYS_TYPOGRAPHY_ROLE_COUNT];
 uint32_t g_display_width = 0;
 uint32_t g_display_height = 0;
+UserPreferences g_preferences;
+bool g_theme_observer_registered = false;
+bool g_status_observer_registered = false;
+bool g_theme_observer_seen = false;
+bool g_status_observer_seen = false;
+uint8_t g_observed_volume = 0;
+uint8_t g_observed_brightness = 0;
+
+void LoadUserPreferences() {
+    g_preferences = {};
+    nvs_handle_t handle;
+    if (nvs_open(kPreferencesNamespace, NVS_READONLY, &handle) != ESP_OK)
+        return;
+    g_preferences.has_scheme =
+        nvs_get_u8(handle, "scheme", &g_preferences.scheme) == ESP_OK &&
+        g_preferences.scheme <= PXSYS_COLOR_SCHEME_DARK;
+    g_preferences.has_palette =
+        nvs_get_u8(handle, "palette", &g_preferences.palette) == ESP_OK &&
+        g_preferences.palette < PXSYS_THEME_PALETTE_COUNT;
+    g_preferences.has_volume =
+        nvs_get_u8(handle, "volume", &g_preferences.volume) == ESP_OK &&
+        g_preferences.volume <= 100;
+    g_preferences.has_brightness =
+        nvs_get_u8(handle, "bright", &g_preferences.brightness) == ESP_OK &&
+        g_preferences.brightness >= 2 && g_preferences.brightness <= 100;
+    nvs_close(handle);
+}
+
+void SaveTheme(void*, const pxsys_theme_snapshot_t* theme) {
+    if (theme == nullptr || !g_theme_observer_seen) {
+        g_theme_observer_seen = true;
+        return;
+    }
+    uint8_t palette = PXSYS_THEME_PALETTE_BLUE;
+    if (theme->theme_id_size != 0) {
+        bool found = false;
+        for (uint8_t index = PXSYS_THEME_PALETTE_TEAL;
+             index < PXSYS_THEME_PALETTE_COUNT; ++index) {
+            const char* name = pxsys_theme_palette_name(
+                static_cast<pxsys_theme_palette_t>(index));
+            if (theme->theme_id_size == std::strlen(name) &&
+                std::memcmp(theme->theme_id, name, theme->theme_id_size) == 0) {
+                palette = index;
+                found = true;
+                break;
+            }
+        }
+        if (!found) return;
+    }
+    const uint8_t scheme = static_cast<uint8_t>(theme->effective_scheme);
+    if (g_preferences.has_scheme && g_preferences.has_palette &&
+        g_preferences.scheme == scheme && g_preferences.palette == palette)
+        return;
+    nvs_handle_t handle;
+    if (nvs_open(kPreferencesNamespace, NVS_READWRITE, &handle) != ESP_OK)
+        return;
+    esp_err_t result = nvs_set_u8(handle, "scheme", scheme);
+    if (result == ESP_OK) result = nvs_set_u8(handle, "palette", palette);
+    if (result == ESP_OK) result = nvs_commit(handle);
+    nvs_close(handle);
+    if (result == ESP_OK) {
+        g_preferences.has_scheme = g_preferences.has_palette = true;
+        g_preferences.scheme = scheme;
+        g_preferences.palette = palette;
+    } else {
+        ESP_LOGW(kTag, "Could not save theme: %s", esp_err_to_name(result));
+    }
+}
+
+void SaveLevels(void*, const pxsys_system_status_snapshot_t* status) {
+    if (status == nullptr) return;
+    if (!g_status_observer_seen) {
+        g_status_observer_seen = true;
+        g_observed_volume = status->volume_percent;
+        g_observed_brightness = status->brightness_percent;
+        return;
+    }
+    const bool volume_changed =
+        status->volume_supported && status->volume_percent != g_observed_volume;
+    const bool brightness_changed =
+        status->brightness_supported && status->brightness_percent >= 2 &&
+        status->brightness_percent != g_observed_brightness;
+    g_observed_volume = status->volume_percent;
+    g_observed_brightness = status->brightness_percent;
+    if (!volume_changed && !brightness_changed) return;
+    nvs_handle_t handle;
+    if (nvs_open(kPreferencesNamespace, NVS_READWRITE, &handle) != ESP_OK)
+        return;
+    esp_err_t result = ESP_OK;
+    if (volume_changed)
+        result = nvs_set_u8(handle, "volume", status->volume_percent);
+    if (result == ESP_OK && brightness_changed)
+        result = nvs_set_u8(handle, "bright", status->brightness_percent);
+    if (result == ESP_OK) result = nvs_commit(handle);
+    nvs_close(handle);
+    if (result == ESP_OK) {
+        if (volume_changed) {
+            g_preferences.has_volume = true;
+            g_preferences.volume = status->volume_percent;
+        }
+        if (brightness_changed) {
+            g_preferences.has_brightness = true;
+            g_preferences.brightness = status->brightness_percent;
+        }
+    } else {
+        ESP_LOGW(kTag, "Could not save levels: %s", esp_err_to_name(result));
+    }
+}
 
 constexpr uint16_t kTypographyFontSizes[PXSYS_TYPOGRAPHY_ROLE_COUNT] = {
     28, 24, 20, 16, 14, 12,
@@ -671,10 +791,17 @@ bool CreateSystem(const pxa_board_port_t* board,
     system_config.max_tasks = profile->max_tasks;
     system_config.allocator = allocator;
     system_config.initial_renderer = &renderer_provider;
-    pxsys_theme_snapshot_init(&system_config.initial_theme, profile->display_scheme);
+    const auto initial_scheme = g_preferences.has_scheme
+        ? static_cast<pxsys_color_scheme_t>(g_preferences.scheme)
+        : profile->display_scheme;
+    pxsys_theme_snapshot_init(&system_config.initial_theme, initial_scheme);
     system_config.initial_theme.configured_mode =
-        profile->display_scheme == PXSYS_COLOR_SCHEME_DARK
+        initial_scheme == PXSYS_COLOR_SCHEME_DARK
             ? PXSYS_THEME_MODE_DARK : PXSYS_THEME_MODE_LIGHT;
+    if (g_preferences.has_palette)
+        (void)pxsys_theme_snapshot_apply_palette(
+            &system_config.initial_theme,
+            static_cast<pxsys_theme_palette_t>(g_preferences.palette));
     if (pxsys_locale_snapshot_init(&system_config.initial_locale,
             pxsys_string_from_cstr(profile->locale)) != PXSYS_STATUS_OK) {
         return false;
@@ -791,6 +918,14 @@ bool CreateSystem(const pxa_board_port_t* board,
     PublishDisplayProfile(nullptr, &system_config.initial_display);
     if (board->system_ready != nullptr)
         board->system_ready(board->context, g_system, g_reference_ui);
+    status = pxsys_theme_service_subscribe(
+        pxsys_standard_system_theme(g_system), nullptr, SaveTheme);
+    if (status != PXSYS_STATUS_OK) return false;
+    g_theme_observer_registered = true;
+    status = pxsys_system_status_service_subscribe(
+        pxsys_standard_system_status(g_system), nullptr, SaveLevels);
+    if (status != PXSYS_STATUS_OK) return false;
+    g_status_observer_registered = true;
     return true;
 }
 }  // namespace
@@ -814,6 +949,15 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
         return false;
     if (profile->mount_storage && !MountPxaStorage()) return false;
     if (!board->initialize(board->context) || !pxa_host_initialize()) return false;
+    LoadUserPreferences();
+    if (board->set_level != nullptr) {
+        if (g_preferences.has_volume)
+            (void)board->set_level(board->context, PXSYS_LEVEL_CONTROL_VOLUME,
+                                   g_preferences.volume);
+        if (g_preferences.has_brightness)
+            (void)board->set_level(board->context, PXSYS_LEVEL_CONTROL_BRIGHTNESS,
+                                   g_preferences.brightness);
+    }
     if (!lvgl_port_lock(2000)) return false;
     lv_lock();
     const bool started = CreateSystem(board, profile);
@@ -837,6 +981,18 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
 }
 
 extern "C" void pxa_integration_stop(void) {
+    if (g_status_observer_registered && g_system != nullptr) {
+        (void)pxsys_system_status_service_unsubscribe(
+            pxsys_standard_system_status(g_system), nullptr, SaveLevels);
+        g_status_observer_registered = false;
+    }
+    if (g_theme_observer_registered && g_system != nullptr) {
+        (void)pxsys_theme_service_unsubscribe(
+            pxsys_standard_system_theme(g_system), nullptr, SaveTheme);
+        g_theme_observer_registered = false;
+    }
+    g_theme_observer_seen = false;
+    g_status_observer_seen = false;
     if (g_display_observer_registered && g_system != nullptr) {
         (void)pxsys_display_service_unsubscribe(
             pxsys_standard_system_display(g_system), nullptr,

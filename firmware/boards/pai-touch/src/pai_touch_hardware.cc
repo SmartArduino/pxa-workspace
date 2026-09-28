@@ -561,7 +561,7 @@ void PaiTouchHardware::ShowInitialFrame() {
     lvgl_port_unlock();
     (void)zuowei_pai_touch::ParallelSoftwareRotationFlush::WaitForPendingTransfers(
         pdMS_TO_TICKS(250));
-    SetBrightness(75);
+    SetBrightness(brightness());
 }
 
 void PaiTouchHardware::ReadInjectedPointer(lv_indev_t* indev,
