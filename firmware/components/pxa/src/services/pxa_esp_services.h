@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "pxa/audio.h"
+#include "pxa/assets.h"
 #include "pxa/device.h"
 #include "pxa/fs.h"
 #include "pxa/game_render.h"
@@ -81,6 +82,10 @@ typedef struct {
     pxa_surface_service_t *surface;
     void *surface_workspace;
 
+    pxa_assets_service_t *assets;
+    void *assets_workspace;
+    uint8_t assets_backend_active;
+
     pxa_game_render_service_t *game_render;
     void *game_render_workspace;
 
@@ -110,6 +115,9 @@ typedef struct {
     pxa_runtime_t *runtime;
     const pxa_package_manifest_t *manifest;
     const char *identity;
+    const char *package_root;
+    void *assets_notify_context;
+    void (*assets_notify)(void *context);
     void *allocator_context;
     pxa_esp_services_allocate_fn allocate;
     void *permission_prompt_context;

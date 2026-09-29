@@ -85,6 +85,47 @@ typedef struct {
     uint32_t sample_to_visible_count;
 } pxa_esp_surface_input_metrics_t;
 
+/* Opt-in, bounded diagnostic samples. The probe allocates about 2.1 KiB of PSRAM
+ * only between start and clear. A full buffer reports overflow instead of
+ * silently overwriting earlier frames. Raster time excludes panel transfer;
+ * present interval measures time between completed new GameRender frames. */
+#define PXA_ESP_SURFACE_PERF_CAPACITY 256u
+typedef enum {
+    PXA_ESP_SURFACE_PERF_RASTER = 0,
+    PXA_ESP_SURFACE_PERF_PRESENT_INTERVAL = 1,
+} pxa_esp_surface_perf_kind_t;
+typedef struct {
+    uint32_t raster_count;
+    uint32_t present_interval_count;
+    uint32_t raster_overflow;
+    uint32_t present_interval_overflow;
+    uint32_t list_min_bytes;
+    uint32_t list_max_bytes;
+    uint32_t covered_min_pixels;
+    uint32_t covered_max_pixels;
+    uint8_t surface_changed;
+} pxa_esp_surface_perf_info_t;
+
+/* ESP heap blocks owned directly by the Surface backend. These bytes are
+ * outside the shared resource budget; counts use the allocator-reported block
+ * size and include a replacement mailbox while the old one is still live. */
+typedef struct {
+    uint32_t frame_bytes;
+    uint32_t scratch_bytes;
+    uint32_t mailbox_bytes;
+    uint32_t probe_bytes;
+    uint32_t peak_total_bytes;
+} pxa_esp_surface_memory_info_t;
+
+void pxa_esp_surface_memory_snapshot(pxa_esp_surface_memory_info_t *info);
+
+bool pxa_esp_surface_perf_start(void);
+bool pxa_esp_surface_perf_stop(pxa_esp_surface_perf_info_t *info);
+bool pxa_esp_surface_perf_read(pxa_esp_surface_perf_kind_t kind,
+                               uint32_t offset, uint32_t *values,
+                               uint32_t capacity, uint32_t *count);
+void pxa_esp_surface_perf_clear(void);
+
 void pxa_esp_surface_backend(pxa_surface_backend_t *backend);
 void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend);
 /* Board presenters register their supported integer scale set before an app
@@ -127,6 +168,10 @@ void pxa_esp_surface_note_input_delivered(uint64_t timestamp_us,
  * carries timestamp_us. */
 void pxa_esp_surface_note_frame_presented(uint64_t timestamp_us,
                                           uint64_t presented_us);
+/* Board presenter calls this once a GameRender frame reaches the panel. The
+ * frame id deduplicates UI recompositions of the same Surface contents. */
+void pxa_esp_surface_note_game_frame_presented(uint64_t frame_id,
+                                                uint64_t presented_us);
 void pxa_esp_surface_take_input_metrics(
     pxa_esp_surface_input_metrics_t *metrics);
 bool pxa_esp_surface_acquire_latest(pxa_esp_surface_frame_t *frame);

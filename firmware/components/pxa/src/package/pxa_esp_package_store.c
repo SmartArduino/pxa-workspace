@@ -1195,9 +1195,7 @@ static void scan_installed(void) {
         char canonical[PXA_ESP_PACKAGE_MAX_IDENTITY];
         char storage_key[PXA_ESP_PACKAGE_MAX_IDENTITY];
         char verified_root[PXA_ESP_PACKAGE_MAX_PATH];
-#if !CONFIG_PXA_REVERIFY_INSTALLED_PACKAGES
         char manifest_path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];
-#endif
         uint8_t publisher_root[PXA_PACKAGE_DIGEST_BYTES];
         pxa_posix_installer_result_t result;
         pxa_package_manifest_t *manifest = NULL;
@@ -1216,19 +1214,15 @@ static void scan_installed(void) {
         result.manifest = &manifest;
         result.root = verified_root;
         result.root_capacity = sizeof(verified_root);
-#if CONFIG_PXA_REVERIFY_INSTALLED_PACKAGES
-        if (verify_source_into_store(path, &result) != PXA_STATUS_OK ||
-#else
         path_size = snprintf(manifest_path, sizeof(manifest_path),
                              "%s/manifest.pxm", path);
         if (path_size < 0 || (size_t)path_size >= sizeof(manifest_path) ||
             !parse_manifest_file(manifest_path, &manifest) ||
-#endif
             manifest == NULL || manifest->app_id.size == 0 ||
             manifest->app_id.size >= sizeof(app_id) ||
             !manifest_publisher_root(manifest, publisher_root)) {
             ESP_LOGW(PXA_ESP_PACKAGE_TAG,
-                     "Ignoring unauthenticated installed Package %s",
+                     "Ignoring invalid installed Package %s",
                      entry->d_name);
             continue;
         }
@@ -2161,16 +2155,9 @@ bool pxa_esp_package_store_load_installed(
     uint8_t publisher_key_id[PXA_PACKAGE_DIGEST_BYTES];
     char app_id[PXA_ESP_PACKAGE_MAX_ID];
     char package_root[PXA_ESP_PACKAGE_MAX_PATH];
-#if !CONFIG_PXA_REVERIFY_INSTALLED_PACKAGES
     char manifest_path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];
-#endif
     size_t app_id_size;
     pxa_status_t status;
-#if CONFIG_PXA_REVERIFY_INSTALLED_PACKAGES
-    pxa_posix_installer_identity_t identity_struct;
-    pxa_posix_installer_result_t result;
-    uint8_t id_bytes[65];
-#endif
     if (!store_is_initialized() || identity == NULL || root == NULL ||
         manifest_workspace == NULL || encoded == NULL ||
         manifest == NULL) {
@@ -2196,36 +2183,12 @@ bool pxa_esp_package_store_load_installed(
     memcpy(publisher_key_id, entry->publisher_key_id, sizeof(publisher_key_id));
     snprintf(app_id, sizeof(app_id), "%s", entry->id);
     release_lock(g_store->metadata_lock);
-#if CONFIG_PXA_REVERIFY_INSTALLED_PACKAGES
-    memcpy(id_bytes, app_id, app_id_size);
-    id_bytes[app_id_size] = '\0';
-    memset(&identity_struct, 0, sizeof(identity_struct));
-    identity_struct.app_id = (pxa_bytes_t){id_bytes, app_id_size};
-    identity_struct.publisher_key_id =
-        (pxa_bytes_t){publisher_key_id,
-                      PXA_PACKAGE_DIGEST_BYTES};
-    memset(&result, 0, sizeof(result));
-    result.struct_size = sizeof(result);
-    result.manifest_workspace = manifest_workspace;
-    result.manifest_workspace_size = manifest_workspace_size;
-    result.encoded = encoded;
-    result.encoded_capacity = encoded_capacity;
-    result.manifest = manifest;
-    result.root = root;
-    result.root_capacity = root_capacity;
-#endif
     if (root_capacity == 0 ||
         snprintf(root, root_capacity, "%s", package_root) >=
             (int)root_capacity) {
         return false;
     }
     if (!take_lock(g_store->transaction_lock)) return false;
-#if CONFIG_PXA_REVERIFY_INSTALLED_PACKAGES
-    {
-        status = pxa_posix_installer_load_current(g_store->installer,
-                                                  &identity_struct, &result);
-    }
-#else
     {
         int path_size = snprintf(manifest_path, sizeof(manifest_path),
                                  "%s/manifest.pxm", package_root);
@@ -2250,7 +2213,6 @@ bool pxa_esp_package_store_load_installed(
             }
         }
     }
-#endif
     release_lock(g_store->transaction_lock);
     if (status != PXA_STATUS_OK || *manifest == NULL) {
         ESP_LOGE(PXA_ESP_PACKAGE_TAG,

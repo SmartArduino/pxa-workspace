@@ -8,9 +8,23 @@
 
 static const char *test_state_root;
 #define ESP_PLATFORM 1
+#define CONFIG_IDF_TARGET_ESP32S3 1
+#define PXSYS_WAMR_ENGINE_ABI "test-wamr-abi"
 #define CONFIG_PXA_MOUNT_POINT "/tmp"
 #define CONFIG_PXA_STATE_ROOT test_state_root
 #include "../src/services/pxa_esp_services.c"
+
+pxa_status_t pxa_esp_assets_begin(const pxa_esp_assets_config_t *config, pxa_assets_backend_t *backend) {
+    (void)config; (void)backend; return PXA_STATUS_UNSUPPORTED;
+}
+pxa_status_t pxa_esp_assets_end(void) { return PXA_STATUS_OK; }
+void pxa_esp_assets_io_stats(pxa_esp_asset_io_stats_t *stats) {
+    memset(stats, 0, sizeof(*stats));
+}
+void pxa_esp_assets_stats(pxa_asset_cache_stats_t *stats, size_t *metadata, size_t *stack) {
+    memset(stats, 0, sizeof(*stats)); *metadata = *stack = 0;
+}
+void vTaskDelay(TickType_t ticks) { (void)ticks; assert(!"unexpected wait"); }
 
 static void *allocations[32];
 static size_t allocation_count;
@@ -32,6 +46,11 @@ void *heap_caps_malloc(size_t size, unsigned caps) {
 void *heap_caps_calloc(size_t count, size_t size, unsigned caps) {
     (void)caps;
     return calloc(count, size);
+}
+
+void *heap_caps_realloc(void *memory, size_t size, unsigned caps) {
+    (void)caps;
+    return realloc(memory, size);
 }
 
 void heap_caps_free(void *memory) { free(memory); }
@@ -109,8 +128,10 @@ int main(void) {
     const pxa_bytes_t value = {(const uint8_t *)"saved", 5};
     assert(mkdtemp(root) != NULL);
     test_state_root = root + strlen("/tmp/");
-    snprintf(path, sizeof(path), "%s/data", root); assert(mkdir(path, 0700) == 0);
-    snprintf(path, sizeof(path), "%s/data/app", root); assert(mkdir(path, 0700) == 0);
+    /* A fresh install has neither the private data directory nor the app's
+     * subdirectory. No file service is declared or initialized in this test. */
+    snprintf(path, sizeof(path), "%s/data/app", root);
+    assert(access(path, F_OK) != 0);
     pxa_runtime_limits_init(&limits);
     workspace = malloc(pxa_runtime_workspace_size(&limits));
     assert(pxa_runtime_init(workspace, pxa_runtime_workspace_size(&limits),
@@ -119,6 +140,7 @@ int main(void) {
     host.allocate = test_allocate; host.manifest = &manifest;
     host.work_epoch = 1;
     assert(initialize_storage(&services, &host, &result) == PXA_STATUS_OK);
+    assert(access(path, F_OK) == 0);
     assert(services.posix_storage_workspace == NULL);
     assert(initialize_scheduler(&services, &host, &result) == PXA_STATUS_OK);
     assert(services.posix_storage_workspace == NULL && services.scheduler_store == NULL);

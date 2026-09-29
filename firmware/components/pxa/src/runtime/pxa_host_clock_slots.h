@@ -20,6 +20,8 @@ typedef struct {
 
 typedef struct {
     pxa_host_clock_slot_t slots[PXA_HOST_CLOCK_SLOT_COUNT];
+    uint32_t paused_component;
+    uint8_t component_paused;
 } pxa_host_clock_slots_t;
 
 typedef struct {
@@ -36,6 +38,11 @@ int pxa_host_clock_slots_set(pxa_host_clock_slots_t *slots, uint8_t slot,
 void pxa_host_clock_slots_clear_component(pxa_host_clock_slots_t *slots,
                                           uint32_t component);
 void pxa_host_clock_slots_cancel_all(pxa_host_clock_slots_t *slots);
+/* Keep subscriptions while suppressing a UI component's ticks. Rebase on
+ * either edge so a queued pre-pause tick cannot run after resume. */
+void pxa_host_clock_slots_pause_component(pxa_host_clock_slots_t *slots,
+                                          uint32_t component, int paused,
+                                          uint64_t now_us);
 
 size_t pxa_host_clock_slots_take_due(pxa_host_clock_slots_t *slots,
                                      uint64_t now_us,

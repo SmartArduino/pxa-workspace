@@ -33,6 +33,7 @@ typedef enum {
     PXA_ESP_HOST_CMD_SYSTEM_COMPLETE,
     PXA_ESP_HOST_CMD_SYSTEM_EVENT,
     PXA_ESP_HOST_CMD_STORE_INSTALL,
+    PXA_ESP_HOST_CMD_SHUTDOWN,
 } pxa_esp_host_command_type_t;
 
 typedef struct {
@@ -71,12 +72,21 @@ typedef struct {
 } pxa_host_identity_command_t;
 
 typedef struct {
+    uint64_t host_instance_id;
+    uint8_t reason;
+} pxa_host_stop_command_t;
+
+typedef struct {
     void *response;
 } pxa_host_system_complete_command_t;
 
 typedef struct {
     void *event;
 } pxa_host_system_event_command_t;
+
+typedef struct {
+    uint32_t timeout_ms;
+} pxa_host_shutdown_command_t;
 
 typedef struct {
     void *job;
@@ -106,6 +116,7 @@ typedef struct {
 
 typedef union {
     pxa_host_identity_command_t identity;
+    pxa_host_stop_command_t stop;
     pxa_host_instance_command_t instance;
     pxa_host_pointer_event_t pointer;
     pxa_host_ui_event_t ui_event;
@@ -115,6 +126,7 @@ typedef union {
     pxa_host_permission_set_command_t permission_set;
     pxa_host_system_complete_command_t system_complete;
     pxa_host_system_event_command_t system_event;
+    pxa_host_shutdown_command_t shutdown;
     pxa_host_store_install_command_t store_install;
 } pxa_esp_host_command_payload_t;
 

@@ -27,6 +27,16 @@ bool pxa_esp_host_install_package_file(const char *source_path);
 bool pxa_esp_host_launch(const char *identity);
 bool pxa_esp_host_back(void);
 bool pxa_esp_host_stop(const char *identity);
+bool pxa_esp_host_stop_with_reason(const char *identity,
+                                    uint64_t host_instance_id,
+                                    uint8_t reason);
+bool pxa_esp_host_is_instance_active(const char *identity,
+                                      uint64_t host_instance_id);
+bool pxa_esp_host_set_app_foreground(const char *identity,
+                                     uint64_t host_instance_id,
+                                     bool foreground);
+bool pxa_esp_host_set_display_interactive(bool interactive);
+bool pxa_esp_host_prepare_shutdown(uint32_t timeout_ms);
 bool pxa_esp_host_is_active(const char *identity);
 bool pxa_esp_host_captures_volume_keys(void);
 bool pxa_esp_host_post_key(uint16_t key);
@@ -81,9 +91,12 @@ bool pxa_esp_host_respond_unresponsive(uint32_t prompt_id, bool wait);
 void pxa_esp_host_set_audio_sink(pxa_host_audio_submit_fn submit,
                                  pxa_host_audio_flush_fn flush,
                                  void *context);
+void pxa_esp_host_set_audio_sound_sink(pxa_host_audio_sound_fn, void *);
 void pxa_esp_host_set_audio_asset_sink(
     pxa_host_audio_asset_play_fn play,
     pxa_host_audio_asset_control_fn control, void *context);
+void pxa_esp_host_set_audio_music_sink(const pxa_host_audio_music_sink_t *);
+void pxa_esp_host_audio_notify(void);
 const lv_font_t *pxa_esp_host_ui_body_font(void);
 const lv_font_t *pxa_esp_host_ui_title_font(void);
 uint32_t pxa_esp_host_ui_color(uint8_t index);

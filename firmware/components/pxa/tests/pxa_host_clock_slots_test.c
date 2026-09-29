@@ -61,10 +61,37 @@ static void test_component_clear_invalidates_tick(void) {
     assert(pxa_host_clock_slots_take_due(&slots, 1000000, &tick, 1) == 0);
 }
 
+static void test_pause_preserves_subscription_and_discards_stale_ticks(void) {
+    pxa_host_clock_slots_t slots;
+    pxa_host_clock_tick_t old_tick, new_tick;
+    uint32_t component = 0;
+    pxa_host_clock_slots_init(&slots);
+    assert(pxa_host_clock_slots_set(&slots, 1, 42, 20, 0));
+    assert(pxa_host_clock_slots_set(&slots, 2, 99, 20, 0));
+    assert(pxa_host_clock_slots_take_due(&slots, 20000, &old_tick, 1) == 1);
+    assert(old_tick.slot == 1);
+    pxa_host_clock_slots_pause_component(&slots, 42, 1, 20000);
+    assert(!pxa_host_clock_slots_consume(&slots, old_tick.slot,
+                                         old_tick.generation, &component));
+    assert(pxa_host_clock_slots_take_due(&slots, 1000000, &new_tick, 1) == 1);
+    assert(new_tick.slot == 2);
+    assert(pxa_host_clock_slots_consume(&slots, new_tick.slot,
+                                        new_tick.generation, &component));
+    assert(component == 99);
+    pxa_host_clock_slots_pause_component(&slots, 42, 0, 1000000);
+    assert(pxa_host_clock_slots_take_due(&slots, 1019999, &new_tick, 1) == 0);
+    assert(pxa_host_clock_slots_take_due(&slots, 1020000, &new_tick, 1) == 1);
+    assert(new_tick.slot == 1);
+    assert(pxa_host_clock_slots_consume(&slots, new_tick.slot,
+                                        new_tick.generation, &component));
+    assert(component == 42);
+}
+
 int main(void) {
     test_due_ticks_are_coalesced();
     test_reconfiguration_invalidates_queued_tick();
     test_failed_post_can_be_retried();
     test_component_clear_invalidates_tick();
+    test_pause_preserves_subscription_and_discards_stale_ticks();
     return 0;
 }

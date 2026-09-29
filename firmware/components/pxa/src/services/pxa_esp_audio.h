@@ -1,6 +1,7 @@
 #ifndef PXA_ESP_AUDIO_H
 #define PXA_ESP_AUDIO_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -40,6 +41,7 @@ int pxa_esp_audio_initialize(void);
 void pxa_esp_audio_deinitialize(void);
 
 void pxa_esp_audio_reset_sessions(void);
+void pxa_esp_audio_set_suspended(bool suspended);
 void pxa_esp_audio_backend(pxa_audio_backend_t *output);
 void pxa_esp_audio_snapshot(pxa_esp_audio_snapshot_t *output);
 int pxa_esp_audio_bind_package(const pxa_package_manifest_t *manifest,
@@ -47,6 +49,8 @@ int pxa_esp_audio_bind_package(const pxa_package_manifest_t *manifest,
 
 void pxa_esp_audio_set_sink(pxa_host_audio_submit_fn submit,
                             pxa_host_audio_flush_fn flush, void *context);
+void pxa_esp_audio_set_sound_sink(pxa_host_audio_sound_fn, void *);
+void pxa_esp_audio_set_music_sink(const pxa_host_audio_music_sink_t *);
 void pxa_esp_audio_set_asset_sink(
     pxa_host_audio_asset_play_fn play,
     pxa_host_audio_asset_control_fn control, void *context);

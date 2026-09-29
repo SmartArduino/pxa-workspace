@@ -8,7 +8,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#include "esp_heap_caps.h"
+#include "pxa_esp_resource_memory.h"
 #include "lvgl.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
 
@@ -39,12 +39,8 @@ typedef struct {
 
 static pxa_esp_ui_asset_cache_t g_assets;
 
-static void *asset_alloc(size_t size) {
-    void *memory = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (memory == NULL) {
-        memory = heap_caps_malloc(size, MALLOC_CAP_8BIT);
-    }
-    return memory;
+static void *asset_alloc(size_t size, unsigned kind) {
+    return pxa_esp_resource_allocate(PXA_MEMORY_EXTERNAL, kind, size);
 }
 
 static int size_add(size_t left, size_t right, size_t *output) {
@@ -63,9 +59,9 @@ static void destroy_asset(pxa_esp_ui_asset_t *asset) {
     if (asset->descriptor.header.magic == LV_IMAGE_HEADER_MAGIC) {
         lv_image_cache_drop(&asset->descriptor);
     }
-    free(asset->path);
-    free(asset->bytes);
-    free(asset);
+    pxa_memory_release(asset->path);
+    pxa_memory_release(asset->bytes);
+    pxa_memory_release(asset);
 }
 
 void pxa_esp_ui_assets_clear(void) {
@@ -75,7 +71,7 @@ void pxa_esp_ui_assets_clear(void) {
         g_assets.assets = asset->next;
         destroy_asset(asset);
     }
-    free(g_assets.package_root);
+    pxa_memory_release(g_assets.package_root);
     memset(&g_assets, 0, sizeof(g_assets));
     lv_unlock();
 }
@@ -105,10 +101,10 @@ static int evict_one_unused_asset(void) {
     return 1;
 }
 
-static void *asset_alloc_reclaiming_unused(size_t size) {
+static void *asset_alloc_reclaiming_unused(size_t size, unsigned kind) {
     void *memory;
     if (size == 0) return NULL;
-    while ((memory = asset_alloc(size)) == NULL) {
+    while ((memory = asset_alloc(size, kind)) == NULL) {
         if (!evict_one_unused_asset()) return NULL;
     }
     return memory;
@@ -122,7 +118,7 @@ int pxa_esp_ui_assets_begin(const pxa_package_manifest_t *manifest,
     root_size = strlen(package_root);
     if (root_size == 0 || root_size == SIZE_MAX) return 0;
     lv_lock();
-    root_copy = (char *)asset_alloc_reclaiming_unused(root_size + 1u);
+    root_copy = (char *)asset_alloc_reclaiming_unused(root_size + 1u, PXA_MEMORY_METADATA);
     if (root_copy == NULL) {
         lv_unlock();
         return 0;
@@ -178,19 +174,19 @@ const void *pxa_esp_ui_asset_resolve(const uint8_t *path, size_t path_size,
         }
     }
     g_assets.cache_misses++;
-    asset = (pxa_esp_ui_asset_t *)asset_alloc_reclaiming_unused(sizeof(*asset));
+    asset = (pxa_esp_ui_asset_t *)asset_alloc_reclaiming_unused(sizeof(*asset), PXA_MEMORY_METADATA);
     if (asset == NULL) {
         lv_unlock();
         return NULL;
     }
     memset(asset, 0, sizeof(*asset));
-    asset->bytes = (uint8_t *)asset_alloc_reclaiming_unused(file_size);
+    asset->bytes = (uint8_t *)asset_alloc_reclaiming_unused(file_size, PXA_MEMORY_IMAGE);
     if (asset->bytes == NULL) goto failed;
     if (!size_add(g_assets.package_root_size, path_size, &full_path_size) ||
         !size_add(full_path_size, 2u, &full_path_size)) {
         goto failed;
     }
-    full_path = (char *)asset_alloc_reclaiming_unused(full_path_size);
+    full_path = (char *)asset_alloc_reclaiming_unused(full_path_size, PXA_MEMORY_TEMPORARY);
     if (full_path == NULL) goto failed;
     memcpy(full_path, g_assets.package_root, g_assets.package_root_size);
     full_path[g_assets.package_root_size] = '/';
@@ -203,7 +199,7 @@ const void *pxa_esp_ui_asset_resolve(const uint8_t *path, size_t path_size,
         goto failed;
     }
     stream = fopen(full_path, "rb");
-    free(full_path);
+    pxa_memory_release(full_path);
     full_path = NULL;
     if (stream == NULL) goto failed;
     if (fread(asset->bytes, 1, file_size, stream) != file_size) goto failed;
@@ -224,7 +220,7 @@ const void *pxa_esp_ui_asset_resolve(const uint8_t *path, size_t path_size,
         goto failed;
     }
     decoded_bytes *= (size_t)height;
-    asset->path = (char *)asset_alloc_reclaiming_unused(path_size + 1u);
+    asset->path = (char *)asset_alloc_reclaiming_unused(path_size + 1u, PXA_MEMORY_METADATA);
     if (asset->path == NULL) goto failed;
     memcpy(asset->path, path, path_size);
     asset->path[path_size] = '\0';
@@ -258,7 +254,7 @@ const void *pxa_esp_ui_asset_resolve(const uint8_t *path, size_t path_size,
 
 failed:
     if (stream != NULL) fclose(stream);
-    free(full_path);
+    pxa_memory_release(full_path);
     if (!locked) lv_lock();
     destroy_asset(asset);
     lv_unlock();

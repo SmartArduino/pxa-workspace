@@ -13,6 +13,19 @@ typedef unsigned UBaseType_t;
 typedef int BaseType_t;
 typedef void *QueueHandle_t;
 typedef void *TaskHandle_t;
+typedef unsigned TickType_t;
+typedef int StaticSemaphore_t;
+typedef void *SemaphoreHandle_t;
+#define pdMS_TO_TICKS(ms) (ms)
+SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *);
+int xSemaphoreTake(SemaphoreHandle_t, uint32_t);
+int xSemaphoreGive(SemaphoreHandle_t);
+TickType_t xTaskGetTickCount(void);
+void xTaskNotifyGive(TaskHandle_t);
+TaskHandle_t xTaskGetCurrentTaskHandle(void);
+uint32_t ulTaskNotifyTake(int, TickType_t);
+void vTaskDelayUntil(TickType_t *, TickType_t);
+void vTaskDelay(TickType_t);
 typedef int esp_http_client_method_t;
 typedef enum {
     ESP_LOG_NONE,
@@ -71,9 +84,11 @@ void test_enter(void);
 void test_leave(void);
 void *heap_caps_malloc(size_t, unsigned);
 void *heap_caps_calloc(size_t, size_t, unsigned);
+void *heap_caps_realloc(void *, size_t, unsigned);
 void *heap_caps_aligned_alloc(size_t, size_t, unsigned);
 void *heap_caps_aligned_calloc(size_t, size_t, size_t, unsigned);
 void heap_caps_free(void *);
+size_t heap_caps_get_allocated_size(void *);
 QueueHandle_t xQueueCreateWithCaps(unsigned, size_t, unsigned);
 int xQueueReceive(QueueHandle_t, void *, uint32_t);
 int xQueueSendToBack(QueueHandle_t, const void *, uint32_t);

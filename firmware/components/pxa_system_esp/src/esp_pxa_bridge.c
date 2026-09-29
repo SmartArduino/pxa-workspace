@@ -36,10 +36,12 @@ typedef struct esp_pxa_instance {
     uint8_t publisher_root[PXSYS_PUBLISHER_ROOT_BYTES];
     char app_id[PXA_HOST_APP_ID_MAX];
     char identity_key[PXA_HOST_PACKAGE_ID_MAX];
+    uint64_t host_instance_id;
     uint8_t* launch_event;
     size_t launch_event_size;
     pxa_window_configuration_t window_configuration;
     uint8_t window_configured;
+    uint8_t started;
 } esp_pxa_instance_t;
 
 typedef struct {
@@ -47,6 +49,8 @@ typedef struct {
     pxa_host_runtime_event_t event;
     uint32_t first_delivery_tick;
     uint16_t delivery_retries;
+    uint64_t host_instance_id;
+    uint8_t stop_reason;
     char identity[PXA_HOST_PACKAGE_ID_MAX];
 } runtime_event_t;
 
@@ -269,15 +273,21 @@ static void window_changed(
         free(change);
 }
 
-static esp_pxa_instance_t* find_instance(pxsys_esp_pxa_bridge_t* bridge,
-                                         const char* identity_key) {
+static esp_pxa_instance_t* find_runtime_event_instance(
+    pxsys_esp_pxa_bridge_t* bridge, pxa_host_runtime_event_t event,
+    const char* identity_key, uint64_t host_instance_id) {
     esp_pxa_instance_t* instance;
-    if (!bridge_valid(bridge) || identity_key == NULL)
-        return NULL;
+    if (!bridge_valid(bridge) || identity_key == NULL) return NULL;
     for (instance = bridge->instances; instance != NULL;
          instance = instance->next) {
-        if (strcmp(instance->identity_key, identity_key) == 0)
+        if (strcmp(instance->identity_key, identity_key) != 0) continue;
+        if (event == PXA_HOST_RUNTIME_STOPPED) {
+            if (host_instance_id != 0 && instance->started &&
+                instance->host_instance_id == host_instance_id)
+                return instance;
+        } else if (instance->launch_event != NULL) {
             return instance;
+        }
     }
     return NULL;
 }
@@ -619,7 +629,9 @@ static void process_runtime_event(void* context) {
     if (event == NULL)
         return;
     if (bridge_valid(bridge) && bridge->generation == event->generation)
-        instance = find_instance(bridge, event->identity);
+        instance = find_runtime_event_instance(
+            bridge, event->event, event->identity,
+            event->host_instance_id);
     if (instance == NULL && event->event == PXA_HOST_RUNTIME_STARTED) {
         ESP_LOGW(PXSYS_ESP_PXA_TAG,
                  "Launch completion has no system instance: %s",
@@ -627,6 +639,8 @@ static void process_runtime_event(void* context) {
     }
     if (instance != NULL) {
         if (event->event == PXA_HOST_RUNTIME_STARTED) {
+            instance->started = 1;
+            instance->host_instance_id = event->host_instance_id;
             uint8_t* launch_event = instance->launch_event;
             size_t launch_event_size = instance->launch_event_size;
             pxsys_locale_snapshot_t locale = {0};
@@ -692,18 +706,20 @@ static void process_runtime_event(void* context) {
         } else if (event->event == PXA_HOST_RUNTIME_STOPPED) {
             pxsys_status_t status = pxsys_task_manager_report_stopped(
                 pxsys_standard_system_tasks(bridge->system), instance->reference,
-                PXSYS_STOP_NORMAL);
+                event->stop_reason);
             if (status == PXSYS_STATUS_NOT_FOUND) {
                 (void)pxsys_role_host_report_stopped(
                     pxsys_standard_system_role_host(bridge->system),
-                    instance->reference, PXSYS_STOP_NORMAL);
+                    instance->reference, event->stop_reason);
             }
         }
     }
     free(event);
 }
 
-static void runtime_event(void* context, pxa_host_runtime_event_t type, const char* identity) {
+static void runtime_event(void* context, pxa_host_runtime_event_t type,
+                          const char* identity, uint64_t host_instance_id,
+                          uint8_t stop_reason) {
     runtime_event_t* event;
     uint32_t generation = 0;
     if (identity == NULL)
@@ -720,6 +736,8 @@ static void runtime_event(void* context, pxa_host_runtime_event_t type, const ch
     memset(event, 0, sizeof(*event));
     event->generation = generation;
     event->event = type;
+    event->host_instance_id = host_instance_id;
+    event->stop_reason = stop_reason;
     snprintf(event->identity, sizeof(event->identity), "%s", identity);
     if (schedule_on_lvgl_owner(process_runtime_event, event) != LV_RESULT_OK)
         free(event);
@@ -1292,17 +1310,14 @@ static pxsys_status_t backend_foreground(void* context, void* backend_instance) 
     if (backend_instance == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
     if (!pxa_host_active_identity(active_identity, sizeof(active_identity)) ||
-        strcmp(active_identity, instance->identity_key) != 0) {
+        strcmp(active_identity, instance->identity_key) != 0 ||
+        !pxa_host_runtime_set_app_foreground(
+            instance->identity_key, instance->host_instance_id, true)) {
         if (bridge->window_instance == instance) reset_window(bridge);
-        pxa_esp_surface_set_host_visible(false);
-        return PXSYS_STATUS_OK;
+        return PXSYS_STATUS_UNAVAILABLE;
     }
     resume_window_session(bridge, instance);
     pxa_esp_surface_set_host_visible(true);
-    const uint8_t state = PXA_HOST_SYSTEM_LIFECYCLE_FOREGROUND;
-    (void)pxa_host_post_app_system_event(
-        instance->identity_key,
-        PXA_HOST_SYSTEM_LIFECYCLE_EVENT, &state, sizeof(state));
     ESP_LOGI(PXSYS_ESP_PXA_TAG, "Application foregrounded: %s",
              instance->identity_key);
     return PXSYS_STATUS_OK;
@@ -1314,10 +1329,9 @@ static pxsys_status_t backend_background(void* context, void* backend_instance) 
         return PXSYS_STATUS_INVALID_ARGUMENT;
     if (bridge->window_instance == backend_instance)
         pxa_esp_surface_set_host_visible(false);
-    const uint8_t state = PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND;
-    (void)pxa_host_post_app_system_event(
+    (void)pxa_host_runtime_set_app_foreground(
         ((esp_pxa_instance_t*)backend_instance)->identity_key,
-        PXA_HOST_SYSTEM_LIFECYCLE_EVENT, &state, sizeof(state));
+        ((esp_pxa_instance_t*)backend_instance)->host_instance_id, false);
     if (bridge->window_instance == backend_instance) reset_window(bridge);
     ESP_LOGI(PXSYS_ESP_PXA_TAG, "Application backgrounded: %s",
              ((esp_pxa_instance_t*)backend_instance)->identity_key);
@@ -1333,6 +1347,9 @@ static pxsys_status_t backend_deliver(void* context, void* backend_instance,
     int posted;
     if (instance == NULL || message == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
+    if (!pxa_host_runtime_is_instance_active(
+            instance->identity_key, instance->host_instance_id))
+        return PXSYS_STATUS_UNAVAILABLE;
     encoded = encode_intent_event(bridge, message, &encoded_size);
     if (encoded == NULL)
         return PXSYS_STATUS_NO_MEMORY;
@@ -1344,19 +1361,27 @@ static pxsys_status_t backend_deliver(void* context, void* backend_instance,
 }
 
 static pxsys_back_result_t backend_back(void* context, void* backend_instance) {
+    esp_pxa_instance_t* instance = (esp_pxa_instance_t*)backend_instance;
     (void)context;
-    return backend_instance != NULL && pxa_host_runtime_back() ? PXSYS_BACK_HANDLED
-                                                               : PXSYS_BACK_UNHANDLED;
+    return instance != NULL &&
+                   pxa_host_runtime_is_instance_active(
+                       instance->identity_key, instance->host_instance_id) &&
+                   pxa_host_runtime_back()
+               ? PXSYS_BACK_HANDLED
+               : PXSYS_BACK_UNHANDLED;
 }
 
 static void backend_stop(void* context, void* backend_instance, pxsys_stop_reason_t reason) {
     esp_pxa_instance_t* instance = (esp_pxa_instance_t*)backend_instance;
     pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
-    (void)reason;
     if (instance != NULL) {
         if (bridge->window_instance == instance)
             pxa_esp_surface_set_host_visible(false);
-        (void)pxa_host_runtime_stop(instance->identity_key);
+        if (pxa_host_runtime_is_instance_active(
+                instance->identity_key, instance->host_instance_id))
+            (void)pxa_host_runtime_stop_with_reason(
+                instance->identity_key, instance->host_instance_id,
+                (uint8_t)reason);
     }
     if (bridge->window_instance == instance) reset_window(bridge);
 }
@@ -1365,14 +1390,25 @@ static pxsys_status_t backend_request_stop(void* context, void* backend_instance
                                            pxsys_stop_reason_t reason) {
     esp_pxa_instance_t* instance = (esp_pxa_instance_t*)backend_instance;
     pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
-    (void)reason;
     if (instance == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
+    /* The Host may have evicted this instance while a stop was queued. */
+    if (!pxa_host_runtime_is_instance_active(
+            instance->identity_key, instance->host_instance_id)) {
+        if (bridge->window_instance == instance) {
+            pxa_esp_surface_set_host_visible(false);
+            reset_window(bridge);
+        }
+        return PXSYS_STATUS_OK;
+    }
     if (bridge->window_instance == instance)
         pxa_esp_surface_set_host_visible(false);
     if (bridge->window_instance == instance) reset_window(bridge);
-    return pxa_host_runtime_stop(instance->identity_key) ? PXSYS_STATUS_PENDING
-                                                     : PXSYS_STATUS_UNAVAILABLE;
+    return pxa_host_runtime_stop_with_reason(
+               instance->identity_key, instance->host_instance_id,
+               (uint8_t)reason)
+               ? PXSYS_STATUS_PENDING
+               : PXSYS_STATUS_UNAVAILABLE;
 }
 
 static void backend_destroy(void* context, void* backend_instance) {

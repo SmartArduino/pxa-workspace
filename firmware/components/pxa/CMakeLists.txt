@@ -8,6 +8,10 @@ set(PXA_SRCS
     "src/runtime/pxa_host_pointer_mailbox.c"
     "src/runtime/pxa_esp_host.c"
     "src/services/pxa_esp_audio.c"
+    "src/services/pxa_esp_assets.c"
+    "src/services/pxa_esp_resource_memory.c"
+    "src/services/pxa_audio_output.cc"
+    "src/services/pxa_codec_memory.cc"
     "src/services/pxa_esp_net.c"
     "src/services/pxa_esp_services.c"
     "src/services/pxa_esp_surface.c"
@@ -60,6 +64,7 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ui.c")
 set(PXA_PRIV_REQUIRES
     mbedtls
+    espressif__esp_audio_codec
     esp_http_client
     esp_hw_support
     joltwallet__littlefs

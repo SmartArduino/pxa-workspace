@@ -46,6 +46,8 @@ void pxa_host_clock_slots_clear_component(pxa_host_clock_slots_t *slots,
             invalidate(entry);
         }
     }
+    if (slots->component_paused && slots->paused_component == component)
+        slots->component_paused = 0;
 }
 
 void pxa_host_clock_slots_cancel_all(pxa_host_clock_slots_t *slots) {
@@ -53,6 +55,25 @@ void pxa_host_clock_slots_cancel_all(pxa_host_clock_slots_t *slots) {
     if (slots == NULL) return;
     for (index = 0; index < PXA_HOST_CLOCK_SLOT_COUNT; ++index) {
         invalidate(&slots->slots[index]);
+    }
+    slots->component_paused = 0;
+}
+
+void pxa_host_clock_slots_pause_component(pxa_host_clock_slots_t *slots,
+                                          uint32_t component, int paused,
+                                          uint64_t now_us) {
+    uint8_t index;
+    if (slots == NULL) return;
+    if (slots->component_paused == (uint8_t)(paused != 0) &&
+        (!paused || slots->paused_component == component)) return;
+    slots->paused_component = component;
+    slots->component_paused = paused != 0;
+    for (index = 0; index < PXA_HOST_CLOCK_SLOT_COUNT; ++index) {
+        pxa_host_clock_slot_t *entry = &slots->slots[index];
+        if (entry->period_ms == 0 || entry->component != component) continue;
+        entry->generation++;
+        entry->pending = 0;
+        entry->next_due_us = now_us + (uint64_t)entry->period_ms * UINT64_C(1000);
     }
 }
 
@@ -70,6 +91,8 @@ size_t pxa_host_clock_slots_take_due(pxa_host_clock_slots_t *slots,
         uint64_t period_us;
         uint64_t periods;
         if (entry->period_ms == 0 || entry->pending ||
+            (slots->component_paused &&
+             entry->component == slots->paused_component) ||
             now_us < entry->next_due_us) {
             continue;
         }
@@ -98,7 +121,9 @@ int pxa_host_clock_slots_consume(pxa_host_clock_slots_t *slots, uint8_t slot,
         return 0;
     }
     entry = &slots->slots[slot];
-    if (!entry->pending || entry->generation != generation) return 0;
+    if (!entry->pending || entry->generation != generation ||
+        (slots->component_paused &&
+         entry->component == slots->paused_component)) return 0;
     entry->pending = 0;
     if (entry->period_ms == 0) return 0;
     *component = entry->component;

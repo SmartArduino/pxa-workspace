@@ -62,18 +62,70 @@ menu "PXA Development Apps"
                 domains. Keep it outside system/, tmp/ and .previous so normal
                 factory-content provisioning does not replace App state.
 
-        config PXA_REVERIFY_INSTALLED_PACKAGES
-            bool "Reverify installed PXA Packages before use"
-            default n
+        config PXA_RESOURCE_INTERNAL_BYTES
+            int "Shared resource internal RAM budget"
+            range 16384 262144
+            default 131072
             help
-                Verify a Package signature and every inventoried file when
-                reading a Package already committed under packages/. Leave
-                disabled when the Host treats managed Package storage as its
-                trusted installation domain: Packages are then fully verified
-                only before installation or update, while normal boot, listing
-                and launch parse the manifest and rely on Host storage
-                integrity. Enable on platforms where managed storage can be
-                modified outside the Package installer.
+                Global and active-package ceiling for charged allocations,
+                including allocation prefixes and pending reservations.
+                Covers raster objects, surface metadata and the audio device's
+                task stacks, control blocks, queues and mutex. Other task
+                stacks, DMA/frame buffers and platform heaps remain separate.
+
+        config PXA_RESOURCE_EXTERNAL_BYTES
+            int "Shared resource PSRAM budget"
+            range 65536 8388608
+            default 2097152
+            help
+                Shared by file textures, dynamic uploads, resource index/cache
+                workspace, UI compressed images, short PCM, music buffers and
+                audited codec allocation hooks, including the audio device's
+                ring and cache metadata. No internal-RAM fallback. Decoded
+                LVGL images and other platform allocations remain separate.
+
+        config PXA_RESOURCE_TEMPORARY_INTERNAL_BYTES
+            int "Shared temporary resource internal RAM ceiling"
+            range 0 262144
+            default 16384
+            help
+                Additional global ceiling for allocations classified TEMPORARY.
+                Counts prefixes, concurrent jobs and old plus new resize blocks.
+                Zero forbids temporary allocations in this memory class.
+                This does not reserve RAM; the shared total ceiling also applies.
+
+        config PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES
+            int "Shared temporary resource PSRAM ceiling"
+            range 0 8388608
+            default 524288
+            help
+                Additional global ceiling for temporary decode buffers and
+                audited codec allocations, across active and retiring owners.
+                Counts allocation prefixes and old plus new resize blocks.
+                Zero forbids temporary PSRAM allocations. Does not cover
+                uncaptured third-party allocations or reserve capacity.
+
+        config PXA_ASSET_EXTERNAL_BYTES
+            int "File resource PSRAM object budget"
+            range 65536 4194304
+            default 524288
+            help
+                Includes final texture allocations, in-flight reservations and
+                retired objects until their last frame reference is released.
+                Index metadata, worker stack and other subsystems are separate.
+
+        config PXA_ASSET_INTERNAL_BYTES
+            int "File resource internal RAM object budget"
+            range 1024 262144
+            default 65536
+
+        config PXA_ASSET_WORKER_STACK_SIZE
+            int "Persistent resource worker stack bytes"
+            range 4096 16384
+            default 6144
+            help
+                One internal-RAM task shared across sequential activations.
+                Runs below the audio decoder/output task priorities.
 
         config PXA_GUEST_STACK_SIZE
             int "Guest callback stack size"
@@ -176,6 +228,24 @@ menu "PXA Development Apps"
             int "Maximum guest control message size"
             range 1024 16384
             default 4096
+
+        config PXA_UI_DYNAMIC_BYTES
+            int "Maximum retained PXA UI bytes"
+            range 262144 8388608
+            default 1048576
+            help
+                Shared byte budget for retained UI nodes, transaction data,
+                Canvas frames and their allocation headers.
+
+        config PXA_UI_TRANSACTION_BYTES
+            int "Maximum PXA UI transaction bytes"
+            range 4096 PXA_UI_DYNAMIC_BYTES
+            default 262144
+
+        config PXA_UI_CANVAS_BYTES
+            int "Maximum PXA UI Canvas display-list bytes"
+            range 4096 PXA_UI_DYNAMIC_BYTES
+            default 262144
 
         config PXA_PRIVATE_FS_QUOTA_BYTES
             int "Per-App private FS quota in bytes"

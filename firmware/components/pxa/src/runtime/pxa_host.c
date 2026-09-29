@@ -16,6 +16,7 @@
 #include "pxa_esp_host.h"
 #include "pxa_esp_package_icon.h"
 #include "pxa_esp_package_store.h"
+#include "pxa_esp_resource_memory.h"
 #include "pxa_esp_ui_shell.h"
 
 #define PXA_HOST_TAG "PxaHost"
@@ -294,6 +295,36 @@ bool pxa_host_runtime_stop(const char *identity_key) {
     return g_host_ready && pxa_esp_host_stop(identity_key);
 }
 
+bool pxa_host_runtime_stop_with_reason(const char *identity_key,
+                                       uint64_t host_instance_id,
+                                       uint8_t reason) {
+    return g_host_ready &&
+           pxa_esp_host_stop_with_reason(identity_key, host_instance_id,
+                                          reason);
+}
+
+bool pxa_host_runtime_is_instance_active(const char *identity_key,
+                                          uint64_t host_instance_id) {
+    return g_host_ready && pxa_esp_host_is_instance_active(
+                               identity_key, host_instance_id);
+}
+
+bool pxa_host_runtime_set_app_foreground(const char *identity_key,
+                                         uint64_t host_instance_id,
+                                         bool foreground) {
+    return g_host_ready &&
+           pxa_esp_host_set_app_foreground(identity_key, host_instance_id,
+                                            foreground);
+}
+
+bool pxa_host_set_display_interactive(bool interactive) {
+    return g_host_ready && pxa_esp_host_set_display_interactive(interactive);
+}
+
+bool pxa_host_prepare_shutdown(uint32_t timeout_ms) {
+    return !g_host_ready || pxa_esp_host_prepare_shutdown(timeout_ms);
+}
+
 bool pxa_host_active_identity(char *identity, size_t capacity) {
     return g_host_ready && pxa_esp_host_active_identity(identity, capacity);
 }
@@ -350,6 +381,26 @@ bool pxa_host_set_app_permission(const char *identity_key,
 
 bool pxa_host_ready(void) {
     return g_host_ready;
+}
+
+bool pxa_host_resource_memory_snapshot(
+    pxa_host_resource_memory_snapshot_t *snapshot) {
+    pxa_memory_stats_t stats;
+    size_t fixed_bytes = 0;
+    if (!g_host_ready || snapshot == NULL) return false;
+    pxa_esp_resource_memory_stats(&stats, &fixed_bytes);
+    memset(snapshot, 0, sizeof(*snapshot));
+    for (unsigned cls = 0; cls < PXA_MEMORY_CLASSES; ++cls) {
+        snapshot->current[cls] = stats.charged[cls];
+        snapshot->peak[cls] = stats.peak[cls];
+        snapshot->temporary_peak[cls] = stats.temporary_peak[cls];
+        for (unsigned kind = 0; kind < PXA_MEMORY_KINDS; ++kind)
+            snapshot->by_kind[kind][cls] = stats.by_kind[kind][cls];
+    }
+    snapshot->fixed_bytes = fixed_bytes;
+    snapshot->denied = stats.denied;
+    snapshot->allocation_failures = stats.allocation_failures;
+    return true;
 }
 
 bool pxa_host_is_active(const char *identity_key) {
@@ -455,6 +506,14 @@ void pxa_host_set_audio_sink(pxa_host_audio_submit_fn submit,
                              void *context) {
     pxa_esp_host_set_audio_sink(submit, flush, context);
 }
+
+void pxa_host_set_audio_sound_sink(pxa_host_audio_sound_fn play, void *context) {
+    pxa_esp_host_set_audio_sound_sink(play,context);
+}
+void pxa_host_set_audio_music_sink(const pxa_host_audio_music_sink_t *sink) {
+    pxa_esp_host_set_audio_music_sink(sink);
+}
+void pxa_host_audio_notify(void) { pxa_esp_host_audio_notify(); }
 
 void pxa_host_set_audio_asset_sink(
     pxa_host_audio_asset_play_fn play,

@@ -185,8 +185,8 @@ be trusted by production firmware.
   test suite.
 - `../../../deps/pxa-system/spec/draft/` is normative for Core, Package, UI 0.3 and
   all other services.
-- `../../../deps/pxa-system/sdk/guest-c/` is the C SDK targeting the two
-  `pxa.core.v0` imports.
+- `../../../deps/pxa-system/sdk/guest-c/` is the C SDK: one unversioned API
+  surface that imports `pxa_submit` and `pxa_io` from `pxa.core.v1`.
 - `../../../deps/pxa-system/tools/` compiles Wasm/AOT Artifacts and creates signed
   Packages.
 - `src/runtime/` owns the process/activation lifecycle, event loop and public

@@ -1,18 +1,34 @@
 #include "pxa_test_platform.h"
 
+#include <malloc.h>
 #include <string.h>
 
 #define ESP_PLATFORM 1
 #define PXA_ESP_SURFACE_GUEST_MAPPING_SUPPORTED 1
+#include "../src/services/pxa_esp_resource_memory.c"
 #include "../src/services/pxa_esp_surface.c"
 
+/* This fixture has no file worker; the actual cache reclaimer is exercised
+ * by assets_backend and the product runtime tests. */
+size_t pxa_esp_assets_trim(uint8_t cls, size_t bytes) { (void)cls; (void)bytes; return 0; }
 static unsigned lock_depth;
 static unsigned allocations;
+static unsigned fail_next_malloc;
+static size_t last_aligned_allocation_size;
 static unsigned notifications;
 static unsigned release_notifications;
 static int64_t test_now_us;
 
-int64_t esp_timer_get_time(void) { return test_now_us; }
+static void (*during_raster)(void);
+int64_t esp_timer_get_time(void) {
+    if (during_raster != NULL && lock_depth == 0 && g_surface != NULL &&
+        g_surface->raster_draw_rendering != PXA_ESP_SURFACE_NONE) {
+        void (*callback)(void) = during_raster;
+        during_raster = NULL;
+        callback();
+    }
+    return test_now_us;
+}
 
 void test_enter(void) { assert(lock_depth++ == 0); }
 void test_leave(void) { assert(lock_depth-- == 1); }
@@ -22,6 +38,11 @@ void test_log(const char *tag, const char *format, ...) {
 }
 void *heap_caps_malloc(size_t size, unsigned caps) {
     (void)caps;
+    assert(lock_depth == 0);
+    if (fail_next_malloc != 0) {
+        --fail_next_malloc;
+        return NULL;
+    }
     void *memory = malloc(size);
     if (memory != NULL) ++allocations;
     return memory;
@@ -34,6 +55,7 @@ void *heap_caps_calloc(size_t count, size_t size, unsigned caps) {
 }
 void *heap_caps_aligned_alloc(size_t alignment, size_t size, unsigned caps) {
     (void)alignment;
+    last_aligned_allocation_size = size;
     return heap_caps_malloc(size, caps);
 }
 void *heap_caps_aligned_calloc(size_t alignment, size_t count, size_t size,
@@ -42,11 +64,15 @@ void *heap_caps_aligned_calloc(size_t alignment, size_t count, size_t size,
     return heap_caps_calloc(count, size, caps);
 }
 void heap_caps_free(void *memory) {
+    assert(lock_depth == 0);
     if (memory != NULL) {
         assert(allocations != 0);
         --allocations;
     }
     free(memory);
+}
+size_t heap_caps_get_allocated_size(void *memory) {
+    return malloc_usable_size(memory);
 }
 
 static void ready(void *context) {
@@ -83,7 +109,99 @@ static bool empty_ui_alpha_plane(void *context,
     return true;
 }
 
+#include "../../../../deps/pxa-system/libpxa/tests/raster_snapshot_scenario.h"
+
+static void replace_during_raster(void) {
+    uint8_t palette[PXA_RASTER_UPLOAD_HEADER_BYTES + 512] = {0};
+    snapshot_upload_header(palette, PXA_RASTER_UPLOAD_PALETTE_RGB565, 256, 1);
+    pxa_write_u16(palette + PXA_RASTER_UPLOAD_HEADER_BYTES + 2, 0x07e0);
+    pxa_write_u16(palette + PXA_RASTER_UPLOAD_HEADER_BYTES + 4, 0x001f);
+    assert(raster_upload_surface(NULL, (uint64_t)(uintptr_t)g_surface,
+                                  palette, sizeof(palette)) == PXA_STATUS_OK);
+}
+
+static void snapshot_present(void *context, uint64_t id, uint16_t color) {
+    pxa_esp_surface_frame_t frame;
+    const uint16_t *pixels;
+    (void)context;
+    if (id == 1) during_raster = replace_during_raster;
+    assert(pxa_esp_surface_acquire_latest_for_direct(&frame));
+    assert(during_raster == NULL);
+    assert(frame.frame_id == id);
+    pixels = (const uint16_t *)frame.pixels;
+    for (unsigned i = 0; i < 16; ++i) assert(pixels[i] == color);
+    pxa_esp_surface_release_frame(frame.lease);
+}
+
+static void close_during_raster(void) {
+    close_surface(NULL, (uint64_t)(uintptr_t)g_surface);
+}
+
+static void test_close_while_rendering(pxa_game_render_backend_t *backend) {
+    pxa_game_render_desc_t desc = {4, 4, 3, 0, PXA_GAME_RENDER_SCRATCH_NONE, 4096};
+    uint64_t surface;
+    uint32_t capabilities;
+    uint8_t palette[PXA_RASTER_UPLOAD_HEADER_BYTES + 512] = {0};
+    uint8_t draw[PXA_RASTER_DRAW_HEADER_BYTES + PXA_RASTER_CLEAR_BYTES] = {0};
+    pxa_esp_surface_frame_t frame;
+    assert(backend->create(NULL, &desc, &surface, &capabilities) == 0);
+    snapshot_upload_header(palette, PXA_RASTER_UPLOAD_PALETTE_RGB565, 256, 1);
+    assert(backend->upload(NULL, surface, palette, sizeof(palette)) == 0);
+    pxa_write_u32(draw, PXA_RASTER_DRAW_MAGIC);
+    pxa_write_u16(draw + 4, PXA_RASTER_ABI_MAJOR);
+    pxa_write_u16(draw + 6, PXA_RASTER_ABI_MINOR);
+    pxa_write_u32(draw + 8, sizeof(draw));
+    pxa_write_u32(draw + 16, 1);
+    pxa_write_u64(draw + 20, 1);
+    draw[PXA_RASTER_DRAW_HEADER_BYTES] = PXA_RASTER_RECORD_CLEAR_RGB565;
+    pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2, PXA_RASTER_CLEAR_BYTES);
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+    during_raster = close_during_raster;
+    assert(!pxa_esp_surface_acquire_latest_for_direct(&frame));
+    assert(during_raster == NULL && allocations == 0);
+    pxa_esp_surface_memory_info_t memory = {0};
+    pxa_esp_surface_memory_snapshot(&memory);
+    assert(memory.frame_bytes == 0 && memory.scratch_bytes == 0 &&
+           memory.mailbox_bytes == 0 && memory.probe_bytes == 0);
+}
+
+static void test_retired_display_budget(pxa_game_render_backend_t *backend) {
+    pxa_game_render_desc_t desc = {4, 4, 3, 0, PXA_GAME_RENDER_SCRATCH_NONE, 4096};
+    uint64_t surface;
+    uint32_t capabilities;
+    uint8_t palette[PXA_RASTER_UPLOAD_HEADER_BYTES + 512] = {0};
+    uint8_t draw[PXA_RASTER_DRAW_HEADER_BYTES + PXA_RASTER_CLEAR_BYTES] = {0};
+    pxa_esp_surface_frame_t frame;
+    assert(backend->create(NULL, &desc, &surface, &capabilities) == 0);
+    snapshot_upload_header(palette, PXA_RASTER_UPLOAD_PALETTE_RGB565, 256, 1);
+    assert(backend->upload(NULL, surface, palette, sizeof(palette)) == 0);
+    pxa_write_u32(draw, PXA_RASTER_DRAW_MAGIC);
+    pxa_write_u16(draw + 4, PXA_RASTER_ABI_MAJOR);
+    pxa_write_u16(draw + 6, PXA_RASTER_ABI_MINOR);
+    pxa_write_u32(draw + 8, sizeof(draw));
+    pxa_write_u32(draw + 16, 1);
+    pxa_write_u64(draw + 20, 1);
+    draw[PXA_RASTER_DRAW_HEADER_BYTES] = PXA_RASTER_RECORD_CLEAR_RGB565;
+    pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2, PXA_RASTER_CLEAR_BYTES);
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+    assert(pxa_esp_surface_acquire_latest_for_direct(&frame));
+    backend->close(NULL, surface);
+    assert(allocations > 0); /* Display still owns its scanout lease. */
+    assert(pxa_esp_resource_memory_end() == PXA_STATUS_WOULD_BLOCK);
+    assert(pxa_esp_resource_memory_begin() == PXA_STATUS_OK);
+    assert(!backend->create(NULL, &desc, &surface, &capabilities));
+    assert(!backend->upload(NULL, surface, palette, sizeof(palette)));
+    pxa_esp_surface_release_frame(frame.lease); /* Late old frame releases old owner. */
+    backend->close(NULL, surface);
+    assert(allocations == 0);
+    pxa_esp_surface_memory_info_t memory = {0};
+    pxa_esp_surface_memory_snapshot(&memory);
+    assert(memory.frame_bytes == 0 && memory.scratch_bytes == 0 &&
+           memory.mailbox_bytes == 0);
+}
+
 int main(void) {
+    assert(pxa_esp_resource_memory_begin() == PXA_STATUS_OK);
     pxa_surface_backend_t backend;
     pxa_game_render_backend_t game_backend;
     pxa_surface_desc_t desc = {
@@ -93,6 +211,7 @@ int main(void) {
     pxa_surface_damage_rect_t overlay = {1, 1, 2, 2};
     pxa_surface_state_t state;
     pxa_esp_surface_input_metrics_t input_metrics;
+    pxa_esp_surface_memory_info_t memory_info;
     pxa_esp_surface_frame_t frame;
     pxa_esp_surface_frame_t probe;
     pxa_esp_surface_present_info_t present_info;
@@ -120,6 +239,10 @@ int main(void) {
     assert(backend.create(backend.context, &desc, &surface, &stride) ==
            PXA_STATUS_OK);
     assert(surface != 0 && stride == 8 && allocations == 4);
+    pxa_esp_surface_memory_snapshot(&memory_info);
+    assert(memory_info.frame_bytes >= 3u * sizeof(first) &&
+           memory_info.scratch_bytes == 0 && memory_info.mailbox_bytes == 0 &&
+           memory_info.probe_bytes == 0);
     assert(backend.configure(backend.context, surface, &layer) ==
            PXA_STATUS_OK && notifications == 1);
     assert(pxa_esp_surface_get_present_info(&present_info) &&
@@ -226,6 +349,9 @@ int main(void) {
     assert(allocations == 4 && !pxa_esp_surface_acquire_latest(&probe));
     pxa_esp_surface_release_frame(lease);
     assert(allocations == 0 && notifications == 13 && lock_depth == 0);
+    pxa_esp_surface_memory_snapshot(&memory_info);
+    assert(memory_info.frame_bytes == 0 && memory_info.scratch_bytes == 0 &&
+           memory_info.mailbox_bytes == 0);
 
     g_ui_alpha_provider = empty_ui_alpha_plane;
     g_ui_alpha_provider_context = &notifications;
@@ -408,10 +534,14 @@ int main(void) {
         uint8_t draw[PXA_RASTER_DRAW_HEADER_BYTES + PXA_RASTER_CLEAR_BYTES] =
             {0};
         pxa_raster_telemetry_t telemetry;
+        pxa_esp_surface_perf_info_t perf_info;
+        uint32_t perf_values[4] = {0};
+        uint32_t perf_count = 0;
         uint16_t *front;
         unsigned color;
         pxa_game_render_desc_t game_desc = {
-            4, 4, 3, PXA_GAME_RENDER_FLAG_PREFER_DIRECT_SCANOUT};
+            4, 4, 3, PXA_GAME_RENDER_FLAG_PREFER_DIRECT_SCANOUT,
+            PXA_GAME_RENDER_SCRATCH_DEPTH16, 0};
         uint32_t capabilities;
         assert(game_backend.create(game_backend.context, &game_desc, &surface,
                                    &capabilities) == PXA_STATUS_OK);
@@ -421,7 +551,13 @@ int main(void) {
                (PXA_RASTER_CAP_SPRITE_BATCH |
                 PXA_RASTER_CAP_TRIANGLE_BATCH |
                 PXA_RASTER_CAP_COVERAGE_MASK));
-        assert(allocations == 7);
+        assert(allocations == 8);
+        pxa_esp_surface_memory_snapshot(&memory_info);
+        assert(memory_info.frame_bytes >= 3u * sizeof(first) &&
+               memory_info.scratch_bytes >= 4u * 4u * sizeof(uint16_t) &&
+               memory_info.mailbox_bytes >=
+                   3u * PXA_ESP_RASTER_MAILBOX_MIN_BYTES &&
+               memory_info.probe_bytes == 0);
         assert(((pxa_esp_surface_t *)(uintptr_t)surface)
                        ->raster_draw_capacities[0] ==
                    PXA_ESP_RASTER_MAILBOX_MIN_BYTES &&
@@ -438,9 +574,13 @@ int main(void) {
         pxa_write_u16(upload + PXA_RASTER_UPLOAD_HEADER_BYTES, 0x5aa5);
         assert(game_backend.upload(game_backend.context, surface, upload,
                                    sizeof(upload)) == PXA_STATUS_OK);
-        assert(allocations == 8 &&
-               ((pxa_esp_surface_t *)(uintptr_t)surface)->raster_palette[0] ==
-                   0x5aa5);
+        {
+            pxa_raster_resources_t view;
+            pxa_raster_bindings_view(
+                &((pxa_esp_surface_t *)(uintptr_t)surface)->raster_bindings,
+                capabilities, &view);
+            assert(allocations == 9 && view.palette[0] == 0x5aa5);
+        }
 
         pxa_write_u32(draw, PXA_RASTER_DRAW_MAGIC);
         pxa_write_u16(draw + 4, PXA_RASTER_ABI_MAJOR);
@@ -452,6 +592,12 @@ int main(void) {
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2,
                       PXA_RASTER_CLEAR_BYTES);
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x1234);
+        assert(pxa_esp_surface_perf_start());
+        pxa_esp_surface_memory_snapshot(&memory_info);
+        assert(memory_info.probe_bytes >=
+               sizeof(pxa_esp_surface_perf_buffer_t));
+        assert(!pxa_esp_surface_perf_read(PXA_ESP_SURFACE_PERF_RASTER, 0,
+                                          perf_values, 4, &perf_count));
         assert(game_backend.submit(game_backend.context, surface, draw,
                                    sizeof(draw)) == PXA_STATUS_OK);
         assert(pxa_esp_surface_has_pending_frame());
@@ -462,6 +608,7 @@ int main(void) {
         front = (uint16_t *)(uintptr_t)frame.pixels;
         for (color = 0; color < 16; ++color) assert(front[color] == 0x1234);
         pxa_esp_surface_release_frame(frame.lease);
+        pxa_esp_surface_note_game_frame_presented(1, 1000);
 
         pxa_write_u64(draw + 20, 2);
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x2222);
@@ -471,6 +618,14 @@ int main(void) {
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x3333);
         assert(game_backend.submit(game_backend.context, surface, draw,
                                    sizeof(draw)) == PXA_STATUS_OK);
+        /* A rejected list must not remove the valid pending frame. */
+        pxa_write_u64(draw + 20, 4);
+        draw[PXA_RASTER_DRAW_HEADER_BYTES] = 0xff;
+        assert(game_backend.submit(game_backend.context, surface, draw,
+                                   sizeof(draw)) == PXA_STATUS_UNSUPPORTED);
+        assert(((pxa_esp_surface_t *)(uintptr_t)surface)->raster_draw_pending !=
+               PXA_ESP_SURFACE_NONE);
+        draw[PXA_RASTER_DRAW_HEADER_BYTES] = PXA_RASTER_RECORD_CLEAR_RGB565;
         assert(pxa_esp_surface_acquire_latest_for_direct(&frame));
         assert(frame.frame_id == 3);
         front = (uint16_t *)(uintptr_t)frame.pixels;
@@ -484,6 +639,24 @@ int main(void) {
                telemetry.clear_commands == 2 &&
                telemetry.last_draw_list_bytes == sizeof(draw));
         pxa_esp_surface_release_frame(frame.lease);
+        pxa_esp_surface_note_game_frame_presented(3, 2000);
+        pxa_esp_surface_note_game_frame_presented(3, 2500);
+        assert(pxa_esp_surface_perf_stop(&perf_info));
+        assert(perf_info.raster_count == 2 &&
+               perf_info.present_interval_count == 1 &&
+               perf_info.raster_overflow == 0 &&
+               perf_info.present_interval_overflow == 0 &&
+               perf_info.surface_changed == 0);
+        assert(pxa_esp_surface_perf_read(PXA_ESP_SURFACE_PERF_RASTER, 0,
+                                         perf_values, 4, &perf_count) &&
+               perf_count == 2);
+        assert(pxa_esp_surface_perf_read(
+                   PXA_ESP_SURFACE_PERF_PRESENT_INTERVAL, 0,
+                   perf_values, 4, &perf_count) &&
+               perf_count == 1 && perf_values[0] == 1000);
+        pxa_esp_surface_perf_clear();
+        pxa_esp_surface_memory_snapshot(&memory_info);
+        assert(memory_info.probe_bytes == 0);
         {
             enum {
                 BIG_COMMANDS = 512,
@@ -507,10 +680,24 @@ int main(void) {
             }
             assert(game_backend.submit(game_backend.context, surface, big_draw,
                                        sizeof(big_draw)) == PXA_STATUS_OK);
+            pxa_esp_surface_memory_snapshot(&memory_info);
+            assert(memory_info.mailbox_bytes >
+                       3u * PXA_ESP_RASTER_MAILBOX_MIN_BYTES &&
+                   memory_info.peak_total_bytes >
+                       memory_info.frame_bytes + memory_info.scratch_bytes +
+                           memory_info.mailbox_bytes);
             assert(((pxa_esp_surface_t *)(uintptr_t)surface)
                            ->raster_draw_capacities[0] ==
                        PXA_ESP_RASTER_MAILBOX_MIN_BYTES * 2u &&
-                   allocations == 8);
+                   allocations == 9);
+            pxa_write_u64(big_draw + 20, 5);
+            fail_next_malloc = 1;
+            assert(game_backend.submit(game_backend.context, surface,
+                                       big_draw, sizeof(big_draw)) ==
+                   PXA_STATUS_RESOURCE_LIMIT);
+            assert(fail_next_malloc == 0 &&
+                   ((pxa_esp_surface_t *)(uintptr_t)surface)
+                           ->raster_draw_pending != PXA_ESP_SURFACE_NONE);
             assert(pxa_esp_surface_acquire_latest_for_direct(&frame) &&
                    frame.frame_id == 4);
             front = (uint16_t *)(uintptr_t)frame.pixels;
@@ -520,8 +707,134 @@ int main(void) {
         }
         game_backend.close(game_backend.context, surface);
         assert(allocations == 0);
+        pxa_esp_surface_memory_snapshot(&memory_info);
+        assert(memory_info.frame_bytes == 0 && memory_info.scratch_bytes == 0 &&
+               memory_info.mailbox_bytes == 0 && memory_info.probe_bytes == 0 &&
+               memory_info.peak_total_bytes > 0);
+
+        game_desc.scratch_mode = PXA_GAME_RENDER_SCRATCH_NONE;
+        game_desc.max_draw_bytes = 8192;
+        assert(game_backend.create(game_backend.context, &game_desc, &surface,
+                                   &capabilities) == PXA_STATUS_OK);
+        assert(allocations == 7 &&
+               ((pxa_esp_surface_t *)(uintptr_t)surface)->raster_depth_buffer ==
+                   NULL);
+        assert(((pxa_esp_surface_t *)(uintptr_t)surface)
+                       ->raster_draw_capacities[0] == 8192 &&
+               ((pxa_esp_surface_t *)(uintptr_t)surface)
+                       ->raster_draw_capacities[2] == 8192);
+        assert(game_backend.upload(game_backend.context, surface, upload,
+                                   sizeof(upload)) == PXA_STATUS_OK);
+        pxa_write_u64(draw + 20, 1);
+        pxa_write_u32(draw + 12, PXA_RASTER_CAP_COVERAGE_MASK);
+        assert(game_backend.submit(game_backend.context, surface, draw,
+                                   sizeof(draw)) == PXA_STATUS_BAD_STATE);
+        pxa_write_u32(draw + 12, 0);
+        assert(game_backend.submit(game_backend.context, surface, draw,
+                                   sizeof(draw)) == PXA_STATUS_OK);
+        assert(pxa_esp_surface_acquire_latest_for_direct(&frame));
+        pxa_esp_surface_release_frame(frame.lease);
+        game_backend.close(game_backend.context, surface);
+        assert(allocations == 0);
+
+        game_desc.scratch_mode = PXA_GAME_RENDER_SCRATCH_COVERAGE_2BIT;
+        assert(game_backend.create(game_backend.context, &game_desc, &surface,
+                                   &capabilities) == PXA_STATUS_OK);
+        assert(allocations == 8 && last_aligned_allocation_size == 8 &&
+               ((pxa_esp_surface_t *)(uintptr_t)surface)->raster_depth_buffer !=
+                   NULL);
+        assert(game_backend.upload(game_backend.context, surface, upload,
+                                   sizeof(upload)) == PXA_STATUS_OK);
+        pxa_write_u32(draw + 12, PXA_RASTER_CAP_COVERAGE_MASK);
+        assert(game_backend.submit(game_backend.context, surface, draw,
+                                   sizeof(draw)) == PXA_STATUS_OK);
+        assert(pxa_esp_surface_acquire_latest_for_direct(&frame));
+        pxa_esp_surface_release_frame(frame.lease);
+        game_backend.close(game_backend.context, surface);
+        assert(allocations == 0);
+
+        /* A clear-only DrawList needs no palette allocation or upload. */
+        game_desc.scratch_mode = PXA_GAME_RENDER_SCRATCH_NONE;
+        assert(game_backend.create(game_backend.context, &game_desc, &surface,
+                                   &capabilities) == PXA_STATUS_OK);
+        assert(((pxa_esp_surface_t *)(uintptr_t)surface)->raster_bindings.palette ==
+               NULL);
+        pxa_write_u64(draw + 20, 1);
+        pxa_write_u32(draw + 12, 0);
+        pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0xf800);
+        assert(game_backend.submit(game_backend.context, surface, draw,
+                                   sizeof(draw)) == PXA_STATUS_OK);
+        assert(pxa_esp_surface_acquire_latest_for_direct(&frame));
+        front = (uint16_t *)(uintptr_t)frame.pixels;
+        for (color = 0; color < 16; ++color) assert(front[color] == 0xf800);
+        pxa_esp_surface_release_frame(frame.lease);
+        game_backend.close(game_backend.context, surface);
+        assert(allocations == 0);
     }
 
+    raster_snapshot_scenario(&game_backend, snapshot_present, NULL);
+    test_close_while_rendering(&game_backend);
+    test_retired_display_budget(&game_backend);
+    assert(allocations == 0);
+    assert(pxa_esp_resource_memory_end() == PXA_STATUS_OK);
+    /* Delayed consumers keep their old descriptors while the next activation
+     * starts. Closing blocks late allocation, not late free or app startup. */
+    assert(pxa_esp_resource_memory_begin() == PXA_STATUS_OK);
+    const pxa_memory_allocator_t *old_allocator = pxa_esp_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_RASTER);
+    void *retired = pxa_memory_allocate(old_allocator, 128);
+    assert(retired && pxa_esp_resource_memory_end() == PXA_STATUS_WOULD_BLOCK);
+    assert(pxa_esp_resource_memory_begin() == PXA_STATUS_OK);
+    const pxa_memory_allocator_t *new_allocator = pxa_esp_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_RASTER);
+    assert(new_allocator != old_allocator && new_allocator->owner != old_allocator->owner);
+    assert(pxa_memory_allocate(old_allocator, 1) == NULL);
+    void *current = pxa_memory_allocate(new_allocator, 128);
+    assert(current && pxa_esp_resource_memory_end() == PXA_STATUS_WOULD_BLOCK);
+    assert(pxa_esp_resource_memory_begin() == PXA_STATUS_RESOURCE_LIMIT);
+    pxa_memory_release(retired);
+    assert(pxa_esp_resource_memory_begin() == PXA_STATUS_OK);
+    pxa_memory_release(current);
+    assert(pxa_esp_resource_memory_end() == PXA_STATUS_OK && !allocations);
+    /* Device storage shares global limits but survives app generations and
+     * repeated initialization without resetting counters or descriptors. */
+    const pxa_memory_allocator_t *device_allocator = pxa_esp_device_resource_allocator(
+        PXA_MEMORY_EXTERNAL, PXA_MEMORY_METADATA);
+    assert(device_allocator);
+    void *device = pxa_memory_allocate(device_allocator, 4096);
+    assert(device && pxa_esp_resource_memory_initialize() == PXA_STATUS_OK);
+    assert(pxa_esp_resource_memory_begin() == PXA_STATUS_OK);
+    const pxa_memory_allocator_t *app_allocator = pxa_esp_resource_allocator(
+        PXA_MEMORY_EXTERNAL, PXA_MEMORY_RASTER);
+    assert(device_allocator->owner != app_allocator->owner);
+    assert(!pxa_memory_allocate(app_allocator, CONFIG_PXA_RESOURCE_EXTERNAL_BYTES -
+        (pxa_memory_allocation_bytes(1) - 1)));
+    pxa_memory_stats_t device_stats;
+    pxa_esp_resource_memory_stats(&device_stats, NULL);
+    assert(device_stats.charged[PXA_MEMORY_EXTERNAL] == pxa_memory_allocation_bytes(4096));
+    assert(pxa_esp_resource_memory_end() == PXA_STATUS_OK);
+    pxa_memory_release(device);
+    assert(!allocations);
+    /* Actual ESP allocator configuration, including prefix bytes, is shared
+     * by device and active/retiring app owners. Unrelated raster still fits. */
+    assert(pxa_esp_resource_memory_begin() == PXA_STATUS_OK);
+    const pxa_memory_allocator_t *temporary = pxa_esp_resource_allocator(
+        PXA_MEMORY_EXTERNAL, PXA_MEMORY_TEMPORARY);
+    size_t prefix = pxa_memory_allocation_bytes(1) - 1;
+    void *decode = pxa_memory_allocate(temporary, CONFIG_PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES - prefix);
+    assert(decode);
+    assert(!pxa_memory_allocate(temporary, 1));
+    const pxa_memory_allocator_t *device_temporary = pxa_esp_device_resource_allocator(
+        PXA_MEMORY_EXTERNAL, PXA_MEMORY_TEMPORARY);
+    assert(!pxa_memory_allocate(device_temporary, 1));
+    void *texture = pxa_esp_resource_allocate(PXA_MEMORY_EXTERNAL, PXA_MEMORY_RASTER, 128);
+    assert(texture);
+    pxa_esp_resource_memory_stats(&device_stats, NULL);
+    assert(device_stats.temporary_peak[PXA_MEMORY_EXTERNAL] == CONFIG_PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES);
+    assert(pxa_esp_resource_memory_end() == PXA_STATUS_WOULD_BLOCK);
+    assert(!pxa_memory_allocate(device_temporary, 1));
+    pxa_memory_release(decode); pxa_memory_release(texture);
+    decode = pxa_memory_allocate(device_temporary, 1); assert(decode);
+    pxa_memory_release(decode);
+    assert(pxa_esp_resource_memory_end() == PXA_STATUS_OK && !allocations);
     pxa_esp_surface_set_frame_ready_callback(NULL, NULL);
     pxa_esp_surface_set_release_ready_callback(NULL, NULL);
     return 0;

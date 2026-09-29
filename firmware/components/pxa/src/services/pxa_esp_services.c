@@ -17,6 +17,9 @@
 #include "esp_timer.h"
 
 #include "pxa_esp_audio.h"
+#include "pxa_esp_assets.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "pxa/pxa_esp_surface.h"
 #include "pxa_esp_permission_store.h"
 
@@ -38,7 +41,22 @@
 #ifndef CONFIG_PXA_PRIVATE_KV_MAX_VALUE_BYTES
 #define CONFIG_PXA_PRIVATE_KV_MAX_VALUE_BYTES 960
 #endif
+#ifndef CONFIG_PXA_UI_DYNAMIC_BYTES
+#define CONFIG_PXA_UI_DYNAMIC_BYTES (1024 * 1024)
+#endif
+#ifndef CONFIG_PXA_UI_TRANSACTION_BYTES
+#define CONFIG_PXA_UI_TRANSACTION_BYTES (256 * 1024)
+#endif
+#ifndef CONFIG_PXA_UI_CANVAS_BYTES
+#define CONFIG_PXA_UI_CANVAS_BYTES (256 * 1024)
+#endif
 
+#ifndef CONFIG_PXA_ASSET_EXTERNAL_BYTES
+#define CONFIG_PXA_ASSET_EXTERNAL_BYTES (512 * 1024)
+#endif
+#ifndef CONFIG_PXA_ASSET_INTERNAL_BYTES
+#define CONFIG_PXA_ASSET_INTERNAL_BYTES (64 * 1024)
+#endif
 #define PXA_ESP_SERVICES_PATH_BYTES 160
 #define PXA_ESP_GUEST_LOG_TAG "PXA-App"
 
@@ -94,6 +112,19 @@ static pxa_status_t allocate_workspace(
                       PXA_ESP_SERVICES_ISSUE_NONE);
 }
 
+static int manifest_requires_service(const pxa_package_manifest_t *manifest,
+                                     uint16_t service_id) {
+    if (manifest == NULL || manifest->components == NULL) return 0;
+    for (uint16_t component = 0; component < manifest->component_count;
+         ++component) {
+        const pxa_package_component_t *entry = &manifest->components[component];
+        if (entry->services == NULL) continue;
+        for (uint16_t index = 0; index < entry->service_count; ++index)
+            if (entry->services[index].service == service_id) return 1;
+    }
+    return 0;
+}
+
 static void *ui_allocate(void *context, size_t size) {
     void *memory;
     (void)context;
@@ -105,6 +136,16 @@ static void *ui_allocate(void *context, size_t size) {
 static void ui_release(void *context, void *memory) {
     (void)context;
     free(memory);
+}
+
+static void *ui_resize(void *context, void *memory, size_t size) {
+    void *replacement;
+    (void)context;
+    replacement = heap_caps_realloc(memory, size,
+                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (replacement == NULL)
+        replacement = heap_caps_realloc(memory, size, MALLOC_CAP_8BIT);
+    return replacement;
 }
 
 static uint64_t now_us(void *context) {
@@ -245,6 +286,20 @@ static pxa_status_t initialize_permission(
     return PXA_STATUS_OK;
 }
 
+/* KV is available even when the app does not request the file service. Both
+ * services must therefore be able to create a first-launch private root. */
+static int prepare_private_root(char *root, size_t capacity,
+                                const char *identity) {
+    int length = snprintf(root, capacity, "%s/%s/data",
+                          CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT);
+    if (length < 0 || (size_t)length >= capacity ||
+        (mkdir(root, 0700) != 0 && errno != EEXIST)) return 0;
+    int added = snprintf(root + length, capacity - (size_t)length,
+                         "/%s", identity);
+    return added >= 0 && (size_t)added < capacity - (size_t)length &&
+           (mkdir(root, 0700) == 0 || errno == EEXIST);
+}
+
 static pxa_status_t initialize_fs(
     pxa_esp_services_t *services, const pxa_esp_services_config_t *host,
     pxa_esp_services_result_t *result) {
@@ -255,9 +310,7 @@ static pxa_status_t initialize_fs(
     size_t workspace_size;
     memset(&config, 0, sizeof(config));
     config.struct_size = sizeof(config);
-    if (snprintf(root, sizeof(root), "%s/%s/data/%s", CONFIG_PXA_MOUNT_POINT,
-                 CONFIG_PXA_STATE_ROOT, host->identity) >= (int)sizeof(root) ||
-        (mkdir(root, 0700) != 0 && errno != EEXIST)) {
+    if (!prepare_private_root(root, sizeof(root), host->identity)) {
         return fail(result, "create-private-fs-root", PXA_STATUS_INTERNAL,
                     PXA_ESP_SERVICES_ISSUE_NONE);
     }
@@ -352,7 +405,8 @@ static pxa_status_t initialize_storage(
     size_t workspace_size;
     memset(&config, 0, sizeof(config));
     config.struct_size = sizeof(config);
-    if (snprintf(root, sizeof(root), "%s/%s/data/%s/.pxa-storage",
+    if (!prepare_private_root(root, sizeof(root), host->identity) ||
+        snprintf(root, sizeof(root), "%s/%s/data/%s/.pxa-storage",
                  CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT,
                  host->identity) >= (int)sizeof(root) ||
         (mkdir(root, 0700) != 0 && errno != EEXIST)) {
@@ -617,6 +671,53 @@ static pxa_status_t initialize_bounded_services(
                       PXA_ESP_SERVICES_ISSUE_NONE);
 }
 
+static pxa_status_t initialize_assets(
+    pxa_esp_services_t *services, const pxa_esp_services_config_t *host,
+    pxa_esp_services_result_t *result) {
+    pxa_esp_assets_config_t worker = {0};
+    pxa_assets_config_t config = {0};
+    pxa_status_t status;
+    size_t bytes;
+    int guest_assets = manifest_requires_service(host->manifest, PXA_ASSETS_SERVICE_ID);
+    int music = 0;
+    if (manifest_requires_service(host->manifest, PXA_AUDIO_SERVICE_ID)) {
+        for (size_t i = 0; i < host->manifest->file_count; ++i) {
+            pxa_bytes_t path = host->manifest->files[i].path;
+            if (path.size >= 4) {
+                const uint8_t *suffix = path.data + path.size - 4;
+                if (suffix[0] == '.' && (suffix[1] | 32) == 'o' &&
+                    (suffix[2] | 32) == 'g' && (suffix[3] | 32) == 'g') music = 1;
+            }
+        }
+    }
+    if (!guest_assets && !music) return PXA_STATUS_OK;
+    worker.manifest = host->manifest;
+    worker.package_root = host->package_root;
+    worker.notify = host->assets_notify;
+    worker.notify_context = host->assets_notify_context;
+    worker.max_catalog_bytes = 64u * 1024u;
+    worker.cache.max_entries = guest_assets ? 64 : 1;
+    worker.cache.max_requests = guest_assets ? 48 : 1;
+    worker.cache.max_requests_per_owner = guest_assets ? 32 : 1;
+    worker.cache.max_pending = guest_assets ? 16 : 1;
+    worker.cache.resident_limit[0] = CONFIG_PXA_ASSET_INTERNAL_BYTES;
+    worker.cache.resident_limit[1] = CONFIG_PXA_ASSET_EXTERNAL_BYTES;
+    worker.cache.owner_limit[0] = worker.cache.resident_limit[0];
+    worker.cache.owner_limit[1] = worker.cache.resident_limit[1];
+    config.struct_size = sizeof(config);
+    config.max_pending = config.max_pending_per_component = 16;
+    config.max_resources = config.max_resources_per_component = 32;
+    status = pxa_esp_assets_begin(&worker, &config.backend);
+    if (status != PXA_STATUS_OK) return fail(result, "initialize-asset-worker", status, PXA_ESP_SERVICES_ISSUE_NONE);
+    services->assets_backend_active = 1;
+    if (!guest_assets) return PXA_STATUS_OK;
+    bytes = pxa_assets_service_workspace_size(&config);
+    status = allocate_workspace(host, bytes, &services->assets_workspace, result, "allocate-assets-service");
+    if (status != PXA_STATUS_OK) return status;
+    status = pxa_assets_service_init(services->assets_workspace, bytes, host->runtime, &config, &services->assets);
+    return status == PXA_STATUS_OK ? status : fail(result, "initialize-assets-service", status, PXA_ESP_SERVICES_ISSUE_NONE);
+}
+
 static pxa_status_t collect_jobs(
     pxa_esp_services_t *services, const pxa_esp_services_config_t *host,
     pxa_esp_services_result_t *result) {
@@ -793,10 +894,11 @@ static pxa_status_t initialize_window_ui(
     pxa_ui_config_init(&config);
     config.allocate = ui_allocate;
     config.release = ui_release;
+    config.resize = ui_resize;
     config.now_us = now_us;
-    config.max_dynamic_bytes = SIZE_MAX;
-    config.max_transaction_bytes = SIZE_MAX;
-    config.max_canvas_bytes = SIZE_MAX;
+    config.max_dynamic_bytes = CONFIG_PXA_UI_DYNAMIC_BYTES;
+    config.max_transaction_bytes = CONFIG_PXA_UI_TRANSACTION_BYTES;
+    config.max_canvas_bytes = CONFIG_PXA_UI_CANVAS_BYTES;
     config.features = PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
                       PXA_UI_FEATURE_GRID |
                       PXA_UI_FEATURE_RGB565_BITMAP |
@@ -835,8 +937,9 @@ static pxa_status_t register_services(
     } while (0)
     PXA_REGISTER(pxa_storage_service_register(services->storage),
                  "register-storage-service");
-    PXA_REGISTER(pxa_fs_service_register(services->fs),
-                 "register-fs-service");
+    if (services->fs != NULL)
+        PXA_REGISTER(pxa_fs_service_register(services->fs),
+                     "register-fs-service");
     PXA_REGISTER(pxa_window_service_register(services->window),
                  "register-window-service");
     PXA_REGISTER(pxa_ui_service_register(services->ui), "register-ui-service");
@@ -859,6 +962,7 @@ static pxa_status_t register_services(
                  "register-audio-service");
     PXA_REGISTER(pxa_surface_service_register(services->surface),
                  "register-surface-service");
+    if (services->assets) PXA_REGISTER(pxa_assets_service_register(services->assets), "register-assets-service");
     PXA_REGISTER(pxa_game_render_service_register(services->game_render),
                  "register-game-render-service");
 #undef PXA_REGISTER
@@ -883,13 +987,16 @@ pxa_status_t pxa_esp_services_initialize(
     }
     pxa_esp_services_destroy(services);
     status = initialize_permission(services, config, result);
-    if (status == PXA_STATUS_OK) status = initialize_fs(services, config, result);
+    if (status == PXA_STATUS_OK &&
+        manifest_requires_service(config->manifest, PXA_FS_SERVICE_ID))
+        status = initialize_fs(services, config, result);
     if (status == PXA_STATUS_OK) {
         status = initialize_storage(services, config, result);
     }
     if (status == PXA_STATUS_OK) {
         status = initialize_bounded_services(services, config, result);
     }
+    if (status == PXA_STATUS_OK) status = initialize_assets(services, config, result);
     if (status == PXA_STATUS_OK) {
         status = initialize_scheduler(services, config, result);
     }
@@ -911,6 +1018,27 @@ void pxa_esp_services_destroy(pxa_esp_services_t *services) {
     }
     if (services->posix_fs != NULL) {
         pxa_posix_fs_deinit(services->posix_fs);
+    }
+    if (services->assets_backend_active) {
+        pxa_asset_cache_stats_t stats;
+        size_t metadata, stack;
+        pxa_esp_assets_stats(&stats, &metadata, &stack);
+        ESP_LOGI("PxaAssets", "peak_internal=%u peak_external=%u metadata=%u task_stack=%u evictions=%llu failures=%llu",
+            (unsigned)stats.peak_charged[0], (unsigned)stats.peak_charged[1], (unsigned)metadata,
+            (unsigned)stack, (unsigned long long)stats.evictions, (unsigned long long)stats.load_failures);
+        /* Runtime has closed handles; the display task may still retire its
+         * final frame. Keep the activation arena and manifest alive meanwhile. */
+        while (pxa_esp_assets_end() == PXA_STATUS_WOULD_BLOCK) vTaskDelay(1);
+        pxa_esp_asset_io_stats_t io;
+        pxa_esp_assets_io_stats(&io);
+        for (unsigned lane=0;lane<2;++lane) {
+            const pxa_esp_asset_io_lane_t *s=&io.lanes[lane];
+            ESP_LOGI("PxaStorage", "lane=%u reads=%llu bytes=%llu wait_us=%llu max_wait_us=%llu service_us=%llu max_service_us=%llu max_read=%u cancelled=%u errors=%u",
+                lane,(unsigned long long)s->reads,(unsigned long long)s->bytes,
+                (unsigned long long)s->wait_us,(unsigned long long)s->max_wait_us,
+                (unsigned long long)s->service_us,(unsigned long long)s->max_service_us,
+                (unsigned)s->max_read_bytes,(unsigned)s->cancellations,(unsigned)s->errors);
+        }
     }
     memset(services, 0, sizeof(*services));
 }

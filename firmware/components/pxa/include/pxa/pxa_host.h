@@ -5,6 +5,9 @@
 #include <stdint.h>
 
 #include "pxa/window.h"
+#include "pxa/asset_object.h"
+#include "pxa/audio_playback.h"
+#include "pxa/resource_budget.h"
 
 #if defined(ESP_PLATFORM)
 
@@ -68,6 +71,18 @@ typedef struct {
     char stage[PXA_HOST_PACKAGE_DEPLOY_STAGE_MAX];
 } pxa_host_package_deploy_result_t;
 
+/* On-demand diagnostics. Resource counters cover allocations routed through
+ * the shared budget; heap capability counters must be read separately. */
+typedef struct {
+    size_t current[PXA_MEMORY_CLASSES];
+    size_t peak[PXA_MEMORY_CLASSES];
+    size_t temporary_peak[PXA_MEMORY_CLASSES];
+    size_t by_kind[PXA_MEMORY_KINDS][PXA_MEMORY_CLASSES];
+    size_t fixed_bytes;
+    uint64_t denied;
+    uint64_t allocation_failures;
+} pxa_host_resource_memory_snapshot_t;
+
 typedef void (*pxa_host_icon_release_fn)(void *context);
 
 typedef struct {
@@ -116,7 +131,9 @@ typedef enum {
 
 typedef void (*pxa_host_runtime_event_fn)(void *context,
                                           pxa_host_runtime_event_t event,
-                                          const char *identity_key);
+                                          const char *identity_key,
+                                          uint64_t host_instance_id,
+                                          uint8_t stop_reason);
 typedef void (*pxa_host_catalog_changed_fn)(void *context);
 typedef void (*pxa_host_window_changed_fn)(
     void *context, const char *identity_key,
@@ -168,6 +185,22 @@ bool pxa_host_runtime_launch_app(
     const char *app_id);
 bool pxa_host_runtime_back(void);
 bool pxa_host_runtime_stop(const char *identity_key);
+bool pxa_host_runtime_stop_with_reason(const char *identity_key,
+                                       uint64_t host_instance_id,
+                                       uint8_t reason);
+/* Matches the Package activation even if its UI component has exited while
+ * background Work components are still running. */
+bool pxa_host_runtime_is_instance_active(const char *identity_key,
+                                          uint64_t host_instance_id);
+/* Thread-safe UI lifecycle gates. The Host coalesces changes and reliably
+ * delivers the resulting foreground/background event on its runtime task. */
+bool pxa_host_runtime_set_app_foreground(const char *identity_key,
+                                         uint64_t host_instance_id,
+                                         bool foreground);
+bool pxa_host_set_display_interactive(bool interactive);
+/* Must be called from a task other than the PXA runtime task. Gives the UI
+ * component a bounded background/save phase before board power is cut. */
+bool pxa_host_prepare_shutdown(uint32_t timeout_ms);
 bool pxa_host_active_identity(char *identity, size_t capacity);
 bool pxa_host_deploy_package(const char *identity_key);
 bool pxa_host_deploy_package_detailed(
@@ -183,6 +216,8 @@ size_t pxa_host_list_app_permissions(const char *identity_key,
 bool pxa_host_set_app_permission(const char *identity_key,
                                  size_t permission_index, bool granted);
 bool pxa_host_ready(void);
+bool pxa_host_resource_memory_snapshot(
+    pxa_host_resource_memory_snapshot_t *snapshot);
 bool pxa_host_is_active(const char *identity_key);
 bool pxa_host_captures_volume_keys(void);
 bool pxa_host_post_key(pxa_host_key_t key);
@@ -252,6 +287,11 @@ void pxa_host_set_audio_sink(pxa_host_audio_submit_fn submit,
                              pxa_host_audio_flush_fn flush,
                              void *context);
 
+/* Prepared short sound, borrowed during this call. Accepted playback retains
+ * the object, whose cache pin guarantees deferred worker reclamation. */
+typedef bool (*pxa_host_audio_sound_fn)(void *,uint8_t,pxa_asset_object_t *,int16_t);
+void pxa_host_set_audio_sound_sink(pxa_host_audio_sound_fn,void *);
+
 /* Asset callbacks run on the PXA runtime stack and must only copy/enqueue the
  * command. The absolute package path is valid only until play returns. */
 typedef bool (*pxa_host_audio_asset_play_fn)(
@@ -262,6 +302,18 @@ typedef bool (*pxa_host_audio_asset_control_fn)(
 void pxa_host_set_audio_asset_sink(
     pxa_host_audio_asset_play_fn play,
     pxa_host_audio_asset_control_fn control, void *context);
+
+typedef struct {
+    void *context;
+    pxa_status_t (*play)(void *, uint8_t voice, uint64_t session, const char *,
+        bool loop, int16_t gain, bool paused, uint64_t *instance);
+    pxa_status_t (*peek)(void *, pxa_audio_playback_event_t *);
+    pxa_status_t (*consume)(void *, const pxa_audio_playback_event_t *);
+    void (*close)(void *, uint64_t session);
+} pxa_host_audio_music_sink_t;
+void pxa_host_set_audio_music_sink(const pxa_host_audio_music_sink_t *);
+/* Worker-safe signal only; never delivers Guest events on the audio task. */
+void pxa_host_audio_notify(void);
 
 #ifdef __cplusplus
 }

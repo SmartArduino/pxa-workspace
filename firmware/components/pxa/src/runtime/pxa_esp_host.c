@@ -32,6 +32,7 @@
 
 #include "pxa/activation.h"
 #include "pxa/audio.h"
+#include "pxa/clock.h"
 #include "pxa/fs.h"
 #include "pxa/surface.h"
 #include "pxa/ipc.h"
@@ -53,6 +54,7 @@
 #include "pxa_esp_store_download.h"
 #include "pxa_esp_permission_store.h"
 #include "pxa_esp_services.h"
+#include "pxa_esp_resource_memory.h"
 #include "pxa_esp_ui_shell.h"
 #include "pxa_esp_audio.h"
 #include "pxa/pxa_esp_surface.h"
@@ -62,11 +64,12 @@
 #include "pxa_host_clock_slots.h"
 #include "pxa_host_command.h"
 #include "pxa_host_pointer_mailbox.h"
+#include "pxa_esp_store_policy.h"
 
 #define PXA_ESP_HOST_TAG "PxaHost"
 #define PXA_ESP_HOST_MAX_APP_ID PXA_HOST_COMMAND_MAX_IDENTITY_BYTES
 #define PXA_ESP_HOST_MAX_PATH 160
-#define PXA_ESP_HOST_MAX_SERVICES 19
+#define PXA_ESP_HOST_MAX_SERVICES 20
 #define PXA_ESP_HOST_EVENT_DRAIN_ROUNDS 3
 #define PXA_ESP_HOST_BACK_EVENT_DRAIN_LIMIT 32
 #define PXA_ESP_HOST_CLOCK_PERIOD_US 5000
@@ -80,11 +83,6 @@
 #define PXA_ESP_WAMR_ALLOC_ALIGNMENT 8u
 
 #define PXA_CORE_SERVICE_ID UINT16_C(1)
-#define PXA_CLOCK_SERVICE_ID UINT16_C(4)
-#define PXA_CLOCK_SET_PERIOD UINT16_C(1)
-#define PXA_CLOCK_NOW UINT16_C(2)
-#define PXA_CLOCK_TICK UINT16_C(0x8001)
-#define PXA_CLOCK_NOW_RESULT UINT16_C(0x8002)
 #define PXA_CONFIG_SERVICE_VERSION UINT16_C(4)
 #define PXA_SYSTEM_CONFIG_ENVIRONMENT UINT16_C(12)
 #define PXA_SYSTEM_CONFIGURATION_LOCALE UINT16_C(1)
@@ -182,6 +180,7 @@ typedef struct {
     char active_name[PXA_HOST_PACKAGE_NAME_MAX];
     pxa_component_t active_component;
     uint64_t active_instance_id;
+    uint64_t package_instance_id;
     pxa_component_t *active_components;
     size_t active_component_count;
     size_t active_component_capacity;
@@ -228,6 +227,16 @@ typedef struct {
     uint64_t next_maintenance_us;
     uint64_t next_lifecycle_us;
     uint8_t scheduler_maintenance_pending;
+    uint8_t ui_foreground_requested; /* guarded by g_process_state_lock */
+    uint8_t display_interactive;     /* guarded by g_process_state_lock */
+    uint8_t shutdown_complete;       /* guarded by g_process_state_lock */
+    uint8_t lifecycle_effective;     /* runtime task only */
+    uint8_t lifecycle_delivered;     /* 2 means not yet delivered */
+    uint64_t shutdown_deadline_us;   /* runtime task only */
+    uint8_t graceful_stop_active;    /* runtime task only */
+    uint8_t graceful_stop_after_back;
+    pxa_stop_reason_t graceful_stop_reason;
+    char deferred_launch_identity[PXA_ESP_HOST_MAX_APP_ID];
     pxa_ui_color_scheme_t color_scheme;
     pxa_ui_color_scheme_t pending_color_scheme;
     uint8_t color_scheme_pending;
@@ -353,7 +362,7 @@ static void store_registry_load(void) {
             memset(entry, 0, sizeof(*entry));
             continue;
         }
-        snprintf(filename, sizeof(filename), "%s", entry->filename);
+        memcpy(filename, entry->filename, sizeof(filename));
         if (snprintf(full_path, sizeof(full_path), "%s/%s/%s",
                      CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT,
                      filename) >= (int)sizeof(full_path) ||
@@ -450,7 +459,9 @@ typedef struct {
 static int drain_active_events(void);
 
 static void notify_runtime_event(pxa_host_runtime_event_t event,
-                                 const char *identity) {
+                                 const char *identity,
+                                 uint64_t host_instance_id,
+                                 uint8_t stop_reason) {
     pxa_host_runtime_event_fn callback;
     void *context;
     if (identity == NULL || identity[0] == '\0') return;
@@ -458,7 +469,8 @@ static void notify_runtime_event(pxa_host_runtime_event_t event,
     callback = g_runtime_event_callback;
     context = g_runtime_event_context;
     portEXIT_CRITICAL(&g_runtime_event_lock);
-    if (callback != NULL) callback(context, event, identity);
+    if (callback != NULL) callback(context, event, identity,
+                                   host_instance_id, stop_reason);
 }
 
 static int system_caller_for_component(pxa_component_t component,
@@ -585,6 +597,7 @@ static portMUX_TYPE g_process_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE g_net_completion_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE g_wamr_watchdog_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint8_t g_net_completion_ready;
+static uint32_t g_assets_completion_ready;
 
 static void enter_wamr_watchdog_critical(void *context) {
     portENTER_CRITICAL((portMUX_TYPE *)context);
@@ -811,19 +824,22 @@ static void publish_active_state(void) {
     portENTER_CRITICAL(&g_public_state_lock);
     g_host.public_state = state;
     portEXIT_CRITICAL(&g_public_state_lock);
-    notify_runtime_event(PXA_HOST_RUNTIME_STARTED, state.identity);
+    notify_runtime_event(PXA_HOST_RUNTIME_STARTED, state.identity,
+                         state.main_instance_id, PXA_STOP_NORMAL);
 }
 
 static void publish_main_stopped(void) {
     char identity[PXA_ESP_HOST_MAX_APP_ID];
+    uint64_t instance_id;
     snprintf(identity, sizeof(identity), "%s",
              g_host.activation.active_identity);
     portENTER_CRITICAL(&g_public_state_lock);
+    instance_id = g_host.public_state.main_instance_id;
     g_host.public_state.main_active = 0;
-    g_host.public_state.main_instance_id = 0;
     g_host.public_state.volume_key_capture_active = 0;
     portEXIT_CRITICAL(&g_public_state_lock);
-    notify_runtime_event(PXA_HOST_RUNTIME_STOPPED, identity);
+    notify_runtime_event(PXA_HOST_RUNTIME_STOPPED, identity, instance_id,
+                         PXA_STOP_NORMAL);
 }
 
 static void unpublish_active_state(void) {
@@ -946,12 +962,32 @@ static bool store_inventory_visit(const pxa_esp_package_record_t *record,
     return true;
 }
 
+static pxa_status_t store_begin_request(pxa_runtime_t *runtime,
+                                        pxa_component_t component,
+                                        const pxa_message_view_t *message,
+                                        size_t payload_capacity) {
+    uint16_t core_major = 0;
+    pxa_status_t status = pxa_component_core_major(runtime, component,
+                                                   &core_major);
+    if (status != PXA_STATUS_OK) return status;
+    if (core_major == 1)
+        return pxa_request_begin_reserved(
+            runtime, component, message->request_id,
+            PXA_STORE_INSTALL_SERVICE_ID, message->opcode, 0,
+            payload_capacity);
+    return pxa_request_begin(runtime, component, message->request_id,
+                             PXA_STORE_INSTALL_SERVICE_ID, message->opcode,
+                             0);
+}
+
 static pxa_status_t store_complete_now(pxa_runtime_t *runtime,
                                        pxa_component_t component,
                                        const pxa_message_view_t *message,
                                        const void *payload, size_t length) {
-    pxa_status_t result = pxa_request_begin(runtime, component, message->request_id,
-                            PXA_STORE_INSTALL_SERVICE_ID, message->opcode, 0);
+    pxa_status_t result = store_begin_request(runtime, component, message,
+                                              length);
+    if (result != PXA_STATUS_OK) return result;
+    result = pxa_request_commit(runtime, component, message->request_id);
     if (result != PXA_STATUS_OK) return result;
     return pxa_request_complete(runtime, component, message->request_id,
                                 PXA_STATUS_OK, payload, length);
@@ -960,14 +996,29 @@ static pxa_status_t store_complete_now(pxa_runtime_t *runtime,
 static void copy_utf8_c_string(char *output, size_t capacity,
                                const char *value);
 
+static bool store_installer_authorized_visit(
+    const pxa_esp_package_record_t *record, void *context) {
+    bool *authorized = context;
+    if (strcmp(record->id, g_host.activation.active_identity) != 0)
+        return true;
+    *authorized = pxa_esp_store_installer_authorized(
+        record, g_host.activation.active_identity);
+    return false;
+}
+
 static pxa_status_t host_store_install_control(
     void *context, pxa_runtime_t *runtime, pxa_component_t component,
     const pxa_message_view_t *message) {
     pxa_esp_store_job_t *job;
     pxa_status_t status;
+    bool authorized = false;
     (void)context;
     if (message == NULL || message->request_id == 0)
         return PXA_STATUS_INVALID_ARGUMENT;
+    (void)pxa_esp_package_store_visit(PXA_ESP_PACKAGE_VIEW_RUNNABLE,
+                                      store_installer_authorized_visit,
+                                      &authorized);
+    if (!authorized) return PXA_STATUS_DENIED;
     if (message->opcode == PXA_STORE_INSTALLED_LIST_REQUEST) {
         store_inventory_t *inventory;
         if (message->payload.size != 0) return PXA_STATUS_INVALID_ARGUMENT;
@@ -1049,9 +1100,7 @@ static pxa_status_t host_store_install_control(
         if (target.matches != 1u || target.built_in ||
             strcmp(target.identity, g_host.activation.active_identity) == 0)
             return PXA_STATUS_DENIED;
-        status = pxa_request_begin(runtime, component, message->request_id,
-                                   PXA_STORE_INSTALL_SERVICE_ID,
-                                   PXA_STORE_UNINSTALL_REQUEST, 0);
+        status = store_begin_request(runtime, component, message, 0);
         if (status != PXA_STATUS_OK) return status;
         prompt.prompt_id = ++g_host.activation.next_permission_prompt_id;
         if (prompt.prompt_id == 0)
@@ -1077,8 +1126,11 @@ static pxa_status_t host_store_install_control(
         if (!pxa_esp_ui_shell_post_permission_prompt(&prompt)) {
             pxa_esp_surface_runtime_modal_leave();
             memset(&g_store_uninstall, 0, sizeof(g_store_uninstall));
-            (void)pxa_request_cancel(runtime, component, message->request_id);
-            return PXA_STATUS_RESOURCE_LIMIT;
+            status = pxa_request_complete(runtime, component,
+                                          message->request_id,
+                                          PXA_STATUS_RESOURCE_LIMIT,
+                                          NULL, 0);
+            return status;
         }
         return PXA_STATUS_OK;
     }
@@ -1092,9 +1144,7 @@ static pxa_status_t host_store_install_control(
         if (job == NULL) return PXA_STATUS_RESOURCE_LIMIT;
         snprintf(job->filename, sizeof(job->filename), "%s", entry->filename);
         snprintf(job->app_id, sizeof(job->app_id), "%s", entry->app_id);
-        status = pxa_request_begin(runtime, component, message->request_id,
-                                   PXA_STORE_INSTALL_SERVICE_ID,
-                                   PXA_STORE_INSTALL_FILE_REQUEST, 0);
+        status = store_begin_request(runtime, component, message, 0);
         if (status != PXA_STATUS_OK) { free(job); return status; }
         job->component = component;
         job->request_id = message->request_id;
@@ -1106,9 +1156,12 @@ static pxa_status_t host_store_install_control(
                         PXA_STORE_WORKER_STACK_BYTES,
                         job, 3, &job->worker) != pdPASS) {
             g_store_install = NULL;
-            (void)pxa_request_cancel(runtime, component, message->request_id);
+            status = pxa_request_complete(runtime, component,
+                                          message->request_id,
+                                          PXA_STATUS_RESOURCE_LIMIT,
+                                          NULL, 0);
             free(job);
-            return PXA_STATUS_RESOURCE_LIMIT;
+            return status;
         }
         return PXA_STATUS_OK;
     }
@@ -1127,9 +1180,9 @@ static pxa_status_t host_store_install_control(
         free(job);
         return PXA_STATUS_INVALID_ARGUMENT;
     }
-    status = pxa_request_begin(runtime, component, message->request_id,
-                               PXA_STORE_INSTALL_SERVICE_ID,
-                               message->opcode, 0);
+    status = store_begin_request(runtime, component, message,
+                                 message->opcode == PXA_STORE_DOWNLOAD_REQUEST
+                                     ? 19u : 0u);
     if (status != PXA_STATUS_OK) {
         ESP_LOGW(PXA_ESP_HOST_TAG, "Store request allocation failed: status=%ld",
                  (long)status);
@@ -1153,9 +1206,12 @@ static pxa_status_t host_store_install_control(
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         g_store_install = NULL;
-        (void)pxa_request_cancel(runtime, component, message->request_id);
+        status = pxa_request_complete(runtime, component,
+                                      message->request_id,
+                                      PXA_STATUS_RESOURCE_LIMIT,
+                                      NULL, 0);
         free(job);
-        return PXA_STATUS_RESOURCE_LIMIT;
+        return status;
     }
     return PXA_STATUS_OK;
 }
@@ -1960,6 +2016,8 @@ static int drain_active_events(void) {
     for (round = 0; round < PXA_ESP_HOST_EVENT_DRAIN_ROUNDS; ++round) {
         size_t index;
         int delivered = 0;
+        if (g_host.activation.services.assets) pxa_assets_service_poll(g_host.activation.services.assets);
+        if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
         for (index = 0; index < g_host.activation.active_component_count; ++index) {
             pxa_wamr_event_result_t result;
             const pxa_status_t status = pxa_wamr_engine_deliver_event_result(
@@ -1978,6 +2036,12 @@ static int drain_active_events(void) {
     }
     refresh_volume_key_capture_state();
     return 1;
+}
+
+static void on_assets_completion_ready(void *context) {
+    (void)context;
+    __atomic_store_n(&g_assets_completion_ready, 1u, __ATOMIC_RELEASE);
+    wake_runtime_thread();
 }
 
 static void mark_net_completion_ready(void) {
@@ -2365,12 +2429,33 @@ static pxa_status_t host_clock_control(void *context, pxa_runtime_t *runtime,
     uint8_t response[24];
     uint8_t payload[12];
     pxa_writer_t writer;
+    uint16_t core_major = 0;
     uint16_t period_ms;
     uint64_t now_us;
     (void)context;
     if (message->opcode == PXA_CLOCK_NOW) {
+        pxa_status_t status;
         if (message->request_id == 0 || message->payload.size != 0) {
             return PXA_STATUS_INVALID_ARGUMENT;
+        }
+        status = pxa_component_core_major(runtime, component, &core_major);
+        if (status != PXA_STATUS_OK) return status;
+        if (core_major == 1) {
+            status = pxa_request_begin_reserved(
+                runtime, component, message->request_id,
+                PXA_CLOCK_SERVICE_ID, PXA_CLOCK_NOW, 0, sizeof(now_us));
+            if (status != PXA_STATUS_OK) return status;
+            status = pxa_request_commit(runtime, component,
+                                        message->request_id);
+            if (status != PXA_STATUS_OK) return status;
+            now_us = host_now_us(NULL);
+#if PXA_ESP_ACCEPTANCE_PERF
+            trace_guest_perf_marker(component, message->request_id, now_us);
+#endif
+            pxa_write_u64(payload, now_us);
+            return pxa_request_complete(runtime, component,
+                                        message->request_id, PXA_STATUS_OK,
+                                        payload, sizeof(now_us));
         }
         now_us = host_now_us(NULL);
 #if PXA_ESP_ACCEPTANCE_PERF
@@ -2517,6 +2602,12 @@ static void host_log_activation_memory_usage(void) {
              (unsigned)usage.used_bytes, (unsigned)usage.reserved_bytes,
              (unsigned)usage.peak_used_bytes,
              (unsigned)usage.peak_reserved_bytes);
+}
+
+static pxa_status_t acquire_ui_image(pxa_component_t component, pxa_handle64_t handle, pxa_asset_object_t **output, void *context) {
+    (void)context;
+    return pxa_assets_acquire_handle(g_host.activation.runtime,component,
+        handle,PXA_ASSET_IMAGE,output);
 }
 
 static pxa_status_t prepare_start(void *context, pxa_component_t component,
@@ -2697,6 +2788,8 @@ static pxa_status_t read_artifact(void *host_context, pxa_bytes_t path,
 static void stop_active(pxa_stop_reason_t reason) {
     pxa_esp_host_public_state_t public_state;
     char stopped_identity[PXA_ESP_HOST_MAX_APP_ID];
+    g_host.graceful_stop_active = 0;
+    g_host.deferred_launch_identity[0] = '\0';
     public_state_snapshot(&public_state);
     snprintf(stopped_identity, sizeof(stopped_identity), "%s",
              g_host.activation.active_identity);
@@ -2728,6 +2821,11 @@ static void stop_active(pxa_stop_reason_t reason) {
         memset(&g_store_result, 0, sizeof(g_store_result));
     }
     unpublish_active_state();
+    portENTER_CRITICAL(&g_process_state_lock);
+    g_host.ui_foreground_requested = 0;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    g_host.lifecycle_effective = 0;
+    g_host.lifecycle_delivered = 2;
     dismiss_runtime_permission_prompt();
     dismiss_unresponsive_prompt();
     host_log_ui_usage();
@@ -2749,6 +2847,7 @@ static void stop_active(pxa_stop_reason_t reason) {
     g_host.activation.encoded_keep = NULL;
     g_host.activation.active_component = PXA_COMPONENT_INVALID;
     g_host.activation.active_instance_id = 0;
+    g_host.activation.package_instance_id = 0;
     clear_pointer_mailbox();
     g_host.activation.active_component_count = 0;
     g_host.activation.active_component_capacity = 0;
@@ -2762,7 +2861,8 @@ static void stop_active(pxa_stop_reason_t reason) {
     g_host.activation.active_identity[0] = '\0';
     g_host.activation.active_name[0] = '\0';
     if (public_state.main_active)
-        notify_runtime_event(PXA_HOST_RUNTIME_STOPPED, stopped_identity);
+        notify_runtime_event(PXA_HOST_RUNTIME_STOPPED, stopped_identity,
+                             public_state.main_instance_id, reason);
     portENTER_CRITICAL(&g_clock_slots_lock);
     pxa_host_clock_slots_cancel_all(&g_host.clock_slots);
     portEXIT_CRITICAL(&g_clock_slots_lock);
@@ -2778,8 +2878,12 @@ static void stop_active(pxa_stop_reason_t reason) {
         pxa_runtime_deinit(g_host.activation.runtime);
         g_host.activation.runtime = NULL;
     }
-    destroy_services();
+    /* Stop queued/decoding music before waiting for its catalog leases. */
     pxa_esp_audio_reset_sessions();
+    destroy_services();
+    /* A scanout lease can outlive the application, especially with the screen
+     * off. Keep its allocator generation, but do not wait for display resume. */
+    (void)pxa_esp_resource_memory_end();
     pxa_esp_net_reset_requests();
     free(g_host.engine_workspace);
     g_host.engine_workspace = NULL;
@@ -2876,6 +2980,11 @@ static int start_verified(const char *identity) {
     g_host.activation.active_component_capacity = manifest->component_count;
     snprintf(g_host.activation.active_package_root, sizeof(g_host.activation.active_package_root),
              "%s", root);
+    if (pxa_esp_resource_memory_begin() != PXA_STATUS_OK) {
+        ESP_LOGE(PXA_ESP_HOST_TAG, "Resource budget initialization failed for %s", identity);
+        stop_active(PXA_STOP_FAULT);
+        return 0;
+    }
     if (!pxa_esp_ui_assets_begin(manifest,
                                  g_host.activation.active_package_root)) {
         ESP_LOGE(PXA_ESP_HOST_TAG,
@@ -2910,6 +3019,8 @@ static int start_verified(const char *identity) {
     services_config.runtime = g_host.activation.runtime;
     services_config.manifest = manifest;
     services_config.identity = identity;
+    services_config.package_root = g_host.activation.active_package_root;
+    services_config.assets_notify = on_assets_completion_ready;
     services_config.allocator_context =
         &g_host.activation.activation_memory;
     services_config.allocate = activation_workspace_alloc;
@@ -3016,6 +3127,7 @@ static int start_verified(const char *identity) {
             HOST_SERVICE_VERSION(WORK),
             HOST_SERVICE_VERSION(SURFACE),
             HOST_SERVICE_VERSION(GAME_RENDER),
+            HOST_SERVICE_VERSION(ASSETS),
             HOST_SERVICE_VERSION(LOG),
 #ifdef CONFIG_PXA_WASI_LIBC
             HOST_SERVICE_VERSION(WASI),
@@ -3040,6 +3152,8 @@ static int start_verified(const char *identity) {
                     PXA_WASI_FEATURE_CLOCKS | PXA_WASI_FEATURE_RANDOM;
             }
 #endif
+            if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
+                service_capabilities[index].features = PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS;
             if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {
                 service_capabilities[index].features =
                     PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
@@ -3113,6 +3227,7 @@ static int start_verified(const char *identity) {
             PXA_ESP_START_FAIL("declare-ipc-endpoint", status);
         }
     }
+    pxa_esp_audio_set_suspended(true);
     main_instance = allocate_instance_id();
     status = activate_component_profiled(
         (pxa_bytes_t){(const uint8_t *)"main", 4}, main_instance,
@@ -3126,6 +3241,17 @@ static int start_verified(const char *identity) {
         PXA_ESP_START_FAIL("track-main-component", PXA_STATUS_RESOURCE_LIMIT);
     }
     g_host.activation.active_instance_id = main_instance;
+    g_host.activation.package_instance_id = main_instance;
+    /* Guest start can subscribe before the system foregrounds the Window. */
+    portENTER_CRITICAL(&g_clock_slots_lock);
+    pxa_host_clock_slots_pause_component(&g_host.clock_slots,
+                                          g_host.activation.active_component,
+                                          1, host_now_us(NULL));
+    portEXIT_CRITICAL(&g_clock_slots_lock);
+    g_host.lifecycle_effective = 0;
+    /* Startup is suspended until System foregrounds this instance. There is
+     * no background transition to report before its first foreground. */
+    g_host.lifecycle_delivered = PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND;
     update_window_snapshot(g_host.activation.active_component);
     (void)pxa_ipc_flush(g_host.activation.services.ipc);
     if (!drain_active_events()) {
@@ -3493,6 +3619,30 @@ static void stop_active_after_back(void) {
     stop_active(PXA_STOP_NORMAL);
 }
 
+static void begin_graceful_stop(pxa_stop_reason_t reason,
+                                uint8_t after_back, uint32_t timeout_ms) {
+    if (g_host.graceful_stop_active) {
+        if (reason == PXA_STOP_SHUTDOWN) {
+            g_host.graceful_stop_reason = PXA_STOP_SHUTDOWN;
+            g_host.graceful_stop_after_back = 0;
+            if (g_host.deferred_launch_identity[0] != '\0')
+                notify_runtime_event(PXA_HOST_RUNTIME_START_FAILED,
+                                     g_host.deferred_launch_identity, 0,
+                                     PXA_STOP_NORMAL);
+            g_host.deferred_launch_identity[0] = '\0';
+        }
+        return;
+    }
+    g_host.graceful_stop_active = 1;
+    g_host.graceful_stop_after_back = after_back;
+    g_host.graceful_stop_reason = reason;
+    g_host.shutdown_deadline_us = host_now_us(NULL) +
+                                  (uint64_t)timeout_ms * UINT64_C(1000);
+    portENTER_CRITICAL(&g_process_state_lock);
+    g_host.ui_foreground_requested = 0;
+    portEXIT_CRITICAL(&g_process_state_lock);
+}
+
 /* Delivers queued events until the reliable Back request reaches the main
  * component, then applies the Window service's handled/default-close rule. */
 static int dispatch_back_request(uint8_t *close_requested) {
@@ -3548,7 +3698,7 @@ static void post_back(void) {
     if (g_host.activation.active_component == PXA_COMPONENT_INVALID) return;
     dispatched = dispatch_back_request(&close_requested);
     if (dispatched < 0 || (dispatched > 0 && !close_requested)) return;
-    stop_active_after_back();
+    begin_graceful_stop(PXA_STOP_NORMAL, 1, 1200);
 }
 
 static void apply_active_permission(uint16_t permission_index, bool granted) {
@@ -3703,8 +3853,8 @@ static void handle_store_install_event(pxa_esp_store_job_t *job,
         bool saved = false;
         if (g_host.activation.runtime != NULL &&
             job->instance_id == g_host.activation.active_instance_id &&
-            entry != NULL) {
-            snprintf(entry->filename, sizeof(entry->filename), "%s", job->filename);
+            entry != NULL && store_download_filename_valid(job->filename)) {
+            memcpy(entry->filename, job->filename, sizeof(entry->filename));
             snprintf(entry->app_id, sizeof(entry->app_id), "%s", job->app_id);
             snprintf(entry->owner, sizeof(entry->owner), "%s",
                      g_host.activation.active_identity);
@@ -3913,6 +4063,92 @@ static void maintain_scheduler(void) {
     }
 }
 
+/* Lifecycle transitions are level-triggered, not allocated commands. A full
+ * command queue can delay them but cannot lose the latest state. Clock gating
+ * happens before the Guest notification and does not pause Work components. */
+static void sync_ui_lifecycle(void) {
+    uint8_t effective;
+    uint8_t requested;
+    uint8_t interactive;
+    uint8_t payload;
+    pxa_status_t status;
+    pxa_component_t component = g_host.activation.active_component;
+    if (component == PXA_COMPONENT_INVALID || g_host.activation.runtime == NULL)
+        return;
+    portENTER_CRITICAL(&g_process_state_lock);
+    requested = g_host.ui_foreground_requested;
+    interactive = g_host.display_interactive;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    effective = requested && interactive;
+    if (g_host.lifecycle_effective != effective) {
+        portENTER_CRITICAL(&g_clock_slots_lock);
+        pxa_host_clock_slots_pause_component(&g_host.clock_slots, component,
+                                              !effective, host_now_us(NULL));
+        portEXIT_CRITICAL(&g_clock_slots_lock);
+        pxa_esp_audio_set_suspended(!effective);
+        g_host.lifecycle_effective = effective;
+        ESP_LOGI(PXA_ESP_HOST_TAG,
+                 "UI lifecycle: component=%u foreground=%u requested=%u display_interactive=%u",
+                 (unsigned)component, (unsigned)effective,
+                 (unsigned)requested, (unsigned)interactive);
+    }
+    if (g_host.lifecycle_delivered == effective) return;
+    payload = effective ? PXA_HOST_SYSTEM_LIFECYCLE_FOREGROUND
+                        : PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND;
+    status = pxa_event_post_message(
+        g_host.activation.runtime, component, PXA_HOST_SYSTEM_SERVICE_ID,
+        PXA_HOST_SYSTEM_LIFECYCLE_EVENT, 0,
+        (pxa_bytes_t){&payload, sizeof(payload)}, 1, 0);
+    if (status == PXA_STATUS_OK) {
+        g_host.lifecycle_delivered = effective;
+        drain_active_events();
+    }
+}
+
+static void advance_graceful_stop(void) {
+    pxa_component_snapshot_t snapshot;
+    char next_identity[PXA_ESP_HOST_MAX_APP_ID];
+    pxa_stop_reason_t reason;
+    uint8_t after_back;
+    int ready = 0;
+    if (!g_host.graceful_stop_active) return;
+    if (g_host.activation.active_component != PXA_COMPONENT_INVALID)
+        drain_active_events();
+    if (g_host.activation.active_component == PXA_COMPONENT_INVALID ||
+        g_host.activation.runtime == NULL) {
+        ready = 1;
+    } else if (g_host.lifecycle_delivered ==
+                   PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND &&
+               pxa_component_snapshot(g_host.activation.runtime,
+                                      g_host.activation.active_component,
+                                      &snapshot) == PXA_STATUS_OK &&
+               snapshot.pending_requests == 0 && snapshot.queued_events == 0) {
+        ready = 1;
+    }
+    if (!ready && host_now_us(NULL) < g_host.shutdown_deadline_us) return;
+    reason = g_host.graceful_stop_reason;
+    after_back = g_host.graceful_stop_after_back;
+    snprintf(next_identity, sizeof(next_identity), "%s",
+             g_host.deferred_launch_identity);
+    g_host.graceful_stop_active = 0;
+    g_host.deferred_launch_identity[0] = '\0';
+    if (g_host.activation.active_identity[0] != '\0') {
+        if (after_back)
+            stop_active_after_back();
+        else
+            stop_active(reason);
+    }
+    if (reason == PXA_STOP_SHUTDOWN) {
+        portENTER_CRITICAL(&g_process_state_lock);
+        g_host.shutdown_complete = 1;
+        portEXIT_CRITICAL(&g_process_state_lock);
+    }
+    if (next_identity[0] != '\0' && !start_verified(next_identity)) {
+        notify_runtime_event(PXA_HOST_RUNTIME_START_FAILED, next_identity, 0,
+                             PXA_STOP_NORMAL);
+    }
+}
+
 static void run(void) {
     pxa_esp_host_command_t command;
     for (;;) {
@@ -3920,6 +4156,8 @@ static void run(void) {
         pxa_ui_color_scheme_t color_scheme;
         pxa_window_insets_t pending_safe_insets;
         pxa_window_insets_t pending_system_bar_insets;
+        sync_ui_lifecycle();
+        advance_graceful_stop();
         if (take_pending_color_scheme(&color_scheme)) {
             apply_color_scheme(color_scheme);
             handled = 1;
@@ -3950,6 +4188,10 @@ static void run(void) {
             post_pointer(&command);
             handled = 1;
         }
+        if (__atomic_exchange_n(&g_assets_completion_ready, 0u, __ATOMIC_ACQ_REL)) {
+            if (g_host.activation.runtime) (void)drain_active_events();
+            handled = 1;
+        }
         if (take_net_completion_ready()) {
             drain_net_completions();
             handled = 1;
@@ -3964,11 +4206,33 @@ static void run(void) {
             case PXA_ESP_HOST_CMD_START:
                 ESP_LOGI(PXA_ESP_HOST_TAG, "Processing launch request: %s",
                          command.payload.identity.identity);
+                if (g_host.graceful_stop_active &&
+                    g_host.graceful_stop_reason == PXA_STOP_SHUTDOWN) {
+                    notify_runtime_event(PXA_HOST_RUNTIME_START_FAILED,
+                                         command.payload.identity.identity, 0,
+                                         PXA_STOP_NORMAL);
+                    break;
+                }
+                if (g_host.activation.active_identity[0] != '\0') {
+                    if (g_host.deferred_launch_identity[0] != '\0' &&
+                        strcmp(g_host.deferred_launch_identity,
+                               command.payload.identity.identity) != 0)
+                        notify_runtime_event(
+                            PXA_HOST_RUNTIME_START_FAILED,
+                            g_host.deferred_launch_identity, 0,
+                            PXA_STOP_NORMAL);
+                    snprintf(g_host.deferred_launch_identity,
+                             sizeof(g_host.deferred_launch_identity), "%s",
+                             command.payload.identity.identity);
+                    begin_graceful_stop(PXA_STOP_REPLACED, 0, 1200);
+                    break;
+                }
                 if (!start_verified(command.payload.identity.identity)) {
                     ESP_LOGW(PXA_ESP_HOST_TAG, "Package launch failed: %s",
                              command.payload.identity.identity);
                     notify_runtime_event(PXA_HOST_RUNTIME_START_FAILED,
-                                         command.payload.identity.identity);
+                                         command.payload.identity.identity, 0,
+                                         PXA_STOP_NORMAL);
                 }
                 break;
             case PXA_ESP_HOST_CMD_BACK:
@@ -3988,10 +4252,10 @@ static void run(void) {
                 post_controller(&command);
                 break;
             case PXA_ESP_HOST_CMD_STOP:
-                if (g_host.activation.active_identity[0] != '\0' &&
-                    strcmp(g_host.activation.active_identity,
-                           command.payload.identity.identity) == 0) {
-                    stop_active(PXA_STOP_NORMAL);
+                if (command.payload.stop.host_instance_id != 0 &&
+                    command.payload.stop.host_instance_id ==
+                        g_host.activation.package_instance_id) {
+                    begin_graceful_stop(command.payload.stop.reason, 0, 1200);
                 }
                 break;
             case PXA_ESP_HOST_CMD_SYSTEM_COMPLETE:
@@ -4069,6 +4333,10 @@ static void run(void) {
             case PXA_ESP_HOST_CMD_SCHEDULER_MAINTENANCE:
                 maintain_scheduler();
                 break;
+            case PXA_ESP_HOST_CMD_SHUTDOWN:
+                begin_graceful_stop(PXA_STOP_SHUTDOWN, 0,
+                                    command.payload.shutdown.timeout_ms);
+                break;
             default:
                 break;
             }
@@ -4079,7 +4347,15 @@ static void run(void) {
              * IDLE task runs and services the system task watchdog. */
             vTaskDelay(1);
         } else {
-            (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            (void)ulTaskNotifyTake(
+                pdTRUE,
+                g_host.graceful_stop_active ||
+                    (g_host.activation.active_component !=
+                         PXA_COMPONENT_INVALID &&
+                     g_host.lifecycle_delivered !=
+                         g_host.lifecycle_effective)
+                    ? pdMS_TO_TICKS(50)
+                    : portMAX_DELAY);
         }
     }
 }
@@ -4331,6 +4607,8 @@ bool pxa_esp_host_initialize(void) {
     esp_timer_create_args_t timer_args;
     const char *failed_stage = NULL;
     if (g_host.initialized) return true;
+    g_host.display_interactive = 1;
+    g_host.lifecycle_delivered = 2;
     memcpy(g_host.locale, "en-US", sizeof("en-US"));
     g_host.locale_size = (uint8_t)(sizeof("en-US") - 1u);
     g_host.text_direction = 0;
@@ -4389,6 +4667,7 @@ bool pxa_esp_host_initialize(void) {
     g_host.ui_theme = ui_config.theme;
     g_host.ui_theme_generation = 1u;
     ui_config.resolve_asset = pxa_esp_ui_asset_resolve;
+    ui_config.acquire_image = acquire_ui_image;
     ui_config.release_asset = pxa_esp_ui_asset_release;
     ui_config.event_callback = on_ui_event;
     ui_config.now_us = host_now_us;
@@ -4547,14 +4826,94 @@ bool pxa_esp_host_back(void) {
 }
 
 bool pxa_esp_host_stop(const char *identity) {
+    return pxa_esp_host_stop_with_reason(identity, 0, PXA_STOP_NORMAL);
+}
+
+bool pxa_esp_host_stop_with_reason(const char *identity,
+                                    uint64_t host_instance_id,
+                                    uint8_t reason) {
     pxa_esp_host_command_t command;
-    if (!g_host.initialized || identity == NULL || identity[0] == '\0')
+    pxa_esp_host_public_state_t state;
+    if (!g_host.initialized || identity == NULL || identity[0] == '\0' ||
+        reason > PXA_STOP_SHUTDOWN)
+        return false;
+    public_state_snapshot(&state);
+    if (!state.package_active || state.main_instance_id == 0 ||
+        (host_instance_id != 0 &&
+         state.main_instance_id != host_instance_id) ||
+        strcmp(state.identity, identity) != 0)
         return false;
     memset(&command, 0, sizeof(command));
     command.type = (uint8_t)PXA_ESP_HOST_CMD_STOP;
-    snprintf(command.payload.identity.identity,
-             sizeof(command.payload.identity.identity), "%s", identity);
+    command.payload.stop.host_instance_id = state.main_instance_id;
+    command.payload.stop.reason = reason;
     return post_command(&command) != 0;
+}
+
+bool pxa_esp_host_is_instance_active(const char *identity,
+                                      uint64_t host_instance_id) {
+    pxa_esp_host_public_state_t state;
+    if (!g_host.initialized || identity == NULL || host_instance_id == 0)
+        return false;
+    public_state_snapshot(&state);
+    return state.package_active &&
+           state.main_instance_id == host_instance_id &&
+           strcmp(state.identity, identity) == 0;
+}
+
+bool pxa_esp_host_set_app_foreground(const char *identity,
+                                      uint64_t host_instance_id,
+                                      bool foreground) {
+    pxa_esp_host_public_state_t state;
+    if (!g_host.initialized || identity == NULL) return false;
+    public_state_snapshot(&state);
+    if (!state.main_active || host_instance_id == 0 ||
+        state.main_instance_id != host_instance_id ||
+        strcmp(state.identity, identity) != 0)
+        return false;
+    portENTER_CRITICAL(&g_process_state_lock);
+    g_host.ui_foreground_requested = foreground ? 1u : 0u;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    wake_runtime_thread();
+    return true;
+}
+
+bool pxa_esp_host_set_display_interactive(bool interactive) {
+    if (!g_host.initialized) return false;
+    portENTER_CRITICAL(&g_process_state_lock);
+    g_host.display_interactive = interactive ? 1u : 0u;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    wake_runtime_thread();
+    return true;
+}
+
+bool pxa_esp_host_prepare_shutdown(uint32_t timeout_ms) {
+    pxa_esp_host_command_t command;
+    pxa_esp_host_public_state_t state;
+    uint64_t deadline_us;
+    if (!g_host.initialized || timeout_ms == 0 || timeout_ms > 5000 ||
+        xTaskGetCurrentTaskHandle() == g_host.runtime_task)
+        return false;
+    public_state_snapshot(&state);
+    if (!state.package_active) return true;
+    portENTER_CRITICAL(&g_process_state_lock);
+    g_host.shutdown_complete = 0;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    memset(&command, 0, sizeof(command));
+    command.type = (uint8_t)PXA_ESP_HOST_CMD_SHUTDOWN;
+    command.payload.shutdown.timeout_ms = timeout_ms;
+    if (!post_command(&command)) return false;
+    deadline_us = host_now_us(NULL) +
+                  (uint64_t)(timeout_ms + 500u) * UINT64_C(1000);
+    do {
+        uint8_t complete;
+        portENTER_CRITICAL(&g_process_state_lock);
+        complete = g_host.shutdown_complete;
+        portEXIT_CRITICAL(&g_process_state_lock);
+        if (complete) return true;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    } while (host_now_us(NULL) < deadline_us);
+    return false;
 }
 
 bool pxa_esp_host_is_active(const char *identity) {
@@ -5094,6 +5453,14 @@ void pxa_esp_host_set_audio_sink(pxa_host_audio_submit_fn submit,
                                  void *context) {
     pxa_esp_audio_set_sink(submit, flush, context);
 }
+
+void pxa_esp_host_set_audio_sound_sink(pxa_host_audio_sound_fn play, void *context) {
+    pxa_esp_audio_set_sound_sink(play,context);
+}
+void pxa_esp_host_set_audio_music_sink(const pxa_host_audio_music_sink_t *sink) {
+    pxa_esp_audio_set_music_sink(sink);
+}
+void pxa_esp_host_audio_notify(void) { on_assets_completion_ready(NULL); }
 
 void pxa_esp_host_set_audio_asset_sink(
     pxa_host_audio_asset_play_fn play,
