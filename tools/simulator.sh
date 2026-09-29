@@ -11,6 +11,9 @@ board profile. Omit the mode, or select `ui`, for the standard-UI simulator.
 With no action, the simulator is configured, built, and started. The default
 profile is "generic". `run` also starts the profile's PXADB2 service unless
 `PXA_SIMULATOR_AUTOSTART_PXADB=0` is set.
+The desktop Host defaults to a Release build; set
+`PXA_SIMULATOR_BUILD_TYPE=Debug` when debugging native Host code.
+Set `PXA_SIMULATOR_PERF=1` to log desktop loop timings every two seconds.
 
 Examples:
   tools/simulator.sh ui
@@ -221,6 +224,31 @@ PYTHON
 
 build_dir="$project_root/build/simulator/$profile_name"
 cmake_bin="${CMAKE:-cmake}"
+simulator_build_type="${PXA_SIMULATOR_BUILD_TYPE:-Release}"
+simulator_lvgl_source="${PXA_SIMULATOR_LVGL_SOURCE_DIR:-$project_root/firmware/managed_components/lvgl__lvgl}"
+if [[ ! -f "$simulator_lvgl_source/CMakeLists.txt" && -z "${PXA_SIMULATOR_LVGL_SOURCE_DIR:-}" ]]; then
+  simulator_lvgl_source=""
+fi
+launcher_cmake_args=()
+board_defaults="$project_root/firmware/boards/$profile_name/sdkconfig.defaults"
+if [[ -f "$board_defaults" ]]; then
+  launcher_columns="$(sed -nE 's/^CONFIG_PXSYS_REFERENCE_UI_LAUNCHER_COLUMNS=([0-9]+)$/\1/p' "$board_defaults" | tail -n 1)"
+  launcher_rows="$(sed -nE 's/^CONFIG_PXSYS_REFERENCE_UI_LAUNCHER_ROWS=([0-9]+)$/\1/p' "$board_defaults" | tail -n 1)"
+  if [[ -n "$launcher_columns" && -n "$launcher_rows" ]]; then
+    [[ "$launcher_columns" -ge 1 && "$launcher_columns" -le 8 &&
+       "$launcher_rows" -ge 1 && "$launcher_rows" -le 8 ]] || {
+      echo "Invalid launcher grid in $board_defaults" >&2
+      exit 2
+    }
+    launcher_cmake_args+=(
+      "-DPXSYS_REFERENCE_UI_LAUNCHER_COLUMNS=$launcher_columns"
+      "-DPXSYS_REFERENCE_UI_LAUNCHER_ROWS=$launcher_rows")
+  fi
+fi
+case "$simulator_build_type" in
+  Release|RelWithDebInfo|Debug|MinSizeRel) ;;
+  *) echo "Unsupported simulator build type: $simulator_build_type" >&2; exit 2 ;;
+esac
 product_args=("${profile_args[0]}" "${profile_args[1]}"
               "${profile_args[2]}" "${profile_args[3]}")
 for ((profile_index = 0; profile_index < ${#profile_args[@]}; ++profile_index)); do
@@ -243,7 +271,10 @@ else
 fi
 configure() {
   "$cmake_bin" -S "$pxsys_root/simulator/desktop" -B "$build_dir" \
-    -DPXSYS_DESKTOP_APP_SOURCE_ROOT="$(realpath -m -- "$app_root")"
+    -DCMAKE_BUILD_TYPE="$simulator_build_type" \
+    -DPXSYS_LVGL_SOURCE_DIR="$simulator_lvgl_source" \
+    -DPXSYS_DESKTOP_APP_SOURCE_ROOT="$(realpath -m -- "$app_root")" \
+    "${launcher_cmake_args[@]}"
 }
 
 print_pxadb_endpoint() {
@@ -421,8 +452,7 @@ stop_owned_pxadb() {
 }
 
 case "$action" in
-  configure) exec "$cmake_bin" -S "$pxsys_root/simulator/desktop" -B "$build_dir" \
-      -DPXSYS_DESKTOP_APP_SOURCE_ROOT="$(realpath -m -- "$app_root")" ;;
+  configure) configure ;;
   build) configure; exec "$cmake_bin" --build "$build_dir" ;;
   run)
       autostart_pxadb

@@ -48,6 +48,7 @@
 
 #if CONFIG_PXA_ENABLED
 #include "pxa/pxa_host.h"
+#include "pxa/pxa_esp_surface.h"
 #endif
 
 namespace pxadb {
@@ -1091,9 +1092,15 @@ void SendHello(unsigned long sequence) {
 #endif
     const char* kPowerCapabilities =
         PowerControlAvailable() ? ",poweroff" : "";
+    const char* kPerfCapabilities =
+#if CONFIG_PXA_ENABLED && CONFIG_PXADB_TEST_CONTROL
+        ",perf-raster";
+#else
+        "";
+#endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;target=%s;serial=%s;version=%s",
-             kTestCapabilities, kPowerCapabilities,
+             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;target=%s;serial=%s;version=%s",
+             kTestCapabilities, kPowerCapabilities, kPerfCapabilities,
              static_cast<unsigned>(kFsUploadChunkSize),
              CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version);
     SendFrame(sequence, "OK", payload);
@@ -1115,6 +1122,67 @@ void SendInfo(unsigned long sequence) {
     SendFrame(sequence, "OK", payload);
 }
 
+void SendMemory(unsigned long sequence) {
+    char payload[kMaxFramePayload] = {};
+    const uint32_t internal_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    int count = snprintf(payload, sizeof(payload),
+        "scope=heap;sram_total=%u;sram_free=%u;sram_min=%u;sram_largest=%u;"
+        "psram_total=%u;psram_free=%u;psram_min=%u;psram_largest=%u",
+        static_cast<unsigned>(heap_caps_get_total_size(internal_caps)),
+        static_cast<unsigned>(heap_caps_get_free_size(internal_caps)),
+        static_cast<unsigned>(heap_caps_get_minimum_free_size(internal_caps)),
+        static_cast<unsigned>(heap_caps_get_largest_free_block(internal_caps)),
+        static_cast<unsigned>(heap_caps_get_total_size(MALLOC_CAP_SPIRAM)),
+        static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+        static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM)),
+        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)));
+    if (count <= 0 || static_cast<size_t>(count) >= sizeof(payload) ||
+        !SendFrame(sequence, "DATA", payload)) return;
+#if CONFIG_PXA_ENABLED
+    pxa_host_resource_memory_snapshot_t budget = {};
+    if (pxa_host_resource_memory_snapshot(&budget)) {
+        count = snprintf(payload, sizeof(payload),
+            "scope=budget;internal=%u;external=%u;peak_internal=%u;peak_external=%u;"
+            "temporary_peak_internal=%u;temporary_peak_external=%u;fixed=%u;"
+            "denied=%llu;allocation_failures=%llu",
+            static_cast<unsigned>(budget.current[0]),
+            static_cast<unsigned>(budget.current[1]),
+            static_cast<unsigned>(budget.peak[0]),
+            static_cast<unsigned>(budget.peak[1]),
+            static_cast<unsigned>(budget.temporary_peak[0]),
+            static_cast<unsigned>(budget.temporary_peak[1]),
+            static_cast<unsigned>(budget.fixed_bytes),
+            static_cast<unsigned long long>(budget.denied),
+            static_cast<unsigned long long>(budget.allocation_failures));
+        if (count <= 0 || static_cast<size_t>(count) >= sizeof(payload) ||
+            !SendFrame(sequence, "DATA", payload)) return;
+        static constexpr const char* kinds[] = {
+            "raster", "image", "audio", "temporary", "metadata", "frame"};
+        static_assert(sizeof(kinds) / sizeof(kinds[0]) == PXA_MEMORY_KINDS);
+        for (unsigned kind = 0; kind < PXA_MEMORY_KINDS; ++kind) {
+            count = snprintf(payload, sizeof(payload),
+                "scope=kind;name=%s;internal=%u;external=%u", kinds[kind],
+                static_cast<unsigned>(budget.by_kind[kind][0]),
+                static_cast<unsigned>(budget.by_kind[kind][1]));
+            if (count <= 0 || static_cast<size_t>(count) >= sizeof(payload) ||
+                !SendFrame(sequence, "DATA", payload)) return;
+        }
+    }
+    pxa_esp_surface_memory_info_t surface = {};
+    pxa_esp_surface_memory_snapshot(&surface);
+    count = snprintf(payload, sizeof(payload),
+        "scope=surface;frame=%u;scratch=%u;mailbox=%u;probe=%u;peak_total=%u",
+        static_cast<unsigned>(surface.frame_bytes),
+        static_cast<unsigned>(surface.scratch_bytes),
+        static_cast<unsigned>(surface.mailbox_bytes),
+        static_cast<unsigned>(surface.probe_bytes),
+        static_cast<unsigned>(surface.peak_total_bytes));
+    if (count <= 0 || static_cast<size_t>(count) >= sizeof(payload) ||
+        !SendFrame(sequence, "DATA", payload)) return;
+#endif
+    SendFrame(sequence, "OK", "");
+}
+
 #if CONFIG_PXADB_TEST_CONTROL
 bool ParseUnsigned(const char* text, uint32_t maximum, uint32_t* value) {
     if (text == nullptr || value == nullptr || text[0] == '-') return false;
@@ -1125,6 +1193,83 @@ bool ParseUnsigned(const char* text, uint32_t maximum, uint32_t* value) {
     *value = static_cast<uint32_t>(parsed);
     return true;
 }
+
+#if CONFIG_PXA_ENABLED
+void HandlePerf(unsigned long sequence, char* const* arguments,
+                size_t argument_count) {
+    if (argument_count == 1 && strcmp(arguments[0], "START") == 0) {
+        SendFrame(sequence, pxa_esp_surface_perf_start() ? "OK" : "ERR",
+                  "recording");
+        return;
+    }
+    if (argument_count == 1 && strcmp(arguments[0], "STOP") == 0) {
+        pxa_esp_surface_perf_info_t info = {};
+        if (!pxa_esp_surface_perf_stop(&info)) {
+            SendFrame(sequence, "ERR", "not_recording");
+            return;
+        }
+        char payload[kMaxFramePayload] = {};
+        snprintf(payload, sizeof(payload),
+                 "capacity=%u;raster=%u;present=%u;raster_overflow=%u;"
+                 "present_overflow=%u;list_min=%u;list_max=%u;"
+                 "pixels_min=%u;pixels_max=%u;surface_changed=%u",
+                 PXA_ESP_SURFACE_PERF_CAPACITY,
+                 static_cast<unsigned>(info.raster_count),
+                 static_cast<unsigned>(info.present_interval_count),
+                 static_cast<unsigned>(info.raster_overflow),
+                 static_cast<unsigned>(info.present_interval_overflow),
+                 static_cast<unsigned>(info.list_min_bytes),
+                 static_cast<unsigned>(info.list_max_bytes),
+                 static_cast<unsigned>(info.covered_min_pixels),
+                 static_cast<unsigned>(info.covered_max_pixels),
+                 static_cast<unsigned>(info.surface_changed));
+        SendFrame(sequence, "OK", payload);
+        return;
+    }
+    if (argument_count == 1 && strcmp(arguments[0], "CLEAR") == 0) {
+        pxa_esp_surface_perf_clear();
+        SendFrame(sequence, "OK", "cleared");
+        return;
+    }
+    if (argument_count == 3 && strcmp(arguments[0], "READ") == 0) {
+        pxa_esp_surface_perf_kind_t kind;
+        uint32_t offset = 0;
+        uint32_t values[16] = {};
+        uint32_t count = 0;
+        if (strcmp(arguments[1], "raster") == 0)
+            kind = PXA_ESP_SURFACE_PERF_RASTER;
+        else if (strcmp(arguments[1], "present") == 0)
+            kind = PXA_ESP_SURFACE_PERF_PRESENT_INTERVAL;
+        else {
+            SendFrame(sequence, "ERR", "invalid_kind");
+            return;
+        }
+        if (!ParseUnsigned(arguments[2], PXA_ESP_SURFACE_PERF_CAPACITY,
+                           &offset) ||
+            !pxa_esp_surface_perf_read(kind, offset, values, 16, &count)) {
+            SendFrame(sequence, "ERR", "invalid_read");
+            return;
+        }
+        char payload[kMaxFramePayload] = {};
+        int length = snprintf(payload, sizeof(payload), "offset=%u;count=%u;values=",
+                              static_cast<unsigned>(offset),
+                              static_cast<unsigned>(count));
+        for (uint32_t index = 0; index < count && length > 0 &&
+                                 static_cast<size_t>(length) < sizeof(payload);
+             ++index) {
+            length += snprintf(payload + length, sizeof(payload) - length,
+                               "%s%u", index == 0 ? "" : ",",
+                               static_cast<unsigned>(values[index]));
+        }
+        if (length <= 0 || static_cast<size_t>(length) >= sizeof(payload))
+            SendFrame(sequence, "ERR", "read_overflow");
+        else
+            SendFrame(sequence, "OK", payload);
+        return;
+    }
+    SendFrame(sequence, "ERR", "invalid_perf_command");
+}
+#endif
 
 void SendInputAck(const InputCommand& command, const char* status) {
     if (command.request_sequence == 0) return;
@@ -1714,6 +1859,12 @@ void HandleCommand(char* line) {
         SendFrame(sequence, "OK", "pong");
     } else if (strcmp(command, "INFO") == 0) {
         SendInfo(sequence);
+    } else if (strcmp(command, "MEMORY") == 0) {
+        SendMemory(sequence);
+#if CONFIG_PXA_ENABLED && CONFIG_PXADB_TEST_CONTROL
+    } else if (strcmp(command, "PERF") == 0) {
+        HandlePerf(sequence, arguments, argument_count);
+#endif
     } else if (strcmp(command, "LOGSUB") == 0) {
         s_dropped_logs.store(0);
         EnableLogCapture();

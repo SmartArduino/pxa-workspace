@@ -127,7 +127,7 @@ factory_root="${PXA_BUILTIN_PACKAGE_ROOT:-$(config_value CONFIG_PXA_BUILTIN_PACK
 name_max="${PXA_LITTLEFS_NAME_MAX:-$(config_value CONFIG_LITTLEFS_OBJ_NAME_LEN)}"
 [[ -n "$partition_label" ]] || partition_label="assets"
 [[ -n "$factory_root" ]] || factory_root="system/pxa/builtin"
-[[ -n "$name_max" ]] || name_max=96
+[[ -n "$name_max" ]] || name_max=192
 if [[ "$factory_root" == /* || "$factory_root" == *".."* ]]; then
   echo "Invalid factory package root: $factory_root" >&2
   exit 2

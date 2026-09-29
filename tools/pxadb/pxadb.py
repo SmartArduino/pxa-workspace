@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import json
 import os
 import pathlib
 import socket
@@ -38,6 +39,17 @@ BINARY_MAX_PAYLOAD = 1024 * 1024
 
 class PxaDbError(RuntimeError):
     pass
+
+
+def serial_upload_profile(port: str) -> str:
+    if list_ports is None:
+        return "unknown"
+    for candidate in list_ports.comports():
+        if candidate.device == port:
+            if candidate.vid == ESPRESSIF_USB_VID:
+                return "usb"
+            return "uart" if candidate.vid is not None else "unknown"
+    return "unknown"
 
 
 class BinarySocketTransport:
@@ -257,13 +269,14 @@ class PxaDbClient:
             port,
             baudrate=baudrate,
             timeout=0.2,
-            # PXADB commands fit in one small OS write. In pyserial's finite
+            # Most PXADB commands fit in one small OS write. In pyserial's finite
             # timeout mode, CDC ACM waits for the endpoint to become writable
             # again even after that complete write, which stalls when firmware
             # has no PXADB reader. Non-blocking mode returns the actual count.
             write_timeout=0,
             exclusive=True,
         ))
+        self.upload_profile = serial_upload_profile(port)
         self.timeout = timeout
         self.sequence = 0
         self.pending_frames: list[Frame] = []
@@ -348,21 +361,28 @@ class PxaDbClient:
                                               command.encode("utf-8"))
             return
         payload = f"{PROTOCOL} {sequence} {command}\n".encode("ascii")
+        paced = (command.startswith("FSDATA ")
+                 and getattr(self, "upload_profile", "unknown") != "usb")
+        burst_size = 128 if paced else len(payload)
         # Non-blocking serial writes can accept only part of a large upload
         # command; keep writing until the whole line left the host.
         offset = 0
         deadline = time.monotonic() + max(self.timeout, 2.0)
         while offset < len(payload):
-            written = self.serial.write(payload[offset:])
-            if written:
-                offset += written
-                continue
-            if time.monotonic() >= deadline:
-                raise PxaDbError(
-                    f"short serial write: expected {len(payload)} bytes, "
-                    f"wrote {offset}"
-                )
-            time.sleep(0.005)
+            burst_end = min(offset + burst_size, len(payload))
+            while offset < burst_end:
+                written = self.serial.write(payload[offset:burst_end])
+                if written:
+                    offset += written
+                    continue
+                if time.monotonic() >= deadline:
+                    raise PxaDbError(
+                        f"short serial write: expected {len(payload)} bytes, "
+                        f"wrote {offset}"
+                    )
+                time.sleep(0.005)
+            if paced and offset < len(payload):
+                time.sleep(0.001)
 
     def request_until(
         self, command: str, terminal_kinds: set[str], timeout: float | None = None
@@ -651,6 +671,39 @@ def command_info(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def command_memory(arguments: argparse.Namespace) -> int:
+    with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
+                     arguments.timeout) as client:
+        frames = client.request("MEMORY")
+    values: dict[str, object] = {"kinds": {}}
+    for frame in frames:
+        if frame.kind != "DATA":
+            continue
+        properties = info_properties(frame.payload)
+        scope = properties.pop("scope", "")
+        name = properties.pop("name", "")
+        try:
+            numeric = {key: int(value) for key, value in properties.items()}
+        except ValueError as error:
+            raise PxaDbError("device returned malformed memory statistics") from error
+        if scope in ("heap", "budget", "surface"):
+            if scope in values:
+                raise PxaDbError("device returned duplicate memory scope")
+            values[scope] = numeric
+        elif scope == "kind" and name:
+            kinds = values["kinds"]
+            assert isinstance(kinds, dict)
+            if name in kinds:
+                raise PxaDbError("device returned duplicate memory kind")
+            kinds[name] = numeric
+        else:
+            raise PxaDbError("device returned unknown memory scope")
+    if "heap" not in values:
+        raise PxaDbError("device returned no heap memory statistics")
+    print(json.dumps(values, sort_keys=True))
+    return 0
+
+
 def command_doctor(arguments: argparse.Namespace) -> int:
     port = resolve_pxadb_port(arguments.port, arguments.timeout)
     with open_client(port, arguments.timeout) as client:
@@ -692,6 +745,45 @@ def command_package_action(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def package_manifest_identity(source: pathlib.Path) -> str:
+    """Read the package ID from bounded manifest metadata, before uploading."""
+    if source.is_dir():
+        manifest = (source / "manifest.pxm").read_bytes()
+    else:
+        with source.open("rb") as stream:
+            header = stream.read(64)
+            if len(header) != 64 or header[:4] != b"PXAC" or \
+                    struct.unpack_from("<H", header, 8)[0] != 64:
+                raise PxaDbError("invalid PXA container header")
+            size = struct.unpack_from("<I", header, 16)[0]
+            if size < 12 or size > 1024 * 1024:
+                raise PxaDbError("invalid PXA container manifest size")
+            manifest = stream.read(size)
+    if len(manifest) < 12 or manifest[:4] != b"PXAM" or \
+            struct.unpack_from("<I", manifest, 8)[0] != len(manifest) - 12:
+        raise PxaDbError("invalid PXA package manifest")
+    offset = 12
+    identity = None
+    while offset < len(manifest):
+        if len(manifest) - offset < 4:
+            raise PxaDbError("truncated PXA package manifest")
+        tag, size = struct.unpack_from("<HH", manifest, offset)
+        offset += 4
+        if size > len(manifest) - offset:
+            raise PxaDbError("truncated PXA package manifest")
+        if (tag & 0x7FFF) == 2:
+            if identity is not None:
+                raise PxaDbError("duplicate package identity in manifest")
+            try:
+                identity = manifest[offset:offset + size].decode("ascii")
+            except UnicodeDecodeError as error:
+                raise PxaDbError("non-ASCII package identity") from error
+        offset += size
+    if identity is None:
+        raise PxaDbError("package identity missing from manifest")
+    return identity
+
+
 def package_source(package: str, identity_override: str | None) -> tuple[pathlib.Path, str]:
     source = pathlib.Path(package).resolve()
     is_directory_package = (
@@ -702,7 +794,9 @@ def package_source(package: str, identity_override: str | None) -> tuple[pathlib
     is_container = source.is_file() and source.suffix == ".pxa"
     if not is_directory_package and not is_container:
         raise PxaDbError("package must be a .pxa file or a signed Package directory")
-    identity = identity_override or (source.stem if is_container else source.name)
+    identity = package_manifest_identity(source)
+    if identity_override is not None and identity_override != identity:
+        raise PxaDbError("--identity must match the signed package manifest ID")
     if (
         not identity.startswith("pxa-")
         or len(identity) > 64
@@ -929,8 +1023,11 @@ class NormalFsClient:
         if binary_transfer:
             chunk_size = min(64 * 1024, chunk_size)
         else:
+            upload_profile = getattr(self.client, "upload_profile", "unknown")
+            default_chunk = {"usb": 256, "uart": 512}.get(upload_profile, 64)
             try:
-                requested_chunk = int(os.environ.get("PXADB_UART_UPLOAD_CHUNK", "64"))
+                requested_chunk = int(os.environ.get("PXADB_UART_UPLOAD_CHUNK",
+                                                     str(default_chunk)))
             except ValueError as error:
                 raise PxaDbError("PXADB_UART_UPLOAD_CHUNK must be a positive integer") from error
             if requested_chunk <= 0:
@@ -1539,7 +1636,7 @@ def run_device_scenario(client: PxaDbClient, script: pathlib.Path) -> None:
                 capture = screenshot_capture(
                     client.request(
                         "SCREENSHOT",
-                        timeout=max(arguments.timeout, 600.0),
+                        timeout=max(client.timeout, 600.0),
                     )
                 )
                 destination = pathlib.Path(arguments[1])
@@ -1621,6 +1718,10 @@ def build_parser() -> argparse.ArgumentParser:
     info = subcommands.add_parser("info", help="print device information")
     add_connection_arguments(info)
     info.set_defaults(handler=command_info)
+
+    memory = subcommands.add_parser("memory", help="read ESP heap and PXA resource memory statistics")
+    add_connection_arguments(memory, allow_logcat=False)
+    memory.set_defaults(handler=command_memory)
 
     doctor = subcommands.add_parser("doctor", help="diagnose a PXADB connection")
     add_connection_arguments(doctor, allow_logcat=False)
@@ -1732,7 +1833,7 @@ def build_parser() -> argparse.ArgumentParser:
         "package", help="package ID, .pxa file, or signed Package directory"
     )
     install.add_argument(
-        "--identity", help="PXA app ID override when installing a local package"
+        "--identity", help="expected PXA app ID; must match the package manifest"
     )
     install.add_argument(
         "--yes", action="store_true",
@@ -1759,7 +1860,7 @@ def build_parser() -> argparse.ArgumentParser:
     stage = package_commands.add_parser("stage", help="stage a signed package through PXADB")
     add_connection_arguments(stage)
     stage.add_argument("directory", help=".pxa file or signed Package directory")
-    stage.add_argument("--identity", help="PXA app id; defaults to the package filename")
+    stage.add_argument("--identity", help="expected PXA app ID; defaults to the package manifest")
     stage.set_defaults(handler=command_package_stage)
 
     filesystem = subcommands.add_parser("fs", help="manage files through PXADB")

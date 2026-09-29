@@ -2,6 +2,7 @@ import base64
 import contextlib
 import hashlib
 import io
+import json
 import pathlib
 import struct
 import sys
@@ -172,6 +173,41 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         client._write_command(7, "PING")
         self.assertEqual(client.serial.writes, [b"PXADB1 7 PING\n"])
 
+    def test_uart_upload_command_is_paced(self) -> None:
+        client = fake_client([])
+        client.upload_profile = "uart"
+        command = "FSDATA 0 " + "a" * 512
+        with mock.patch.object(pxadb.time, "sleep") as sleep:
+            client._write_command(7, command)
+        self.assertEqual(b"".join(client.serial.writes),
+                         f"PXADB1 7 {command}\n".encode("ascii"))
+        self.assertTrue(all(len(part) <= 128 for part in client.serial.writes))
+        self.assertEqual(sleep.call_count, len(client.serial.writes) - 1)
+
+    def test_native_usb_upload_command_is_not_paced(self) -> None:
+        client = fake_client([])
+        client.upload_profile = "usb"
+        command = "FSDATA 0 " + "a" * 512
+        with mock.patch.object(pxadb.time, "sleep") as sleep:
+            client._write_command(7, command)
+        self.assertEqual(client.serial.writes,
+                         [f"PXADB1 7 {command}\n".encode("ascii")])
+        sleep.assert_not_called()
+
+    def test_paced_upload_handles_partial_serial_writes(self) -> None:
+        class PartialSerial(FakeSerial):
+            def write(self, value: bytes) -> int:
+                return super().write(value[:32])
+
+        client = fake_client([])
+        client.serial = PartialSerial([])
+        client.upload_profile = "uart"
+        command = "FSDATA 0 " + "a" * 300
+        with mock.patch.object(pxadb.time, "sleep"):
+            client._write_command(7, command)
+        self.assertEqual(b"".join(client.serial.writes),
+                         f"PXADB1 7 {command}\n".encode("ascii"))
+
     def test_close_preserves_pointer_session_until_explicit_end(self) -> None:
         client = fake_client([])
         client.device_info = "protocol=1"
@@ -245,6 +281,27 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         self.assertEqual([int(entry.split(" ")[3]) for entry in writes[1:]],
                          [0, 64, 128])
 
+    def test_upload_chunk_follows_serial_profile(self) -> None:
+        payload = b"x" * 600
+        for profile, chunk_size in (("usb", 256), ("uart", 512)):
+            with self.subTest(profile=profile):
+                client = fake_client([
+                    encoded_frame(1, "READY", "600"),
+                    encoded_frame(2, "READY", str(600 - chunk_size)),
+                    encoded_frame(3, "OK", ""),
+                ])
+                client.upload_profile = profile
+                client.device_info = "max_chunk=1024;fs_offset=1"
+                with tempfile.TemporaryDirectory() as directory:
+                    source = pathlib.Path(directory) / "payload.bin"
+                    source.write_bytes(payload)
+                    with mock.patch.dict("os.environ", {}, clear=True):
+                        pxadb.NormalFsClient(client).put(
+                            source, "pxa-state/inbox/payload.bin")
+                writes = b"".join(client.serial.writes).decode("ascii").splitlines()
+                self.assertEqual([int(entry.split(" ")[3]) for entry in writes[1:]],
+                                 [0, chunk_size])
+
     def test_binary_upload_keeps_file_data_unencoded(self) -> None:
         responses = [
             (pxadb.BINARY_RESPONSE, 0, 1, b"READY\x003"),
@@ -284,6 +341,17 @@ class PxaDbLogStreamingTest(unittest.TestCase):
             candidates = pxadb.candidate_ports()
         self.assertEqual([candidate.device for candidate in candidates],
                          ["/dev/ttyACM0", "/dev/ttyUSB0"])
+
+    def test_serial_upload_profile_uses_usb_identity(self) -> None:
+        ports = [
+            SimpleNamespace(device="/dev/ttyACM0", vid=pxadb.ESPRESSIF_USB_VID),
+            SimpleNamespace(device="/dev/ttyUSB0", vid=0x10C4),
+        ]
+        with mock.patch.object(pxadb, "list_ports") as list_ports:
+            list_ports.comports.return_value = ports
+            self.assertEqual(pxadb.serial_upload_profile("/dev/ttyACM0"), "usb")
+            self.assertEqual(pxadb.serial_upload_profile("/dev/ttyUSB0"), "uart")
+            self.assertEqual(pxadb.serial_upload_profile("/dev/unknown"), "unknown")
 
     def test_simulator_parser_selects_a_unix_socket(self) -> None:
         arguments = pxadb.build_parser().parse_args([
@@ -362,6 +430,33 @@ class PxaDbLogStreamingTest(unittest.TestCase):
             self.assertEqual(pxadb.command_package_install(arguments), 0)
         client.__enter__().request.assert_any_call(
             "PACKAGE deploy pxa-pixel-dungeon", timeout=180.0)
+
+    def test_container_deploy_uses_manifest_id_instead_of_filename(self) -> None:
+        payload = b"pxa-wimg"
+        records = struct.pack("<HH", 2, len(payload)) + payload
+        manifest = struct.pack("<4sHHI", b"PXAM", 0, 7, len(records)) + records
+        header = bytearray(64)
+        struct.pack_into("<4sH", header, 0, b"PXAC", 0)
+        struct.pack_into("<H", header, 8, 64)
+        struct.pack_into("<I", header, 16, len(manifest))
+        with tempfile.TemporaryDirectory() as directory:
+            container = pathlib.Path(directory) / "pxa-pxa-wimg.pxa"
+            container.write_bytes(header + manifest)
+            self.assertEqual(pxadb.package_source(str(container), None),
+                             (container, "pxa-wimg"))
+            with self.assertRaisesRegex(pxadb.PxaDbError, "must match"):
+                pxadb.package_source(str(container), "pxa-pxa-wimg")
+
+    def test_container_with_truncated_manifest_is_rejected_before_upload(self) -> None:
+        header = bytearray(64)
+        struct.pack_into("<4sH", header, 0, b"PXAC", 0)
+        struct.pack_into("<H", header, 8, 64)
+        struct.pack_into("<I", header, 16, 99)
+        with tempfile.TemporaryDirectory() as directory:
+            container = pathlib.Path(directory) / "pxa-example.pxa"
+            container.write_bytes(header)
+            with self.assertRaisesRegex(pxadb.PxaDbError, "manifest"):
+                pxadb.package_source(str(container), None)
 
     def test_staging_directory_removes_same_identity_pxa_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -484,6 +579,32 @@ class PxaDbLogStreamingTest(unittest.TestCase):
                 self.assertRaisesRegex(pxadb.PxaDbError,
                                        "does not support software power-off"):
             pxadb.command_poweroff(arguments)
+
+    def test_memory_command_parses_scoped_device_counters(self) -> None:
+        arguments = pxadb.build_parser().parse_args([
+            "memory", "--port", "/dev/ttyACM0"
+        ])
+        frames = [
+            pxadb.Frame(1, "DATA", "scope=heap;sram_total=100;sram_free=40;psram_free=300"),
+            pxadb.Frame(1, "DATA", "scope=budget;internal=7;external=18;fixed=12"),
+            pxadb.Frame(1, "DATA", "scope=kind;name=raster;internal=2;external=9"),
+            pxadb.Frame(1, "DATA", "scope=surface;frame=1024;scratch=128;mailbox=64;probe=0;peak_total=1216"),
+            pxadb.Frame(1, "OK", ""),
+        ]
+        client = mock.MagicMock()
+        client.__enter__().request.return_value = frames
+        output = io.StringIO()
+        with mock.patch.object(pxadb, "open_client", return_value=client), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(pxadb.command_memory(arguments), 0)
+        client.__enter__().request.assert_called_once_with("MEMORY")
+        self.assertEqual(json.loads(output.getvalue()), {
+            "heap": {"sram_total": 100, "sram_free": 40, "psram_free": 300},
+            "budget": {"internal": 7, "external": 18, "fixed": 12},
+            "surface": {"frame": 1024, "scratch": 128, "mailbox": 64,
+                        "probe": 0, "peak_total": 1216},
+            "kinds": {"raster": {"internal": 2, "external": 9}},
+        })
 
     def test_input_and_screenshot_parsers(self) -> None:
         touch = pxadb.build_parser().parse_args([

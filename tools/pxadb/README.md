@@ -23,6 +23,47 @@ The client stages a local `.pxa` into the firmware inbox, asks the firmware to
 verify its signature and inventory, then commits it through the normal package
 transaction. Passing `--yes` permits a non-interactive replacement. `--port`
 is optional when exactly one PXADB USB device can be identified.
+The deployment ID comes from the signed package manifest, so a renamed `.pxa`
+file still installs under the correct App ID. An explicit `--identity` must
+match that manifest ID; a mismatch is rejected before upload.
+
+Serial uploads select a chunk size from the detected USB device: 256 bytes for
+Espressif USB Serial/JTAG, or 512 bytes with paced writes for USB-to-UART
+bridges. Unknown ports keep the conservative 64-byte default. Set
+`PXADB_UART_UPLOAD_CHUNK` to override the chunk size if needed. UART boards
+configured for a non-default baud rate also require `--baud`, for example
+`--baud 2000000`.
+
+Firmware with the `memory` capability provides an on-demand diagnostic
+snapshot: `pxadb memory --port /dev/ttyACM0` (add `--baud 2000000` for Korvo).
+The JSON separates ESP heap-capability totals/free/minimum free from PXA's
+shared resource budget and its current allocation kinds. Resource counters
+cover only allocations routed through that budget; they must not be added to
+ESP heap usage or treated as the full app memory total. The query does no
+work in the frame or audio callback.
+
+The `surface` scope separately counts ESP heap blocks owned by the Surface
+backend: frame buffers, raster scratch, DrawList mailboxes and the optional
+performance probe. These allocations are outside the shared resource budget
+but inside ESP heap usage, so do not add them to either heap total. `peak_total`
+is the Surface-owned high watermark since firmware boot, including short
+mailbox replacement overlap; it is not an app-local whole-device RAM peak.
+
+Test-control firmware advertising `perf-raster` also accepts the raw PXADB
+commands `PERF START`, `PERF STOP`, `PERF READ raster|present OFFSET`, and
+`PERF CLEAR`. The bounded 256-frame probe allocates PSRAM only while enabled;
+read samples after stopping it. Raster samples exclude panel transfer, while
+`present` samples are intervals between completed new GameRender frames on
+boards with a panel-completion hook. `tools/measure-device-voxel.py` runs the
+warmup, capture, sample download, screenshot and cleanup for an already
+installed signed Voxel package. The optional `--package` argument records a
+local package file hash in the report; install that same file first when using
+this option. Use `--menu-tap X Y` for interactive builds that start at a menu.
+When the firmware also advertises `memory`, the report includes ESP heap and
+shared-budget snapshots before launch, after warmup, after frame capture and
+after stop. `tools/compare-device-voxel-memory.py` validates and compares an
+old/new/old sequence; its heap deltas are sampled steady-state differences,
+not independent per-app peak measurements.
 
 Restart a connected device with `pxadb reboot --port /dev/ttyACM0`. Boards that
 register a controllable power latch also advertise `poweroff` and accept
@@ -81,6 +122,11 @@ transfer and package management.
 
 PXADB 是本工作区固件 PXADB USB Serial/JTAG 服务的主机客户端。它可安装独立构建的
 PXA 容器，不会重新编译或烧录固件。
+
+新固件可运行 `pxadb memory --port /dev/ttyACM0`，Korvo 另加
+`--baud 2000000`。JSON 分列 ESP SRAM/PSRAM 的容量、空闲和历史最低空闲，
+以及 PXA 共享资源预算的当前用量、峰值和分配类别。预算用量已经包含在堆占用中，
+不能重复相加；未走共享预算的 LVGL、codec 和任务存储也不能据此称为零。
 
 ```sh
 python3 -m pip install -e tools/pxadb
