@@ -38,3 +38,6 @@ intentionally reported as unsupported.
 For on-device Wi-Fi setup, open **Settings → Wi-Fi**, select a scanned
 network, and enter its password using the on-screen keyboard. Use **Scan again**
 to refresh the list; the SET key remains an alternative provisioning method.
+After Wi-Fi obtains an IP address, the board synchronizes its system clock
+with `pool.ntp.org`. A later reconnection starts synchronization again; the
+ESP-IDF SNTP service also refreshes the clock periodically while connected.
