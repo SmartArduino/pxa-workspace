@@ -36,4 +36,9 @@ idf_component_register(
 if(CONFIG_LV_USE_FREETYPE)
     idf_component_get_property(LVGL_COMPONENT_LIB lvgl__lvgl COMPONENT_LIB)
     target_link_libraries(${LVGL_COMPONENT_LIB} PRIVATE idf::espressif__freetype)
+    # The decoder includes LVGL's private headers, which in turn include
+    # ft2build.h; its own target needs the FreeType include directories too.
+    if(TARGET lvgl_docoder_lib)
+        target_link_libraries(lvgl_docoder_lib PRIVATE idf::espressif__freetype)
+    endif()
 endif()

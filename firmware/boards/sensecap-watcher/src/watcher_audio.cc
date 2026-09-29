@@ -127,7 +127,9 @@ bool WatcherAudio::Initialize(i2c_master_bus_handle_t i2c_bus) {
         return false;
     }
     SetVolume(volume_.load());
-    pxa_host_set_audio_sink(Submit, Flush, this);
+    if (!output_.Initialize([](void* context, const int16_t* pcm, size_t samples) {
+            return static_cast<WatcherAudio*>(context)->Write(pcm, samples);
+        }, this)) return false;
     ESP_LOGI(kTag, "ES8311 speaker ready at %d Hz mono",
              WATCHER_AUDIO_SAMPLE_RATE);
     return true;
@@ -142,19 +144,6 @@ void WatcherAudio::SetVolume(uint8_t percent) {
     xSemaphoreTake(mutex_, portMAX_DELAY);
     esp_codec_dev_set_out_vol(speaker_, codec_volume);
     xSemaphoreGive(mutex_);
-}
-
-bool WatcherAudio::Submit(void* context, uint8_t voice, const int16_t* pcm,
-                          size_t samples) {
-    (void)voice;
-    auto* self = static_cast<WatcherAudio*>(context);
-    if (self == nullptr || pcm == nullptr || samples == 0) return false;
-    return self->Write(pcm, samples);
-}
-
-void WatcherAudio::Flush(void* context, uint8_t voice) {
-    (void)context;
-    (void)voice;
 }
 
 bool WatcherAudio::Write(const int16_t* pcm, size_t samples) {

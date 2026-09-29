@@ -6,6 +6,10 @@ the ES8389 speaker codec over I2S0. It enables VSYNC-synchronized direct
 double-buffer scanout, two LVGL software renderers, Wi-Fi and volume controls.
 GT1151 contacts are exposed as five independent LVGL pointer devices, so PXA
 apps and games receive stable `pointer_id` values for simultaneous touches.
+The poller follows the GT1151 driver's low-nibble contact count even when the
+status ready bit is clear. An empty status keeps the last contact briefly until
+a release report or the 150 ms stale-contact timeout; discarding nonzero counts
+solely on the ready bit can make physical touch appear unresponsive.
 Build it with:
 
 ```sh
@@ -13,6 +17,9 @@ tools/firmware.sh esp32s31-korvo-1 build
 ```
 
 Use `/dev/ttyUSB0` to flash or monitor the connected board.
+Early boot logs use the IDF console baud rate (currently 115200); PXADB switches
+the same UART to 2000000 after it starts. Use the appropriate baud rate for the
+phase being diagnosed.
 
 Create the factory `pxa_data` image with the CJK system font included:
 

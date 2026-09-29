@@ -17,6 +17,8 @@
 #include <esp_lcd_touch_gt1151.h>
 #include <esp_lvgl_port.h>
 #include <esp_log.h>
+#include <esp_netif_sntp.h>
+#include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
 #include <pxa_board_api.h>
 #include <pxsys/standard_system.h>
@@ -111,6 +113,15 @@ void Esp32S31Korvo1Hardware::AttachSystem(
     pxsys_standard_system_t* system, pxsys_reference_lvgl_t* reference_ui) {
     system_ = system;
     reference_ui_ = reference_ui;
+    if (reference_ui_ != nullptr) {
+        (void)pxsys_reference_lvgl_set_lock_changed_callback(
+            reference_ui_, this,
+            [](void*, bool locked) {
+                const bool interactive = !locked;
+                pxa_esp_surface_set_display_unlocked(interactive);
+                (void)pxa_host_set_display_interactive(interactive);
+            });
+    }
     PublishStatus();
 }
 
@@ -138,12 +149,30 @@ bool Esp32S31Korvo1Hardware::InitializeWifi() {
     config.language = "zh-CN";
     auto& wifi = WifiManager::GetInstance();
     wifi.SetEventCallback([this](WifiEvent event, const std::string&) {
+        if (event == WifiEvent::Connected && time_sync_initialized_.load()) {
+            const esp_err_t result = esp_netif_sntp_start();
+            if (result != ESP_OK)
+                ESP_LOGW(kTag, "Unable to start time sync: %s",
+                         esp_err_to_name(result));
+        }
         if (event == WifiEvent::Connected || event == WifiEvent::Disconnected ||
             event == WifiEvent::ConfigModeEnter || event == WifiEvent::ConfigModeExit) {
             ScheduleStatusUpdate();
         }
     });
     if (!wifi.Initialize(config)) return false;
+    esp_sntp_config_t time_config =
+        ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    time_config.start = false;
+    time_config.wait_for_sync = false;
+    time_config.sync_cb = [](struct timeval*) {
+        ESP_LOGI(kTag, "System time synchronized");
+    };
+    const esp_err_t time_result = esp_netif_sntp_init(&time_config);
+    time_sync_initialized_.store(time_result == ESP_OK);
+    if (time_result != ESP_OK)
+        ESP_LOGW(kTag, "Unable to initialize time sync: %s",
+                 esp_err_to_name(time_result));
     wifi_initialized_.store(true);
     wifi.StartStation();
     return true;
@@ -591,7 +620,7 @@ void Esp32S31Korvo1Hardware::FlushDisplay(lv_display_t* display,
         /* A Surface frame is composed once after LVGL finishes all dirty
          * regions. Surface-only updates deliberately invalidate one pixel,
          * avoiding an otherwise redundant full-screen LVGL redraw. */
-        korvo_pxa_surface::ComposeFrame(pixels);
+        const auto composed = korvo_pxa_surface::ComposeFrame(pixels);
         pxa_board_performance_note_frame();
         pxa_board_performance_draw_rgb565(
             reinterpret_cast<uint16_t*>(pixels), KORVO_DISPLAY_WIDTH,
@@ -626,6 +655,9 @@ void Esp32S31Korvo1Hardware::FlushDisplay(lv_display_t* display,
         } else {
             hardware->frame_switch_pending_ = true;
             hardware->latest_frame_buffer_ = pixels;
+            hardware->pending_composed_frame_id_ = composed.frame_id;
+            hardware->pending_composed_input_timestamp_us_ =
+                composed.input_timestamp_us;
         }
         const int64_t flush_finished_us = esp_timer_get_time();
         hardware->RecordPresentTime(
@@ -666,6 +698,19 @@ bool Esp32S31Korvo1Hardware::WaitForPendingFrame() {
     if (frame_done_sem_ == nullptr ||
         xSemaphoreTake(frame_done_sem_, pdMS_TO_TICKS(100)) != pdTRUE)
         return false;
+    const uint64_t observed_us = static_cast<uint64_t>(esp_timer_get_time());
+    const uint32_t completed_low =
+        frame_done_us_low_.load(std::memory_order_acquire);
+    /* The wait is capped at 100 ms. Reconstruct the ISR timestamp across a
+     * 32-bit microsecond wrap without a non-lock-free 64-bit ISR atomic. */
+    const uint64_t completed_us = observed_us - static_cast<uint32_t>(
+        static_cast<uint32_t>(observed_us) - completed_low);
+    pxa_esp_surface_note_frame_presented(
+        pending_composed_input_timestamp_us_, completed_us);
+    pxa_esp_surface_note_game_frame_presented(
+        pending_composed_frame_id_, completed_us);
+    pending_composed_frame_id_ = 0;
+    pending_composed_input_timestamp_us_ = 0;
     frame_switch_pending_ = false;
     return true;
 }
@@ -694,6 +739,8 @@ void Esp32S31Korvo1Hardware::AlignAfterDirectScanout(
     }
     latest_frame_buffer_ = displayed_buffer;
     frame_switch_pending_ = false;
+    pending_composed_frame_id_ = 0;
+    pending_composed_input_timestamp_us_ = 0;
     deferred_sync_area_count_ = 0;
     (void)xSemaphoreTake(frame_done_sem_, 0);
 }
@@ -713,6 +760,8 @@ bool Esp32S31Korvo1Hardware::OnFrameBufferComplete(
     auto* hardware = static_cast<Esp32S31Korvo1Hardware*>(context);
     if (hardware == nullptr || hardware->frame_done_sem_ == nullptr)
         return false;
+    hardware->frame_done_us_low_.store(
+        static_cast<uint32_t>(esp_timer_get_time()), std::memory_order_release);
     BaseType_t task_woken = pdFALSE;
     xSemaphoreGiveFromISR(hardware->frame_done_sem_, &task_woken);
     return task_woken == pdTRUE;
@@ -814,13 +863,17 @@ void Esp32S31Korvo1Hardware::PollTouchController() {
         return;
     }
 
-    // A clear data-ready bit means the controller has no new report. Its low
-    // nibble is then zero even while a finger remains down, so retaining the
-    // previous snapshot is essential for a continuous press.
-    if ((status & kGt1151StatusDataReady) == 0) return;
-
     const uint8_t reported_count = status & 0x0f;
     uint8_t clear = 0;
+    // The GT1151 driver treats the low nibble as the contact count without
+    // requiring bit 7, so do not discard a nonzero count based on that bit.
+    // A zero count is not necessarily a release: after acknowledging a
+    // report the controller may have no newer data while a finger stays down.
+    if (reported_count == 0 &&
+        (status & kGt1151StatusDataReady) == 0) {
+        expire_stale_contacts();
+        return;
+    }
     if (reported_count == 0 || reported_count > kGt1151MaxHardwarePoints) {
         (void)esp_lcd_panel_io_tx_param(touch_io_, kGt1151ReadXyRegister,
                                         &clear, sizeof(clear));

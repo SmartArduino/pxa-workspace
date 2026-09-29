@@ -61,6 +61,14 @@ void ShowInitialFrame(void*) {
     g_hardware.ShowInitialFrame();
 }
 
+void SetIdleDim(void*, bool enabled, uint8_t percent) {
+    g_hardware.SetIdleDim(enabled, percent);
+}
+
+void IdleScreenOff(void*) {
+    g_hardware.AutoScreenOff();
+}
+
 bool ConfigureDiagnostics(void*) {
     return g_hardware.ConfigurePxadbControls();
 }
@@ -85,6 +93,8 @@ const pxa_board_port_t kPort = {
     .show_initial_frame = ShowInitialFrame,
     .configure_diagnostics = ConfigureDiagnostics,
     .capture_displayed_rgb565 = CaptureDisplayedRgb565,
+    .set_idle_dim = SetIdleDim,
+    .idle_screen_off = IdleScreenOff,
 };
 }  // namespace
 

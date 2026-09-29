@@ -15,6 +15,9 @@ idf_component_register(
     REQUIRES lvgl pxa_system_core pxa_system_native pxa_system_standard)
 
 target_compile_features(${COMPONENT_LIB} PUBLIC c_std_99)
+# Generated LVGL font sources use the include form exported by the
+# ESP-IDF lvgl component (its public path contains lvgl.h, not lvgl/lvgl.h).
+target_compile_definitions(${COMPONENT_LIB} PRIVATE LV_LVGL_H_INCLUDE_SIMPLE=1)
 
 function(pxsys_reference_ui_define_bool config_symbol define_symbol)
     if(${config_symbol})

@@ -4,9 +4,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -32,6 +34,7 @@
 
 #include "pxa_board_api.h"
 #include "wifi_manager.h"
+#include "ssid_manager.h"
 #include "sdkconfig.h"
 
 namespace {
@@ -47,6 +50,7 @@ struct UserPreferences {
     uint8_t palette = 0;
     uint8_t volume = 0;
     uint8_t brightness = 0;
+    pxsys_reference_idle_policy_t idle_policy = {30, 120, 10};
 };
 
 pxsys_standard_system_t* g_system;
@@ -83,7 +87,55 @@ void LoadUserPreferences() {
     g_preferences.has_brightness =
         nvs_get_u8(handle, "bright", &g_preferences.brightness) == ESP_OK &&
         g_preferences.brightness >= 2 && g_preferences.brightness <= 100;
+    pxsys_reference_idle_policy_t saved = {};
+    if (nvs_get_u16(handle, "dim_sec", &saved.dim_after_seconds) == ESP_OK &&
+        nvs_get_u16(handle, "lock_sec", &saved.lock_after_seconds) == ESP_OK &&
+        nvs_get_u8(handle, "dim_pct", &saved.dim_percent) == ESP_OK &&
+        saved.dim_after_seconds >= 15 && saved.dim_after_seconds <= 600 &&
+        saved.lock_after_seconds > saved.dim_after_seconds &&
+        saved.lock_after_seconds <= 900 &&
+        saved.dim_percent >= 2 && saved.dim_percent <= 100)
+        g_preferences.idle_policy = saved;
     nvs_close(handle);
+}
+
+bool SaveIdlePolicy(void*, const pxsys_reference_idle_policy_t* policy) {
+    if (policy == nullptr || policy->dim_after_seconds < 15 ||
+        policy->dim_after_seconds > 600 ||
+        policy->lock_after_seconds <= policy->dim_after_seconds ||
+        policy->lock_after_seconds > 900 ||
+        policy->dim_percent < 2 || policy->dim_percent > 100)
+        return false;
+    nvs_handle_t handle;
+    if (nvs_open(kPreferencesNamespace, NVS_READWRITE, &handle) != ESP_OK)
+        return false;
+    esp_err_t result = nvs_set_u16(handle, "dim_sec",
+                                   policy->dim_after_seconds);
+    if (result == ESP_OK)
+        result = nvs_set_u16(handle, "lock_sec", policy->lock_after_seconds);
+    if (result == ESP_OK)
+        result = nvs_set_u8(handle, "dim_pct", policy->dim_percent);
+    if (result == ESP_OK) result = nvs_commit(handle);
+    nvs_close(handle);
+    if (result != ESP_OK) {
+        ESP_LOGW(kTag, "Could not save display timeout: %s",
+                 esp_err_to_name(result));
+        return false;
+    }
+    g_preferences.idle_policy = *policy;
+    return true;
+}
+
+void ApplyIdleDim(void* context, bool enabled, uint8_t percent) {
+    const auto* board = static_cast<const pxa_board_port_t*>(context);
+    if (board != nullptr && board->set_idle_dim != nullptr)
+        board->set_idle_dim(board->context, enabled, percent);
+}
+
+void IdleScreenOff(void* context) {
+    const auto* board = static_cast<const pxa_board_port_t*>(context);
+    if (board != nullptr && board->idle_screen_off != nullptr)
+        board->idle_screen_off(board->context);
 }
 
 void SaveTheme(void*, const pxsys_theme_snapshot_t* theme) {
@@ -383,6 +435,33 @@ bool CurrentWifi(void*, char* ssid, size_t capacity) {
     return ssid[0] != '\0';
 }
 
+size_t ListSavedWifi(void*, pxsys_reference_wifi_saved_t* networks,
+                     size_t capacity) {
+    const auto saved = SsidManager::GetInstance().GetSsidList();
+    if (networks == nullptr) return saved.size();
+    const size_t count = saved.size() < capacity ? saved.size() : capacity;
+    for (size_t index = 0; index < count; ++index)
+        std::snprintf(networks[index].ssid, sizeof(networks[index].ssid), "%s",
+                      saved[index].ssid.c_str());
+    return count;
+}
+
+bool ForgetSavedWifi(void*, const char* ssid) {
+    if (ssid == nullptr || ssid[0] == '\0') return false;
+    auto& manager = SsidManager::GetInstance();
+    const auto saved = manager.GetSsidList();
+    for (size_t index = 0; index < saved.size(); ++index) {
+        if (saved[index].ssid != ssid) continue;
+        auto& wifi = WifiManager::GetInstance();
+        const bool connected = wifi.IsConnected() && wifi.GetSsid() == ssid;
+        if (connected) wifi.StopStation();
+        manager.RemoveSsid(static_cast<int>(index));
+        if (connected) wifi.StartStation();
+        return true;
+    }
+    return false;
+}
+
 bool MountPxaStorage() {
     const esp_vfs_littlefs_conf_t config = {
         .base_path = CONFIG_PXA_MOUNT_POINT,
@@ -629,8 +708,19 @@ bool SetAppPermission(void*, const char* identity, size_t permission_index,
 }
 
 bool BuildAbsolutePath(const char* logical, char* output, size_t capacity) {
-    if (logical == nullptr || std::strstr(logical, "..") != nullptr)
+    if (logical == nullptr || (logical[0] != '/' && logical[0] != '\0'))
         return false;
+    for (const char* part = logical; *part != '\0';) {
+        while (*part == '/') ++part;
+        if (*part == '\0') break;
+        const char* end = std::strchr(part, '/');
+        const size_t length = end == nullptr ? std::strlen(part)
+                                             : static_cast<size_t>(end - part);
+        if ((length == 1 && part[0] == '.') ||
+            (length == 2 && part[0] == '.' && part[1] == '.'))
+            return false;
+        part += length;
+    }
     const int written = std::snprintf(output, capacity, "%s%s",
                                       CONFIG_PXA_MOUNT_POINT, logical);
     return written > 0 && static_cast<size_t>(written) < capacity;
@@ -652,32 +742,24 @@ size_t ListFiles(void*, const char* path, pxsys_reference_file_entry_t* entries,
             if (count >= capacity) break;
             pxsys_reference_file_entry_t* entry = &entries[count];
             std::memset(entry, 0, sizeof(*entry));
-            CopyText(entry->name, sizeof(entry->name), item->d_name);
-            {
-                size_t used = 0;
-                CopyText(entry->path, sizeof(entry->path),
-                         path != nullptr ? path : "");
-                used = std::strlen(entry->path);
-                if (used + 1 < sizeof(entry->path)) {
-                    entry->path[used++] = '/';
-                    CopyText(entry->path + used, sizeof(entry->path) - used,
-                             item->d_name);
-                }
-            }
+            const int logical_length = std::snprintf(
+                entry->path, sizeof(entry->path), "%s/%s",
+                path != nullptr ? path : "", item->d_name);
             char child[sizeof(absolute)];
-            {
-                size_t used = 0;
-                CopyText(child, sizeof(child), absolute);
-                used = std::strlen(child);
-                if (used + 1 < sizeof(child)) {
-                    child[used++] = '/';
-                    CopyText(child + used, sizeof(child) - used, item->d_name);
-                }
-            }
+            const int absolute_length = std::snprintf(
+                child, sizeof(child), "%s/%s", absolute, item->d_name);
+            if (logical_length < 0 || absolute_length < 0 ||
+                static_cast<size_t>(logical_length) >= sizeof(entry->path) ||
+                static_cast<size_t>(absolute_length) >= sizeof(child) ||
+                std::strlen(item->d_name) >= sizeof(entry->name))
+                continue;
+            CopyText(entry->name, sizeof(entry->name), item->d_name);
             struct stat info = {};
             if (stat(child, &info) == 0) {
                 entry->is_directory = S_ISDIR(info.st_mode) ? 1 : 0;
                 entry->size = static_cast<uint64_t>(info.st_size);
+                entry->modified_unix_seconds =
+                    info.st_mtime > 0 ? static_cast<uint64_t>(info.st_mtime) : 0;
             }
         }
         ++count;
@@ -686,38 +768,225 @@ size_t ListFiles(void*, const char* path, pxsys_reference_file_entry_t* entries,
     return count;
 }
 
-bool RemoveTree(const char* absolute, int depth) {
-    if (depth > 16) return false;
+bool RemoveTree(const char* absolute) {
     struct stat info = {};
     if (stat(absolute, &info) != 0) return false;
-    if (S_ISDIR(info.st_mode)) {
-        DIR* directory = opendir(absolute);
-        if (directory == nullptr) return false;
-        bool ok = true;
-        struct dirent* item;
-        while ((item = readdir(directory)) != nullptr) {
-            if (std::strcmp(item->d_name, ".") == 0 ||
-                std::strcmp(item->d_name, "..") == 0)
-                continue;
-            char child[PXSYS_REFERENCE_FILE_PATH_MAX + 256];
-            std::snprintf(child, sizeof(child), "%s/%s", absolute,
-                          item->d_name);
-            if (!RemoveTree(child, depth + 1)) ok = false;
+    if (!S_ISDIR(info.st_mode)) return remove(absolute) == 0;
+    struct Frame { std::string path; DIR* directory; };
+    std::vector<Frame> stack;
+    DIR* directory = opendir(absolute);
+    if (directory == nullptr) return false;
+    stack.push_back({absolute, directory});
+    bool ok = true;
+    while (ok && !stack.empty()) {
+        Frame& frame = stack.back();
+        struct dirent* item = readdir(frame.directory);
+        if (item == nullptr) {
+            const std::string path = frame.path;
+            closedir(frame.directory);
+            stack.pop_back();
+            ok = rmdir(path.c_str()) == 0;
+            continue;
         }
-        closedir(directory);
-        if (!ok) return false;
+        if (std::strcmp(item->d_name, ".") == 0 ||
+            std::strcmp(item->d_name, "..") == 0) continue;
+        const std::string child = frame.path + "/" + item->d_name;
+        if (stat(child.c_str(), &info) != 0) { ok = false; break; }
+        if (S_ISDIR(info.st_mode)) {
+            DIR* nested = opendir(child.c_str());
+            if (nested == nullptr) { ok = false; break; }
+            stack.push_back({child, nested});
+        } else {
+            ok = remove(child.c_str()) == 0;
+        }
     }
-    return remove(absolute) == 0;
+    for (Frame& frame : stack) closedir(frame.directory);
+    return ok;
 }
 
-bool ManageFile(void*, const char* path,
+bool CopyFile(const char* source, const char* destination) {
+    int input = open(source, O_RDONLY);
+    if (input < 0) return false;
+    int output = open(destination, O_WRONLY | O_CREAT | O_EXCL, 0664);
+    if (output < 0) {
+        close(input);
+        return false;
+    }
+    char buffer[2048];
+    bool ok = true;
+    for (;;) {
+        const ssize_t count = read(input, buffer, sizeof(buffer));
+        if (count < 0) { ok = false; break; }
+        if (count == 0) break;
+        ssize_t offset = 0;
+        while (offset < count) {
+            const ssize_t written = write(output, buffer + offset,
+                                          static_cast<size_t>(count - offset));
+            if (written <= 0) { ok = false; break; }
+            offset += written;
+        }
+        if (!ok) break;
+    }
+    if (close(output) != 0) ok = false;
+    close(input);
+    if (!ok) (void)remove(destination);
+    return ok;
+}
+
+bool CopyTree(const char* source, const char* destination) {
+    struct stat info = {};
+    if (stat(source, &info) != 0) return false;
+    if (!S_ISDIR(info.st_mode)) return CopyFile(source, destination);
+    if (mkdir(destination, 0775) != 0) return false;
+    struct Frame { std::string source; std::string destination; DIR* directory; };
+    std::vector<Frame> stack;
+    DIR* directory = opendir(source);
+    if (directory == nullptr) {
+        (void)rmdir(destination);
+        return false;
+    }
+    stack.push_back({source, destination, directory});
+    bool ok = true;
+    while (ok && !stack.empty()) {
+        Frame& frame = stack.back();
+        struct dirent* item = readdir(frame.directory);
+        if (item == nullptr) {
+            closedir(frame.directory);
+            stack.pop_back();
+            continue;
+        }
+        if (std::strcmp(item->d_name, ".") == 0 ||
+            std::strcmp(item->d_name, "..") == 0) continue;
+        const std::string child_source = frame.source + "/" + item->d_name;
+        const std::string child_destination = frame.destination + "/" +
+                                              item->d_name;
+        if (stat(child_source.c_str(), &info) != 0) { ok = false; break; }
+        if (S_ISDIR(info.st_mode)) {
+            if (mkdir(child_destination.c_str(), 0775) != 0) {
+                ok = false;
+                break;
+            }
+            DIR* nested = opendir(child_source.c_str());
+            if (nested == nullptr) { ok = false; break; }
+            stack.push_back({child_source, child_destination, nested});
+        } else {
+            ok = CopyFile(child_source.c_str(), child_destination.c_str());
+        }
+    }
+    for (Frame& frame : stack) closedir(frame.directory);
+    if (!ok) (void)RemoveTree(destination);
+    return ok;
+}
+
+struct FileSizeFrame {
+    DIR* directory;
+    std::string path;
+};
+
+struct FileSizeScan {
+    std::vector<FileSizeFrame> stack;
+    uint64_t bytes = 0;
+};
+
+FileSizeScan g_file_size_scan;
+
+void CancelFileSizeScan() {
+    while (!g_file_size_scan.stack.empty()) {
+        closedir(g_file_size_scan.stack.back().directory);
+        g_file_size_scan.stack.pop_back();
+    }
+    g_file_size_scan.bytes = 0;
+}
+
+bool FileSize(void*, const char* path, uint64_t* size, bool* done) {
+    if (path == nullptr && size == nullptr && done == nullptr) {
+        CancelFileSizeScan();
+        return true;
+    }
+    if (path != nullptr) {
+        char absolute[PXSYS_REFERENCE_FILE_PATH_MAX + 64];
+        struct stat info = {};
+        CancelFileSizeScan();
+        if (!BuildAbsolutePath(path, absolute, sizeof(absolute)) ||
+            stat(absolute, &info) != 0) return false;
+        if (!S_ISDIR(info.st_mode)) {
+            g_file_size_scan.bytes = static_cast<uint64_t>(info.st_size);
+        } else {
+            DIR* directory = opendir(absolute);
+            if (directory == nullptr) return false;
+            g_file_size_scan.stack.push_back({directory, absolute});
+        }
+    }
+    for (int budget = 0; budget < 12 && !g_file_size_scan.stack.empty(); ++budget) {
+        FileSizeFrame& frame = g_file_size_scan.stack.back();
+        struct dirent* item = readdir(frame.directory);
+        if (item == nullptr) {
+            closedir(frame.directory);
+            g_file_size_scan.stack.pop_back();
+            continue;
+        }
+        if (std::strcmp(item->d_name, ".") == 0 ||
+            std::strcmp(item->d_name, "..") == 0) continue;
+        const std::string child = frame.path + "/" + item->d_name;
+        struct stat info = {};
+        if (stat(child.c_str(), &info) != 0) {
+            CancelFileSizeScan();
+            return false;
+        }
+        if (S_ISDIR(info.st_mode)) {
+            DIR* nested = opendir(child.c_str());
+            if (nested == nullptr) {
+                CancelFileSizeScan();
+                return false;
+            }
+            g_file_size_scan.stack.push_back({nested, child});
+        } else {
+            g_file_size_scan.bytes += static_cast<uint64_t>(info.st_size);
+        }
+    }
+    if (size != nullptr) *size = g_file_size_scan.bytes;
+    if (done != nullptr) *done = g_file_size_scan.stack.empty();
+    return true;
+}
+
+bool ManageFile(void*, const char* path, const char* destination,
                 pxsys_reference_file_action_t action) {
     char absolute[PXSYS_REFERENCE_FILE_PATH_MAX + 64];
-    if (action != PXSYS_REFERENCE_FILE_ACTION_DELETE) return false;
-    if (path == nullptr || path[0] == '\0') return false;
-    if (!BuildAbsolutePath(path, absolute, sizeof(absolute))) return false;
-    if (std::strcmp(absolute, CONFIG_PXA_MOUNT_POINT) == 0) return false;
-    return RemoveTree(absolute, 0);
+    char target[PXSYS_REFERENCE_FILE_PATH_MAX + 64];
+    if (action == PXSYS_REFERENCE_FILE_ACTION_MKDIR) {
+        return destination != nullptr && destination[0] != '\0' &&
+               BuildAbsolutePath(destination, target, sizeof(target)) &&
+               mkdir(target, 0775) == 0;
+    }
+    if (path == nullptr || path[0] == '\0' ||
+        std::strcmp(path, "/") == 0 ||
+        !BuildAbsolutePath(path, absolute, sizeof(absolute)) ||
+        std::strcmp(absolute, CONFIG_PXA_MOUNT_POINT) == 0) return false;
+    if (action == PXSYS_REFERENCE_FILE_ACTION_DELETE)
+        return RemoveTree(absolute);
+    if (action == PXSYS_REFERENCE_FILE_ACTION_INSTALL) {
+        const char* extension = std::strrchr(path, '.');
+        return extension != nullptr && std::strcmp(extension, ".pxa") == 0 &&
+               pxa_host_install_package_file(absolute);
+    }
+    if (destination == nullptr || destination[0] == '\0' ||
+        !BuildAbsolutePath(destination, target, sizeof(target))) return false;
+    struct stat info = {};
+    if (stat(absolute, &info) != 0 || stat(target, &info) == 0) return false;
+    const size_t source_length = std::strlen(absolute);
+    if (std::strncmp(absolute, target, source_length) == 0 &&
+        target[source_length] == '/') return false;
+    if (action == PXSYS_REFERENCE_FILE_ACTION_RENAME ||
+        action == PXSYS_REFERENCE_FILE_ACTION_MOVE) {
+        if (rename(absolute, target) == 0) return true;
+        if (action == PXSYS_REFERENCE_FILE_ACTION_RENAME) return false;
+    }
+    if (action != PXSYS_REFERENCE_FILE_ACTION_COPY &&
+        action != PXSYS_REFERENCE_FILE_ACTION_MOVE) return false;
+    if (!CopyTree(absolute, target)) return false;
+    if (action == PXSYS_REFERENCE_FILE_ACTION_MOVE &&
+        !RemoveTree(absolute)) return false;
+    return true;
 }
 #endif  // CONFIG_PXSYS_REFERENCE_UI_BUILTIN_SETTINGS
 
@@ -875,6 +1144,7 @@ bool CreateSystem(const pxa_board_port_t* board,
     ui_config.app_permission_set = SetAppPermission;
     ui_config.file_list = ListFiles;
     ui_config.file_action = ManageFile;
+    ui_config.file_size = FileSize;
 #endif
 #if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
     ui_config.navigation_mode = PXSYS_NAVIGATION_GESTURES;
@@ -902,6 +1172,14 @@ bool CreateSystem(const pxa_board_port_t* board,
     ui_config.wifi_scan_start = StartWifiScan;
     ui_config.wifi_connect = ConnectWifi;
     ui_config.wifi_current = CurrentWifi;
+    ui_config.wifi_saved_list = ListSavedWifi;
+    ui_config.wifi_forget = ForgetSavedWifi;
+    ui_config.idle_policy = g_preferences.idle_policy;
+    ui_config.idle_context = const_cast<pxa_board_port_t*>(board);
+    ui_config.idle_save = SaveIdlePolicy;
+    ui_config.idle_dim = board->set_idle_dim != nullptr ? ApplyIdleDim : nullptr;
+    ui_config.idle_lock = board->idle_screen_off != nullptr
+                              ? IdleScreenOff : nullptr;
     status = pxsys_reference_lvgl_create(&ui_config, &g_reference_ui);
     if (status == PXSYS_STATUS_OK)
         status = pxsys_reference_lvgl_start(g_reference_ui);

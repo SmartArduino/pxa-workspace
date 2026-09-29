@@ -66,6 +66,7 @@ uint8_t g_direct_pending_index = 0;
 bool g_direct_has_displayed_buffer = false;
 bool g_direct_submission_pending = false;
 uint64_t g_direct_pending_input_timestamp_us = 0;
+uint64_t g_direct_pending_frame_id = 0;
 bool g_direct_active = false;
 DirectScanoutTransitionCallback g_transition_callback = nullptr;
 void* g_transition_context = nullptr;
@@ -602,6 +603,8 @@ bool CompletePendingDirectSubmission(uint32_t* wait_us) {
     pxa_esp_surface_note_frame_presented(
         g_direct_pending_input_timestamp_us,
         static_cast<uint64_t>(finished_us));
+    pxa_esp_surface_note_game_frame_presented(
+        g_direct_pending_frame_id, static_cast<uint64_t>(finished_us));
     return true;
 }
 
@@ -640,6 +643,7 @@ bool PresentDirectFrame(const pxa_esp_surface_frame_t& frame) {
     }
     g_direct_pending_index = g_direct_buffer_index;
     g_direct_pending_input_timestamp_us = frame.input_timestamp_us;
+    g_direct_pending_frame_id = frame.frame_id;
     g_direct_submission_pending = true;
     g_direct_buffer_index = (g_direct_buffer_index + 1U) % 3U;
     g_direct_displayed_buffer = static_cast<const uint8_t*>(target);
@@ -705,6 +709,7 @@ bool EnterDirectScanout() {
     g_direct_has_displayed_buffer = false;
     g_direct_submission_pending = false;
     g_direct_pending_input_timestamp_us = 0;
+    g_direct_pending_frame_id = 0;
     g_last_direct_frame_id = 0;
     lvgl_port_unlock();
     ESP_LOGI(kTag, "Direct scanout engaged");
@@ -957,10 +962,10 @@ bool SnapshotDisplayedFrame(uint16_t* pixels, size_t pixel_count,
     return true;
 }
 
-void ComposeFrame(uint8_t* pixels) {
-    if (pixels == nullptr || g_direct_active) return;
+ComposedFrameInfo ComposeFrame(uint8_t* pixels) {
+    if (pixels == nullptr || g_direct_active) return {};
     pxa_esp_surface_frame_t frame;
-    if (!pxa_esp_surface_acquire_latest(&frame)) return;
+    if (!pxa_esp_surface_acquire_latest(&frame)) return {};
     const int64_t started_us = esp_timer_get_time();
     bool used_ppa = false;
     bool ui_used_ppa = false;
@@ -1026,9 +1031,9 @@ void ComposeFrame(uint8_t* pixels) {
             g_compose_ui_pixels = 0;
         }
     }
-    pxa_esp_surface_note_frame_presented(
-        frame.input_timestamp_us, static_cast<uint64_t>(esp_timer_get_time()));
+    const ComposedFrameInfo result{frame.frame_id, frame.input_timestamp_us};
     pxa_esp_surface_release_frame(frame.lease);
+    return result;
 }
 
 }  // namespace korvo_pxa_surface

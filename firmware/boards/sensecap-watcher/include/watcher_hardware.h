@@ -36,6 +36,8 @@ public:
                       pxsys_reference_lvgl_t* reference_ui);
     void SetWifiEnabled(bool enabled);
     void SetBrightness(uint8_t percent);
+    void SetIdleDim(bool enabled, uint8_t percent);
+    void AutoScreenOff();
     void SetVolume(uint8_t percent);
     void PublishStatus();
     void ShowInitialFrame();
@@ -96,6 +98,7 @@ private:
     bool InitializeWifi();
     void EnterWifiProvisioning();
     void ScheduleStatusUpdate();
+    void ApplyBacklight();
     void LogHeapUsage();
     void SetScreenEnabled(bool enabled);
     void ToggleScreen();
@@ -152,6 +155,7 @@ private:
     int64_t boot_time_us_ = 0;
     int64_t heap_log_us_ = 0;
     std::atomic<uint8_t> brightness_{75};
+    std::atomic<uint8_t> idle_dim_percent_{100};
     std::atomic<bool> screen_enabled_{true};
     std::atomic<bool> power_key_woke_screen_{false};
     std::atomic<bool> power_key_long_press_{false};

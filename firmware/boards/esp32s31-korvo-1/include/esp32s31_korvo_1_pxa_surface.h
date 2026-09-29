@@ -26,7 +26,11 @@ bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
              SemaphoreHandle_t frame_done_semaphore,
              DirectScanoutTransitionCallback transition_callback,
              void* transition_context);
-void ComposeFrame(uint8_t* pixels);
+struct ComposedFrameInfo {
+    uint64_t frame_id = 0;
+    uint64_t input_timestamp_us = 0;
+};
+ComposedFrameInfo ComposeFrame(uint8_t* pixels);
 bool DirectScanoutActive();
 
 /* Copies the newest completed panel frame as RGB565LE rows. While direct

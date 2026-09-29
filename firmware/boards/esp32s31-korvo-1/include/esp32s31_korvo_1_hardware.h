@@ -111,6 +111,9 @@ private:
     ppa_client_handle_t sync_ppa_client_ = nullptr;
     SemaphoreHandle_t frame_done_sem_ = nullptr;
     bool frame_switch_pending_ = false;
+    uint64_t pending_composed_frame_id_ = 0;
+    uint64_t pending_composed_input_timestamp_us_ = 0;
+    std::atomic<uint32_t> frame_done_us_low_{0};
     int64_t render_started_us_ = 0;
     int64_t perf_report_started_us_ = 0;
     uint32_t perf_frames_ = 0;
@@ -139,6 +142,7 @@ private:
     std::atomic<bool> audio_initialized_{false};
     std::atomic<bool> wifi_initialized_{false};
     std::atomic<bool> wifi_enabled_{true};
+    std::atomic<bool> time_sync_initialized_{false};
     std::atomic<bool> status_update_pending_{false};
     Esp32S31Korvo1Audio audio_;
 };

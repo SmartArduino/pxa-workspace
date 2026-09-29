@@ -1257,6 +1257,8 @@ private:
                     pxa_esp_surface_note_frame_presented(
                         context->output_input_timestamp_us[buffer_index],
                         completed_us);
+                    pxa_esp_surface_note_game_frame_presented(
+                        context->output_frame_id[buffer_index], completed_us);
 #endif
                     context->output_input_timestamp_us[buffer_index] = 0;
 #if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG

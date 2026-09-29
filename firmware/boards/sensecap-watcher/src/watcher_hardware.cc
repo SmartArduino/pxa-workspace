@@ -896,6 +896,7 @@ void SensecapWatcherHardware::AttachSystem(
                 }
                 if (xTaskCreate(
                         [](void*) {
+                            (void)pxa_host_prepare_shutdown(1200);
                             vTaskDelay(pdMS_TO_TICKS(120));
                             esp_restart();
                         },
@@ -909,6 +910,7 @@ void SensecapWatcherHardware::AttachSystem(
             [](void*, bool visible) {
                 pxa_esp_surface_set_power_overlay_visible(visible);
             });
+        OnLockChanged(pxsys_reference_lvgl_is_locked(reference_ui_));
     }
     PublishStatus();
 }
@@ -916,12 +918,30 @@ void SensecapWatcherHardware::AttachSystem(
 void SensecapWatcherHardware::SetBrightness(uint8_t percent) {
     if (percent > 100) percent = 100;
     brightness_.store(percent);
+    ApplyBacklight();
+    ScheduleStatusUpdate();
+}
+
+void SensecapWatcherHardware::ApplyBacklight() {
+    const uint8_t effective = std::min(brightness_.load(),
+                                       idle_dim_percent_.load());
     const uint32_t duty = screen_enabled_.load()
-                              ? static_cast<uint32_t>(percent) * 1023 / 100
+                              ? static_cast<uint32_t>(effective) * 1023 / 100
                               : 0;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL);
-    ScheduleStatusUpdate();
+}
+
+void SensecapWatcherHardware::SetIdleDim(bool enabled, uint8_t percent) {
+    idle_dim_percent_.store(enabled ? std::min<uint8_t>(percent, 100) : 100);
+    ApplyBacklight();
+}
+
+void SensecapWatcherHardware::AutoScreenOff() {
+    if (!screen_enabled_.exchange(false)) return;
+    pxa_esp_surface_set_display_unlocked(false);
+    (void)pxa_host_set_display_interactive(false);
+    ApplyBacklight();
 }
 
 void SensecapWatcherHardware::SetVolume(uint8_t percent) {
@@ -1127,9 +1147,9 @@ void SensecapWatcherHardware::SetScreenEnabled(bool enabled) {
     const bool previous = screen_enabled_.exchange(enabled);
     if (previous == enabled) return;
     pxa_esp_surface_set_display_unlocked(false);
+    if (!enabled) (void)pxa_host_set_display_interactive(false);
     if (!enabled) {
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL, 0);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL);
+        ApplyBacklight();
     }
     lv_lock();
     const lv_result_t result = lv_async_call(
@@ -1138,6 +1158,8 @@ void SensecapWatcherHardware::SetScreenEnabled(bool enabled) {
             if (self->reference_ui_ != nullptr)
                 (void)pxsys_reference_lvgl_set_locked(self->reference_ui_, true);
             if (!self->screen_enabled_.load()) return;
+            lv_display_trigger_activity(self->display_);
+            self->SetIdleDim(false, 100);
             if (self->display_ != nullptr) lv_refr_now(self->display_);
             self->SetBrightness(self->brightness_.load() == 0
                                     ? kDefaultBrightness
@@ -1155,10 +1177,13 @@ void SensecapWatcherHardware::ToggleScreen() {
 }
 
 void SensecapWatcherHardware::OnLockChanged(bool locked) {
-    pxa_esp_surface_set_display_unlocked(!locked && screen_enabled_.load());
+    const bool interactive = !locked && screen_enabled_.load();
+    pxa_esp_surface_set_display_unlocked(interactive);
+    (void)pxa_host_set_display_interactive(interactive);
 }
 
 void SensecapWatcherHardware::PowerOff() {
+    (void)pxa_host_prepare_shutdown(1200);
     ESP_LOGI(kTag, "Releasing the power latch");
     ledc_set_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL, 0);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL);

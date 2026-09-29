@@ -26,6 +26,8 @@ public:
                       pxsys_reference_lvgl_t* reference_ui);
     void SetWifiEnabled(bool enabled);
     void SetBrightness(uint8_t percent);
+    void SetIdleDim(bool enabled, uint8_t percent);
+    void AutoScreenOff();
     void SetVolume(uint8_t percent);
     void PublishStatus();
     void ShowInitialFrame();
@@ -51,6 +53,7 @@ private:
     bool InitializeWifi();
     void InitializeButtons();
     void ScheduleStatusUpdate();
+    void ApplyBacklight();
     void SetScreenEnabled(bool enabled);
     void ToggleScreen();
     void HandlePowerButtonPressDown();
@@ -102,6 +105,7 @@ private:
     esp_timer_handle_t status_timer_ = nullptr;
     Rpc701Audio audio_;
     std::atomic<uint8_t> brightness_{75};
+    std::atomic<uint8_t> idle_dim_percent_{100};
     std::atomic<bool> screen_enabled_{true};
     std::atomic<bool> wifi_initialized_{false};
     std::atomic<bool> wifi_enabled_{true};

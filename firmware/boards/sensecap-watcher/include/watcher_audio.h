@@ -1,4 +1,5 @@
 #pragma once
+#include <pxa/pxa_audio_output.h>
 
 #include <atomic>
 #include <cstddef>
@@ -20,9 +21,7 @@ public:
     uint8_t volume() const { return volume_.load(); }
 
 private:
-    static bool Submit(void* context, uint8_t voice, const int16_t* pcm,
-                       size_t samples);
-    static void Flush(void* context, uint8_t voice);
+    PxaAudioOutput output_;
     bool Write(const int16_t* pcm, size_t samples);
 
     i2s_chan_handle_t tx_channel_ = nullptr;

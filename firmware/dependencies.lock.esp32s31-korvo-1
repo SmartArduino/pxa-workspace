@@ -49,6 +49,16 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 1.1.1
+  espressif/esp_audio_codec:
+    component_hash: 16e2880dbdd5a72264051f750f33a6e5a38fd25621c83e3a32a85a152d2d2643
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.5.0
   espressif/esp_codec_dev:
     component_hash: df70f10af8d7b922add7b9d07372c9c97ab356e58d72b7a892050227c2d44348
     dependencies:
@@ -161,7 +171,7 @@ dependencies:
       type: service
     version: 2.14.3~1
   espressif/libpng:
-    component_hash: b8c715f76b79a127d9b1b632e09acc23e7b29d2194af890a837adc2be5a2804b
+    component_hash: d094357a329f78668629d7c9656064b2b0123196eb6d25ca77db3782e0752480
     dependencies:
     - name: idf
       require: private
@@ -173,7 +183,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 1.6.58~1
+    version: 1.6.58~2
   espressif/zlib:
     component_hash: 9083cada65f1c9d298ef92266232d071c6f2f335164e2799554b3eae73aedc55
     dependencies:
@@ -232,6 +242,7 @@ dependencies:
 direct_dependencies:
 - 78/esp-wifi-connect
 - espressif/button
+- espressif/esp_audio_codec
 - espressif/esp_codec_dev
 - espressif/esp_lcd_touch
 - espressif/esp_lcd_touch_gt1151
@@ -242,6 +253,6 @@ direct_dependencies:
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: b0d40a1cf5a1adccab591dbeaf07aa0b620775595be71aaa49d3a8d190a134ac
+manifest_hash: ceca623ca56a81bbd6a138caf3d0f73bc369f6252ae0b08153a178f11158669a
 target: esp32s31
 version: 3.0.0

@@ -41,6 +41,10 @@ typedef struct {
     bool (*configure_diagnostics)(void* context);
     bool (*capture_displayed_rgb565)(void* context, uint16_t* pixels,
                                      size_t pixel_count);
+    /* Idle dim affects only the physical backlight, not the saved level. */
+    void (*set_idle_dim)(void* context, bool enabled, uint8_t percent);
+    /* Called on the LVGL thread after the reference UI has locked. */
+    void (*idle_screen_off)(void* context);
 } pxa_board_port_t;
 
 bool pxa_board_register(const pxa_board_port_t* port);

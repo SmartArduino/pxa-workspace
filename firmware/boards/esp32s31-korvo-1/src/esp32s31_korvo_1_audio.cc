@@ -5,7 +5,6 @@
 #include <esp_codec_dev_defaults.h>
 #include <esp_log.h>
 #include <es8389_codec.h>
-#include <pxa/pxa_host.h>
 
 namespace {
 constexpr char kTag[] = "korvo_audio";
@@ -92,7 +91,9 @@ bool Esp32S31Korvo1Audio::Initialize(i2c_master_bus_handle_t i2c_bus) {
     };
     if (esp_codec_dev_open(speaker_, &sample_info) != ESP_OK) return false;
     SetVolume(volume());
-    pxa_host_set_audio_sink(Submit, Flush, this);
+    if (!output_.Initialize([](void* context, const int16_t* pcm, size_t samples) {
+            return static_cast<Esp32S31Korvo1Audio*>(context)->Write(pcm, samples);
+        }, this)) return false;
     ESP_LOGI(kTag, "ES8389 speaker ready at %d Hz stereo", KORVO_AUDIO_SAMPLE_RATE);
     return true;
 }
@@ -104,18 +105,6 @@ void Esp32S31Korvo1Audio::SetVolume(uint8_t percent) {
     xSemaphoreTake(mutex_, portMAX_DELAY);
     (void)esp_codec_dev_set_out_vol(speaker_, percent);
     xSemaphoreGive(mutex_);
-}
-
-bool Esp32S31Korvo1Audio::Submit(void* context, uint8_t voice,
-                                  const int16_t* pcm, size_t samples) {
-    (void)voice;
-    auto* self = static_cast<Esp32S31Korvo1Audio*>(context);
-    return self != nullptr && pcm != nullptr && samples != 0 && self->Write(pcm, samples);
-}
-
-void Esp32S31Korvo1Audio::Flush(void* context, uint8_t voice) {
-    (void)context;
-    (void)voice;
 }
 
 bool Esp32S31Korvo1Audio::Write(const int16_t* pcm, size_t samples) {

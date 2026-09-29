@@ -15,6 +15,7 @@ idf_component_register(
         esp_driver_ppa
         esp_event
         esp_lcd
+        esp_netif
         esp_timer
         espressif__esp_codec_dev
         espressif__esp_lcd_touch
