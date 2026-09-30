@@ -349,7 +349,7 @@ void OverlaySurfacePreview(void*, lv_draw_buf_t* image, int32_t screen_x,
 bool DeveloperGet(void* context, pxsys_reference_performance_option_t option) {
     const auto* board = static_cast<const pxa_board_port_t*>(context);
     if (option == PXSYS_REFERENCE_PXADB)
-        return pxa_board_performance_get(option);
+        return pxadb::IsRunning();
     return board != nullptr && board->performance_get != nullptr &&
            board->performance_get(board->context, option);
 }
@@ -1250,7 +1250,19 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     if (board->configure_diagnostics != nullptr &&
         !board->configure_diagnostics(board->context))
         ESP_LOGW(kTag, "Board diagnostics are unavailable");
-    if (!pxa_host_start_runtime()) return false;
+#if CONFIG_PXADB_AUTOSTART
+    // PXADB task stacks need contiguous internal RAM; reserve them before
+    // the Guest runtime starts allocating its own tasks.
+    if (pxa_board_performance_get(PXSYS_REFERENCE_PXADB)) {
+        const esp_err_t result = pxadb::Start();
+        if (result != ESP_OK)
+            ESP_LOGW(kTag, "PXADB startup failed: %s", esp_err_to_name(result));
+    }
+#endif
+    if (!pxa_host_start_runtime()) {
+        pxadb::Stop();
+        return false;
+    }
     /* The runtime performs the initial built-in package scan on its own task.
      * Do not repeat it here: this startup task must return so the UI can keep
      * presenting while Wi-Fi associates and the catalog is populated. */

@@ -288,7 +288,8 @@ TestControlAdapter s_test_control;
 
 #if CONFIG_PXADB_TEST_CONTROL
 bool TestControlAvailable() {
-    return s_test_control.struct_size >= sizeof(TestControlAdapter) &&
+    return s_input_task_active.load() &&
+           s_test_control.struct_size >= sizeof(TestControlAdapter) &&
            s_test_control.width != 0 && s_test_control.height != 0 &&
            s_test_control.route_pointer_down != nullptr &&
            s_test_control.inject_pointer != nullptr &&
@@ -2305,24 +2306,13 @@ esp_err_t Start() {
     if (s_running.load()) return ESP_OK;
     const esp_err_t transport_err = TransportStart();
     if (transport_err != ESP_OK) return transport_err;
-    // Log history can later be read by LOGSUB. Keep it in internal RAM because
-    // package and filesystem operations can temporarily disable the flash cache.
-    if (s_log_history == nullptr) {
-        s_log_history = static_cast<LogRecord*>(heap_caps_calloc(
-            kLogHistoryDepth, sizeof(LogRecord),
-            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-        if (s_log_history == nullptr) {
-            ESP_LOGW(kTag, "PXADB log history is unavailable; live logcat remains enabled");
-        }
-    }
-    portENTER_CRITICAL(&s_history_lock);
-    s_log_history_start = 0;
-    s_log_history_count = 0;
-    portEXIT_CRITICAL(&s_history_lock);
     s_log_queue = xQueueCreateWithCaps(
         kLogQueueDepth, sizeof(LogRecord),
         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (s_log_queue == nullptr) return ESP_ERR_NO_MEM;
+    if (s_log_queue == nullptr) {
+        ESP_LOGW(kTag, "PXADB log queue allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
     s_tx_mutex = xSemaphoreCreateMutexStatic(&s_tx_mutex_storage);
     if (s_tx_mutex == nullptr) {
         vQueueDelete(s_log_queue);
@@ -2344,29 +2334,48 @@ esp_err_t Start() {
     portEXIT_CRITICAL(&s_input_lock);
 #endif
     s_running.store(true);
-#if CONFIG_PXADB_TEST_CONTROL
-    if (s_test_control.set_input_takeover_callback != nullptr) {
-        s_test_control.set_input_takeover_callback(
-            s_test_control.context, HandleSystemInputTakeover, nullptr);
+    s_task_active.store(true);
+    if (xTaskCreateWithCaps(PxadbTask, "pxadbd", kTaskStackSize, nullptr, 4,
+                            nullptr, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
+        s_task_active.store(false);
+        ESP_LOGW(kTag,
+                 "PXADB control task allocation failed: free_sram=%u largest_sram=%u",
+                 static_cast<unsigned>(heap_caps_get_free_size(
+                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+                 static_cast<unsigned>(heap_caps_get_largest_free_block(
+                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+        CleanupService(false);
+        return ESP_ERR_NO_MEM;
     }
-#endif
 #if CONFIG_PXADB_TEST_CONTROL
     s_input_task_active.store(true);
     if (xTaskCreateWithCaps(PxadbInputTask, "pxadb-input",
                             kInputTaskStackSize, nullptr, 5, nullptr,
                             MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
         s_input_task_active.store(false);
-        CleanupService(false);
-        return ESP_ERR_NO_MEM;
+        ESP_LOGW(kTag,
+                 "PXADB input control unavailable: free_sram=%u largest_sram=%u",
+                 static_cast<unsigned>(heap_caps_get_free_size(
+                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+                 static_cast<unsigned>(heap_caps_get_largest_free_block(
+                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
+    } else if (s_test_control.set_input_takeover_callback != nullptr) {
+        s_test_control.set_input_takeover_callback(
+            s_test_control.context, HandleSystemInputTakeover, nullptr);
     }
 #endif
-    s_task_active.store(true);
-    if (xTaskCreateWithCaps(PxadbTask, "pxadbd", kTaskStackSize, nullptr, 4,
-                            nullptr, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
-        s_task_active.store(false);
-        CleanupService(false);
-        return ESP_ERR_NO_MEM;
+    // History is optional; reserve task stacks before this internal-RAM cache.
+    if (s_log_history == nullptr) {
+        s_log_history = static_cast<LogRecord*>(heap_caps_calloc(
+            kLogHistoryDepth, sizeof(LogRecord),
+            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        if (s_log_history == nullptr)
+            ESP_LOGW(kTag, "PXADB log history is unavailable; live logcat remains enabled");
     }
+    portENTER_CRITICAL(&s_history_lock);
+    s_log_history_start = 0;
+    s_log_history_count = 0;
+    portEXIT_CRITICAL(&s_history_lock);
     ESP_LOGI(kTag, "PXADB service ready: control_stack=%uB internal; free_sram=%u largest_sram=%u",
              static_cast<unsigned>(kTaskStackSize),
              static_cast<unsigned>(heap_caps_get_free_size(

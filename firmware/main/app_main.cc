@@ -8,7 +8,6 @@
 #include "pxa_board.h"
 #include "pxa_board_api.h"
 #include "pxa_integration.h"
-#include "pxadb/pxadb_service.h"
 #include "sdkconfig.h"
 
 namespace {
@@ -45,10 +44,4 @@ extern "C" void app_main(void) {
         ESP_LOGE(kTag, "PXA integration did not start");
         return;
     }
-
-#if CONFIG_PXADB_AUTOSTART
-    if (pxa_board_performance_get(PXSYS_REFERENCE_PXADB) &&
-        pxadb::StartAutostart() != ESP_OK)
-        ESP_LOGW(kTag, "PXADB autostart task could not be created");
-#endif
 }
