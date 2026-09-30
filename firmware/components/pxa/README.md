@@ -248,7 +248,7 @@ separate directories, use the CMake WASI builder:
     "id": "main",
     "kind": "ui",
     "cmake_target": "pxa_main",
-    "wasi": {"version": "preview1", "libc": "wasi-libc", "features": []}
+    "wasi": {"version": "preview1", "libc": "wasi-libc", "features": ["monotonic-clock", "wall-clock"]}
   }]
 }
 ```
@@ -257,7 +257,7 @@ The App `CMakeLists.txt` loads `PxaGuest` from `PXA_CMAKE_MODULE_DIR`, builds
 folder-level code with `pxa_add_module()`, and combines those modules with
 `pxa_add_component()`. A complete example is under
 `pxa-system/apps/tests/cmake-wasi-app`. Build packaging requires an installed
-WASI SDK and an explicit `WASI_SDK_DIR`:
+WASI SDK 34 and an explicit `WASI_SDK_DIR`:
 
 ```cmake
 pxa_add_module(app_logic
@@ -275,14 +275,16 @@ reconfigure. It is intentionally non-recursive: give each subdirectory its own
 module to keep module ownership and include paths explicit.
 
 ```sh
-WASI_SDK_DIR=/opt/wasi-sdk \
+WASI_SDK_DIR=/opt/wasi-sdk-34.0 \
   pxa-system/tools/package/package_app.sh <app-directory> simulator \
   simulator/assets/system/pxa/builtin/pxa-<app-directory>
 ```
 
-PXA publishes WASI Preview 1 on ESP32-S3 and the simulator. A Component with
-feature bits `0` can use `wasi-libc` routines that remain inside Wasm linear
-memory, such as string, memory, formatting, parsing and allocation routines.
+PXA publishes WASI Preview 1 on ESP32-S3 and the simulator. The package
+builder requires WASI SDK 34 for both C and C++ Guests. Purely in-memory
+`wasi-libc` routines do not require WASI feature declarations, but SDK 34's
+linked libc may also import `clock_time_get`; declare both clock features when
+the package import check reports that import.
 The Hosts additionally publish `monotonic-clock`, `wall-clock` and `random`.
 Because Preview 1 selects a clock at call time through the shared
 `clock_time_get` import, a Component using either clock must sign for both
@@ -330,7 +332,7 @@ root explicitly:
 test_root=/tmp/pxa-test-packages
 PXA_APP_SOURCE_ROOT="$PWD/pxa-system/apps/tests/wasi" \
 PXA_PACKAGE_OUTPUT_ROOT="$test_root" \
-WASI_SDK_DIR=/opt/wasi-sdk \
+WASI_SDK_DIR=/opt/wasi-sdk-34.0 \
   pxa-system/tools/package/package_app.sh wasi-libc-lab simulator \
   "$test_root/pxa-wasi-libc-lab"
 ```
