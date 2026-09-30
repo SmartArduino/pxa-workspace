@@ -9,6 +9,10 @@ touch, ADC buttons, battery monitor, Wi-Fi and RPC701 audio.
 The two CST826 contacts are exposed as independent LVGL pointer devices, so PXA
 apps receive stable `pointer_id` values for simultaneous touches.
 
+After Wi-Fi obtains an IP address, the board synchronizes its system clock
+with `pool.ntp.org`. The ESP-IDF SNTP service refreshes it periodically while
+connected, and a later reconnection starts synchronization again.
+
 Its `sdkconfig.defaults` and `partitions.csv` are loaded only for this board.
 They define the `pxa_data` LittleFS partition, mounted at `/pxa`, separately
 from firmware flashing. The defaults also enable LVGL's LodePNG decoder

@@ -8,6 +8,9 @@
 CST826 的两个触点分别映射为独立的 LVGL 指针设备，PXA 应用因此能收到稳定的
 `pointer_id`，从而支持双指同时触摸。
 
+Wi-Fi 获取 IP 地址后，板子会通过 `pool.ntp.org` 校准系统时间。ESP-IDF SNTP
+服务在联网期间定期更新时间，重新联网后也会再次启动校时。
+
 `sdkconfig.defaults` 与 `partitions.csv` 仅在选择该板子时加载。它们定义独立于固件
 烧录的 `pxa_data` LittleFS 分区，并挂载至 `/pxa`。其中启用了 LVGL 的 LodePNG 解码器，
 因为 PXA Package 使用 PNG 图标与 UI 资源。开发安装与显式出厂镜像生成参见

@@ -8,6 +8,7 @@
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <utility>
 
 #include <adc_battery_monitor.h>
 #include <button.h>
@@ -23,6 +24,7 @@
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <esp_lvgl_port.h>
+#include <esp_netif_sntp.h>
 #include <esp_system.h>
 #include <nvs.h>
 #include <freertos/FreeRTOS.h>
@@ -406,25 +408,40 @@ void PaiTouchHardware::InitializeButtons() {
     power_button_->OnPressDown([this]() { HandlePowerButtonPressDown(); });
     power_button_->OnPressUp([this]() { HandlePowerButtonPressUp(); });
     power_button_->OnLongPress([this]() { HandlePowerButtonLongPress(); });
-    home_button_->OnClick([this]() { NavigateBack(); });
-    home_button_->OnLongPress([this]() { EnterWifiProvisioning(); });
+    home_button_->OnPressDown([this]() {
+        home_button_woke_screen_ = WakeScreenOnKeyPress();
+    });
+    home_button_->OnClick([this]() {
+        if (std::exchange(home_button_woke_screen_, false)) return;
+        NavigateBack();
+    });
+    home_button_->OnLongPress([this]() {
+        if (home_button_woke_screen_) return;
+        EnterWifiProvisioning();
+    });
     volume_up_button_->OnPressDown([this]() {
+        volume_up_woke_screen_ = WakeScreenOnKeyPress();
+        if (volume_up_woke_screen_) return;
         if (!pxa_host_captures_volume_keys() ||
             !pxa_host_post_key(PXA_HOST_KEY_VOLUME_UP)) {
             SetVolume(std::min<int>(100, volume() + 10));
         }
     });
-    volume_up_button_->OnPressUp([]() {
+    volume_up_button_->OnPressUp([this]() {
+        if (std::exchange(volume_up_woke_screen_, false)) return;
         if (pxa_host_captures_volume_keys())
             (void)pxa_host_post_key(PXA_HOST_KEY_VOLUME_UP_RELEASED);
     });
     volume_down_button_->OnPressDown([this]() {
+        volume_down_woke_screen_ = WakeScreenOnKeyPress();
+        if (volume_down_woke_screen_) return;
         if (!pxa_host_captures_volume_keys() ||
             !pxa_host_post_key(PXA_HOST_KEY_VOLUME_DOWN)) {
             SetVolume(volume() > 10 ? volume() - 10 : 0);
         }
     });
-    volume_down_button_->OnPressUp([]() {
+    volume_down_button_->OnPressUp([this]() {
+        if (std::exchange(volume_down_woke_screen_, false)) return;
         if (pxa_host_captures_volume_keys())
             (void)pxa_host_post_key(PXA_HOST_KEY_VOLUME_DOWN_RELEASED);
     });
@@ -436,6 +453,12 @@ bool PaiTouchHardware::InitializeWifi() {
     config.language = "zh-CN";
     auto& wifi = WifiManager::GetInstance();
     wifi.SetEventCallback([this](WifiEvent event, const std::string&) {
+        if (event == WifiEvent::Connected && time_sync_initialized_.load()) {
+            const esp_err_t result = esp_netif_sntp_start();
+            if (result != ESP_OK)
+                ESP_LOGW(kTag, "Unable to start time sync: %s",
+                         esp_err_to_name(result));
+        }
         if (event == WifiEvent::Connected || event == WifiEvent::Disconnected ||
             event == WifiEvent::ConfigModeEnter ||
             event == WifiEvent::ConfigModeExit) {
@@ -443,6 +466,18 @@ bool PaiTouchHardware::InitializeWifi() {
         }
     });
     if (!wifi.Initialize(config)) return false;
+    esp_sntp_config_t time_config =
+        ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    time_config.start = false;
+    time_config.wait_for_sync = false;
+    time_config.sync_cb = [](struct timeval*) {
+        ESP_LOGI(kTag, "System time synchronized");
+    };
+    const esp_err_t time_result = esp_netif_sntp_init(&time_config);
+    time_sync_initialized_.store(time_result == ESP_OK);
+    if (time_result != ESP_OK)
+        ESP_LOGW(kTag, "Unable to initialize time sync: %s",
+                 esp_err_to_name(time_result));
     wifi_initialized_.store(true);
     wifi.StartStation();
     return true;
@@ -779,6 +814,7 @@ bool PaiTouchHardware::CancelInjectedPointer() {
 }
 
 bool PaiTouchHardware::RouteInjectedKey(pxadb::TestControlKey key) {
+    if (WakeScreenOnKeyPress()) return true;
     switch (key) {
         case pxadb::TestControlKey::kBack:
             NavigateBack();
@@ -909,6 +945,19 @@ void PaiTouchHardware::SetScreenEnabled(bool enabled) {
                  enabled ? "wake" : "lock");
 }
 
+bool PaiTouchHardware::WakeScreenOnKeyPress() {
+    if (!screen_enabled_.load()) {
+        SetScreenEnabled(true);
+        return true;
+    }
+    if (idle_dim_percent_.load() == 100) return false;
+    lv_lock();
+    if (display_ != nullptr) lv_display_trigger_activity(display_);
+    SetIdleDim(false, 100);
+    lv_unlock();
+    return true;
+}
+
 void PaiTouchHardware::ToggleScreen() {
     SetScreenEnabled(!screen_enabled_.load());
 }
@@ -920,12 +969,11 @@ bool PaiTouchHardware::IsTouchInteractionRecent() const {
 }
 
 void PaiTouchHardware::HandlePowerButtonPressDown() {
-    power_button_woke_screen_ = !screen_enabled_.load();
+    power_button_woke_screen_ = WakeScreenOnKeyPress();
     power_button_pressed_at_us_ = esp_timer_get_time();
     power_button_long_press_ = false;
     power_button_ignored_ =
         !power_button_woke_screen_ && IsTouchInteractionRecent();
-    if (power_button_woke_screen_) SetScreenEnabled(true);
 }
 
 void PaiTouchHardware::HandlePowerButtonLongPress() {

@@ -55,6 +55,7 @@ private:
     void ScheduleStatusUpdate();
     void ApplyBacklight();
     void SetScreenEnabled(bool enabled);
+    bool WakeScreenOnKeyPress();
     void ToggleScreen();
     void HandlePowerButtonPressDown();
     void HandlePowerButtonPressUp();
@@ -109,6 +110,7 @@ private:
     std::atomic<bool> screen_enabled_{true};
     std::atomic<bool> wifi_initialized_{false};
     std::atomic<bool> wifi_enabled_{true};
+    std::atomic<bool> time_sync_initialized_{false};
     std::atomic<bool> status_update_pending_{false};
     std::atomic<uint16_t> injected_pointer_x_{0};
     std::atomic<uint16_t> injected_pointer_y_{0};
@@ -118,4 +120,7 @@ private:
     bool power_button_long_press_ = false;
     bool power_button_woke_screen_ = false;
     bool power_button_ignored_ = false;
+    bool home_button_woke_screen_ = false;
+    bool volume_up_woke_screen_ = false;
+    bool volume_down_woke_screen_ = false;
 };

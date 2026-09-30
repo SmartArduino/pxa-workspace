@@ -17,6 +17,7 @@ idf_component_register(
         esp_driver_uart
         esp_event
         esp_lcd
+        esp_netif
         esp_timer
         espressif__adc_battery_estimation
         espressif__button
