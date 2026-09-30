@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pathlib
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -89,22 +89,43 @@ class FilePanel(QWidget):
         buttons.addWidget(self.delete_button)
         buttons.addStretch(1)
 
+        self.system_status = QLabel("Lock state unknown")
+        self.unlock_button = QPushButton("Unlock system...")
+        self.unlock_button.setToolTip("Temporarily allow writes under the system directory")
+        self.unlock_button.clicked.connect(self._unlock_system)
+        self.lock_button = QPushButton("Lock system")
+        self.lock_button.clicked.connect(lambda: self.session.lock_system())
+        self.lock_timer = QTimer(self)
+        self.lock_timer.setSingleShot(True)
+        self.lock_timer.timeout.connect(self._unlock_expired)
+
+        system_row = QHBoxLayout()
+        system_row.addWidget(self.system_status, 1)
+        system_row.addWidget(self.unlock_button)
+        system_row.addWidget(self.lock_button)
+
         layout = QVBoxLayout(self)
         layout.addLayout(path_row)
         layout.addWidget(self.tree, 1)
         layout.addLayout(buttons)
+        layout.addLayout(system_row)
         layout.addWidget(self.progress)
 
         self.signals.files_listed.connect(self._on_files_listed)
         self.signals.files_changed.connect(self._on_files_changed)
+        self.signals.system_lock_changed.connect(self._on_system_lock_changed)
         self.signals.progress.connect(self._on_progress)
         self.set_connected(False)
 
     def set_connected(self, connected: bool) -> None:
         for widget in (self.path_edit, self.tree, self.push_button,
                        self.pull_button, self.mkdir_button,
-                       self.delete_button):
+                       self.delete_button, self.unlock_button,
+                       self.lock_button):
             widget.setEnabled(connected)
+        if not connected:
+            self.lock_timer.stop()
+            self.system_status.setText("Lock state unknown")
 
     def refresh(self) -> None:
         if self.session.connected:
@@ -139,6 +160,17 @@ class FilePanel(QWidget):
 
     def _on_files_changed(self, _path: str) -> None:
         self.refresh()
+
+    def _on_system_lock_changed(self, unlocked: bool, minutes: int) -> None:
+        self.lock_timer.stop()
+        if unlocked:
+            self.system_status.setText(f"System unlocked ({minutes} min)")
+            self.lock_timer.start(minutes * 60_000)
+        else:
+            self.system_status.setText("System locked")
+
+    def _unlock_expired(self) -> None:
+        self.system_status.setText("System unlock expired")
 
     def _on_progress(self, label: str, done: int, total: int) -> None:
         self.progress.setVisible(True)
@@ -185,6 +217,12 @@ class FilePanel(QWidget):
         name, accepted = QInputDialog.getText(self, "New folder", "Folder name")
         if accepted and name.strip():
             self.session.make_directory(self._join(name.strip()))
+
+    def _unlock_system(self) -> None:
+        minutes, accepted = QInputDialog.getInt(
+            self, "Unlock system files", "Duration (minutes)", 10, 1, 1440)
+        if accepted:
+            self.session.unlock_system(minutes)
 
     def _delete(self) -> None:
         selection = self._selected()

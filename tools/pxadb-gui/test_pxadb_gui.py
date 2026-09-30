@@ -14,7 +14,7 @@ import pxadb
 
 from pxadb_gui.geometry import device_point, fitted_rect
 from pxadb_gui.images import capture_to_image
-from pxadb_gui.panels import human_size
+from pxadb_gui.panels import FilePanel, human_size
 from pxadb_gui.session import (
     DeviceChoice,
     DeviceSession,
@@ -223,6 +223,73 @@ class ScreenshotRequestTest(unittest.TestCase):
         self.assertEqual(
             screenshot_request("protocol=2;screenshot=png;simulator=1"),
             "SCREENSHOT")
+
+
+class SystemUnlockTest(unittest.TestCase):
+    def test_session_uses_cli_commands_and_emits_success_state(self) -> None:
+        session = object.__new__(DeviceSession)
+        session.signals = SessionSignals()
+        session._client = mock.MagicMock()
+        session._enqueue = mock.MagicMock()
+        changes: list[tuple[bool, int]] = []
+        session.signals.system_lock_changed.connect(
+            lambda unlocked, minutes: changes.append((unlocked, minutes)))
+
+        session.unlock_system(5)
+        name, action = session._enqueue.call_args.args
+        self.assertEqual(name, "fs unlock")
+        self.assertEqual(action(session), "system files unlocked for 5 min")
+        session._client.request.assert_called_once_with("FSUNLOCK 5",
+                                                        timeout=10.0)
+        self.assertEqual(changes, [(True, 5)])
+
+        session._enqueue.reset_mock()
+        session._client.request.reset_mock()
+        session.lock_system()
+        name, action = session._enqueue.call_args.args
+        self.assertEqual(name, "fs lock")
+        self.assertEqual(action(session), "system files locked")
+        session._client.request.assert_called_once_with("FSLOCK", timeout=10.0)
+        self.assertEqual(changes[-1], (False, 0))
+
+        with self.assertRaises(ValueError):
+            session.unlock_system(0)
+        with self.assertRaises(ValueError):
+            session.unlock_system(1441)
+        session._enqueue.assert_called_once()
+
+    def test_file_panel_unlock_controls_and_status(self) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.instance() or QApplication([])
+        signals = SessionSignals()
+        session = mock.Mock()
+        session.connected = True
+        panel = FilePanel(session, signals)
+        panel.set_connected(True)
+
+        with mock.patch("pxadb_gui.panels.QInputDialog.getInt",
+                        return_value=(5, True)):
+            panel.unlock_button.click()
+        session.unlock_system.assert_called_once_with(5)
+        signals.system_lock_changed.emit(True, 5)
+        self.assertEqual(panel.system_status.text(), "System unlocked (5 min)")
+        self.assertTrue(panel.lock_timer.isActive())
+
+        panel.lock_button.click()
+        session.lock_system.assert_called_once_with()
+        signals.system_lock_changed.emit(False, 0)
+        self.assertEqual(panel.system_status.text(), "System locked")
+        self.assertFalse(panel.lock_timer.isActive())
+
+        with mock.patch("pxadb_gui.panels.QInputDialog.getInt",
+                        return_value=(10, False)):
+            panel.unlock_button.click()
+        session.unlock_system.assert_called_once_with(5)
+        panel.set_connected(False)
+        self.assertFalse(panel.unlock_button.isEnabled())
+        self.assertFalse(panel.lock_button.isEnabled())
+        self.assertEqual(panel.system_status.text(), "Lock state unknown")
 
 
 class FakeCapture:

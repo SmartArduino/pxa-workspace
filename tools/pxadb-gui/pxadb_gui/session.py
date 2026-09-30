@@ -168,6 +168,7 @@ class SessionSignals(QObject):
     log_line = Signal(str)
     files_listed = Signal(str, object)      # path, list[(kind, size, name)]
     files_changed = Signal(str)
+    system_lock_changed = Signal(bool, int)  # unlocked, requested minutes
     packages_listed = Signal(object)        # list[list[str]]
     progress = Signal(str, int, int)        # label, done, total
     job_done = Signal(str, object)          # job name, payload
@@ -387,6 +388,25 @@ class DeviceSession:
             return None
 
         self._enqueue("fs list", action)
+
+    def unlock_system(self, minutes: int = 10) -> None:
+        if not 1 <= minutes <= 1440:
+            raise ValueError("unlock duration must be between 1 and 1440 minutes")
+
+        def action(session: "DeviceSession") -> object:
+            session._client.request(f"FSUNLOCK {minutes}", timeout=10.0)
+            session.signals.system_lock_changed.emit(True, minutes)
+            return f"system files unlocked for {minutes} min"
+
+        self._enqueue("fs unlock", action)
+
+    def lock_system(self) -> None:
+        def action(session: "DeviceSession") -> object:
+            session._client.request("FSLOCK", timeout=10.0)
+            session.signals.system_lock_changed.emit(False, 0)
+            return "system files locked"
+
+        self._enqueue("fs lock", action)
 
     def make_directory(self, path: str) -> None:
         def action(session: "DeviceSession") -> object:

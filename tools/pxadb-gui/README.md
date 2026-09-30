@@ -39,7 +39,9 @@ pxadb-gui --connect 192.168.1.20:9222 --token local/simulator/pai-touch/pxadb2.t
   the pointer is held down so drags stay responsive.
 - **File transfer** — browse storage, create and delete paths, push and pull
   files with progress. Works on firmware (`FSLIST`/`FSREAD`/`FSSHA`) and on
-  product simulators.
+  product simulators. On firmware, the Files panel can temporarily unlock
+  writes under the system directory for 1–1440 minutes and lock it again
+  (`FSUNLOCK`/`FSLOCK`).
 - **Device log** — subscribe to structured logs and raw console output while
   the preview runs; the worker drains buffered output between requests.
 - **Packages** — list installed packages, install a local `.pxa`, launch,
@@ -105,7 +107,8 @@ pxadb-gui --connect 192.168.1.20:9222 --token local/simulator/pai-touch/pxadb2.t
   MOVE 事件在 GUI 侧和设备输入邮箱中各合并一次；按住指针时暂停预览采集，
   拖动响应保持在几十毫秒级。
 - **文件传输** —— 浏览存储、新建/删除路径、带进度地上传下载。固件
-  （`FSLIST`/`FSREAD`/`FSSHA`）和产品模拟器都支持。
+  （`FSLIST`/`FSREAD`/`FSSHA`）和产品模拟器都支持。连接固件时，文件面板可按
+  1～1440 分钟临时解锁系统目录写入，并可立即重新锁定（`FSUNLOCK`/`FSLOCK`）。
 - **设备日志** —— 预览运行期间可订阅结构化日志与原始串口输出；worker 会在
   请求间隙排空缓冲区。
 - **包管理** —— 列出已安装包、安装本地 `.pxa`、启动、停止、启用、禁用、
