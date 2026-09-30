@@ -14,6 +14,8 @@ import time
 import tomllib
 from collections.abc import Iterable
 
+from pxadb.pxadb import PxaDbError, package_manifest_identity
+
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 APP_TOOL = ROOT / "tools" / "app.sh"
@@ -157,7 +159,7 @@ class Developer:
         self.log = log
         self.source_root = source_root
         self.app_id = args.app_id
-        self.package_id = f"pxa-{args.app_id}"
+        self.package_id: str | None = None
         self.app_dir = source_root / args.app_id
         self.runner: subprocess.Popen[str] | None = None
         self.logcat: subprocess.Popen[str] | None = None
@@ -186,7 +188,7 @@ class Developer:
 
     @property
     def package_path(self) -> pathlib.Path:
-        return ROOT / "local" / "app-output" / self.args.board / f"{self.package_id}.pxa"
+        return ROOT / "local" / "app-output" / self.args.board / f"pxa-{self.app_id}.pxa"
 
     def start_simulator_service(self) -> None:
         stream_command(
@@ -199,6 +201,8 @@ class Developer:
         stream_command(command, self.log)
 
     def start_app(self) -> None:
+        if self.package_id is None:
+            raise DevError("package identity is unavailable; build the package first")
         if self.args.mode == "sim":
             self.runner = start_logged_process(
                 [
@@ -233,6 +237,10 @@ class Developer:
         self.build()
         if not self.package_path.is_file():
             raise DevError(f"package build did not produce {self.package_path}")
+        try:
+            self.package_id = package_manifest_identity(self.package_path)
+        except (OSError, PxaDbError) as error:
+            raise DevError(f"cannot read built package identity: {error}") from error
         self.install()
         self.start_app()
         self.log.write(f"[dev] running {self.package_id}\n")
@@ -270,7 +278,10 @@ def parse_arguments() -> argparse.Namespace:
         description="Build, deploy and run a PXA App with an optional source watcher.",
     )
     parser.add_argument("mode", choices=("sim", "device"), help="desktop product simulator or ESP device")
-    parser.add_argument("app_id", help="App ID, whose directory is <source-root>/<app-id>")
+    parser.add_argument(
+        "app_id",
+        help="App source directory name; the installed ID is read from the built package",
+    )
     parser.add_argument("--source-root", help="parent directory containing the App directory")
     parser.add_argument("--board", default="pai-touch", help="PXA board profile (default: pai-touch)")
     parser.add_argument("--profile", help="simulator profile (default: --board)")

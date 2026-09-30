@@ -1,5 +1,6 @@
 import pathlib
 import sys
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -15,6 +16,23 @@ class DeviceLaunchTest(unittest.TestCase):
             port="/dev/ttyUSB0", baud=2000000, no_logcat=True,
         )
         self.developer = dev.Developer(args, mock.Mock(), pathlib.Path("."))
+        self.developer.package_id = "pxa-game-render-bench"
+
+    def test_reads_identity_from_signed_package(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            package = root / "local/app-output/esp32s31-korvo-1/pxa-game-render-bench.pxa"
+            package.parent.mkdir(parents=True)
+            package.touch()
+            with mock.patch.object(dev, "ROOT", root), \
+                    mock.patch.object(self.developer, "build"), \
+                    mock.patch.object(self.developer, "install"), \
+                    mock.patch.object(self.developer, "start_app"), \
+                    mock.patch.object(dev, "package_manifest_identity",
+                                      return_value="pxa-cpp-counter") as read_identity:
+                self.developer.deploy()
+            read_identity.assert_called_once_with(package)
+            self.assertEqual(self.developer.package_id, "pxa-cpp-counter")
 
     def test_retries_catalog_sync_delay(self) -> None:
         with mock.patch.object(dev, "stream_command", side_effect=[
@@ -32,6 +50,13 @@ class DeviceLaunchTest(unittest.TestCase):
                 self.developer.start_app()
         run.assert_called_once()
         sleep.assert_not_called()
+
+    def test_launch_uses_package_manifest_identity(self) -> None:
+        self.developer.package_id = "pxa-cpp-counter"
+        with mock.patch.object(dev, "stream_command") as run:
+            self.developer.start_app()
+        command = run.call_args.args[0]
+        self.assertEqual(command[2:5], ["package", "run", "pxa-cpp-counter"])
 
 
 class SimulatorProfileTest(unittest.TestCase):

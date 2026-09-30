@@ -84,6 +84,10 @@ launching into one development loop. An App source root is the parent directory
 that contains `<app-id>/`; configure it once in ignored `local/apps.toml`, or
 supply it for a one-off command:
 
+The command argument names the source directory. The output file uses
+`pxa-<app-id>.pxa`, while installation and launch use the ID in the signed
+package manifest. These names may differ.
+
 ```toml
 # local/apps.toml
 [apps.my-app]
