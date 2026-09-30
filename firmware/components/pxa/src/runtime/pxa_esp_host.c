@@ -1943,11 +1943,21 @@ static void finish_job(uint16_t index, pxa_work_result_t result) {
     const pxa_component_t component = g_host.activation.active_jobs[index];
     const pxa_scheduler_entry_t entry =
         g_host.activation.active_work[index];
+    pxa_status_t status;
     if (component == PXA_COMPONENT_INVALID) return;
     if (result == PXA_WORK_RESULT_RETRY &&
         entry.attempt < entry.max_attempts) {
-        (void)pxa_scheduler_retry(g_host.activation.services.scheduler,
-                                  &entry);
+        status = pxa_scheduler_retry(g_host.activation.services.scheduler,
+                                     &entry);
+    } else {
+        status = pxa_scheduler_finish(g_host.activation.services.scheduler,
+                                      entry.id);
+    }
+    if (status != PXA_STATUS_OK && status != PXA_STATUS_NOT_FOUND) {
+        ESP_LOGW(PXA_ESP_HOST_TAG,
+                 "Work completion persistence failed: id=%u status=%d",
+                 (unsigned)entry.id, (int)status);
+        return;
     }
     (void)pxa_activation_deactivate(
         g_host.activation.coordinator,
