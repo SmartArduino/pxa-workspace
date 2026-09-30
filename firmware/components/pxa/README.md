@@ -280,6 +280,14 @@ WASI_SDK_DIR=/opt/wasi-sdk-34.0 \
   simulator/assets/system/pxa/builtin/pxa-<app-directory>
 ```
 
+The packager resolves pinned WASI SDK 34 for both CMake and direct C builds;
+`WASI_SDK_DIR` is optional when the locked toolchain is cached or can be
+downloaded. Direct multi-source C builds compile independent sources in
+parallel, while CMake builds prefer Ninja when available. `PXA_BUILD_JOBS`
+sets the host build and independent AoT task limit (default: up to 8,
+supported range: 1-64). Set it to `1` for serial builds. This does not enable
+threads inside the Guest.
+
 PXA publishes WASI Preview 1 on ESP32-S3 and the simulator. The package
 builder requires WASI SDK 34 for both C and C++ Guests. Purely in-memory
 `wasi-libc` routines do not require WASI feature declarations, but SDK 34's
