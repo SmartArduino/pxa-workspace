@@ -422,7 +422,7 @@ private:
     static constexpr UBaseType_t kPresenterPriority = 4;
     static constexpr uint32_t kWorkerStackSize = 2048;
     static constexpr uint32_t kSubmitStackSize = 3072;
-    static constexpr uint32_t kPresenterStackSize = 3072;
+    static constexpr uint32_t kPresenterStackSize = 5120;
     static constexpr uint32_t kReportIntervalUs = 2 * 1000 * 1000;
     static constexpr TickType_t kWorkerDoneTimeout = pdMS_TO_TICKS(500);
     static constexpr TickType_t kTransferDoneTimeout = pdMS_TO_TICKS(50);
@@ -764,30 +764,6 @@ private:
         return BlendArgb8888Premultiplied(destination, argb);
     }
 
-    static uint16_t BlendUiAlphaPixel(uint16_t destination,
-                                      uint16_t foreground, uint8_t alpha,
-                                      uint8_t opacity) {
-        if (alpha == 0 || opacity == 0) return destination;
-        if (opacity != 255) {
-            alpha = static_cast<uint8_t>(
-                (static_cast<uint16_t>(alpha) * opacity + 127u) / 255u);
-            if (alpha == 0) return destination;
-        }
-        if (alpha == 255) return foreground;
-
-        const uint16_t inverse = static_cast<uint16_t>(255u - alpha);
-        const uint16_t red = static_cast<uint16_t>(
-            (((foreground >> 11) * alpha + (destination >> 11) * inverse +
-              128u) >> 8));
-        const uint16_t green = static_cast<uint16_t>(
-            (((((foreground >> 5) & 0x3fu) * alpha +
-               ((destination >> 5) & 0x3fu) * inverse + 128u) >> 8)));
-        const uint16_t blue = static_cast<uint16_t>(
-            (((foreground & 0x1fu) * alpha + (destination & 0x1fu) * inverse +
-              128u) >> 8));
-        return static_cast<uint16_t>((red << 11) | (green << 5) | blue);
-    }
-
     static uint8_t SurfaceCompositionScale(
         const pxa_esp_surface_frame_t* surface, int32_t logical_width,
         int32_t logical_height) {
@@ -936,44 +912,48 @@ private:
                         tile_row[x - x0] = __builtin_bswap16(result);
                     }
                     if (surface != nullptr) {
-                        const auto& plane = surface->ui_alpha_plane;
-                        if (plane.visible && plane.opacity != 0 &&
-                            plane.pixels != nullptr && plane.alpha != nullptr &&
-                            static_cast<int64_t>(y) >= plane.y &&
-                            static_cast<int64_t>(y) <
-                                static_cast<int64_t>(plane.y) + plane.height) {
-                            const int64_t plane_right =
-                                static_cast<int64_t>(plane.x) + plane.width;
-                            const int32_t alpha_first = static_cast<int32_t>(
-                                plane.x > x0 ? plane.x : x0);
-                            const int32_t alpha_last = static_cast<int32_t>(
-                                plane_right < x1 ? plane_right : x1);
-                            if (alpha_first < alpha_last) {
-                                const int32_t plane_y = y - plane.y;
-                                const auto* colors =
-                                    reinterpret_cast<const uint16_t*>(
-                                        reinterpret_cast<const uint8_t*>(
-                                            plane.pixels) +
+                        auto blend_plane = [&](const auto& plane) {
+                            if (plane.visible && plane.opacity != 0 &&
+                                plane.pixels != nullptr && plane.alpha != nullptr &&
+                                static_cast<int64_t>(y) >= plane.y &&
+                                static_cast<int64_t>(y) <
+                                    static_cast<int64_t>(plane.y) + plane.height) {
+                                const int64_t plane_right =
+                                    static_cast<int64_t>(plane.x) + plane.width;
+                                const int32_t alpha_first = static_cast<int32_t>(
+                                    plane.x > x0 ? plane.x : x0);
+                                const int32_t alpha_last = static_cast<int32_t>(
+                                    plane_right < x1 ? plane_right : x1);
+                                if (alpha_first < alpha_last) {
+                                    const int32_t plane_y = y - plane.y;
+                                    const auto* colors =
+                                        reinterpret_cast<const uint16_t*>(
+                                            reinterpret_cast<const uint8_t*>(
+                                                plane.pixels) +
+                                            static_cast<size_t>(plane_y) *
+                                                plane.pixel_stride_bytes) +
+                                        (alpha_first - plane.x);
+                                    const auto* alpha = plane.alpha +
                                         static_cast<size_t>(plane_y) *
-                                            plane.pixel_stride_bytes) +
-                                    (alpha_first - plane.x);
-                                const auto* alpha = plane.alpha +
-                                    static_cast<size_t>(plane_y) *
-                                        plane.alpha_stride_bytes +
-                                    (alpha_first - plane.x);
-                                for (int32_t alpha_x = alpha_first;
-                                     alpha_x < alpha_last; ++alpha_x) {
-                                    uint16_t* destination =
-                                        &tile_row[alpha_x - x0];
-                                    const uint16_t base =
-                                        __builtin_bswap16(*destination);
-                                    *destination = __builtin_bswap16(
-                                        BlendUiAlphaPixel(
-                                            base, *colors++, *alpha++,
-                                            plane.opacity));
+                                            plane.alpha_stride_bytes +
+                                        (alpha_first - plane.x);
+                                    for (int32_t alpha_x = alpha_first;
+                                         alpha_x < alpha_last; ++alpha_x) {
+                                        uint16_t* destination =
+                                            &tile_row[alpha_x - x0];
+                                        const uint16_t base =
+                                            __builtin_bswap16(*destination);
+                                        *destination = __builtin_bswap16(
+                                            pxa_esp_surface_blend_alpha_pixel(
+                                                base, *colors++, *alpha++,
+                                                plane.opacity));
+                                    }
                                 }
                             }
-                        }
+                        };
+                        if (!surface->suppress_guest_alpha)
+                            blend_plane(surface->ui_alpha_plane);
+                        blend_plane(surface->system_alpha_plane);
                     }
 #else
                     for (int32_t x = 0; x < tile_width; ++x) {
@@ -1394,6 +1374,9 @@ private:
             context->pxa_direct_frame_count == 0 ? 0 :
             context->pxa_direct_rotate_total_us /
                 context->pxa_direct_frame_count;
+        const UBaseType_t presenter_stack_free_min =
+            context->pxa_presenter_task == nullptr ? 0 :
+            uxTaskGetStackHighWaterMark(context->pxa_presenter_task);
         pxa_esp_surface_input_metrics_t input_metrics = {};
         pxa_esp_surface_take_input_metrics(&input_metrics);
         const uint32_t sample_to_guest_us =
@@ -1446,7 +1429,7 @@ private:
                  "min_1s=%" PRIu32 ".%u fps interval_max=%" PRIu32 "us "
                  "rotate_us avg/max=%" PRIu32 "/%" PRIu32
                  " submit_failures=%" PRIu32 " composition_fallbacks=%" PRIu32
-                 " active=%d",
+                 " active=%d presenter_stack_free_min=%u",
                  context->pxa_direct_frame_count, pxa_direct_fps_x10 / 10,
                  static_cast<unsigned>(pxa_direct_fps_x10 % 10),
                  pxa_visible_frames, pxa_visible_fps_x10 / 10,
@@ -1457,7 +1440,8 @@ private:
                  pxa_direct_rotate_us, context->pxa_direct_rotate_max_us,
                  context->pxa_direct_submit_failures,
                  context->pxa_direct_composition_fallbacks,
-                 static_cast<int>(context->pxa_direct_scanout_active));
+                 static_cast<int>(context->pxa_direct_scanout_active),
+                 static_cast<unsigned>(presenter_stack_free_min));
         ESP_LOGI(kTag,
                  "PXA input latency us: guest avg/p95/max=%" PRIu32 "/%" PRIu32
                  "/%" PRIu32 " (%" PRIu32 ") present avg/p95/max=%" PRIu32
@@ -1697,6 +1681,7 @@ private:
     static bool PxaFrameCanScanoutDirectly(
         const Context* context, const pxa_esp_surface_frame_t& frame) {
         const auto& overlay = frame.ui_alpha_plane;
+        const auto& system_overlay = frame.system_alpha_plane;
         const uint8_t scale = DirectFrameScale(context, frame.width,
                                                frame.height);
         return frame.visible &&
@@ -1709,7 +1694,10 @@ private:
                frame.opaque_ui_region_count == 0 &&
                !pxa_esp_surface_composition_required() &&
                (!overlay.visible || overlay.opacity == 0 ||
-                overlay.pixels == nullptr || overlay.alpha == nullptr);
+                overlay.pixels == nullptr || overlay.alpha == nullptr) &&
+               (!system_overlay.visible || system_overlay.opacity == 0 ||
+                system_overlay.pixels == nullptr ||
+                system_overlay.alpha == nullptr);
     }
 
     static void EndPxaDirectScanout(Context* context) {

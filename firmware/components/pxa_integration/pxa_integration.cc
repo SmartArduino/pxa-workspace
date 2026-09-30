@@ -1165,6 +1165,10 @@ bool CreateSystem(const pxa_board_port_t* board,
         else
             pxa_esp_surface_runtime_modal_leave();
     };
+    ui_config.system_overlay_objects_changed =
+        [](void*, lv_obj_t* const* objects, size_t count) {
+            pxa_esp_system_overlay_set_reference_objects(objects, count);
+        };
     ui_config.performance_context = const_cast<pxa_board_port_t*>(board);
     ui_config.performance_get = DeveloperGet;
     ui_config.performance_set = DeveloperSet;

@@ -471,6 +471,8 @@ static void notify_runtime_event(pxa_host_runtime_event_t event,
     portEXIT_CRITICAL(&g_runtime_event_lock);
     if (callback != NULL) callback(context, event, identity,
                                    host_instance_id, stop_reason);
+    if (event == PXA_HOST_RUNTIME_START_FAILED)
+        pxa_esp_ui_shell_dismiss_app_launch(identity);
 }
 
 static int system_caller_for_component(pxa_component_t component,
@@ -3257,7 +3259,6 @@ static int start_verified(const char *identity) {
     if (!drain_active_events()) {
         PXA_ESP_START_FAIL("drain-startup-events", PXA_STATUS_INTERNAL);
     }
-    pxa_esp_ui_shell_dismiss_app_launch();
     publish_active_state();
     refresh_volume_key_capture_state();
     host_log_heap_usage("launch-ready");
@@ -3270,7 +3271,6 @@ failed:
     host_log_heap_usage("launch-failed");
     stop_active(PXA_STOP_FAULT);
     host_log_heap_usage("launch-cleanup");
-    pxa_esp_ui_shell_dismiss_app_launch();
     if (!toast_posted) {
         pxa_esp_ui_shell_post_toast("应用启动失败", 1800);
     }
@@ -4100,8 +4100,13 @@ static void sync_ui_lifecycle(void) {
         PXA_HOST_SYSTEM_LIFECYCLE_EVENT, 0,
         (pxa_bytes_t){&payload, sizeof(payload)}, 1, 0);
     if (status == PXA_STATUS_OK) {
+        char launch_identity[PXA_ESP_HOST_MAX_APP_ID];
+        if (effective)
+            snprintf(launch_identity, sizeof(launch_identity), "%s",
+                     g_host.activation.active_identity);
         g_host.lifecycle_delivered = effective;
         drain_active_events();
+        if (effective) pxa_esp_ui_shell_dismiss_app_launch(launch_identity);
     }
 }
 
@@ -4805,9 +4810,11 @@ bool pxa_esp_host_launch(const char *identity) {
     snprintf(command.payload.identity.identity,
              sizeof(command.payload.identity.identity), "%s", identity);
     ESP_LOGI(PXA_ESP_HOST_TAG, "Queueing launch request: %s", identity);
+    pxa_esp_ui_shell_post_app_launch(command.payload.identity.identity);
     if (!post_command(&command)) {
         ESP_LOGW(PXA_ESP_HOST_TAG,
                  "Launch queue full; request rejected: %s", identity);
+        pxa_esp_ui_shell_dismiss_app_launch(command.payload.identity.identity);
         return false;
     }
     return true;

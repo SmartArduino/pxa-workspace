@@ -10,6 +10,7 @@
 
 #include "pxa_esp_host.h"
 #include "pxa_esp_dialog_layout.h"
+#include "pxa_esp_system_overlay.h"
 #include "pxa/ui.h"
 
 static lv_obj_t *g_result_dialog;
@@ -31,6 +32,7 @@ static const lv_font_t *title_font(void) {
 
 static void close_result(void) {
     if (g_result_dialog == NULL) return;
+    pxa_esp_system_overlay_remove(g_result_dialog);
     lv_obj_add_flag(g_result_dialog, LV_OBJ_FLAG_HIDDEN);
     lv_obj_delete_async(g_result_dialog);
     g_result_dialog = NULL;
@@ -42,6 +44,11 @@ static void result_response(lv_event_t *event) {
     bool open = (uintptr_t)lv_event_get_user_data(event) != 0;
     close_result();
     (void)pxa_esp_host_respond_store_result(prompt_id, open);
+}
+
+static void refresh_scrolled_overlay(lv_event_t *event) {
+    (void)event;
+    pxa_esp_system_overlay_refresh();
 }
 
 static void show_result(void *context) {
@@ -104,6 +111,8 @@ static void show_result(void *context) {
     lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(content, 6, 0);
+    lv_obj_add_event_cb(content, refresh_scrolled_overlay, LV_EVENT_SCROLL,
+                        NULL);
 
     name = lv_label_create(content);
     lv_obj_set_width(name, LV_PCT(100));
@@ -148,6 +157,7 @@ static void show_result(void *context) {
         lv_obj_set_style_text_font(label, body_font(), 0);
         lv_obj_center(label);
     }
+    pxa_esp_system_overlay_add(g_result_dialog);
     free(result);
 }
 

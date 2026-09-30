@@ -57,28 +57,6 @@ uint16_t BlendSerializedAlpha(uint16_t destination, uint32_t argb) {
         ((source & 0x001fu) + retained_blue));
 }
 
-uint16_t BlendUiAlphaPixel(uint16_t destination, uint16_t foreground,
-                           uint8_t alpha, uint8_t opacity) {
-    if (alpha == 0 || opacity == 0) return destination;
-    if (opacity != 255) {
-        alpha = static_cast<uint8_t>(
-            (static_cast<uint16_t>(alpha) * opacity + 127u) / 255u);
-        if (alpha == 0) return destination;
-    }
-    if (alpha == 255) return foreground;
-    const uint16_t inverse = static_cast<uint16_t>(255u - alpha);
-    const uint16_t red = static_cast<uint16_t>(
-        (((foreground >> 11) * alpha + (destination >> 11) * inverse +
-          128u) >> 8));
-    const uint16_t green = static_cast<uint16_t>(
-        ((((foreground >> 5) & 0x3fu) * alpha +
-          ((destination >> 5) & 0x3fu) * inverse + 128u) >> 8));
-    const uint16_t blue = static_cast<uint16_t>(
-        (((foreground & 0x1fu) * alpha + (destination & 0x1fu) * inverse +
-          128u) >> 8));
-    return static_cast<uint16_t>((red << 11) | (green << 5) | blue);
-}
-
 // A Surface smaller than the panel is presented at the largest exact 1x/2x/4x
 // factor that fits and is centered unless the Guest placed it explicitly; the
 // panel's safe area is the inscribed square of the round display, so a
@@ -245,14 +223,18 @@ void ComposeFrame(const pxa_esp_surface_frame_t& frame,
     const int32_t surface_bottom = origin_y + drawn_height;
     const size_t bytes_per_pixel =
         frame.format == PXA_SURFACE_FORMAT_RGB565 ? 2u : 4u;
-    const auto& plane = frame.ui_alpha_plane;
-    const bool plane_visible = plane.visible && plane.opacity != 0 &&
-                               plane.pixels != nullptr && plane.alpha != nullptr;
-    const int32_t plane_right = plane.x + plane.width;
-    const int32_t plane_bottom = plane.y + plane.height;
+    const pxa_esp_surface_ui_alpha_plane_t* planes[2] = {
+        &frame.ui_alpha_plane, &frame.system_alpha_plane};
+    const bool plane_visible[2] = {
+        !frame.suppress_guest_alpha && planes[0]->visible &&
+            planes[0]->opacity != 0 && planes[0]->pixels != nullptr &&
+            planes[0]->alpha != nullptr,
+        planes[1]->visible && planes[1]->opacity != 0 &&
+            planes[1]->pixels != nullptr && planes[1]->alpha != nullptr};
 
     if (frame.format == PXA_SURFACE_FORMAT_RGB565 &&
-        frame.opaque_ui_region_count == 0 && !plane_visible) {
+        frame.opaque_ui_region_count == 0 && !plane_visible[0] &&
+        !plane_visible[1]) {
         if (scale == 1) {
             ComposeRgb565Scale1(frame, area, pixels, origin_x, origin_y,
                                 drawn_width, drawn_height);
@@ -288,16 +270,19 @@ void ComposeFrame(const pxa_esp_surface_frame_t& frame,
                     opaque_regions[opaque_region_count++] = &rect;
             }
         }
-        const bool row_has_plane =
-            plane_visible && y >= plane.y && y < plane_bottom;
-        const uint16_t* plane_colors = nullptr;
-        const uint8_t* plane_alpha = nullptr;
-        if (row_has_plane) {
+        bool row_has_plane[2] = {};
+        const uint16_t* plane_colors[2] = {};
+        const uint8_t* plane_alpha[2] = {};
+        for (uint8_t index = 0; index < 2; ++index) {
+            const auto& plane = *planes[index];
+            row_has_plane[index] = plane_visible[index] && y >= plane.y &&
+                                   y < plane.y + plane.height;
+            if (!row_has_plane[index]) continue;
             const int32_t plane_y = y - plane.y;
-            plane_colors = reinterpret_cast<const uint16_t*>(
+            plane_colors[index] = reinterpret_cast<const uint16_t*>(
                 reinterpret_cast<const uint8_t*>(plane.pixels) +
                 static_cast<size_t>(plane_y) * plane.pixel_stride_bytes);
-            plane_alpha = plane.alpha +
+            plane_alpha[index] = plane.alpha +
                 static_cast<size_t>(plane_y) * plane.alpha_stride_bytes;
         }
 
@@ -328,11 +313,14 @@ void ComposeFrame(const pxa_esp_surface_frame_t& frame,
                     }
                 }
             }
-            if (row_has_plane && x >= plane.x && x < plane_right) {
-                value = BlendUiAlphaPixel(value,
-                                          plane_colors[x - plane.x],
-                                          plane_alpha[x - plane.x],
-                                          plane.opacity);
+            for (uint8_t index = 0; index < 2; ++index) {
+                const auto& plane = *planes[index];
+                if (!row_has_plane[index] || x < plane.x ||
+                    x >= plane.x + plane.width)
+                    continue;
+                value = pxa_esp_surface_blend_alpha_pixel(
+                    value, plane_colors[index][x - plane.x],
+                    plane_alpha[index][x - plane.x], plane.opacity);
             }
             row[x - area->x1] = SwapBytes(value);
         }

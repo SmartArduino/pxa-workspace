@@ -109,6 +109,14 @@ static bool empty_ui_alpha_plane(void *context,
     return true;
 }
 
+static bool missing_ui_alpha_plane(void *context,
+                                   pxa_esp_surface_ui_alpha_plane_t *plane) {
+    assert(context == &notifications);
+    memset(plane, 0, sizeof(*plane));
+    plane->visible = 1;
+    return true;
+}
+
 #include "../../../../deps/pxa-system/libpxa/tests/raster_snapshot_scenario.h"
 
 static void replace_during_raster(void) {
@@ -837,5 +845,53 @@ int main(void) {
     assert(pxa_esp_resource_memory_end() == PXA_STATUS_OK && !allocations);
     pxa_esp_surface_set_frame_ready_callback(NULL, NULL);
     pxa_esp_surface_set_release_ready_callback(NULL, NULL);
+    pxa_surface_desc_t overlay_desc = {
+        .width = 4, .height = 4, .format = PXA_SURFACE_FORMAT_RGB565,
+        .buffer_count = 2};
+    pxa_surface_layer_t overlay_layer = {
+        .width = 4, .height = 4, .visible = 1};
+    assert(pxa_esp_resource_memory_begin() == PXA_STATUS_OK);
+    pxa_esp_surface_set_system_alpha_provider(ui_alpha_plane, &notifications);
+    assert(backend.create(backend.context, &overlay_desc, &surface, &stride) ==
+           PXA_STATUS_OK);
+    assert(backend.configure(backend.context, surface, &overlay_layer) ==
+           PXA_STATUS_OK);
+    assert(backend.write(backend.context, surface, first, sizeof(first)) ==
+           PXA_STATUS_OK);
+    assert(backend.queue(backend.context, surface, 12, NULL, 0) ==
+           PXA_STATUS_OK);
+    assert(pxa_esp_surface_composition_required());
+    assert(!pxa_esp_surface_acquire_latest_for_direct(&probe));
+    assert(pxa_esp_surface_acquire_latest(&probe));
+    assert(probe.system_alpha_plane.visible &&
+           probe.system_alpha_plane.pixels != NULL &&
+           probe.ui_alpha_plane.pixels == NULL &&
+           !probe.suppress_guest_alpha);
+    pxa_esp_surface_release_frame(probe.lease);
+    pxa_esp_surface_set_system_alpha_provider(empty_ui_alpha_plane,
+                                               &notifications);
+    pxa_esp_surface_runtime_modal_enter();
+    assert(pxa_esp_surface_acquire_latest(&probe));
+    assert(probe.opaque_ui_region_count == 0 &&
+           !probe.suppress_guest_alpha);
+    pxa_esp_surface_release_frame(probe.lease);
+    pxa_esp_surface_set_system_alpha_provider(missing_ui_alpha_plane,
+                                               &notifications);
+    assert(pxa_esp_surface_composition_required());
+    assert(pxa_esp_surface_acquire_latest(&probe));
+    assert(probe.opaque_ui_region_count == 1 &&
+           probe.opaque_ui_regions[0].width == 4 &&
+           probe.suppress_guest_alpha);
+    pxa_esp_surface_release_frame(probe.lease);
+    pxa_esp_surface_runtime_modal_leave();
+    pxa_esp_surface_set_system_alpha_provider(empty_ui_alpha_plane,
+                                               &notifications);
+    assert(pxa_esp_surface_acquire_latest(&probe));
+    assert(probe.opaque_ui_region_count == 0 &&
+           !probe.suppress_guest_alpha);
+    pxa_esp_surface_release_frame(probe.lease);
+    backend.close(backend.context, surface);
+    pxa_esp_surface_set_system_alpha_provider(NULL, NULL);
+    assert(pxa_esp_resource_memory_end() == PXA_STATUS_OK && !allocations);
     return 0;
 }

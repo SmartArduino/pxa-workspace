@@ -238,7 +238,12 @@ void pxa_esp_ui_shell_post_toast(const char *message, uint32_t duration_ms) {
     app_pages_post_toast(message, duration);
 }
 
-void pxa_esp_ui_shell_dismiss_app_launch(void) {
+void pxa_esp_ui_shell_post_app_launch(const char *identity) {
+    (void)identity;
+}
+
+void pxa_esp_ui_shell_dismiss_app_launch(const char *identity) {
+    (void)identity;
     app_pages_dismiss_app_launch();
 }
 

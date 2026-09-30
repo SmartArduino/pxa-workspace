@@ -12,6 +12,9 @@
 
 #include "pxa_esp_host.h"
 #include "pxa_esp_dialog_layout.h"
+#include "pxa_esp_system_overlay.h"
+#include "pxa_esp_package_icon.h"
+#include "pxa_esp_package_store.h"
 #include "pxa/ui.h"
 #include "pxa/pxa_esp_surface.h"
 
@@ -30,11 +33,19 @@ typedef struct {
     char message[192];
 } toast_copy_t;
 
+typedef struct {
+    char identity[PXA_ESP_PACKAGE_ID_BYTES];
+} launch_copy_t;
+
 static lv_obj_t *g_permission_dialog;
 static lv_obj_t *g_unresponsive_dialog;
 static lv_obj_t *g_toast;
+static lv_obj_t *g_launch_overlay;
+static pxa_host_icon_t g_launch_icon;
+static char g_launch_identity[PXA_ESP_PACKAGE_ID_BYTES];
+static char g_requested_launch_identity[PXA_ESP_PACKAGE_ID_BYTES];
+static lv_timer_t *g_launch_timeout;
 static lv_timer_t *g_toast_timer;
-static bool g_toast_overlay_active;
 static uint32_t g_permission_prompt_id;
 static uint32_t g_unresponsive_prompt_id;
 
@@ -65,9 +76,107 @@ static lv_result_t schedule_on_lvgl(lv_async_cb_t callback, void *context) {
 
 static void close_dialog(lv_obj_t **dialog) {
     if (*dialog == NULL) return;
+    pxa_esp_system_overlay_remove(*dialog);
     lv_obj_add_flag(*dialog, LV_OBJ_FLAG_HIDDEN);
     lv_obj_delete_async(*dialog);
     *dialog = NULL;
+}
+
+static void refresh_scrolled_overlay(lv_event_t *event) {
+    (void)event;
+    pxa_esp_system_overlay_refresh();
+}
+
+static void close_launch(void) {
+    if (g_launch_timeout != NULL) {
+        lv_timer_delete(g_launch_timeout);
+        g_launch_timeout = NULL;
+    }
+    if (g_launch_overlay != NULL) {
+        pxa_esp_system_overlay_remove(g_launch_overlay);
+        lv_obj_delete(g_launch_overlay);
+        g_launch_overlay = NULL;
+    }
+    if (g_launch_icon.release != NULL)
+        g_launch_icon.release(g_launch_icon.release_context);
+    memset(&g_launch_icon, 0, sizeof(g_launch_icon));
+    g_launch_identity[0] = '\0';
+}
+
+static void launch_timeout(lv_timer_t *timer) {
+    (void)timer;
+    g_launch_timeout = NULL;
+    if (strcmp(g_requested_launch_identity, g_launch_identity) == 0)
+        g_requested_launch_identity[0] = '\0';
+    close_launch();
+}
+
+static void show_launch(void *context) {
+    launch_copy_t *copy = (launch_copy_t *)context;
+    pxa_esp_package_icon_source_t source;
+    lv_obj_t *icon;
+    int32_t icon_size;
+    if (strcmp(g_requested_launch_identity, copy->identity) != 0) {
+        free(copy);
+        return;
+    }
+    if (strcmp(g_launch_identity, copy->identity) == 0) {
+        free(copy);
+        return;
+    }
+    close_launch();
+    snprintf(g_launch_identity, sizeof(g_launch_identity), "%s", copy->identity);
+    memset(&source, 0, sizeof(source));
+    if (pxa_esp_package_store_icon_source(copy->identity,
+            PXA_ESP_PACKAGE_ICON_INSTALLED, &source))
+        g_launch_icon = pxa_esp_package_icon_load(source.root,
+                                                  source.relative_path);
+
+    g_launch_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(g_launch_overlay);
+    lv_obj_set_size(g_launch_overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(g_launch_overlay,
+                              system_color(PXA_UI_THEME_BACKGROUND), 0);
+    lv_obj_set_style_bg_opa(g_launch_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_clickable(g_launch_overlay, true);
+    lv_obj_move_to_index(g_launch_overlay, 0);
+
+    icon_size = lv_display_get_horizontal_resolution(lv_display_get_default()) / 4;
+    if (icon_size < 56) icon_size = 56;
+    if (icon_size > 88) icon_size = 88;
+    icon = lv_obj_create(g_launch_overlay);
+    lv_obj_remove_style_all(icon);
+    lv_obj_set_size(icon, icon_size, icon_size);
+    lv_obj_set_style_radius(icon, icon_size / 4, 0);
+    lv_obj_set_style_bg_color(icon, system_color(PXA_UI_THEME_PRIMARY), 0);
+    lv_obj_set_style_bg_opa(icon, LV_OPA_COVER, 0);
+    lv_obj_center(icon);
+    if (g_launch_icon.image_dsc != NULL) {
+        lv_obj_t *image = lv_image_create(icon);
+        lv_obj_set_size(image, LV_PCT(100), LV_PCT(100));
+        lv_image_set_src(image, g_launch_icon.image_dsc);
+        lv_image_set_inner_align(image, LV_IMAGE_ALIGN_CONTAIN);
+        lv_obj_center(image);
+    } else {
+        lv_obj_t *symbol = lv_label_create(icon);
+        lv_label_set_text(symbol, LV_SYMBOL_LIST);
+        lv_obj_set_style_text_color(symbol,
+                                    system_color(PXA_UI_THEME_ON_PRIMARY), 0);
+        lv_obj_set_style_text_font(symbol, pxa_esp_ui_shell_icon_font(), 0);
+        lv_obj_center(symbol);
+    }
+    g_launch_timeout = lv_timer_create(launch_timeout, 30000, NULL);
+    if (g_launch_timeout != NULL)
+        lv_timer_set_repeat_count(g_launch_timeout, 1);
+    pxa_esp_system_overlay_add(g_launch_overlay);
+    free(copy);
+}
+
+static void dismiss_launch(void *context) {
+    launch_copy_t *copy = (launch_copy_t *)context;
+    if (strcmp(g_launch_identity, copy->identity) == 0 ||
+        g_requested_launch_identity[0] == '\0') close_launch();
+    free(copy);
 }
 
 static lv_obj_t *create_dialog(const char *title, const char *body,
@@ -119,6 +228,8 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
     lv_obj_set_style_text_color(body_label, system_color(5), 0);
     lv_obj_set_style_text_font(body_label, system_body_font(), 0);
     lv_obj_set_style_text_line_space(body_label, 3, 0);
+    lv_obj_add_event_cb(content, refresh_scrolled_overlay, LV_EVENT_SCROLL,
+                        NULL);
 
     lv_obj_t *left = lv_button_create(panel);
     lv_obj_set_size(left, layout.button_width, 36);
@@ -145,6 +256,7 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
     lv_obj_set_style_text_font(right_label, system_body_font(), 0);
     lv_obj_set_style_text_color(right_label, system_color(3), 0);
     lv_obj_center(right_label);
+    pxa_esp_system_overlay_add(mask);
     return mask;
 }
 
@@ -226,10 +338,6 @@ static void toast_timeout(lv_timer_t *timer) {
     (void)timer;
     close_dialog(&g_toast);
     g_toast_timer = NULL;
-    if (g_toast_overlay_active) {
-        g_toast_overlay_active = false;
-        pxa_esp_surface_runtime_modal_leave();
-    }
 }
 
 static void show_toast(void *context) {
@@ -239,10 +347,6 @@ static void show_toast(void *context) {
         g_toast_timer = NULL;
     }
     close_dialog(&g_toast);
-    if (!g_toast_overlay_active) {
-        g_toast_overlay_active = true;
-        pxa_esp_surface_runtime_modal_enter();
-    }
     g_toast = lv_label_create(lv_layer_top());
     lv_label_set_text(g_toast, copy->message);
     lv_label_set_long_mode(g_toast, LV_LABEL_LONG_WRAP);
@@ -255,17 +359,18 @@ static void show_toast(void *context) {
     lv_obj_set_style_radius(g_toast, 4, 0);
     lv_obj_set_style_text_font(g_toast, system_body_font(), 0);
     g_toast_timer = lv_timer_create(toast_timeout, copy->duration_ms, NULL);
+    pxa_esp_system_overlay_add(g_toast);
     if (g_toast_timer != NULL)
         lv_timer_set_repeat_count(g_toast_timer, 1);
     else {
         close_dialog(&g_toast);
-        g_toast_overlay_active = false;
-        pxa_esp_surface_runtime_modal_leave();
     }
     free(copy);
 }
 
-void pxa_esp_ui_shell_bind(void) {}
+void pxa_esp_ui_shell_bind(void) {
+    pxa_esp_system_overlay_bind();
+}
 
 int pxa_esp_ui_shell_post_permission_prompt(
     const pxa_esp_ui_permission_prompt_t *prompt) {
@@ -313,7 +418,36 @@ void pxa_esp_ui_shell_post_toast(const char *message, uint32_t duration_ms) {
     if (schedule_on_lvgl(show_toast, copy) != LV_RESULT_OK) free(copy);
 }
 
-void pxa_esp_ui_shell_dismiss_app_launch(void) {}
+void pxa_esp_ui_shell_post_app_launch(const char *identity) {
+    launch_copy_t *copy;
+    lv_result_t result;
+    if (identity == NULL || identity[0] == '\0') return;
+    copy = (launch_copy_t *)calloc(1, sizeof(*copy));
+    if (copy == NULL) return;
+    snprintf(copy->identity, sizeof(copy->identity), "%s", identity);
+    lv_lock();
+    result = lv_async_call(show_launch, copy);
+    if (result == LV_RESULT_OK)
+        snprintf(g_requested_launch_identity,
+                 sizeof(g_requested_launch_identity), "%s", copy->identity);
+    lv_unlock();
+    if (result != LV_RESULT_OK) free(copy);
+}
+
+void pxa_esp_ui_shell_dismiss_app_launch(const char *identity) {
+    launch_copy_t *copy;
+    lv_result_t result;
+    if (identity == NULL || identity[0] == '\0') return;
+    copy = (launch_copy_t *)calloc(1, sizeof(*copy));
+    if (copy == NULL) return;
+    snprintf(copy->identity, sizeof(copy->identity), "%s", identity);
+    lv_lock();
+    if (strcmp(g_requested_launch_identity, copy->identity) == 0)
+        g_requested_launch_identity[0] = '\0';
+    result = lv_async_call(dismiss_launch, copy);
+    lv_unlock();
+    if (result != LV_RESULT_OK) free(copy);
+}
 void pxa_esp_ui_shell_refresh_apps(void) {}
 
 const lv_font_t *pxa_esp_ui_shell_text_font(void) {

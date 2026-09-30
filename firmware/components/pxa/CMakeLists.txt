@@ -23,6 +23,7 @@ set(PXA_SRCS
     "src/package/pxa_esp_store_download.c"
     "src/package/pxa_esp_permission_store.c"
     "src/ui/pxa_esp_ui_assets.c"
+    "src/ui/pxa_esp_system_overlay.c"
     "src/ui/pxa_esp_store_result.c")
 
 # Product builds retain the legacy app_pages shell unless they explicitly opt

@@ -2,6 +2,7 @@
 #define PXA_ESP_SURFACE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "pxa/game_render.h"
@@ -28,6 +29,27 @@ typedef struct {
     uint8_t visible;
     uint64_t revision;
 } pxa_esp_surface_ui_alpha_plane_t;
+
+static inline uint16_t pxa_esp_surface_blend_alpha_pixel(
+    uint16_t destination, uint16_t foreground, uint8_t alpha,
+    uint8_t opacity) {
+    if (alpha == 0 || opacity == 0) return destination;
+    if (opacity != 255) {
+        alpha = (uint8_t)(((uint16_t)alpha * opacity + 127u) / 255u);
+        if (alpha == 0) return destination;
+    }
+    if (alpha == 255) return foreground;
+    const uint16_t inverse = (uint16_t)(255u - alpha);
+    const uint16_t red = (uint16_t)((((foreground >> 11) * alpha +
+                                    (destination >> 11) * inverse + 128u) >> 8));
+    const uint16_t green = (uint16_t)((((((foreground >> 5) & 0x3fu) * alpha +
+                                      ((destination >> 5) & 0x3fu) * inverse +
+                                      128u) >> 8)));
+    const uint16_t blue = (uint16_t)((((foreground & 0x1fu) * alpha +
+                                     (destination & 0x1fu) * inverse +
+                                     128u) >> 8));
+    return (uint16_t)((red << 11) | (green << 5) | blue);
+}
 
 /* A provider is called after a Surface frame lease is acquired. Its plane must
  * remain immutable until pxa_esp_surface_release_frame() for that lease. */
@@ -56,6 +78,8 @@ typedef struct {
     pxa_surface_damage_rect_t
         opaque_ui_regions[PXA_SURFACE_MAX_OPAQUE_UI_REGIONS];
     pxa_esp_surface_ui_alpha_plane_t ui_alpha_plane;
+    pxa_esp_surface_ui_alpha_plane_t system_alpha_plane;
+    uint8_t suppress_guest_alpha;
     uint64_t frame_id;
     uint64_t input_timestamp_us;
     uint64_t lease;
@@ -141,6 +165,12 @@ void pxa_esp_surface_set_release_ready_callback(
     pxa_esp_surface_frame_ready_fn callback, void *context);
 void pxa_esp_surface_set_ui_alpha_provider(
     pxa_esp_surface_ui_alpha_provider_fn callback, void *context);
+void pxa_esp_surface_set_system_alpha_provider(
+    pxa_esp_surface_ui_alpha_provider_fn callback, void *context);
+struct _lv_obj_t;
+/* Borrowed LVGL objects. Call on the LVGL owner thread after their state changes. */
+void pxa_esp_system_overlay_set_reference_objects(
+    struct _lv_obj_t *const *objects, size_t count);
 void pxa_esp_surface_set_fill_bands_callback(
     pxa_esp_surface_fill_bands_fn callback, void *context);
 /* Trusted LVGL content changed and must be composed above the Surface until

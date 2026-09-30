@@ -46,7 +46,8 @@ int pxa_esp_ui_shell_post_store_result(const pxa_esp_ui_store_result_t *result);
 void pxa_esp_ui_shell_dismiss_store_result(uint32_t prompt_id);
 
 void pxa_esp_ui_shell_post_toast(const char *message, uint32_t duration_ms);
-void pxa_esp_ui_shell_dismiss_app_launch(void);
+void pxa_esp_ui_shell_post_app_launch(const char *identity);
+void pxa_esp_ui_shell_dismiss_app_launch(const char *identity);
 void pxa_esp_ui_shell_refresh_apps(void);
 const lv_font_t *pxa_esp_ui_shell_text_font(void);
 const lv_font_t *pxa_esp_ui_shell_title_font(void);

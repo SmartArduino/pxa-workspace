@@ -186,6 +186,8 @@ static pxa_esp_surface_frame_ready_fn g_release_notify;
 static void *g_release_notify_context;
 static pxa_esp_surface_ui_alpha_provider_fn g_ui_alpha_provider;
 static void *g_ui_alpha_provider_context;
+static pxa_esp_surface_ui_alpha_provider_fn g_system_alpha_provider;
+static void *g_system_alpha_provider_context;
 static pxa_esp_surface_fill_bands_fn g_fill_bands;
 static void *g_fill_bands_context;
 static pxa_game_render_target_profile_t g_game_render_scale_profile = {
@@ -1571,6 +1573,15 @@ void pxa_esp_surface_set_ui_alpha_provider(
     notify_frame_ready();
 }
 
+void pxa_esp_surface_set_system_alpha_provider(
+    pxa_esp_surface_ui_alpha_provider_fn callback, void *context) {
+    taskENTER_CRITICAL(&g_surface_lock);
+    g_system_alpha_provider = callback;
+    g_system_alpha_provider_context = context;
+    taskEXIT_CRITICAL(&g_surface_lock);
+    notify_frame_ready();
+}
+
 void pxa_esp_surface_set_fill_bands_callback(
     pxa_esp_surface_fill_bands_fn callback, void *context) {
     taskENTER_CRITICAL(&g_surface_lock);
@@ -1592,21 +1603,34 @@ bool pxa_esp_surface_composition_required(void) {
     pxa_esp_surface_ui_alpha_provider_fn ui_alpha_provider;
     void *ui_alpha_provider_context;
     pxa_esp_surface_ui_alpha_plane_t ui_alpha_plane;
+    pxa_esp_surface_ui_alpha_provider_fn system_alpha_provider;
+    void *system_alpha_provider_context;
+    pxa_esp_surface_ui_alpha_plane_t system_alpha_plane;
     taskENTER_CRITICAL(&g_surface_lock);
     required = g_system_overlay_visible || g_power_overlay_visible ||
-               g_runtime_modal_count != 0;
+               (g_runtime_modal_count != 0 && g_system_alpha_provider == NULL);
     ui_required = g_composition_required;
     ui_alpha_provider = g_ui_alpha_provider;
     ui_alpha_provider_context = g_ui_alpha_provider_context;
+    system_alpha_provider = g_system_alpha_provider;
+    system_alpha_provider_context = g_system_alpha_provider_context;
     taskEXIT_CRITICAL(&g_surface_lock);
-    if (required || !ui_required) return required;
-    if (ui_alpha_provider == NULL) return true;
-    memset(&ui_alpha_plane, 0, sizeof(ui_alpha_plane));
-    if (!ui_alpha_provider(ui_alpha_provider_context, &ui_alpha_plane))
-        return true;
-    required = ui_alpha_plane.visible && ui_alpha_plane.pixels != NULL &&
-               ui_alpha_plane.alpha != NULL && ui_alpha_plane.width != 0 &&
-               ui_alpha_plane.height != 0;
+    if (required) return true;
+    if (ui_required) {
+        if (ui_alpha_provider == NULL) return true;
+        memset(&ui_alpha_plane, 0, sizeof(ui_alpha_plane));
+        if (!ui_alpha_provider(ui_alpha_provider_context, &ui_alpha_plane))
+            return true;
+        required = ui_alpha_plane.visible && ui_alpha_plane.pixels != NULL &&
+                   ui_alpha_plane.alpha != NULL && ui_alpha_plane.width != 0 &&
+                   ui_alpha_plane.height != 0;
+    }
+    if (!required && system_alpha_provider != NULL) {
+        memset(&system_alpha_plane, 0, sizeof(system_alpha_plane));
+        if (!system_alpha_provider(system_alpha_provider_context,
+                                   &system_alpha_plane)) return true;
+        required = system_alpha_plane.visible;
+    }
     return required;
 }
 
@@ -2065,6 +2089,10 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
     pxa_esp_surface_t *surface;
     pxa_esp_surface_ui_alpha_provider_fn ui_alpha_provider;
     void *ui_alpha_provider_context;
+    pxa_esp_surface_ui_alpha_provider_fn system_alpha_provider;
+    void *system_alpha_provider_context;
+    bool runtime_modal_active;
+    bool full_ui_region;
     uint64_t candidate_frame_id;
     int index;
     if (frame == NULL) return false;
@@ -2089,7 +2117,7 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
                              : surface->current_frame_id;
     if (direct_only &&
         (g_system_overlay_visible || g_power_overlay_visible ||
-         g_runtime_modal_count != 0 ||
+         (g_runtime_modal_count != 0 && g_system_alpha_provider == NULL) ||
          surface->opaque_ui_region_count != 0 ||
          (g_direct_resume_barrier &&
           candidate_frame_id <= g_direct_resume_after_frame_id))) {
@@ -2130,7 +2158,10 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
     frame->y = surface->layer.y;
     frame->z = surface->layer.z;
     frame->visible = surface->layer.visible;
-    if (g_system_overlay_visible || g_power_overlay_visible) {
+    runtime_modal_active = g_runtime_modal_count != 0;
+    full_ui_region = g_system_overlay_visible || g_power_overlay_visible ||
+                     (runtime_modal_active && g_system_alpha_provider == NULL);
+    if (full_ui_region) {
         /* The host modal is already rendered into LVGL's framebuffer. Keep
          * that framebuffer over the app Surface for the duration of the
          * modal, then restore the app's own trusted-UI regions. */
@@ -2142,8 +2173,8 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
     } else {
         frame->opaque_ui_region_count = surface->opaque_ui_region_count;
     }
-    if (!g_system_overlay_visible && !g_power_overlay_visible &&
-        frame->opaque_ui_region_count != 0)
+    frame->suppress_guest_alpha = full_ui_region;
+    if (!full_ui_region && frame->opaque_ui_region_count != 0)
         memcpy(frame->opaque_ui_regions, surface->opaque_ui_regions,
                (size_t)frame->opaque_ui_region_count *
                    sizeof(frame->opaque_ui_regions[0]));
@@ -2152,10 +2183,28 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
     frame->lease = surface->acquire_generation;
     ui_alpha_provider = g_ui_alpha_provider;
     ui_alpha_provider_context = g_ui_alpha_provider_context;
+    system_alpha_provider = g_system_alpha_provider;
+    system_alpha_provider_context = g_system_alpha_provider_context;
     taskEXIT_CRITICAL(&g_surface_lock);
     if (ui_alpha_provider != NULL &&
         !ui_alpha_provider(ui_alpha_provider_context, &frame->ui_alpha_plane))
         memset(&frame->ui_alpha_plane, 0, sizeof(frame->ui_alpha_plane));
+    if (system_alpha_provider != NULL &&
+        !system_alpha_provider(system_alpha_provider_context,
+                               &frame->system_alpha_plane))
+        memset(&frame->system_alpha_plane, 0,
+               sizeof(frame->system_alpha_plane));
+    if (frame->system_alpha_plane.visible &&
+        (frame->system_alpha_plane.pixels == NULL ||
+         frame->system_alpha_plane.alpha == NULL ||
+         frame->system_alpha_plane.width == 0 ||
+         frame->system_alpha_plane.height == 0) && !full_ui_region) {
+        frame->opaque_ui_region_count = 1;
+        frame->opaque_ui_regions[0] = (pxa_surface_damage_rect_t){
+            .x = 0, .y = 0, .width = surface->width,
+            .height = surface->height};
+        frame->suppress_guest_alpha = 1;
+    }
     return true;
 }
 
@@ -2285,6 +2334,11 @@ void pxa_esp_surface_set_release_ready_callback(
     (void)context;
 }
 void pxa_esp_surface_set_ui_alpha_provider(
+    pxa_esp_surface_ui_alpha_provider_fn callback, void *context) {
+    (void)callback;
+    (void)context;
+}
+void pxa_esp_surface_set_system_alpha_provider(
     pxa_esp_surface_ui_alpha_provider_fn callback, void *context) {
     (void)callback;
     (void)context;

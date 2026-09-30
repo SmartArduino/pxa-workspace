@@ -160,6 +160,7 @@ bool DirectPathViable() {
 bool DirectFrameEligible(const pxa_esp_surface_frame_t& frame) {
     if (frame.format != PXA_SURFACE_FORMAT_RGB565 || !frame.visible ||
         frame.opaque_ui_region_count != 0 || frame.ui_alpha_plane.visible ||
+        frame.system_alpha_plane.visible ||
         frame.x != 0 || frame.y != 0 || frame.width == 0 || frame.height == 0)
         return false;
     const uint8_t scale = pxa_surface_fit_scale(
@@ -566,10 +567,28 @@ uint32_t BlendUiAlphaPlane(const pxa_esp_surface_frame_t& frame,
         plane.alpha_stride_bytes, plane.x, plane.y, plane.opacity);
 }
 
+uint32_t BlendSystemAlphaPlane(const pxa_esp_surface_frame_t& frame,
+                              uint8_t* target) {
+    const auto& plane = frame.system_alpha_plane;
+    if (target == nullptr || !plane.visible || plane.opacity == 0 ||
+        plane.pixels == nullptr || plane.alpha == nullptr ||
+        plane.pixel_stride_bytes % sizeof(uint16_t) != 0 ||
+        plane.pixel_stride_bytes / sizeof(uint16_t) < plane.width ||
+        plane.alpha_stride_bytes < plane.width)
+        return 0;
+    return pxa_surface_blend_rgb565_a8(
+        reinterpret_cast<uint16_t*>(target), KORVO_DISPLAY_WIDTH,
+        KORVO_DISPLAY_HEIGHT, KORVO_DISPLAY_WIDTH, plane.pixels, plane.alpha,
+        plane.width, plane.height,
+        plane.pixel_stride_bytes / sizeof(uint16_t),
+        plane.alpha_stride_bytes, plane.x, plane.y, plane.opacity);
+}
+
 void ComposeFullFrame(const pxa_esp_surface_frame_t& frame, uint8_t* target) {
     if (!TryPpaScaleToBuffer(frame, target)) ComposeRgb565(frame, target);
-    if (!TryPpaBlendUi(frame, target))
+    if (!frame.suppress_guest_alpha && !TryPpaBlendUi(frame, target))
         (void)BlendUiAlphaPlane(frame, target);
+    (void)BlendSystemAlphaPlane(frame, target);
 }
 
 void SetRefreshPaused(bool paused) {
@@ -975,11 +994,14 @@ ComposedFrameInfo ComposeFrame(uint8_t* pixels) {
         used_ppa = TryPpaScaleToBuffer(frame, pixels);
         if (!used_ppa) ComposeRgb565(frame, pixels);
         const int64_t ui_started_us = esp_timer_get_time();
-        ui_used_ppa = TryPpaBlendUi(frame, pixels);
-        if (!ui_used_ppa)
-            ui_pixels = BlendUiAlphaPlane(frame, pixels);
-        else
-            ui_pixels = g_ui_visible_pixels;
+        if (!frame.suppress_guest_alpha) {
+            ui_used_ppa = TryPpaBlendUi(frame, pixels);
+            if (!ui_used_ppa)
+                ui_pixels = BlendUiAlphaPlane(frame, pixels);
+            else
+                ui_pixels = g_ui_visible_pixels;
+        }
+        ui_pixels += BlendSystemAlphaPlane(frame, pixels);
         ui_duration_us = static_cast<uint32_t>(
             esp_timer_get_time() - ui_started_us);
     }
