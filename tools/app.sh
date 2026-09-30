@@ -58,6 +58,7 @@ done
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd "$script_dir/.." && pwd)"
+export PXA_BUILD_CACHE_DIR="${PXA_BUILD_CACHE_DIR:-$project_root/local/app-build-cache}"
 catalog="$project_root/local/apps.toml"
 if [[ -z "$source_root" && -f "$catalog" ]]; then
   source_root="$("${PYTHON:-python3}" - "$catalog" "$app_id" <<'PYTHON'

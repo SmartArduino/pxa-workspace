@@ -14,6 +14,7 @@ Environment:
   PXA_SIGNING_KEY        Signing key accepted by the imported package tool
   PXA_PACKAGE_TARGET     Package target; esp32s3, esp32s31, or simulator (default: board target)
   PXA_BUILD_JOBS         Host compile/AOT concurrency, 1-64 (default: up to 8)
+  PXA_BUILD_CACHE_DIR    Reuse CMake object files across App builds
 EOF
 }
 
