@@ -312,12 +312,13 @@ bool SensecapWatcherHardware::InitializeDisplay() {
 
     spd2010_vendor_config_t vendor_config = {};
     vendor_config.flags.use_qspi_interface = 1;
-    const esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = GPIO_NUM_NC,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
-        .bits_per_pixel = 16,
-        .vendor_config = &vendor_config,
-    };
+    /* Assignment rather than a full initializer: esp_lcd_panel_dev_config_t
+     * reordered its fields between IDF releases. */
+    esp_lcd_panel_dev_config_t panel_config = {};
+    panel_config.reset_gpio_num = GPIO_NUM_NC;
+    panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
+    panel_config.bits_per_pixel = 16;
+    panel_config.vendor_config = &vendor_config;
     if (esp_lcd_new_panel_spd2010(panel_io_, &panel_config, &panel_) != ESP_OK) {
         ESP_LOGE(kTag, "Cannot create SPD2010 panel");
         return false;

@@ -110,6 +110,12 @@
 #ifndef CONFIG_PXA_COMMAND_QUEUE_LENGTH
 #define CONFIG_PXA_COMMAND_QUEUE_LENGTH 16
 #endif
+/* The runtime stack has to live in internal RAM (flash operations run on it).
+ * A board whose bring-up temporarily fragments the internal heap can be
+ * without a contiguous block for a moment, so the first attempts wait and
+ * retry before the runtime is declared unavailable. */
+#define PXA_ESP_HOST_RUNTIME_STACK_ATTEMPTS 5
+#define PXA_ESP_HOST_RUNTIME_STACK_RETRY_MS 800
 #ifndef CONFIG_PXA_RUNTIME_TASK_STACK_SIZE
 #define CONFIG_PXA_RUNTIME_TASK_STACK_SIZE (12 * 1024)
 #endif
@@ -4415,6 +4421,12 @@ static int start_runtime_thread(void) {
     config.inherit_cfg = false;
     config.thread_name = "pxa_runtime";
     config.pin_to_core = CONFIG_PXA_RUNTIME_TASK_AFFINITY;
+    /* The stack must stay in internal RAM: the runtime reaches flash (NVS,
+     * storage) and IDF asserts when a flash operation runs on a stack that
+     * caches-disabled code cannot reach. A board whose bring-up leaves no
+     * contiguous internal block of this size therefore has to free internal
+     * RAM (see the SE column in the SenseCAP Watcher board notes) rather than
+     * fall back to PSRAM. */
     config.stack_alloc_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
 
     config_status = esp_pthread_set_cfg(&config);
@@ -4423,7 +4435,8 @@ static int start_runtime_thread(void) {
     }
     (void)esp_pthread_set_cfg(&previous);
     if (config_status != ESP_OK || create_status != 0) {
-        ESP_LOGE(PXA_ESP_HOST_TAG,
+        /* The caller retries; it reports the error once the attempts run out. */
+        ESP_LOGW(PXA_ESP_HOST_TAG,
                  "Runtime thread creation failed: config=0x%x pthread=%d",
                  (unsigned)config_status, create_status);
         return 0;
@@ -4463,7 +4476,22 @@ static int start_runtime_services(void) {
         portEXIT_CRITICAL(&g_process_state_lock);
         return 0;
     }
-    if (!start_runtime_thread()) {
+    bool runtime_created = start_runtime_thread() != 0;
+    for (int attempt = 1;
+         !runtime_created && attempt < PXA_ESP_HOST_RUNTIME_STACK_ATTEMPTS;
+         ++attempt) {
+        ESP_LOGW(PXA_ESP_HOST_TAG,
+                 "Runtime stack did not fit internal RAM (attempt %d/%d); "
+                 "retrying in %d ms",
+                 attempt, (int)PXA_ESP_HOST_RUNTIME_STACK_ATTEMPTS,
+                 (int)PXA_ESP_HOST_RUNTIME_STACK_RETRY_MS);
+        vTaskDelay(pdMS_TO_TICKS(PXA_ESP_HOST_RUNTIME_STACK_RETRY_MS));
+        runtime_created = start_runtime_thread() != 0;
+    }
+    if (!runtime_created) {
+        ESP_LOGE(PXA_ESP_HOST_TAG,
+                 "Runtime thread creation failed after %d attempts",
+                 (int)PXA_ESP_HOST_RUNTIME_STACK_ATTEMPTS);
         (void)esp_timer_stop(g_host.watchdog_timer);
         (void)esp_timer_stop(g_host.clock_timer);
         portENTER_CRITICAL(&g_process_state_lock);
