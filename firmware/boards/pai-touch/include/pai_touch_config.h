@@ -4,7 +4,11 @@
 #include <driver/i2c_master.h>
 #include <driver/uart.h>
 
-// JL701 RPC UART and its remote PA control pin.
+// JL701 RPC UART. The coprocessor also owns the amplifier on its own IO6; the
+// two PA_* values below record that wiring but are not forwarded in the
+// handshake, because the current JL701 firmware stops answering `rpc_vb_init`
+// as soon as it is asked to drive that pin (verified on hardware). The vendor
+// reference firmware leaves remote PA control disabled the same way.
 #define PAI_JL701_UART UART_NUM_2
 #define PAI_JL701_BAUD 2000000
 #define PAI_JL701_TX GPIO_NUM_17

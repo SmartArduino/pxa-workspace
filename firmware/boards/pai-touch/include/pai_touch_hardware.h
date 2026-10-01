@@ -1,6 +1,6 @@
 #pragma once
 
-#include "rpc701_audio.h"
+#include "pai_touch_audio.h"
 
 #include <atomic>
 #include <esp_adc/adc_oneshot.h>
@@ -104,7 +104,7 @@ private:
     pxsys_standard_system_t* system_ = nullptr;
     pxsys_reference_lvgl_t* reference_ui_ = nullptr;
     esp_timer_handle_t status_timer_ = nullptr;
-    Rpc701Audio audio_;
+    PaiTouchAudio audio_;
     std::atomic<uint8_t> brightness_{75};
     std::atomic<uint8_t> idle_dim_percent_{100};
     std::atomic<bool> screen_enabled_{true};

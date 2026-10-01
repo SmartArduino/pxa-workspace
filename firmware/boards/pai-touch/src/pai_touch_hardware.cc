@@ -161,7 +161,7 @@ bool PaiTouchHardware::PerformanceSet(
 
 bool PaiTouchHardware::Initialize() {
     // Wake the JL701 before display and network startup can leave it idle.
-    if (!audio_.Initialize()) ESP_LOGW(kTag, "Continuing without RPC701 audio");
+    if (!audio_.Initialize()) ESP_LOGW(kTag, "Continuing without JL701 audio");
     if (!InitializeDisplay()) return false;
     nvs_handle_t performance_handle;
     if (nvs_open(kPerformanceNamespace, NVS_READONLY, &performance_handle) ==

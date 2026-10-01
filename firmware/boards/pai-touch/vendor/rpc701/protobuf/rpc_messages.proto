@@ -1,0 +1,1268 @@
+syntax = "proto3";
+
+enum CodecFmt{
+    CODEC_OPUS_20MS = 0;
+    CODEC_OPUS_40MS = 1;
+    CODEC_OPUS_60MS = 2;
+    CODEC_PCM_8K   =  3;
+    CODEC_PCM_16K   = 4;
+}
+
+enum WakeWordType {
+    WORD_TYPE_WAKEUP   = 0;
+    WORD_TYPE_COMMMAND = 1;
+}
+
+enum MusicMode{
+    MODE_BT = 0;
+    MODE_SD = 1;
+    MODE_USB = 2;
+    MODE_IN_FLASH = 3;
+    MODE_MAX = 4;
+}
+
+enum MusicLoopMode {
+    MUSIC_LOOP_MODE_ORDER = 0;
+    MUSIC_LOOP_MODE_SINGLE = 1;
+    MUSIC_LOOP_MODE_RANDOM = 2;
+    MUSIC_LOOP_MODE_MAX = 3;
+}
+
+enum MusicPlayCtrl {
+    MUSIC_PLAY_CTRL_PLAY = 0;
+    MUSIC_PLAY_CTRL_PAUSE = 1;
+    MUSIC_PLAY_CTRL_TOGGLE = 2;
+    MUSIC_PLAY_CTRL_MAX = 3;
+}
+
+enum AsrMicMode {
+    ASR_MIC_MODE_AEC = 0;
+    ASR_MIC_MODE_ANS = 1;
+}
+
+enum StorageDevType {
+    STORAGE_DEV_SD0 = 0;
+    STORAGE_DEV_SD1 = 1;
+    STORAGE_DEV_USB = 2;
+}
+
+enum StorageDevAction {
+    STORAGE_DEV_ACTION_INSERT = 0;
+    STORAGE_DEV_ACTION_REMOVE = 1;
+}
+
+enum BtWorkMode {
+    BT_WORK_MODE_EMITTER = 0;
+    BT_WORK_MODE_HFP = 1;
+}
+
+message wake_word_info{
+    WakeWordType type = 1;
+    bytes word_name = 2;
+}
+
+message Rpc_Req_VbInit{
+    int32 keep_alive_ms     = 1;
+    int32 pa_io             = 2;
+    bool  pa_en_level       = 3;
+    CodecFmt coder_fmt      = 4; 
+    CodecFmt decoder_fmt    = 5; 
+    bytes bt_name           = 6;
+    int32 debug_uart_io = 7;
+}
+
+message Rpc_Resp_VbInit{
+    int32 resp = 1;
+}
+
+
+// 取当前生效语法的词表。
+// 返回当前运行期生效的词表 —— fst_asr 构建下是引擎正在用的那份语法,
+// wanson 构建下是编译期的 asr_cmd_list。接口形态与老版本保持一致(无请求参数、
+// 一次返回), 想按 (区域, 组号) 取别的组、或者需要分页, 用 Req_AsrFstWords。
+message Rpc_Resp_GetAsrWords{
+    int32 resp = 1;
+    repeated wake_word_info words_list = 2;
+}
+
+message Rpc_Req_EmitterStartScan{
+}
+
+message Rpc_Resp_EmitterStartScan{
+    int32 resp = 1;
+}
+
+message Rpc_Req_EmitterConnect{
+    bytes addr = 1;
+}
+
+message Rpc_Resp_EmitterConnect{
+    int32 resp = 1;
+}
+
+message Rpc_Req_UserAsrMicModeChange{
+    AsrMicMode mode = 1;
+    uint32 gain = 2;
+}
+
+message Rpc_Resp_UserAsrMicModeChange{
+    int32 resp = 1;
+}
+
+// 控制mic数据是否上传给主机(仅控制发送, 本地采集/AEC/编码不变)
+message Rpc_Req_MicDataCtrl{
+    bool enable = 1; // true=上传mic数据(默认) false=停止上传
+}
+
+message Rpc_Resp_MicDataCtrl{
+    int32 resp = 1;
+}
+
+message Rpc_Event_VolumeChanged{
+    int32 resp = 1;
+    int32 volume = 2;
+}
+
+message Rpc_Event_BTConnected{
+    int32 resp = 1;
+    bytes addr = 2;
+    bool is_sink = 3;
+    bytes name = 4;
+}
+
+message Rpc_Event_BTDisconnected{
+    int32 resp = 1;
+    bytes addr = 2;
+}
+
+message Rpc_Event_BTMusicPlay{
+    int32 resp = 1;
+}
+
+message Rpc_Event_BTMusicPause{
+    int32 resp = 1;
+}
+
+message Rpc_Event_AsrWord{
+    int32 resp = 1;
+    bytes words = 2;
+}
+
+// 可靠投递版 ASR 事件:同一次识别会重发多帧,seq 相同,主机按 seq 去重
+message Rpc_Event_AsrWordEx{
+    int32 resp = 1;
+    bytes words = 2;
+    uint32 seq = 3;
+}
+
+message Rpc_Event_MusicInfoTitle{
+    int32 resp = 1;
+    bytes title = 2;
+}
+
+message Rpc_Event_MusicInfoLyrc{
+    int32 resp = 1;
+    bytes lyrc = 2;
+}
+
+message Rpc_Event_MusicInfoTime{
+    int32 resp = 1;
+    int32 current_time_sec = 2;
+    int32 total_time_sec = 3;
+}
+
+message Rpc_Event_MusicModeChanged{
+    int32 resp = 1;
+    MusicMode mode = 2;
+}
+
+message Rpc_Event_EmitterScanResult{
+    int32 resp = 1;
+    bytes name = 2;
+    bytes addr = 3;
+    uint32 dev_class = 4;
+    int32 rssi = 5;
+}
+
+message Rpc_Event_StorageDevChanged{
+    int32 resp = 1;
+    StorageDevType dev = 2;
+    StorageDevAction action = 3;
+}
+
+message Rpc_Event_HfpStatus{
+    int32 resp = 1;
+    bool connected = 2;
+}
+
+message Rpc_Event_ScoStatus{
+    int32 resp = 1;
+    bool connected = 2;
+}
+
+message Rpc_Event_DoaAngle{
+    int32 resp = 1;
+    int32 angle = 2;
+}
+
+message Rpc_Event_AlarmFired{
+    int32 resp = 1;
+    uint32 year = 2;
+    uint32 month = 3;
+    uint32 day = 4;
+    uint32 hour = 5;
+    uint32 minute = 6;
+    uint32 second = 7;
+    uint32 index = 8;
+}
+
+// SD音乐文件信息
+message SdMusicFileInfo{
+    bytes file_name = 1;    // 文件名 (UTF-8)
+    uint32 index = 2;       // 文件索引 (0-based)
+}
+
+// 请求: 查询SD卡音乐数量
+message Rpc_Req_SdMusicCount{
+    StorageDevType dev = 1; // 设备类型 (SD0/SD1/USB)
+}
+
+// 响应: 查询SD卡音乐数量
+message Rpc_Resp_SdMusicCount{
+    int32 resp = 1;         // 错误码 (0=成功)
+    uint32 total = 2;       // 音乐文件总数
+}
+
+// 请求: 获取SD卡音乐列表
+message Rpc_Req_SdMusicList{
+    StorageDevType dev = 1; // 设备类型 (SD0/SD1/USB)
+    uint32 offset = 2;      // 起始索引 (0-based)
+    uint32 count = 3;       // 请求的数量
+}
+
+// 响应: 获取SD卡音乐列表
+message Rpc_Resp_SdMusicList{
+    int32 resp = 1;             // 错误码 (0=成功)
+    uint32 offset = 2;          // 本次返回的起始索引
+    uint32 count = 3;           // 本次返回的数量
+    uint32 total = 4;           // 音乐文件总数
+    repeated SdMusicFileInfo files = 5; // 文件列表
+}
+
+message Rpc_Req_MusicModeGet{
+}
+
+message Rpc_Resp_MusicModeGet{
+    int32 resp = 1;
+    MusicMode mode = 2;
+}
+
+message Rpc_Req_MusicModeSet{
+    MusicMode mode = 1;
+}
+
+message Rpc_Resp_MusicModeSet{
+    int32 resp = 1;
+}
+
+message Rpc_Req_MusicTrackSwitch{
+    bool next = 1;
+}
+
+message Rpc_Resp_MusicTrackSwitch{
+    int32 resp = 1;
+}
+
+message Rpc_Req_MusicPlayCtrl{
+    MusicPlayCtrl ctrl = 1;
+}
+
+message Rpc_Resp_MusicPlayCtrl{
+    int32 resp = 1;
+}
+
+message Rpc_Req_MusicIsPlaying{
+}
+
+message Rpc_Resp_MusicIsPlaying{
+    int32 resp = 1;
+    bool is_playing = 2;
+}
+
+message Rpc_Req_MusicPlayingIndexGet{
+}
+
+message Rpc_Resp_MusicPlayingIndexGet{
+    int32 resp = 1;
+    uint32 index = 2;
+}
+
+message Rpc_Req_MusicLoopModeSet{
+    MusicLoopMode loop_mode = 1;
+}
+
+message Rpc_Resp_MusicLoopModeSet{
+    int32 resp = 1;
+}
+
+message Rpc_Req_MusicLoopModeGet{
+}
+
+message Rpc_Resp_MusicLoopModeGet{
+    int32 resp = 1;
+    MusicLoopMode loop_mode = 2;
+}
+
+message Rpc_Req_MusicVolumeSet{
+    int32 volume = 1;
+}
+
+message Rpc_Resp_MusicVolumeSet{
+    int32 resp = 1;
+}
+
+message Rpc_Req_MusicVolumeGet{
+}
+
+message Rpc_Resp_MusicVolumeGet{
+    int32 resp = 1;
+    int32 volume = 2;
+}
+
+message Rpc_Req_PlayMusicByIndex{
+    uint32 index = 1;
+}
+
+message Rpc_Resp_PlayMusicByIndex{
+    int32 resp = 1;
+}
+
+message Rpc_Req_PowerOff{
+}
+
+message Rpc_Resp_PowerOff{
+    int32 resp = 1;
+}
+
+message Rpc_Req_Heartbeat{
+}
+
+message Rpc_Resp_Heartbeat{
+    int32 resp = 1;
+}
+
+message Rpc_Req_HeartbeatSet{
+    int32 keep_alive_ms = 1;
+}
+
+message Rpc_Resp_HeartbeatSet{
+    int32 resp = 1;
+    int32 keep_alive_ms = 2;
+}
+
+message Rpc_Req_Reboot{
+}
+
+message Rpc_Resp_Reboot{
+    int32 resp = 1;
+}
+
+message Rpc_Req_SdCardStatus{
+}
+
+message Rpc_Resp_SdCardStatus{
+    int32 resp = 1;
+    bool inserted = 2;
+}
+
+message Rpc_Req_BtStatus{
+}
+
+message Rpc_Resp_BtStatus{
+    int32 resp = 1;
+    bool connected = 2;
+}
+
+message Rpc_Req_TimeGet{
+}
+
+message Rpc_Resp_TimeGet{
+    int32 resp = 1;
+    uint32 year = 2;
+    uint32 month = 3;
+    uint32 day = 4;
+    uint32 hour = 5;
+    uint32 minute = 6;
+    uint32 second = 7;
+}
+
+message Rpc_Req_TimeSet{
+    uint32 year = 1;
+    uint32 month = 2;
+    uint32 day = 3;
+    uint32 hour = 4;
+    uint32 minute = 5;
+    uint32 second = 6;
+}
+
+message Rpc_Resp_TimeSet{
+    int32 resp = 1;
+}
+
+message Rpc_Req_AlarmSet{
+    uint32 year = 1;
+    uint32 month = 2;
+    uint32 day = 3;
+    uint32 hour = 4;
+    uint32 minute = 5;
+    uint32 second = 6;
+    uint32 index = 7;
+    // mode 位掩码（与 SDK alarm 一致）：
+    //   0x00 = ONCE
+    //   0x01 = EVERY_DAY
+    //   0x02..0x80 = 周一..周日（可按位或组合）
+    uint32 mode = 8;
+    // 闹钟开关：0 = 未指定（兼容旧主机，按启用处理），1 = 启用，2 = 关闭（保留槽位仅停用）
+    uint32 sw = 9;
+}
+
+message Rpc_Resp_AlarmSet{
+    int32 resp = 1;
+    uint32 index = 2;
+}
+
+message Rpc_Req_AlarmCancel{
+    uint32 index = 1;
+    bool all = 2;
+}
+
+message Rpc_Resp_AlarmCancel{
+    int32 resp = 1;
+    uint32 index = 2;
+    bool all = 3;
+}
+
+message Rpc_Req_AlarmGet{
+    uint32 index = 1;
+}
+
+message Rpc_Resp_AlarmGet{
+    int32 resp = 1;
+    bool active = 2;
+    uint32 year = 3;
+    uint32 month = 4;
+    uint32 day = 5;
+    uint32 hour = 6;
+    uint32 minute = 7;
+    uint32 second = 8;
+    uint32 index = 9;
+    uint32 mode = 10;       // 与 Rpc_Req_AlarmSet.mode 同义
+}
+
+message Rpc_Req_BtDisconnect{
+    // true  = 只断开当前连接, 保留配对信息(link key / 设备记录), 下次可直接回连
+    // false = 断开并解绑(删 link key + 删设备记录), 与本字段出现之前的行为一致
+    //
+    // 特意取 keep_bond 而不是 unbind: proto3 不发默认值, 旧固件收到新主机的包时
+    // 本字段一律缺省, 按 false 走解绑 —— 和它本来的行为撞在同一个语义上。反过来
+    // 定义成 unbind 的话, 旧固件会把"只断开"当成解绑执行, 而且不报错。
+    bool keep_bond = 1;
+}
+
+message Rpc_Resp_BtDisconnect{
+    int32 resp = 1;
+}
+
+message Rpc_Req_BtWorkModeSet{
+    BtWorkMode mode = 1;
+}
+
+message Rpc_Resp_BtWorkModeSet{
+    int32 resp = 1;
+}
+
+message Rpc_Req_BtWorkModeGet{
+}
+
+message Rpc_Resp_BtWorkModeGet{
+    int32 resp = 1;
+    BtWorkMode mode = 2;
+}
+
+enum OtaTransportId {
+    OTA_TRANSPORT_RPC = 0;
+    OTA_TRANSPORT_BLE = 1;
+}
+
+enum OtaTargetPolicy {
+    OTA_POLICY_AUTO = 0;
+    OTA_POLICY_RPC_PREFERRED = 1;
+    OTA_POLICY_BLE_PREFERRED = 2;
+    OTA_POLICY_DUAL_BANK_REQUIRED = 3;
+}
+
+enum OtaSessionState {
+    OTA_SESSION_IDLE = 0;
+    OTA_SESSION_OPENED = 1;
+    OTA_SESSION_RECVING = 2;
+    OTA_SESSION_VERIFY_PENDING = 3;
+    OTA_SESSION_READY = 4;
+    OTA_SESSION_FAILED = 5;
+    OTA_SESSION_ABORTED = 6;
+}
+
+enum OtaReasonCode {
+    OTA_REASON_NONE = 0;
+    OTA_REASON_SESSION_BUSY = 1;
+    OTA_REASON_BAD_STATE = 2;
+    OTA_REASON_BAD_SESSION = 3;
+    OTA_REASON_BAD_OFFSET = 4;
+    OTA_REASON_BAD_SEQUENCE = 5;
+    OTA_REASON_CHUNK_TOO_LARGE = 6;
+    OTA_REASON_CRC_MISMATCH = 7;
+    OTA_REASON_SIZE_MISMATCH = 8;
+    OTA_REASON_CAPACITY_NOT_ENOUGH = 9;
+    OTA_REASON_UNSUPPORTED_MODE = 10;
+    OTA_REASON_INTERNAL = 11;
+}
+
+message Rpc_Req_OtaBegin{
+    uint32 session_id = 1;
+    uint32 image_size = 2;
+    uint32 image_crc32 = 3;
+    uint32 chunk_size = 4;
+    uint32 protocol_version = 5;
+    OtaTargetPolicy target_policy = 6;
+    OtaTransportId transport_hint = 7;
+    bytes resume_token = 8;
+}
+
+message Rpc_Resp_OtaBegin{
+    int32 resp = 1;
+    OtaSessionState state = 2;
+    OtaReasonCode reason_code = 3;
+    uint32 accepted_chunk_size = 4;
+    uint32 next_offset = 5;
+    OtaTransportId transport_id = 6;
+    bool resume_supported = 7;
+}
+
+message Rpc_Req_OtaChunk{
+    uint32 session_id = 1;
+    uint32 seq = 2;
+    uint32 offset = 3;
+    bytes payload = 4;
+    uint32 payload_crc32 = 5;
+}
+
+message Rpc_Resp_OtaChunk{
+    int32 resp = 1;
+    OtaSessionState state = 2;
+    OtaReasonCode reason_code = 3;
+    uint32 accepted_seq = 4;
+    uint32 accepted_offset = 5;
+    uint32 next_offset = 6;
+}
+
+message Rpc_Req_OtaCommit{
+    uint32 session_id = 1;
+    uint32 total_size = 2;
+    uint32 total_chunks = 3;
+    uint32 final_crc32 = 4;
+}
+
+message Rpc_Resp_OtaCommit{
+    int32 resp = 1;
+    OtaSessionState state = 2;
+    OtaReasonCode reason_code = 3;
+    uint32 received_size = 4;
+}
+
+message Rpc_Req_OtaAbort{
+    uint32 session_id = 1;
+    OtaReasonCode reason_code = 2;
+}
+
+message Rpc_Resp_OtaAbort{
+    int32 resp = 1;
+    OtaSessionState state = 2;
+    OtaReasonCode reason_code = 3;
+}
+
+message Rpc_Req_OtaStatusQuery{
+    uint32 session_id = 1;
+}
+
+message Rpc_Resp_OtaStatusQuery{
+    int32 resp = 1;
+    OtaSessionState state = 2;
+    OtaReasonCode reason_code = 3;
+    uint32 received_size = 4;
+    uint32 next_offset = 5;
+    uint32 next_seq = 6;
+    uint32 chunk_size = 7;
+    uint32 image_size = 8;
+    uint32 image_crc32 = 9;
+}
+
+// 请求: 设置蓝牙名称
+message Rpc_Req_BtNameSet{
+    bytes name = 1;         // 新蓝牙名称 (UTF-8, 最长31字节)
+}
+
+// 响应: 设置蓝牙名称
+message Rpc_Resp_BtNameSet{
+    int32 resp = 1;         // 错误码 (0=成功)
+}
+
+// 请求: 获取蓝牙名称
+message Rpc_Req_BtNameGet{
+}
+
+// 响应: 获取蓝牙名称
+message Rpc_Resp_BtNameGet{
+    int32 resp = 1;         // 错误码 (0=成功)
+    bytes name = 2;         // 当前蓝牙名称 (UTF-8)
+}
+
+// A2DP 媒体状态（与 SDK BT_MUSIC_STATE 同义）
+enum BtA2dpStatus {
+    BT_A2DP_STATUS_IDLE = 0;
+    BT_A2DP_STATUS_STARTING = 1;
+    BT_A2DP_STATUS_SUSPENDING = 2;
+}
+
+// 当前蓝牙连接信息
+message BtConnectionInfo{
+    bool connected = 1;         // 是否已建立链路
+    bytes addr = 2;             // 远端 BD_ADDR (6 字节, 倒序与 SDK 一致)
+    bytes name = 3;             // 远端设备名 (UTF-8)
+    uint32 dev_class = 4;       // CoD; 当前 SDK 无连接态查询接口, 未知时填 0
+    bool is_sink = 5;           // 是否 A2DP Sink (耳机/音箱)
+    bool support_hfp = 6;       // 远端是否支持 HFP (HF 或 AG)
+    bool has_mic = 7;           // 远端是否含麦克风 (近似: support_hfp)
+    bool support_cvsd = 8;      // 本机/链路支持 CVSD
+    bool support_msbc = 9;      // 本机/链路支持 mSBC
+    bool sco_connected = 10;    // 当前 SCO 通道是否建立
+    BtA2dpStatus a2dp_status = 11; // A2DP 媒体状态
+    bool a2dp_channel_up = 12;  // A2DP source channel 已就绪
+    bool hfp_slc_up = 13;       // HFP SLC 已建立
+}
+
+// 请求: 获取当前蓝牙连接信息
+message Rpc_Req_BtConnInfoGet{
+}
+
+// 响应: 获取当前蓝牙连接信息
+message Rpc_Resp_BtConnInfoGet{
+    int32 resp = 1;             // 错误码 (0=成功)
+    BtConnectionInfo info = 2;
+}
+
+// 请求: 控制 SCO 连接 (转发到 AG call_start / call_stop)
+message Rpc_Req_ScoCtrl{
+    bool connect = 1;           // true=建立 SCO/通话; false=断开 SCO/通话
+}
+
+// 响应: 控制 SCO 连接
+message Rpc_Resp_ScoCtrl{
+    int32 resp = 1;             // 错误码 (0=成功)
+}
+
+// 请求: 开关蓝牙
+message Rpc_Req_BtSwitch {
+    bool on = 1;                // true=开启蓝牙; false=关闭蓝牙
+}
+
+// 响应: 开关蓝牙
+message Rpc_Resp_BtSwitch {
+    int32 resp = 1;             // 错误码 (0=成功)
+}
+
+enum ButtonEvent {
+    BUTTON_EVENT_DOWN = 0;
+    BUTTON_EVENT_CLICK = 1;
+    BUTTON_EVENT_DOUBLE_CLICK = 2;
+    BUTTON_EVENT_REPEAT_CLICK = 3;
+    BUTTON_EVENT_SHORT_START = 4;
+    BUTTON_EVENT_SHORT_UP = 5;
+    BUTTON_EVENT_LONG_START = 6;
+    BUTTON_EVENT_LONG_UP = 7;
+    BUTTON_EVENT_LONG_HOLD = 8;
+    BUTTON_EVENT_LONG_HOLD_UP = 9;
+}
+
+// 请求: 配置一个 GPIO 按键
+message Rpc_Req_ButtonConfig{
+    uint32 id = 1;                  // 按键 id, 0..255; 同时最多注册 32 个
+    uint32 io = 2;                  // JL IO_PORT* 数值
+    bool pressed_logic_level = 3;   // true=高电平按下, false=低电平按下
+    uint32 short_press_ms = 4;      // 触发 SHORT_START/SHORT_UP 的时间
+    uint32 long_press_ms = 5;       // 触发 LONG_START/LONG_UP 的时间
+    uint32 long_hold_ms = 6;        // 触发 LONG_HOLD/LONG_HOLD_UP 的时间
+    bool enable = 7;                // false 时注销该 id 的按键
+}
+
+// 响应: 配置 GPIO 按键
+message Rpc_Resp_ButtonConfig{
+    int32 resp = 1;
+}
+
+// 事件: GPIO 按键事件上报
+message Rpc_Event_Button{
+    int32 resp = 1;
+    uint32 id = 2;
+    ButtonEvent event = 3;
+    uint32 click_cnt = 4;
+    uint32 scan_cnt = 5;
+}
+
+enum GpioDirection {
+    GPIO_DIRECTION_INPUT = 0;
+    GPIO_DIRECTION_OUTPUT = 1;
+}
+
+// 请求: 配置一个 701 GPIO
+message Rpc_Req_GpioConfig{
+    uint32 io = 1;              // JL IO_PORT* 数值
+    GpioDirection direction = 2;
+    bool pull_up = 4;           // direction=INPUT 时常用
+    bool pull_down = 5;         // direction=INPUT 时常用
+    bool die = 6;               // 数字输入使能
+}
+
+// 响应: 配置 GPIO, 并返回当前读取到的电平
+message Rpc_Resp_GpioConfig{
+    int32 resp = 1;
+    bool level = 2;
+}
+
+// 请求: 读取一个 701 GPIO 电平
+message Rpc_Req_GpioRead{
+    uint32 io = 1;
+}
+
+// 响应: 读取 GPIO 电平
+message Rpc_Resp_GpioRead{
+    int32 resp = 1;
+    bool level = 2;
+}
+
+// 请求: 写入一个 701 GPIO 输出电平
+message Rpc_Req_GpioWrite{
+    uint32 io = 1;
+    bool level = 2;
+}
+
+// 响应: 写入 GPIO 电平, 并返回当前读取到的电平
+message Rpc_Resp_GpioWrite{
+    int32 resp = 1;
+    bool level = 2;
+}
+
+// 请求: 获取电池电量
+message Rpc_Req_BatteryGet{
+}
+
+// 响应: 获取电池电量
+message Rpc_Resp_BatteryGet{
+    int32 resp = 1;
+    int32 percent = 2;      // 电量百分比
+    int32 voltage_mv = 3;   // 电池电压, 单位 mV
+    bool charging = 4;      // 是否正在充电
+    int32 voltage_rt_mv = 5;
+}
+
+// 请求: 获取固件版本号
+message Rpc_Req_FirmwareVersionGet{
+}
+
+// 响应: 获取固件版本号
+message Rpc_Resp_FirmwareVersionGet{
+    int32 resp = 1;         // 错误码 (0=成功)
+    bytes name = 2;         // 固件名称 (UTF-8)
+    bytes version = 3;      // 固件版本号 (UTF-8)
+    bytes build_date = 4;   // 编译日期
+    bytes build_time = 5;   // 编译时间
+    // 本机蓝牙 MAC, 6 字节, 原始顺序(与 bt_get_mac_addr 一致, 不做倒序) ——
+    // fst 加密语法包就是按这个顺序封装的, 直接喂给 fst_export.py --device-mac。
+    // 空(len==0) = 固件不支持本字段, 或调用时蓝牙还没起来。
+    bytes mac = 6;
+}
+
+
+
+// ---- ASR 词表语法容器 ----
+//
+// 语法决定"能识别哪些词", 声学模型编在固件里不动, 换词表不必刷固件。
+// 语法按 (区域, 组号) 两级寻址, 每个区域里可以放多份:
+//
+//   BUILTIN  编译期内嵌, 只读, 掉电保留 —— 永远可用的兜底
+//   SRAM     临时写入, 掉电即失 —— 用来试效果, 不满意重启就没了
+//   FLASH    保留区分区, 掉电保留, OTA 不擦除 —— 确认好用了才写这里
+//
+// 典型流程: 写 SRAM 试听 -> 满意 -> 写 FLASH 持久化 -> Select 切过去。
+// 出问题随时 Select(BUILTIN, 0) 退回去。
+//
+// 容器格式是 FASR FST v2, 必须带关键词分类表(导出时给 --cmd) —— 没有分类表
+// 就分不出唤醒词, 固件在扫描阶段直接拒收, 不会出现"装上了但唤不醒"。
+enum AsrFstArea {
+    ASR_FST_AREA_BUILTIN = 0;
+    ASR_FST_AREA_SRAM    = 1;
+    ASR_FST_AREA_FLASH   = 2;
+}
+
+// 一组语法的概览。所有字段在设备扫描时就算好了, 查询不额外开销。
+message AsrFstGroup {
+    AsrFstArea area   = 1;
+    uint32 index      = 2;
+    bytes  id         = 3;      // 容器里的唯一标识, 没设时为空
+    uint32 num_words  = 4;      // 真词数(唤醒 + 命令, 已排除图内部的伪词)
+    uint32 num_states = 5;
+    uint32 wake_count = 6;
+    uint32 cmd_count  = 7;
+    uint32 bytes_size = 8;      // 该容器占多少字节
+}
+
+// ---- 设备能力与当前状态 ----
+message Rpc_Req_AsrFstInfo {}
+message Rpc_Resp_AsrFstInfo {
+    int32  resp = 1;
+    bool   engine_present = 2;    // 固件编进了 fst 引擎, 否则整组接口不可用
+    bool   flash_supported = 3;   // 有没有 flash 语法分区
+    uint32 flash_capacity = 4;    // flash 分区大小
+    uint32 flash_used     = 5;
+    uint32 flash_count    = 6;    // flash 分区里的组数
+    uint32 builtin_count  = 7;    // 编译内置的组数
+    uint32 sram_count     = 8;    // SRAM 里的组数
+    uint32 sram_capacity  = 9;
+    uint32 group_max      = 10;   // 单区域最多认几组
+    AsrFstArea active_area = 11;  // 当前生效的是哪一组
+    uint32 active_index   = 12;
+    bytes  active_id      = 13;
+    uint32 max_states     = 14;   // 解码器状态数上限, 主机构图时自检用
+    uint32 max_chunk      = 15;   // 写入分片的 payload 上限
+    uint32 container_version = 16;
+}
+
+// 列出各组。all_areas=true 时忽略 area, 把三个区域按 BUILTIN/SRAM/FLASH
+// 的顺序连起来返回。
+message Rpc_Req_AsrFstList {
+    AsrFstArea area = 1;
+    bool   all_areas = 2;
+    uint32 start = 3;
+    uint32 count = 4;           // 0 表示由固件按帧长决定
+}
+message Rpc_Resp_AsrFstList {
+    int32  resp = 1;
+    uint32 detail = 2;          // fst_err_t 原始码, 便于定位
+    uint32 total = 3;
+    uint32 start = 4;
+    repeated AsrFstGroup groups = 5;
+}
+
+// 取指定一组的词表 —— 不必先切过去就能看某组里都有什么词。
+// 词按"唤醒词在前、命令词在后"排, 前 wake_count 个必定是唤醒词。
+// 词多时一帧发不下: 固件按帧长自行截断, 不保证给满 count 个,
+// 以 total 为准判断有没有拉完。
+message Rpc_Req_AsrFstWords {
+    AsrFstArea area = 1;
+    uint32 index = 2;
+    uint32 start = 3;
+    uint32 count = 4;
+}
+message Rpc_Resp_AsrFstWords {
+    int32  resp = 1;
+    uint32 detail = 2;
+    bytes  id = 3;              // 该组的唯一标识
+    uint32 total = 4;           // 该组的真词总数
+    uint32 start = 5;           // 本页起始序号(回显, 便于对账)
+    repeated wake_word_info words_list = 6;
+}
+
+// 切换当前生效的语法
+message Rpc_Req_AsrFstSelect {
+    AsrFstArea area = 1;
+    uint32 index = 2;
+    bool   persist = 3;         // 记住这次选择, 下次开机自动用它
+}
+message Rpc_Resp_AsrFstSelect {
+    int32  resp = 1;
+    uint32 detail = 2;
+    AsrFstArea active_area = 3;
+    uint32 active_index = 4;
+    bytes  active_id = 5;
+}
+
+// 清空一个区域: SRAM 释放内存, FLASH 擦掉分区, BUILTIN 会被拒。
+// 正在使用的区域不能擦, 先 Select 到别处。
+message Rpc_Req_AsrFstErase {
+    AsrFstArea area = 1;
+}
+message Rpc_Resp_AsrFstErase {
+    int32  resp = 1;
+    uint32 detail = 2;
+}
+
+// ---- 写入会话 ----
+//
+// 下发的一律是**设备绑定加密包**: 服务器按目标设备的蓝牙 MAC 封装, 换台机器
+// 解不开。每份容器的形态是 [header 明文][body 密文][key_id 1][保留 3][salt 16][tag 16], header
+// 不加密, 所以固件收到第一片就能读出 total_size / num_states 提前拒。
+//
+// 一次会话可以连续写多份 —— 主机把 N 份加密包首尾相接发过来(不用自己算对齐,
+// 每份的长度就是它 header 里的 total_size + 36)。固件全程收在 RAM 里,
+// WriteEnd 时整批解封、把明文挤成连续镜像, 校验都过了才落到目标区域。
+// 同一时刻只允许一个会话。
+//
+// 因此 WriteBegin 不再擦除 FLASH: 解封失败、中止、断线, 目标区域一个字节都
+// 没被碰过, 老词表照常能用。
+message Rpc_Req_AsrFstWriteBegin {
+    AsrFstArea area = 1;        // 写到哪个区域(BUILTIN 会被拒)
+    uint32 total_size = 2;      // N 份加密包拼起来的总字节数(含每份 36 字节尾巴)
+    uint32 group_count = 3;     // 本次写入几份容器
+    uint32 declared_max_states = 4;  // 主机声明的最大状态数, 用于提前拒绝
+}
+message Rpc_Resp_AsrFstWriteBegin {
+    int32  resp = 1;
+    uint32 detail = 2;
+    uint32 capacity = 3;        // 该区域容量, 便于主机提前判断放不放得下
+    uint32 max_chunk = 4;       // 单片 payload 上限
+    uint32 max_states = 5;      // 解码器的状态数上限
+}
+
+// 顺序追加。offset 必须等于已落盘字节数, 不匹配直接拒绝(不做乱序重组)。
+message Rpc_Req_AsrFstWriteChunk {
+    uint32 offset = 1;
+    bytes  payload = 2;
+}
+message Rpc_Resp_AsrFstWriteChunk {
+    int32  resp = 1;
+    uint32 detail = 2;
+    uint32 written = 3;         // 已落盘字节数; 断线后据此续传
+}
+
+// 收尾: 整批解封(AES-128-CTR 解密 + AES-CMAC 校验), 再扫描该区域逐个容器做
+// 完整校验(含 CRC32) —— 两层互相独立, CMAC 管"是不是发给这台机器的、有没有被
+// 改过", CRC32 管"解出来的数据对不对"。
+// 认下的组数与 group_count 对不上就算失败。
+// 解封失败(密钥不对/错设备/被篡改/发的是明文包)时 resp = RPC_ERR(-1),
+// detail = FST_ERR_DECRYPT(14); 和数据传坏了(RPC_ERR_INVALID_ARG)分得开 ——
+// 前者要换包, 后者重传就行。
+message Rpc_Req_AsrFstWriteEnd {
+    bool   apply_now = 1;       // true 立即切到本次写入的语法
+    uint32 apply_index = 2;     // apply_now 时切到哪一组
+}
+message Rpc_Resp_AsrFstWriteEnd {
+    int32  resp = 1;
+    uint32 detail = 2;
+    uint32 accepted = 3;              // 实际认下几组
+    repeated AsrFstGroup groups = 4;  // 每组的 id/词数/状态数, 便于主机对账
+}
+
+// 放弃当前会话, 释放 RAM。目标区域没被碰过, 老词表照常可用。
+message Rpc_Req_AsrFstWriteAbort {}
+message Rpc_Resp_AsrFstWriteAbort {
+    int32  resp = 1;
+    uint32 detail = 2;
+}
+
+enum RpcType {
+MsgType_Invalid = 0;
+	Req = 1;
+	Resp = 2;
+	Event = 3;
+	MsgType_Max = 4;
+}
+
+enum RpcId{
+    MsgId_Invalid = 0;
+    /*Request Msgs*/
+    Req_Base                        = 256; //0x100
+    Req_VbInit                      = 257;
+    Req_GetAsrWords                 = 258;
+    Req_EmitterStartScan            = 259;
+    Req_EmitterConnect              = 260;
+    Req_UserAsrMicModeChange        = 261;
+    Req_SdMusicCount                = 262;
+    Req_SdMusicList                 = 263;
+    Req_MusicModeGet                = 264;
+    Req_MusicModeSet                = 265;
+    Req_MusicTrackSwitch            = 266;
+    Req_MusicPlayCtrl               = 267;
+    Req_MusicIsPlaying              = 268;
+    Req_MusicLoopModeSet            = 269;
+    Req_MusicLoopModeGet            = 270;
+    Req_MusicVolumeSet              = 271;
+    Req_MusicVolumeGet              = 272;
+    Req_PlayMusicByIndex            = 273;
+    Req_PowerOff                    = 274;
+    Req_Heartbeat                   = 275;
+    Req_SdCardStatus                = 276;
+    Req_BtStatus                    = 277;
+    Req_TimeGet                     = 278;
+    Req_TimeSet                     = 279;
+    Req_BtDisconnect                = 280;
+    Req_BtWorkModeSet               = 281;
+    Req_BtWorkModeGet               = 282;
+    Req_OtaBegin                    = 283;
+    Req_OtaChunk                    = 284;
+    Req_OtaCommit                   = 285;
+    Req_OtaAbort                    = 286;
+    Req_OtaStatusQuery              = 287;
+    Req_HeartbeatSet                = 288;
+    Req_Reboot                      = 289;
+    Req_BtNameSet                   = 290;
+    Req_BtNameGet                   = 291;
+    Req_AlarmSet                    = 292;
+    Req_AlarmCancel                 = 293;
+    Req_AlarmGet                    = 294;
+    Req_BtConnInfoGet               = 295;
+    Req_ScoCtrl                     = 296;
+    Req_ButtonConfig                = 297;
+    Req_GpioConfig                  = 298;
+    Req_GpioRead                    = 299;
+    Req_GpioWrite                   = 300;
+    Req_BatteryGet                  = 301;
+    Req_BtSwitch                    = 302;
+    Req_FirmwareVersionGet          = 303;
+    Req_MusicPlayingIndexGet        = 304;
+    Req_MicDataCtrl                 = 305;
+    Req_AsrFstInfo                  = 306;
+    Req_AsrFstList                  = 307;
+    Req_AsrFstWords                 = 308;
+    Req_AsrFstSelect                = 309;
+    Req_AsrFstErase                 = 310;
+    Req_AsrFstWriteBegin            = 311;
+    Req_AsrFstWriteChunk            = 312;
+    Req_AsrFstWriteEnd              = 313;
+    Req_AsrFstWriteAbort            = 314;
+    Req_Max                         = 315;
+
+    /*Response Msgs*/
+    Resp_Base                       = 512;//0x200
+    Resp_VbInit                     = 513;
+    Resp_GetAsrWords                = 514;
+    Resp_EmitterStartScan           = 515;
+    Resp_EmitterConnect             = 516;
+    Resp_UserAsrMicModeChange       = 517;
+    Resp_SdMusicCount               = 518;
+    Resp_SdMusicList                = 519;
+    Resp_MusicModeGet               = 520;
+    Resp_MusicModeSet               = 521;
+    Resp_MusicTrackSwitch           = 522;
+    Resp_MusicPlayCtrl              = 523;
+    Resp_MusicIsPlaying             = 524;
+    Resp_MusicLoopModeSet           = 525;
+    Resp_MusicLoopModeGet           = 526;
+    Resp_MusicVolumeSet             = 527;
+    Resp_MusicVolumeGet             = 528;
+    Resp_PlayMusicByIndex           = 529;
+    Resp_PowerOff                   = 530;
+    Resp_Heartbeat                  = 531;
+    Resp_SdCardStatus               = 532;
+    Resp_BtStatus                   = 533;
+    Resp_TimeGet                    = 534;
+    Resp_TimeSet                    = 535;
+    Resp_BtDisconnect               = 536;
+    Resp_BtWorkModeSet              = 537;
+    Resp_BtWorkModeGet              = 538;
+    Resp_OtaBegin                   = 539;
+    Resp_OtaChunk                   = 540;
+    Resp_OtaCommit                  = 541;
+    Resp_OtaAbort                   = 542;
+    Resp_OtaStatusQuery             = 543;
+    Resp_HeartbeatSet               = 544;
+    Resp_Reboot                     = 545;
+    Resp_BtNameSet                  = 546;
+    Resp_BtNameGet                  = 547;
+    Resp_AlarmSet                   = 548;
+    Resp_AlarmCancel                = 549;
+    Resp_AlarmGet                   = 550;
+    Resp_BtConnInfoGet              = 551;
+    Resp_ScoCtrl                    = 552;
+    Resp_ButtonConfig               = 553;
+    Resp_GpioConfig                 = 554;
+    Resp_GpioRead                   = 555;
+    Resp_GpioWrite                  = 556;
+    Resp_BatteryGet                 = 557;
+    Resp_BtSwitch                   = 558;
+    Resp_FirmwareVersionGet         = 559;
+    Resp_MusicPlayingIndexGet       = 560;
+    Resp_MicDataCtrl                = 561;
+    Resp_AsrFstInfo                 = 562;
+    Resp_AsrFstList                 = 563;
+    Resp_AsrFstWords                = 564;
+    Resp_AsrFstSelect               = 565;
+    Resp_AsrFstErase                = 566;
+    Resp_AsrFstWriteBegin           = 567;
+    Resp_AsrFstWriteChunk           = 568;
+    Resp_AsrFstWriteEnd             = 569;
+    Resp_AsrFstWriteAbort           = 570;
+    Resp_Max                        = 571;
+
+    /*Event Msgs*/
+    Evt_Base                        = 768; //0x300
+    Evt_BTConnected                 = 769;
+    Evt_BTDisconnected              = 770;
+    Evt_BTMusicPlay                 = 771;
+    Evt_BTMusicPause                = 772;
+    Evt_VolumeChanged               = 773;
+    Evt_MusicInfoTitle              = 774;
+    Evt_MusicInfoLyrc               = 775;
+    Evt_MusicInfoTime               = 776;
+    Evt_MusicModeChanged            = 777;
+    Evt_AsrWord                     = 778;
+    Evt_EmitterScanResult           = 779;
+    Evt_StorageDevChanged           = 780;
+    Evt_HfpStatus                   = 781;
+    Evt_ScoStatus                   = 782;
+    Evt_DoaAngle                    = 783;
+    Evt_AlarmFired                  = 784;
+    Evt_Button                      = 785;
+    Evt_AsrWordEx                   = 786;
+    Evt_Max                         = 787;
+}
+
+message Rpc{
+    RpcType msg_type = 1;
+    RpcId msg_id = 2;
+    uint32 uid = 3;
+    oneof payload {
+        Rpc_Req_VbInit req_vb_init = 257;
+        Rpc_Req_EmitterStartScan req_emitter_start_scan = 259;
+        Rpc_Req_EmitterConnect req_emitter_connect = 260;
+        Rpc_Req_UserAsrMicModeChange req_user_asr_mic_mode_change = 261;
+        Rpc_Req_SdMusicCount req_sd_music_count = 262;
+        Rpc_Req_SdMusicList req_sd_music_list = 263;
+        Rpc_Req_MusicModeGet req_music_mode_get = 264;
+        Rpc_Req_MusicModeSet req_music_mode_set = 265;
+        Rpc_Req_MusicTrackSwitch req_music_track_switch = 266;
+        Rpc_Req_MusicPlayCtrl req_music_play_ctrl = 267;
+        Rpc_Req_MusicIsPlaying req_music_is_playing = 268;
+        Rpc_Req_MusicLoopModeSet req_music_loop_mode_set = 269;
+        Rpc_Req_MusicLoopModeGet req_music_loop_mode_get = 270;
+        Rpc_Req_MusicVolumeSet req_music_volume_set = 271;
+        Rpc_Req_MusicVolumeGet req_music_volume_get = 272;
+        Rpc_Req_PlayMusicByIndex req_play_music_by_index = 273;
+        Rpc_Req_PowerOff req_power_off = 274;
+        Rpc_Req_Heartbeat req_heartbeat = 275;
+        Rpc_Req_SdCardStatus req_sd_card_status = 276;
+        Rpc_Req_BtStatus req_bt_status = 277;
+        Rpc_Req_TimeGet req_time_get = 278;
+        Rpc_Req_TimeSet req_time_set = 279;
+        Rpc_Req_BtDisconnect req_bt_disconnect = 280;
+        Rpc_Req_BtWorkModeSet req_bt_work_mode_set = 281;
+        Rpc_Req_BtWorkModeGet req_bt_work_mode_get = 282;
+        Rpc_Req_OtaBegin req_ota_begin = 283;
+        Rpc_Req_OtaChunk req_ota_chunk = 284;
+        Rpc_Req_OtaCommit req_ota_commit = 285;
+        Rpc_Req_OtaAbort req_ota_abort = 286;
+        Rpc_Req_OtaStatusQuery req_ota_status_query = 287;
+        Rpc_Req_HeartbeatSet req_heartbeat_set = 288;
+        Rpc_Req_Reboot req_reboot = 289;
+        Rpc_Req_BtNameSet req_bt_name_set = 290;
+        Rpc_Req_BtNameGet req_bt_name_get = 291;
+        Rpc_Req_AlarmSet req_alarm_set = 292;
+        Rpc_Req_AlarmCancel req_alarm_cancel = 293;
+        Rpc_Req_AlarmGet req_alarm_get = 294;
+        Rpc_Req_BtConnInfoGet req_bt_conn_info_get = 295;
+        Rpc_Req_ScoCtrl req_sco_ctrl = 296;
+        Rpc_Req_ButtonConfig req_button_config = 297;
+        Rpc_Req_GpioConfig req_gpio_config = 298;
+        Rpc_Req_GpioRead req_gpio_read = 299;
+        Rpc_Req_GpioWrite req_gpio_write = 300;
+        Rpc_Req_BatteryGet req_battery_get = 301;
+        Rpc_Req_BtSwitch req_bt_switch = 302;
+        Rpc_Req_FirmwareVersionGet req_firmware_version_get = 303;
+        Rpc_Req_MusicPlayingIndexGet req_music_playing_index_get = 304;
+        Rpc_Req_MicDataCtrl req_mic_data_ctrl = 305;
+        Rpc_Req_AsrFstInfo req_asr_fst_info = 306;
+        Rpc_Req_AsrFstList req_asr_fst_list = 307;
+        Rpc_Req_AsrFstWords req_asr_fst_words = 308;
+        Rpc_Req_AsrFstSelect req_asr_fst_select = 309;
+        Rpc_Req_AsrFstErase req_asr_fst_erase = 310;
+        Rpc_Req_AsrFstWriteBegin req_asr_fst_write_begin = 311;
+        Rpc_Req_AsrFstWriteChunk req_asr_fst_write_chunk = 312;
+        Rpc_Req_AsrFstWriteEnd req_asr_fst_write_end = 313;
+        Rpc_Req_AsrFstWriteAbort req_asr_fst_write_abort = 314;
+
+        Rpc_Resp_VbInit resp_vb_init = 513;
+        Rpc_Resp_GetAsrWords resp_get_asr_words = 514;
+        Rpc_Resp_EmitterStartScan resp_emitter_start_scan = 515;
+        Rpc_Resp_EmitterConnect resp_emitter_connect = 516;
+        Rpc_Resp_UserAsrMicModeChange resp_user_asr_mic_mode_change = 517;
+        Rpc_Resp_SdMusicCount resp_sd_music_count = 518;
+        Rpc_Resp_SdMusicList resp_sd_music_list = 519;
+        Rpc_Resp_MusicModeGet resp_music_mode_get = 520;
+        Rpc_Resp_MusicModeSet resp_music_mode_set = 521;
+        Rpc_Resp_MusicTrackSwitch resp_music_track_switch = 522;
+        Rpc_Resp_MusicPlayCtrl resp_music_play_ctrl = 523;
+        Rpc_Resp_MusicIsPlaying resp_music_is_playing = 524;
+        Rpc_Resp_MusicLoopModeSet resp_music_loop_mode_set = 525;
+        Rpc_Resp_MusicLoopModeGet resp_music_loop_mode_get = 526;
+        Rpc_Resp_MusicVolumeSet resp_music_volume_set = 527;
+        Rpc_Resp_MusicVolumeGet resp_music_volume_get = 528;
+        Rpc_Resp_PlayMusicByIndex resp_play_music_by_index = 529;
+        Rpc_Resp_PowerOff resp_power_off = 530;
+        Rpc_Resp_Heartbeat resp_heartbeat = 531;
+        Rpc_Resp_SdCardStatus resp_sd_card_status = 532;
+        Rpc_Resp_BtStatus resp_bt_status = 533;
+        Rpc_Resp_TimeGet resp_time_get = 534;
+        Rpc_Resp_TimeSet resp_time_set = 535;
+        Rpc_Resp_BtDisconnect resp_bt_disconnect = 536;
+        Rpc_Resp_BtWorkModeSet resp_bt_work_mode_set = 537;
+        Rpc_Resp_BtWorkModeGet resp_bt_work_mode_get = 538;
+        Rpc_Resp_OtaBegin resp_ota_begin = 539;
+        Rpc_Resp_OtaChunk resp_ota_chunk = 540;
+        Rpc_Resp_OtaCommit resp_ota_commit = 541;
+        Rpc_Resp_OtaAbort resp_ota_abort = 542;
+        Rpc_Resp_OtaStatusQuery resp_ota_status_query = 543;
+        Rpc_Resp_HeartbeatSet resp_heartbeat_set = 544;
+        Rpc_Resp_Reboot resp_reboot = 545;
+        Rpc_Resp_BtNameSet resp_bt_name_set = 546;
+        Rpc_Resp_BtNameGet resp_bt_name_get = 547;
+        Rpc_Resp_AlarmSet resp_alarm_set = 548;
+        Rpc_Resp_AlarmCancel resp_alarm_cancel = 549;
+        Rpc_Resp_AlarmGet resp_alarm_get = 550;
+        Rpc_Resp_BtConnInfoGet resp_bt_conn_info_get = 551;
+        Rpc_Resp_ScoCtrl resp_sco_ctrl = 552;
+        Rpc_Resp_ButtonConfig resp_button_config = 553;
+        Rpc_Resp_GpioConfig resp_gpio_config = 554;
+        Rpc_Resp_GpioRead resp_gpio_read = 555;
+        Rpc_Resp_GpioWrite resp_gpio_write = 556;
+        Rpc_Resp_BatteryGet resp_battery_get = 557;
+        Rpc_Resp_BtSwitch resp_bt_switch = 558;
+        Rpc_Resp_FirmwareVersionGet resp_firmware_version_get = 559;
+        Rpc_Resp_MusicPlayingIndexGet resp_music_playing_index_get = 560;
+        Rpc_Resp_MicDataCtrl resp_mic_data_ctrl = 561;
+        Rpc_Resp_AsrFstInfo resp_asr_fst_info = 562;
+        Rpc_Resp_AsrFstList resp_asr_fst_list = 563;
+        Rpc_Resp_AsrFstWords resp_asr_fst_words = 564;
+        Rpc_Resp_AsrFstSelect resp_asr_fst_select = 565;
+        Rpc_Resp_AsrFstErase resp_asr_fst_erase = 566;
+        Rpc_Resp_AsrFstWriteBegin resp_asr_fst_write_begin = 567;
+        Rpc_Resp_AsrFstWriteChunk resp_asr_fst_write_chunk = 568;
+        Rpc_Resp_AsrFstWriteEnd resp_asr_fst_write_end = 569;
+        Rpc_Resp_AsrFstWriteAbort resp_asr_fst_write_abort = 570;
+
+        Rpc_Event_BTConnected evt_bt_connected = 769;
+        Rpc_Event_BTDisconnected evt_bt_disconnected = 770;
+        Rpc_Event_BTMusicPlay evt_bt_music_play = 771;
+        Rpc_Event_BTMusicPause evt_bt_music_pause = 772;
+        Rpc_Event_VolumeChanged evt_volume_changed = 773;
+        Rpc_Event_MusicInfoTitle evt_music_info_title = 774;
+        Rpc_Event_MusicInfoLyrc evt_music_info_lyrc = 775;
+        Rpc_Event_MusicInfoTime evt_music_info_time = 776;
+        Rpc_Event_MusicModeChanged evt_music_mode_changed = 777;
+        Rpc_Event_AsrWord evt_asr_word = 778;
+        Rpc_Event_EmitterScanResult evt_emitter_scan_result = 779;
+        Rpc_Event_StorageDevChanged evt_storage_dev_changed = 780;
+        Rpc_Event_HfpStatus evt_hfp_status = 781;
+        Rpc_Event_ScoStatus evt_sco_status = 782;
+        Rpc_Event_DoaAngle evt_doa_angle = 783;
+        Rpc_Event_AlarmFired evt_alarm_fired = 784;
+        Rpc_Event_Button evt_button = 785;
+        Rpc_Event_AsrWordEx evt_asr_word_ex = 786;
+    }
+}

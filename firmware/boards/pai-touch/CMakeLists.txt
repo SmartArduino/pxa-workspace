@@ -1,12 +1,22 @@
+# The JL701 coprocessor stack used to be two shared components
+# (`rpc_701` + `rpc_adapter`) pulled in as submodules. pai-touch is its only
+# consumer, so the vendored sources now compile into this board component and
+# the RPC headers stay private to it; `jl701_audio_link` is the only audio
+# surface the board exposes.
+include("${CMAKE_CURRENT_LIST_DIR}/vendor/rpc701/pai_touch_rpc701.cmake")
+
 idf_component_register(
     SRCS
         "src/pai_touch_board_port.cc"
         "src/pai_touch_hardware.cc"
-        "src/rpc701_audio.cc"
+        "src/pai_touch_audio.cc"
+        "src/jl701_audio_link.cc"
         "src/adc_battery_monitor.cc"
         "src/button.cc"
         "src/te_sync_panel.cc"
+        ${PXA_RPC701_SRCS}
     INCLUDE_DIRS "include"
+    PRIV_INCLUDE_DIRS ${PXA_RPC701_INCLUDE_DIR}
     PRIV_REQUIRES
         78__esp-wifi-connect
         esp_adc
@@ -18,6 +28,7 @@ idf_component_register(
         esp_event
         esp_lcd
         esp_netif
+        esp_ringbuf
         esp_timer
         espressif__adc_battery_estimation
         espressif__button
@@ -31,9 +42,7 @@ idf_component_register(
         pxadb
         pxa_board_api
         pxa_system_reference_ui
-        pxa_system_standard
-        rpc_701
-        rpc_adapter)
+        pxa_system_standard)
 
 # This board owns the direct scanout presenter. It is not part of the generic
 # port API and remains selected only for the pai-touch build profile.
