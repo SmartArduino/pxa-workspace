@@ -128,6 +128,12 @@ void pxa_esp_system_overlay_refresh(void) {
   uint8_t *alpha;
   if (!g_bound)
     return;
+  /* This plane is only ever composited above an application Surface. While the
+   * LVGL shell owns the panel the overlay is drawn by LVGL directly, so the
+   * ARGB snapshots and the per-pixel blend below are pure overhead - and they
+   * ran on every step of a notification-shade drag, which capped the pull-down
+   * at a few frames per second. Keep the last plane untouched; it is refreshed
+   * again as soon as a Surface is actually composed. */
   layer = lv_layer_top();
   lv_obj_update_layout(layer);
   const int32_t display_width =
