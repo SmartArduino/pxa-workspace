@@ -212,6 +212,10 @@ bool pxa_esp_surface_acquire_current_for_preview(
 bool pxa_esp_surface_acquire_latest_for_direct(
     pxa_esp_surface_frame_t *frame);
 bool pxa_esp_surface_has_pending_frame(void);
+/* True while an application Surface owns the panel, i.e. while the compositor
+ * draws application frames instead of the LVGL shell. Host overlays only need
+ * their composition planes built in that state. */
+bool pxa_esp_surface_has_visible_surface(void);
 /* Reads immutable placement data without acquiring a framebuffer lease. */
 bool pxa_esp_surface_get_present_info(
     pxa_esp_surface_present_info_t *info);

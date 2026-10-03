@@ -43,9 +43,9 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 CONFIG_ESP_INT_WDT_TIMEOUT_MS=10000
 # Wi-Fi buffers follow the pai-touch board's tuning: the static RX/TX pools
 # are the internal-RAM consumers, so they are trimmed for this station link.
-CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=6
-CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=6
 CONFIG_ESP_WIFI_MGMT_SBUF_NUM=32
 CONFIG_ESP_WIFI_RX_BA_WIN=6
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=24
@@ -67,20 +67,25 @@ CONFIG_LITTLEFS_BLOCK_CYCLES=256
 CONFIG_LITTLEFS_MALLOC_STRATEGY_SPIRAM_PREFER=y
 
 CONFIG_LV_OS_FREERTOS=y
-CONFIG_LV_USE_CLIB_MALLOC=y
+# LVGL objects go to PSRAM through components/pxa_lvgl_memory so the
+# internal, DMA-capable pool stays free for the display and audio paths.
+CONFIG_LV_USE_CUSTOM_MALLOC=y
 CONFIG_LV_USE_CLIB_STRING=y
 CONFIG_LV_USE_CLIB_SPRINTF=y
 # Refreshes are invalidation-driven with partial rendering; a 16 ms period
 # keeps drags and animations smooth without forcing full-screen redraws.
 CONFIG_LV_DEF_REFR_PERIOD=16
 # Two software draw units: LVGL splits the refreshed area into tiles and the
-# two render threads run on both cores, the software equivalent of the
-# pai-touch board's dual-core rotation stage. Costs one extra draw thread
-# stack (LV_DRAW_THREAD_STACK_SIZE).
+# two render threads run on both cores. Each thread costs a
+# LV_DRAW_THREAD_STACK_SIZE stack (32 KiB, the compile-time minimum while
+# FreeType is enabled), and dropping to one unit was measurably laggy, so the
+# RAM is better spent here.
 CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
 # Highest draw-thread priority: the LVGL task runs at 4, and with the default
 # (3) the render threads competed with it instead of preempting it.
 CONFIG_LV_DRAW_THREAD_PRIO=4
+# FreeType requires at least 32 KiB here, and the value is checked at compile
+# time by LVGL; do not lower it while CONFIG_LV_USE_FREETYPE is on.
 CONFIG_LV_DRAW_THREAD_STACK_SIZE=32768
 # Touch follows the official Watcher BSP: one point polled on the indev timer
 # with a pressure threshold. LVGL gesture recognition stays off because the
@@ -93,15 +98,20 @@ CONFIG_LV_USE_LOG=y
 CONFIG_LV_LOG_LEVEL_USER=y
 CONFIG_LV_USE_FREETYPE=y
 CONFIG_LV_FREETYPE_USE_LVGL_PORT=n
-CONFIG_LV_FREETYPE_CACHE_FT_GLYPH_CNT=2048
+# Fonts come from apps (CJK text included) and the cache now lives in
+# PSRAM through components/pxa_lvgl_memory, so keep room for many glyphs.
+CONFIG_LV_FREETYPE_CACHE_FT_GLYPH_CNT=4096
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_USE_SNAPSHOT=y
 CONFIG_LV_USE_LODEPNG=y
 # The launcher icons are PNGs decoded by esp_lv_decoder; with the image cache
 # disabled every redraw decoded them again, which dominated the render time
-# whenever the launcher was repainted (for example behind the shade drag).
-CONFIG_LV_CACHE_DEF_SIZE=1048576
+# whenever the launcher was repainted (for example behind the shade drag). The
+# same cache holds rendered glyphs. It is an upper bound, not a reservation,
+# and LVGL allocates it from PSRAM (components/pxa_lvgl_memory), so growing it
+# trades external RAM for fewer re-decodes and re-rasterisations.
+CONFIG_LV_CACHE_DEF_SIZE=3145728
 CONFIG_LV_IMAGE_HEADER_CACHE_DEF_CNT=32
 
 # The board owns I2C0 with the new i2c_master driver, so the ES8311 control

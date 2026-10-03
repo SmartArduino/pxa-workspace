@@ -1,6 +1,9 @@
 #include "board_sensecap_watcher.h"
 #include "pxa_board.h"
 
+#include <pxa_board_common/display_profile.h>
+#include <pxa_board_common/register.h>
+
 #include "pxa_board_api.h"
 #include "watcher_hardware.h"
 
@@ -16,13 +19,14 @@ lv_display_t* Display(void*) {
 }
 
 void DisplayProfile(void*, pxsys_display_profile_t* output) {
-    if (output == nullptr) return;
-    pxsys_display_profile_init(output, 412, 412);
-    output->shape = PXSYS_DISPLAY_SHAPE_CIRCLE;
-    output->corner_radii = {206, 206, 206, 206};
-    // Inscribed square of the round 412 px panel, matching the simulator
-    // "round" profile geometry.
-    output->safe_insets = {60, 60, 60, 60};
+    static constexpr pxa_board_common::DisplayProfile kProfile = {
+        .width = 412,
+        .height = 412,
+        .shape = PXSYS_DISPLAY_SHAPE_CIRCLE,
+        .corner_radii = {206, 206, 206, 206},
+        .safe_insets = {60, 60, 60, 60},
+    };
+    pxa_board_common::ApplyDisplayProfile(kProfile, output);
 }
 
 pxsys_status_t SetNetworkEnabled(void*, pxsys_network_type_t network,
@@ -62,6 +66,14 @@ void ShowInitialFrame(void*) {
     g_hardware.ShowInitialFrame();
 }
 
+bool ConfigureDiagnostics(void*) {
+    return g_hardware.ConfigurePxadbControls();
+}
+
+bool CaptureDisplayedRgb565(void*, uint16_t* pixels, size_t pixel_count) {
+    return g_hardware.CaptureRgb565(pixels, pixel_count, false, nullptr);
+}
+
 void SetIdleDim(void*, bool enabled, uint8_t percent) {
     g_hardware.SetIdleDim(enabled, percent);
 }
@@ -82,7 +94,8 @@ const pxa_board_port_t kPort = {
     .performance_set = PerformanceSet,
     .system_ready = SystemReady,
     .show_initial_frame = ShowInitialFrame,
-    .configure_diagnostics = nullptr,
+    .configure_diagnostics = ConfigureDiagnostics,
+    .capture_displayed_rgb565 = CaptureDisplayedRgb565,
     .set_idle_dim = SetIdleDim,
     .idle_screen_off = IdleScreenOff,
 };
@@ -92,6 +105,4 @@ extern "C" bool board_sensecap_watcher_register(void) {
     return pxa_board_register(&kPort);
 }
 
-extern "C" bool pxa_board_register_selected(void) {
-    return board_sensecap_watcher_register();
-}
+PXA_BOARD_REGISTER_SELECTED(board_sensecap_watcher_register)

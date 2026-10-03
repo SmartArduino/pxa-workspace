@@ -20,6 +20,8 @@
 #include <iot_button.h>
 #include <led_strip.h>
 #include <lvgl.h>
+#include <pxa_board_common/ledc_backlight.h>
+#include <pxadb/pxadb_service.h>
 
 struct pxsys_standard_system;
 typedef struct pxsys_standard_system pxsys_standard_system_t;
@@ -41,9 +43,13 @@ public:
     void SetVolume(uint8_t percent);
     void PublishStatus();
     void ShowInitialFrame();
+    bool RequestPowerOff();
+    bool ConfigurePxadbControls();
+    bool CaptureRgb565(uint16_t* pixels, size_t pixel_count, bool after_present,
+                       pxadb::TestControlCaptureInfo* info);
 
     lv_display_t* display() const { return display_; }
-    uint8_t brightness() const { return brightness_.load(); }
+    uint8_t brightness() const { return backlight_.percent(); }
     uint8_t volume() const { return audio_.volume(); }
 
     // Used by the wheel-button driver which runs below this class.
@@ -103,6 +109,13 @@ private:
     void SetScreenEnabled(bool enabled);
     void ToggleScreen();
     void WakeScreen();
+    void NavigateHome();
+    bool RouteInjectedPointerDown();
+    bool InjectPointer(uint16_t x, uint16_t y, bool pressed);
+    bool CancelInjectedPointer();
+    bool RouteInjectedKey(pxadb::TestControlKey key);
+    static void ReadInjectedPointer(lv_indev_t* indev, lv_indev_data_t* data);
+    void SnapshotFlushArea(const lv_area_t* area, const uint8_t* pixels);
     void OnLockChanged(bool locked);
     void AdjustVolume(int delta);
     void PowerOff();
@@ -124,6 +137,7 @@ private:
     esp_lcd_touch_handle_t touch_ = nullptr;
     lv_display_t* display_ = nullptr;
     lv_indev_t* touch_indev_ = nullptr;
+    lv_indev_t* injected_pointer_ = nullptr;
     int64_t flush_error_us_ = 0;
     QueueHandle_t flush_queue_ = nullptr;
     TaskHandle_t flush_task_ = nullptr;
@@ -154,12 +168,22 @@ private:
     esp_timer_handle_t status_timer_ = nullptr;
     int64_t boot_time_us_ = 0;
     int64_t heap_log_us_ = 0;
-    std::atomic<uint8_t> brightness_{75};
-    std::atomic<uint8_t> idle_dim_percent_{100};
+    pxa_board_common::LedcBacklight backlight_;
     std::atomic<bool> screen_enabled_{true};
     std::atomic<bool> power_key_woke_screen_{false};
     std::atomic<bool> power_key_long_press_{false};
     std::atomic<bool> status_update_pending_{false};
+    std::atomic<uint16_t> injected_pointer_x_{0};
+    std::atomic<uint16_t> injected_pointer_y_{0};
+    std::atomic<bool> injected_pointer_pressed_{false};
+    // Latest composed frame, mirrored out of the LVGL flush: the SPD2010 path
+    // has no readable framebuffer, so PXADB screenshots are served from here.
+    uint16_t* snapshot_ = nullptr;
+    SemaphoreHandle_t snapshot_sem_ = nullptr;
+    std::atomic<bool> snapshot_pending_{false};
+    std::atomic<bool> snapshot_ready_{false};
+    std::atomic<uint32_t> snapshot_frame_id_{0};
+    std::atomic<int64_t> snapshot_timestamp_us_{0};
     std::atomic<bool> wifi_initialized_{false};
     std::atomic<bool> wifi_enabled_{true};
 };

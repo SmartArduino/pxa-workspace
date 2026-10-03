@@ -32,11 +32,13 @@
 
 namespace {
 constexpr char kTag[] = "WatcherHw";
-// The SPI driver bounces PSRAM color data through internal DMA buffers that
-// are allocated per transaction. Keep the chunks small (8 KiB, two in flight)
-// so those allocations cannot fail under internal-RAM pressure; a failed
-// transfer would otherwise leave LVGL waiting for a completion forever.
-constexpr int kLcdChunkBytes = 8 * 1024;
+// The SPI driver bounces PSRAM color data through an internal DMA buffer it
+// allocates per transaction. The watcher's internal heap runs with an ~8 KiB
+// largest free block once the runtime and PXADB stacks are up, so the chunk
+// has to stay well below that: an 8 KiB chunk failed to allocate, the panel
+// silently dropped the transfer, and LVGL spun forever in wait_for_flushing
+// with the screen frozen. 4 KiB in flight twice fits where 8 KiB did not.
+constexpr int kLcdChunkBytes = 4 * 1024;
 constexpr int kLcdQueueDepth = 2;
 // The flush task only runs the SPI submission and its bounce copies.
 constexpr int kFlushTaskPriority = 4;
@@ -221,7 +223,6 @@ bool SensecapWatcherHardware::InitializePower() {
     }
     // Latch the system rail first; everything else follows.
     if (!io_expander_.SetOutputs(WATCHER_IO_PWR_SYSTEM, true)) return false;
-    vTaskDelay(pdMS_TO_TICKS(100));
     if (!io_expander_.SetOutputs(
             WATCHER_IO_POWER_UP_MASK & ~WATCHER_IO_PWR_SYSTEM, true)) {
         return false;
@@ -279,6 +280,8 @@ bool SensecapWatcherHardware::InitializeDisplay() {
         ESP_LOGE(kTag, "Cannot configure LCD backlight");
         return false;
     }
+    backlight_.Configure(WATCHER_LCD_BACKLIGHT_CHANNEL,
+                         (1u << WATCHER_LCD_BACKLIGHT_DUTY_RES) - 1u);
 
     const spi_bus_config_t bus_config = {
         .data0_io_num = WATCHER_LCD_DATA0,
@@ -381,6 +384,26 @@ bool SensecapWatcherHardware::InitializeDisplay() {
         ESP_LOGE(kTag, "Cannot register SPD2010 display with LVGL");
         return false;
     }
+    // PXADB screenshots are mirrored out of the flush path: the SPD2010 has no
+    // readable framebuffer, so the flush callback copies the composed areas
+    // into this snapshot before they are handed to the panel.
+    snapshot_ = static_cast<uint16_t*>(heap_caps_malloc(
+        static_cast<size_t>(WATCHER_DISPLAY_WIDTH) * WATCHER_DISPLAY_HEIGHT *
+            sizeof(uint16_t),
+        MALLOC_CAP_SPIRAM));
+    snapshot_sem_ = xSemaphoreCreateBinary();
+    if (snapshot_ == nullptr || snapshot_sem_ == nullptr) {
+        ESP_LOGW(kTag, "Continuing without PXADB screen capture");
+        if (snapshot_ != nullptr) {
+            heap_caps_free(snapshot_);
+            snapshot_ = nullptr;
+        }
+        if (snapshot_sem_ != nullptr) {
+            vSemaphoreDelete(snapshot_sem_);
+            snapshot_sem_ = nullptr;
+        }
+    }
+
     // Submitting a PSRAM frame costs the SPI driver a bounce copy per chunk.
     // A dedicated task does that work so the LVGL task can start the next
     // render immediately; LVGL still waits for the transfer completion.
@@ -422,6 +445,19 @@ void SensecapWatcherHardware::FlushDisplay(lv_display_t* display,
     // leaves the LVGL task; the queued pixels are then fully owned by the
     // flush task and the Surface lease can be released immediately.
     watcher_pxa_surface::ComposeFlushArea(area, pixels);
+    if (self->snapshot_pending_.load(std::memory_order_acquire)) {
+        self->SnapshotFlushArea(area, pixels);
+        if (lv_display_flush_is_last(display)) {
+            self->snapshot_frame_id_.fetch_add(1, std::memory_order_relaxed);
+            self->snapshot_timestamp_us_.store(esp_timer_get_time(),
+                                               std::memory_order_relaxed);
+            self->snapshot_ready_.store(true, std::memory_order_release);
+            self->snapshot_pending_.store(false, std::memory_order_release);
+            if (self->snapshot_sem_ != nullptr) {
+                xSemaphoreGive(self->snapshot_sem_);
+            }
+        }
+    }
     if (lv_display_flush_is_last(display)) pxa_board_performance_note_frame();
     pxa_board_performance_draw_rgb565(
         reinterpret_cast<uint16_t*>(pixels), WATCHER_DISPLAY_WIDTH,
@@ -531,7 +567,6 @@ bool SensecapWatcherHardware::InitializeTouch() {
     // input device.
     vTaskDelay(pdMS_TO_TICKS(50));
     esp_lcd_touch_read_data(touch);
-    vTaskDelay(pdMS_TO_TICKS(100));
     touch_ = touch;
     // The PCA9555 asserts its interrupt (GPIO2) whenever an input changes,
     // and the SPD2010 raises P0.5 when a report is ready. Wake a dedicated
@@ -917,24 +952,17 @@ void SensecapWatcherHardware::AttachSystem(
 }
 
 void SensecapWatcherHardware::SetBrightness(uint8_t percent) {
-    if (percent > 100) percent = 100;
-    brightness_.store(percent);
+    backlight_.SetPercent(percent);
     ApplyBacklight();
     ScheduleStatusUpdate();
 }
 
 void SensecapWatcherHardware::ApplyBacklight() {
-    const uint8_t effective = std::min(brightness_.load(),
-                                       idle_dim_percent_.load());
-    const uint32_t duty = screen_enabled_.load()
-                              ? static_cast<uint32_t>(effective) * 1023 / 100
-                              : 0;
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL, duty);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL);
+    backlight_.Apply(screen_enabled_.load());
 }
 
 void SensecapWatcherHardware::SetIdleDim(bool enabled, uint8_t percent) {
-    idle_dim_percent_.store(enabled ? std::min<uint8_t>(percent, 100) : 100);
+    backlight_.SetIdleDim(enabled, percent);
     ApplyBacklight();
 }
 
@@ -976,7 +1004,7 @@ void SensecapWatcherHardware::PublishStatus() {
     status.volume_supported = 1;
     status.volume_percent = audio_.volume();
     status.brightness_supported = 1;
-    status.brightness_percent = brightness_.load();
+    status.brightness_percent = backlight_.percent();
     (void)pxsys_system_status_service_update(
         pxsys_standard_system_status(system_), &status);
 }
@@ -1162,9 +1190,9 @@ void SensecapWatcherHardware::SetScreenEnabled(bool enabled) {
             lv_display_trigger_activity(self->display_);
             self->SetIdleDim(false, 100);
             if (self->display_ != nullptr) lv_refr_now(self->display_);
-            self->SetBrightness(self->brightness_.load() == 0
+            self->SetBrightness(self->backlight_.percent() == 0
                                     ? kDefaultBrightness
-                                    : self->brightness_.load());
+                                    : self->backlight_.percent());
         },
         this);
     lv_unlock();
@@ -1181,6 +1209,193 @@ void SensecapWatcherHardware::OnLockChanged(bool locked) {
     const bool interactive = !locked && screen_enabled_.load();
     pxa_esp_surface_set_display_unlocked(interactive);
     (void)pxa_host_set_display_interactive(interactive);
+}
+
+void SensecapWatcherHardware::SnapshotFlushArea(const lv_area_t* area,
+                                                const uint8_t* pixels) {
+    if (snapshot_ == nullptr || area == nullptr || pixels == nullptr) return;
+    const int width = lv_area_get_width(area);
+    const int height = lv_area_get_height(area);
+    if (width <= 0 || height <= 0) return;
+    // The panel runs LV_COLOR_FORMAT_RGB565_SWAPPED, so the draw buffer holds
+    // byte-swapped pixels; the capture reports plain little-endian RGB565.
+    // Rows in the full-screen draw buffer are one display width apart.
+    const auto* source = reinterpret_cast<const uint16_t*>(pixels);
+    for (int row = 0; row < height; ++row) {
+        const int y = area->y1 + row;
+        if (y < 0 || y >= WATCHER_DISPLAY_HEIGHT) continue;
+        const uint16_t* src =
+            source + static_cast<size_t>(row) * WATCHER_DISPLAY_WIDTH;
+        uint16_t* dst =
+            snapshot_ + static_cast<size_t>(y) * WATCHER_DISPLAY_WIDTH;
+        for (int column = 0; column < width; ++column) {
+            const int x = area->x1 + column;
+            if (x < 0 || x >= WATCHER_DISPLAY_WIDTH) continue;
+            const uint16_t value = src[column];
+            dst[x] = static_cast<uint16_t>((value >> 8) | (value << 8));
+        }
+    }
+}
+
+bool SensecapWatcherHardware::CaptureRgb565(
+    uint16_t* pixels, size_t pixel_count, bool after_present,
+    pxadb::TestControlCaptureInfo* info) {
+    if (pixels == nullptr || snapshot_ == nullptr) return false;
+    const size_t needed =
+        static_cast<size_t>(WATCHER_DISPLAY_WIDTH) * WATCHER_DISPLAY_HEIGHT;
+    if (pixel_count < needed) return false;
+    if (after_present || !snapshot_ready_.load(std::memory_order_acquire)) {
+        snapshot_pending_.store(true, std::memory_order_release);
+        if (snapshot_sem_ == nullptr ||
+            xSemaphoreTake(snapshot_sem_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            return false;
+        }
+    }
+    memcpy(pixels, snapshot_, needed * sizeof(uint16_t));
+    if (info != nullptr) {
+        info->width = WATCHER_DISPLAY_WIDTH;
+        info->height = WATCHER_DISPLAY_HEIGHT;
+        info->stride_bytes = WATCHER_DISPLAY_WIDTH * sizeof(uint16_t);
+        info->frame_id = snapshot_frame_id_.load(std::memory_order_relaxed);
+        info->completed_timestamp_us =
+            snapshot_timestamp_us_.load(std::memory_order_relaxed);
+        info->source = "lvgl-flush";
+    }
+    return true;
+}
+
+void SensecapWatcherHardware::NavigateHome() {
+    if (!screen_enabled_.load()) {
+        WakeScreen();
+        return;
+    }
+    if (reference_ui_ != nullptr &&
+        pxsys_reference_lvgl_is_locked(reference_ui_)) {
+        return;
+    }
+    lv_lock();
+    lv_async_call([](void* context) {
+        auto* self = static_cast<SensecapWatcherHardware*>(context);
+        if (self->reference_ui_ != nullptr) {
+            (void)pxsys_reference_lvgl_home(self->reference_ui_);
+        }
+    }, this);
+    lv_unlock();
+}
+
+bool SensecapWatcherHardware::RouteInjectedPointerDown() {
+    if (screen_enabled_.load()) return true;
+    WakeScreen();
+    return false;
+}
+
+bool SensecapWatcherHardware::InjectPointer(uint16_t x, uint16_t y,
+                                            bool pressed) {
+    if (display_ == nullptr || x >= WATCHER_DISPLAY_WIDTH ||
+        y >= WATCHER_DISPLAY_HEIGHT) {
+        return false;
+    }
+    injected_pointer_x_.store(x, std::memory_order_relaxed);
+    injected_pointer_y_.store(y, std::memory_order_relaxed);
+    injected_pointer_pressed_.store(pressed, std::memory_order_release);
+    // The indev's read timer runs inside the LVGL task, which owns the display
+    // pipeline; injecting here would run UI callbacks on the PXADB task.
+    if (injected_pointer_ != nullptr) return true;
+    if (!lvgl_port_lock(1000)) return false;
+    lv_lock();
+    if (injected_pointer_ == nullptr) {
+        injected_pointer_ = lv_indev_create();
+        if (injected_pointer_ != nullptr) {
+            lv_indev_set_type(injected_pointer_, LV_INDEV_TYPE_POINTER);
+            lv_indev_set_display(injected_pointer_, display_);
+            lv_indev_set_user_data(injected_pointer_, this);
+            lv_indev_set_read_cb(injected_pointer_, ReadInjectedPointer);
+            lv_timer_set_period(lv_indev_get_read_timer(injected_pointer_),
+                                kTouchPollMs);
+        }
+    }
+    const bool ready = injected_pointer_ != nullptr;
+    lv_unlock();
+    lvgl_port_unlock();
+    return ready;
+}
+
+bool SensecapWatcherHardware::CancelInjectedPointer() {
+    injected_pointer_pressed_.store(false, std::memory_order_release);
+    return injected_pointer_ != nullptr;
+}
+
+void SensecapWatcherHardware::ReadInjectedPointer(lv_indev_t* indev,
+                                                  lv_indev_data_t* data) {
+    auto* self =
+        static_cast<SensecapWatcherHardware*>(lv_indev_get_user_data(indev));
+    if (self == nullptr || data == nullptr) return;
+    data->point.x = self->injected_pointer_x_.load(std::memory_order_relaxed);
+    data->point.y = self->injected_pointer_y_.load(std::memory_order_relaxed);
+    data->state =
+        self->injected_pointer_pressed_.load(std::memory_order_acquire)
+            ? LV_INDEV_STATE_PRESSED
+            : LV_INDEV_STATE_RELEASED;
+}
+
+bool SensecapWatcherHardware::RouteInjectedKey(pxadb::TestControlKey key) {
+    switch (key) {
+        case pxadb::TestControlKey::kBack:
+        case pxadb::TestControlKey::kHome:
+            NavigateHome();
+            return true;
+        case pxadb::TestControlKey::kVolumeUp:
+            AdjustVolume(kVolumeStep);
+            return true;
+        case pxadb::TestControlKey::kVolumeDown:
+            AdjustVolume(-kVolumeStep);
+            return true;
+    }
+    return false;
+}
+
+bool SensecapWatcherHardware::ConfigurePxadbControls() {
+    pxadb::PowerControlAdapter power_adapter;
+    power_adapter.context = this;
+    power_adapter.power_off = [](void* context) {
+        return static_cast<SensecapWatcherHardware*>(context)->RequestPowerOff();
+    };
+    if (pxadb::ConfigurePowerControl(&power_adapter) != ESP_OK) return false;
+
+    pxadb::TestControlAdapter adapter;
+    adapter.context = this;
+    adapter.width = WATCHER_DISPLAY_WIDTH;
+    adapter.height = WATCHER_DISPLAY_HEIGHT;
+    adapter.route_pointer_down = [](void* context) {
+        return static_cast<SensecapWatcherHardware*>(context)
+            ->RouteInjectedPointerDown();
+    };
+    adapter.inject_pointer = [](void* context, uint16_t x, uint16_t y,
+                                bool pressed) {
+        return static_cast<SensecapWatcherHardware*>(context)
+            ->InjectPointer(x, y, pressed);
+    };
+    adapter.cancel_pointer = [](void* context) {
+        return static_cast<SensecapWatcherHardware*>(context)
+            ->CancelInjectedPointer();
+    };
+    adapter.route_key = [](void* context, pxadb::TestControlKey key) {
+        return static_cast<SensecapWatcherHardware*>(context)
+            ->RouteInjectedKey(key);
+    };
+    adapter.capture_rgb565 = [](
+        void* context, uint16_t* pixels, size_t pixel_count,
+        bool after_present, pxadb::TestControlCaptureInfo* info) {
+        return static_cast<SensecapWatcherHardware*>(context)->CaptureRgb565(
+            pixels, pixel_count, after_present, info);
+    };
+    const esp_err_t result = pxadb::ConfigureTestControl(&adapter);
+    return result == ESP_OK || result == ESP_ERR_NOT_SUPPORTED;
+}
+
+bool SensecapWatcherHardware::RequestPowerOff() {
+    PowerOff();
+    return true;
 }
 
 void SensecapWatcherHardware::PowerOff() {

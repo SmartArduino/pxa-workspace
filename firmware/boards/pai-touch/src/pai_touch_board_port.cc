@@ -1,6 +1,9 @@
 #include "board_pai_touch.h"
 #include "pxa_board.h"
 
+#include <pxa_board_common/display_profile.h>
+#include <pxa_board_common/register.h>
+
 #include "pai_touch_hardware.h"
 #include "parallel_sw_rotation_flush.h"
 #include "pxa_board_api.h"
@@ -17,11 +20,14 @@ lv_display_t* Display(void*) {
 }
 
 void DisplayProfile(void*, pxsys_display_profile_t* output) {
-    if (output == nullptr) return;
-    pxsys_display_profile_init(output, 296, 240);
-    output->shape = PXSYS_DISPLAY_SHAPE_ROUNDED_RECTANGLE;
-    output->corner_radii = {58, 58, 58, 58};
-    output->safe_insets = {8, 10, 8, 10};
+    static constexpr pxa_board_common::DisplayProfile kProfile = {
+        .width = 296,
+        .height = 240,
+        .shape = PXSYS_DISPLAY_SHAPE_ROUNDED_RECTANGLE,
+        .corner_radii = {58, 58, 58, 58},
+        .safe_insets = {8, 10, 8, 10},
+    };
+    pxa_board_common::ApplyDisplayProfile(kProfile, output);
 }
 
 pxsys_status_t SetNetworkEnabled(void*, pxsys_network_type_t network,
@@ -102,6 +108,4 @@ extern "C" bool board_pai_touch_register(void) {
     return pxa_board_register(&kPort);
 }
 
-extern "C" bool pxa_board_register_selected(void) {
-    return board_pai_touch_register();
-}
+PXA_BOARD_REGISTER_SELECTED(board_pai_touch_register)

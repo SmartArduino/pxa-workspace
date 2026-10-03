@@ -2222,6 +2222,15 @@ bool pxa_esp_surface_acquire_latest_for_direct(
     return acquire_latest(frame, true, false);
 }
 
+bool pxa_esp_surface_has_visible_surface(void) {
+    bool visible;
+    taskENTER_CRITICAL(&g_surface_lock);
+    visible = g_host_visible && g_display_unlocked && g_surface != NULL &&
+              !g_surface->closing && g_surface->layer.visible;
+    taskEXIT_CRITICAL(&g_surface_lock);
+    return visible;
+}
+
 bool pxa_esp_surface_has_pending_frame(void) {
     bool pending;
     taskENTER_CRITICAL(&g_surface_lock);
@@ -2422,6 +2431,7 @@ bool pxa_esp_surface_acquire_latest_for_direct(
     return false;
 }
 bool pxa_esp_surface_has_pending_frame(void) { return false; }
+bool pxa_esp_surface_has_visible_surface(void) { return false; }
 bool pxa_esp_surface_get_present_info(
     pxa_esp_surface_present_info_t *info) {
     (void)info;

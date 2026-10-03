@@ -30,6 +30,9 @@ idf_component_register(
         lvgl
         pxa
         pxa_board_api
+        pxa_board_common
+        pxa_lvgl_memory
+        pxadb
         pxa_system_reference_ui
         pxa_system_standard)
 
@@ -41,4 +44,15 @@ if(CONFIG_LV_USE_FREETYPE)
     if(TARGET lvgl_docoder_lib)
         target_link_libraries(lvgl_docoder_lib PRIVATE idf::espressif__freetype)
     endif()
+endif()
+
+# ---------------------------------------------------------------------------
+# LVGL's allocator lives in pxa_lvgl_memory. LVGL cannot name that component
+# itself (it is a managed component), and the linker resolves archive members
+# left to right, so link it *behind* LVGL: otherwise lv_malloc_core and friends
+# are still undefined when LVGL is pulled in.
+# ---------------------------------------------------------------------------
+idf_component_get_property(_pxa_lvgl_lib lvgl__lvgl COMPONENT_LIB)
+if(_pxa_lvgl_lib)
+    target_link_libraries(${_pxa_lvgl_lib} PUBLIC idf::pxa_lvgl_memory)
 endif()

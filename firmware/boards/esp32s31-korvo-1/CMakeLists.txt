@@ -28,6 +28,7 @@ idf_component_register(
         pxa
         pxadb
         pxa_board_api
+        pxa_board_common
         pxa_system_reference_ui
         pxa_system_standard)
 

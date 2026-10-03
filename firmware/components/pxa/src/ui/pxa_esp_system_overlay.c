@@ -21,6 +21,8 @@ static uint8_t g_object_count;
 static lv_obj_t *g_reference_objects[PXA_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS];
 static uint8_t g_reference_count;
 static bool g_bound;
+/* The plane below was built while the LVGL shell owned the panel. */
+static bool g_plane_built_for_shell;
 static uint8_t *g_plane_memory;
 static pxa_esp_surface_ui_alpha_plane_t g_plane;
 static uint64_t g_revision;
@@ -128,6 +130,20 @@ void pxa_esp_system_overlay_refresh(void) {
   uint8_t *alpha;
   if (!g_bound)
     return;
+  /* While the LVGL shell owns the panel it draws the overlay itself and this
+   * plane is never composited, so building it on every step of a notification
+   * shade drag (a 509 KiB PSRAM calloc, a full-frame ARGB8888 snapshot and a
+   * per-pixel blend over ~170k pixels) capped the pull-down at a few frames
+   * per second. Leave the last plane untouched here. */
+  if (!pxa_esp_surface_has_visible_surface()) {
+    if (g_plane_built_for_shell)
+      return;
+    /* One build per shell period: the plane is not composited right now, but a
+     * fresh one has to be ready when an application Surface takes the panel. */
+    g_plane_built_for_shell = true;
+  } else {
+    g_plane_built_for_shell = false;
+  }
   /* This plane is only ever composited above an application Surface. While the
    * LVGL shell owns the panel the overlay is drawn by LVGL directly, so the
    * ARGB snapshots and the per-pixel blend below are pure overhead - and they

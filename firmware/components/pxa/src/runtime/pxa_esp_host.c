@@ -111,11 +111,13 @@
 #define CONFIG_PXA_COMMAND_QUEUE_LENGTH 16
 #endif
 /* The runtime stack has to live in internal RAM (flash operations run on it).
- * A board whose bring-up temporarily fragments the internal heap can be
- * without a contiguous block for a moment, so the first attempts wait and
- * retry before the runtime is declared unavailable. */
-#define PXA_ESP_HOST_RUNTIME_STACK_ATTEMPTS 5
-#define PXA_ESP_HOST_RUNTIME_STACK_RETRY_MS 800
+ * A board can be without a contiguous block of that size while its own
+ * bring-up and the PXADB tasks settle - SenseCAP Watcher first reports an
+ * 11 KiB largest block where the stack needs 12 KiB, and a 17 KiB block a
+ * little later - so a failed attempt is retried from a timer instead of
+ * blocking the boot path or moving the stack out of internal RAM. */
+#define PXA_ESP_HOST_RUNTIME_RETRY_MS 1500
+#define PXA_ESP_HOST_RUNTIME_RETRY_ATTEMPTS 20
 #ifndef CONFIG_PXA_RUNTIME_TASK_STACK_SIZE
 #define CONFIG_PXA_RUNTIME_TASK_STACK_SIZE (12 * 1024)
 #endif
@@ -4445,6 +4447,8 @@ static int start_runtime_thread(void) {
     return 1;
 }
 
+static void schedule_runtime_retry(void);
+
 static int start_runtime_services(void) {
     if (!g_host.initialized || g_host.queue == NULL) return 0;
     portENTER_CRITICAL(&g_process_state_lock);
@@ -4476,27 +4480,13 @@ static int start_runtime_services(void) {
         portEXIT_CRITICAL(&g_process_state_lock);
         return 0;
     }
-    bool runtime_created = start_runtime_thread() != 0;
-    for (int attempt = 1;
-         !runtime_created && attempt < PXA_ESP_HOST_RUNTIME_STACK_ATTEMPTS;
-         ++attempt) {
-        ESP_LOGW(PXA_ESP_HOST_TAG,
-                 "Runtime stack did not fit internal RAM (attempt %d/%d); "
-                 "retrying in %d ms",
-                 attempt, (int)PXA_ESP_HOST_RUNTIME_STACK_ATTEMPTS,
-                 (int)PXA_ESP_HOST_RUNTIME_STACK_RETRY_MS);
-        vTaskDelay(pdMS_TO_TICKS(PXA_ESP_HOST_RUNTIME_STACK_RETRY_MS));
-        runtime_created = start_runtime_thread() != 0;
-    }
-    if (!runtime_created) {
-        ESP_LOGE(PXA_ESP_HOST_TAG,
-                 "Runtime thread creation failed after %d attempts",
-                 (int)PXA_ESP_HOST_RUNTIME_STACK_ATTEMPTS);
+    if (!start_runtime_thread()) {
         (void)esp_timer_stop(g_host.watchdog_timer);
         (void)esp_timer_stop(g_host.clock_timer);
         portENTER_CRITICAL(&g_process_state_lock);
         g_host.runtime_starting = 0;
         portEXIT_CRITICAL(&g_process_state_lock);
+        schedule_runtime_retry();
         return 0;
     }
     portENTER_CRITICAL(&g_process_state_lock);
@@ -4507,6 +4497,57 @@ static int start_runtime_services(void) {
              "Runtime started (internal stack=%u bytes)",
              (unsigned)runtime_task_stack_size());
     return 1;
+}
+
+static esp_timer_handle_t s_runtime_retry_timer = NULL;
+static uint32_t s_runtime_retry_left = 0;
+
+static void runtime_retry_cb(void* arg) {
+    (void)arg;
+    if (s_runtime_retry_left == 0) return;
+    --s_runtime_retry_left;
+    if (start_runtime_services()) {
+        s_runtime_retry_left = 0;
+        return;
+    }
+    if (s_runtime_retry_left == 0) {
+        ESP_LOGE(PXA_ESP_HOST_TAG,
+                 "Runtime stack never fit internal RAM; runtime unavailable");
+        return;
+    }
+    if (s_runtime_retry_left % 5 == 0) {
+        ESP_LOGW(PXA_ESP_HOST_TAG,
+                 "Runtime stack still does not fit internal RAM (%u retries left)",
+                 (unsigned)s_runtime_retry_left);
+    }
+    (void)esp_timer_start_once(
+        s_runtime_retry_timer,
+        (uint64_t)PXA_ESP_HOST_RUNTIME_RETRY_MS * UINT64_C(1000));
+}
+
+static void schedule_runtime_retry(void) {
+    if (s_runtime_retry_timer == NULL) {
+        const esp_timer_create_args_t args = {
+            .callback = runtime_retry_cb,
+            .arg = NULL,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "pxa_rt_stack",
+        };
+        if (esp_timer_create(&args, &s_runtime_retry_timer) != ESP_OK) {
+            ESP_LOGE(PXA_ESP_HOST_TAG,
+                     "Cannot create the runtime stack retry timer");
+            return;
+        }
+    }
+    if (s_runtime_retry_left == 0) {
+        s_runtime_retry_left = PXA_ESP_HOST_RUNTIME_RETRY_ATTEMPTS;
+    }
+    ESP_LOGW(PXA_ESP_HOST_TAG,
+             "Runtime stack did not fit internal RAM; retrying every %d ms",
+             (int)PXA_ESP_HOST_RUNTIME_RETRY_MS);
+    (void)esp_timer_start_once(
+        s_runtime_retry_timer,
+        (uint64_t)PXA_ESP_HOST_RUNTIME_RETRY_MS * UINT64_C(1000));
 }
 
 /* --- engine prepare_start: bind host-owned UI services ------------------- */

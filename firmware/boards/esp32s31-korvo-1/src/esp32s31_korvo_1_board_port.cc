@@ -1,5 +1,8 @@
 #include "pxa_board.h"
 
+#include <pxa_board_common/display_profile.h>
+#include <pxa_board_common/register.h>
+
 #include "esp32s31_korvo_1_config.h"
 #include "esp32s31_korvo_1_hardware.h"
 #include "esp32s31_korvo_1_pxa_surface.h"
@@ -11,9 +14,12 @@ Esp32S31Korvo1Hardware g_hardware;
 bool Initialize(void*) { return g_hardware.Initialize(); }
 lv_display_t* Display(void*) { return g_hardware.display(); }
 void DisplayProfile(void*, pxsys_display_profile_t* output) {
-    if (output == nullptr) return;
-    pxsys_display_profile_init(output, KORVO_UI_WIDTH, KORVO_UI_HEIGHT);
-    output->shape = PXSYS_DISPLAY_SHAPE_RECTANGLE;
+    static constexpr pxa_board_common::DisplayProfile kProfile = {
+        .width = KORVO_UI_WIDTH,
+        .height = KORVO_UI_HEIGHT,
+        .shape = PXSYS_DISPLAY_SHAPE_RECTANGLE,
+    };
+    pxa_board_common::ApplyDisplayProfile(kProfile, output);
 }
 pxsys_status_t SetNetworkEnabled(void*, pxsys_network_type_t network,
                                  uint8_t enabled) {
@@ -64,6 +70,8 @@ const pxa_board_port_t kPort = {
 };
 }
 
-extern "C" bool pxa_board_register_selected(void) {
+extern "C" bool board_esp32s31_korvo_1_register(void) {
     return pxa_board_register(&kPort);
 }
+
+PXA_BOARD_REGISTER_SELECTED(board_esp32s31_korvo_1_register)
