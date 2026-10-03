@@ -110,3 +110,10 @@ CONFIG_PXSYS_REFERENCE_UI_TASK_PREVIEW_COUNT=3
 CONFIG_PXADB_ENABLED=y
 CONFIG_PXADB_AUTOSTART=y
 CONFIG_PXADB_TEST_CONTROL=y
+
+# The reference UI renders CJK text through FreeType and draws icons from
+# packages. Without an LVGL cache every glyph and image is rasterised again on
+# each frame, which made large moving surfaces (the notification shade drag)
+# cost tens of milliseconds per frame. Other boards already size this cache.
+CONFIG_LV_CACHE_DEF_SIZE=1048576
+CONFIG_LV_IMAGE_HEADER_CACHE_DEF_CNT=32
