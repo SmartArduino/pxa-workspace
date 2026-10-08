@@ -107,6 +107,11 @@ def main() -> int:
                     raise RuntimeError("foreground or idle-lock transition missing")
                 report["lock_seconds"] = time.monotonic() - start
                 if args.verify_frames:
+                    # A synchronous Guest call and the bounded raster queue
+                    # may already be in flight at the lifecycle transition.
+                    # Let those complete, then check the steady locked state.
+                    report["pipeline_settle_seconds"] = 1
+                    pump(1)
                     request("PERF CLEAR")
                     request("PERF START")
                 pump(5)
