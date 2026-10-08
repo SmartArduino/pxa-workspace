@@ -59,7 +59,7 @@ run_logged pixel-package env PXA_APP_SOURCE_ROOT="$app_root" \
     bash "$pxa_root/tools/package/package_app.sh" pixel-dungeon simulator "$test_root/packages/pxa-pixel-dungeon"
 run_logged simulator-configure bash "$project_root/tools/simulator.sh" product configure --profile "$profile"
 run_logged simulator-build cmake --build "$project_root/build/simulator/$profile" \
-    --target pxsys_resources_test pxsys_resource_budget_test pxsys_audio_test pxsys_audio_app_test pxsys_ui_images_test pxsys_store_images_test -j "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
+    --target pxsys_resource_app_test pxsys_resource_budget_test pxsys_audio_test pxsys_audio_app_test pxsys_ui_images_test pxsys_store_images_test -j "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
 # Exercise the production LVGL adapter against real prepared pixel objects.
 # The simulator configure step above makes its pinned LVGL source available.
 lvgl_test_root="${PXA_LVGL_TEST_ROOT:-$test_root/lvgl}"
@@ -73,7 +73,7 @@ run_logged shared-budget "$project_root/build/simulator/$profile/pxsys_resource_
 run_logged audio-backend python3 "$pxa_root/tools/package/test_audio_backend.py" \
     "$project_root/build/simulator/$profile/pxsys_audio_test" \
     "$pxa_root/simulator/desktop/tests/audio-assets"
-runner="$project_root/build/simulator/$profile/pxsys_resources_test"
+runner="$project_root/build/simulator/$profile/pxsys_resource_app_test"
 package="$test_root/packages/pxa-resource-scenes"
 key="${PXA_SIMULATOR_PUBLISHER_KEY:-$app_root/.dev-signing/publisher-public.der}"
 # Fixed budgets make the default/pressure comparison independent of the shell.

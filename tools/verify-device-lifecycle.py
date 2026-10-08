@@ -24,6 +24,8 @@ def main() -> int:
     parser.add_argument("--app", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=180)
+    parser.add_argument("--verify-frames", action="store_true",
+                        help="require no raster/present samples while locked and frames after unlock")
     parser.add_argument("--unlock-swipe", type=int, nargs=4,
                         metavar=("X1", "Y1", "X2", "Y2"), required=True)
     parser.add_argument("--unlock-duration-ms", type=int, default=400)
@@ -104,7 +106,16 @@ def main() -> int:
                         report.get("bridge_foreground")) or not has_transition(0, 0):
                     raise RuntimeError("foreground or idle-lock transition missing")
                 report["lock_seconds"] = time.monotonic() - start
+                if args.verify_frames:
+                    request("PERF CLEAR")
+                    request("PERF START")
                 pump(5)
+                if args.verify_frames:
+                    paused = pxadb.info_properties(request("PERF STOP")[-1].payload)
+                    report["paused_probe"] = paused
+                    if int(paused["raster"]) or int(paused["present"]):
+                        raise RuntimeError("frames continued while locked")
+                    request("PERF CLEAR")
                 locked = pxadb.screenshot_capture(request("SCREENSHOT JPEG"))
                 pxadb.write_screenshot(locked, args.output / "locked.jpg")
                 report["locked_frame"] = locked.metadata
@@ -127,7 +138,16 @@ def main() -> int:
                     pump(.1)
                 if not has_transition(1, 1, report["lock_seconds"]):
                     raise RuntimeError("foreground transition missing after unlock")
+                if args.verify_frames:
+                    request("PERF CLEAR")
+                    request("PERF START")
                 pump(3)
+                if args.verify_frames:
+                    resumed = pxadb.info_properties(request("PERF STOP")[-1].payload)
+                    report["resumed_probe"] = resumed
+                    if not int(resumed["present"]):
+                        raise RuntimeError("no displayed frames after unlock")
+                    request("PERF CLEAR")
                 unlocked = pxadb.screenshot_capture(request("SCREENSHOT JPEG"))
                 pxadb.write_screenshot(unlocked, args.output / "unlocked.jpg")
                 report["unlocked_frame"] = unlocked.metadata
