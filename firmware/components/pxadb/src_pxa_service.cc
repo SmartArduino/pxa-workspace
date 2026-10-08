@@ -402,7 +402,7 @@ bool DecodeFsPath(const char* encoded, char* relative, size_t relative_capacity,
     for (char* character = relative;; ++character) {
         const char value = *character;
         if (!(value == '\0' || value == '/' || value == '.' || value == '_' ||
-              value == '-' || (value >= 'a' && value <= 'z') ||
+              value == '-' || value == '~' || (value >= 'a' && value <= 'z') ||
               (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9'))) {
             return false;
         }
