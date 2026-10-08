@@ -59,6 +59,8 @@ build_and_run disabled_policy \
   -I"$component_dir/src/package" \
   "$tests_dir/pxa_package_disabled_policy_test.c" \
   "$component_dir/src/package/pxa_package_disabled_policy.c"
+build_and_run wasi_stdio -DESP_PLATFORM=1 \
+  "${adapter_includes[@]}" "$tests_dir/pxa_esp_wasi_stdio_test.c"
 
 libpxa_build="$build_dir/libpxa"
 cmake -S "$pxa_system_dir/libpxa" -B "$libpxa_build" \
