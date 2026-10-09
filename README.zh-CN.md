@@ -161,6 +161,16 @@ board port 提供显示创建与显示 Profile，以及可选的网络、音量�
 
 ## 依赖
 
+开发应用可以直接使用 [PXA DevKit](https://github.com/SmartArduino/pxa-system/releases)，
+无需本工作区或 ESP-IDF。版本、兼容性及发行范围见
+[发行与 SDK 方案](docs/pxa-release-and-app-sdk.zh-CN.md)。
+
+维护 Host 或固件时，递归检出公开的依赖并使用工作区固定的提交：
+
+```sh
+git clone --branch v0.2.0-rc.1 --recurse-submodules https://github.com/SmartArduino/pxa-workspace.git
+```
+
 `deps/pxa-system` 是独立 Git checkout，并固定 WAMR 和 page-manager 子模块。ESP
 host 直接持有很小的 WAMR/ESP-IDF 声明兼容层。host 与板级依赖
 均保存在本工程内，因此源码和 CMake 文件不包含原 pai-touch 演示固件的路径。
