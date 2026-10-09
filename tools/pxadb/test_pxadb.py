@@ -75,6 +75,31 @@ def fake_client(lines: list[bytes]) -> pxadb.PxaDbClient:
     return client
 
 
+class RuntimeProfileTest(unittest.TestCase):
+    def test_paged_records_use_actual_versions(self):
+        client = mock.Mock()
+        client.request.side_effect = [
+            [SimpleNamespace(payload=json.dumps({"schema": "pxa-host-profile-1", "core": [1, 0], "service_count": 2}))],
+            [SimpleNamespace(payload=json.dumps({"id": 3, "version": [0, 6], "features": 1}))],
+            [SimpleNamespace(payload=json.dumps({"id": 18, "version": [0, 5], "features": 1}))],
+        ]
+        result = pxadb.runtime_profile(client)
+        self.assertEqual(result["services"][1]["version"], [0, 5])
+        self.assertEqual([call.args[0] for call in client.request.call_args_list],
+                         ["RUNTIMEINFO 0", "RUNTIMEINFO 1", "RUNTIMEINFO 2"])
+
+    def test_unbounded_or_duplicate_records_rejected(self):
+        for count in (-1, 129, True, "2"):
+            client = mock.Mock()
+            client.request.return_value = [SimpleNamespace(payload=json.dumps({"service_count": count}))]
+            with self.assertRaises(pxadb.PxaDbError): pxadb.runtime_profile(client)
+        client = mock.Mock()
+        client.request.side_effect = [[SimpleNamespace(payload=json.dumps({"service_count": 2}))],
+                                      [SimpleNamespace(payload=json.dumps({"id": 3}))],
+                                      [SimpleNamespace(payload=json.dumps({"id": 3}))]]
+        with self.assertRaises(pxadb.PxaDbError): pxadb.runtime_profile(client)
+
+
 class FakeBufferedSerial:
     """Driver-like stub that never returns more than the requested size."""
 

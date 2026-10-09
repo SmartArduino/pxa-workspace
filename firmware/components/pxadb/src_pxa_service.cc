@@ -1893,6 +1893,19 @@ void HandleCommand(char* line) {
         SendFrame(sequence, "OK", "pong");
     } else if (strcmp(command, "INFO") == 0) {
         SendInfo(sequence);
+#if CONFIG_PXA_ENABLED
+    } else if (strcmp(command, "RUNTIMEINFO") == 0) {
+        char payload[kMaxFramePayload] = {};
+        char* record_end = nullptr;
+        const unsigned long record = argument == nullptr ? 0 : strtoul(argument, &record_end, 10);
+        if (argument_count > 1 || (argument != nullptr &&
+            (record_end == argument || *record_end != '\0' || argument[0] == '-'))) {
+            SendFrame(sequence, "ERR", "invalid_runtime_record");
+        } else {
+            const int32_t status = pxa_host_profile_record(record, payload, sizeof(payload));
+            SendFrame(sequence, status == 0 ? "OK" : "ERR", status == 0 ? payload : "runtime_record_unavailable");
+        }
+#endif
     } else if (strcmp(command, "MEMORY") == 0) {
         if (argument_count == 0) {
             SendMemory(sequence);

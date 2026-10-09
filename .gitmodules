@@ -1,0 +1,3 @@
+[submodule "deps/pxa-system"]
+	path = deps/pxa-system
+	url = https://github.com/SmartArduino/pxa-system.git

@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import json
 import pathlib
 import sys
 import tempfile
@@ -131,6 +132,24 @@ class SimulatorFileCommandTest(unittest.TestCase):
         with self.assertRaisesRegex(simulator_pxadb.ServiceError,
                                     "path must remain inside"):
             self.service.storage_path("../outside")
+
+    def test_runtime_profile_pages_actual_capabilities(self) -> None:
+        self.service.runtime_profile = {"core": [1, 0], "service_count": 1,
+                                       "services": [{"id": 3, "version": [0, 6], "features": 1}]}
+        for index, expected in ((0, {"core": [1, 0], "service_count": 1}),
+                                (1, self.service.runtime_profile["services"][0])):
+            self.connection.frames.clear()
+            self.service.dispatch(self.connection, 8, "RUNTIMEINFO", [str(index)])
+            kind, payload = self.connection.decoded()[0]
+            self.assertEqual(kind, "OK")
+            self.assertEqual(json.loads(payload), expected)
+        for index in ("-1", "2", "invalid"):
+            with self.assertRaisesRegex(simulator_pxadb.ServiceError, "invalid_runtime_record"):
+                self.service.dispatch(self.connection, 9, "RUNTIMEINFO", [index])
+
+    def test_runtime_profile_absence_is_explicit(self) -> None:
+        with self.assertRaisesRegex(simulator_pxadb.ServiceError, "runtime_profile_unavailable"):
+            self.service.dispatch(self.connection, 10, "RUNTIMEINFO", [])
 
 
 if __name__ == "__main__":

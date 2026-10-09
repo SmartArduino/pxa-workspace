@@ -7,6 +7,7 @@ import argparse
 import base64
 import hashlib
 import hmac
+import json
 import os
 import pathlib
 import secrets
@@ -89,11 +90,13 @@ def write_tcp_address(path: pathlib.Path, address: tuple[str, int]) -> None:
 class SimulatorPxaDb:
     def __init__(self, state_root: pathlib.Path, installer: pathlib.Path,
                  publisher_key: pathlib.Path,
-                 control_socket: pathlib.Path | None = None) -> None:
+                 control_socket: pathlib.Path | None = None,
+                 runtime_profile: dict | None = None) -> None:
         self.state_root = state_root
         self.installer = installer
         self.publisher_key = publisher_key
         self.control_socket = control_socket
+        self.runtime_profile = runtime_profile
         self.lock = threading.Lock()
         self.uploads: dict[int, tuple[pathlib.Path, pathlib.Path, int, str]] = {}
         self.state_root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -417,6 +420,19 @@ class SimulatorPxaDb:
                       "simulator=1;screenshot=png;input=pointer,key")
         elif command == "INFO":
             self.send(connection, sequence, "OK", "kind=simulator;package_installer=posix;protocol=2;debug_control=1")
+        elif command == "RUNTIMEINFO" and len(arguments) <= 1:
+            if self.runtime_profile is None:
+                raise ServiceError("runtime_profile_unavailable")
+            try:
+                index = int(arguments[0]) if arguments else 0
+                services = self.runtime_profile["services"]
+                if not 0 <= index <= len(services):
+                    raise ValueError("record outside profile")
+                record = ({key: value for key, value in self.runtime_profile.items() if key != "services"}
+                          if index == 0 else services[index - 1])
+            except (ValueError, KeyError) as error:
+                raise ServiceError("invalid_runtime_record") from error
+            self.send(connection, sequence, "OK", json.dumps(record, separators=(",", ":")))
         elif command in {"PING", "BYE"}:
             self.send(connection, sequence, "OK", "pong" if command == "PING" else "disconnected")
         elif command in {"LOGSUB", "LOGUNSUB"}:
@@ -537,6 +553,8 @@ def main() -> int:
     parser.add_argument("--installer", required=True, type=pathlib.Path)
     parser.add_argument("--publisher-key", required=True, type=pathlib.Path)
     parser.add_argument("--control-socket", type=pathlib.Path)
+    parser.add_argument("--runtime-profile", type=pathlib.Path,
+                        help="profile queried from this build's native simulator")
     parser.add_argument("--tcp-listen", type=parse_tcp_address)
     parser.add_argument("--token-file", type=pathlib.Path)
     parser.add_argument("--tcp-address-file", type=pathlib.Path)
@@ -562,6 +580,7 @@ def main() -> int:
     service = SimulatorPxaDb(
         state_root, arguments.installer.resolve(), arguments.publisher_key.resolve(),
         arguments.control_socket.resolve() if arguments.control_socket else None,
+        json.loads(arguments.runtime_profile.read_text()) if arguments.runtime_profile else None,
     )
     unix_server = UnixServer(str(socket_path), BinaryHandler)
     configure_server(unix_server, service, None)

@@ -191,6 +191,14 @@ integration component includes them.
 
 ## Dependencies
 
+App developers can use the [PXA DevKit](https://github.com/SmartArduino/pxa-system/releases)
+without this workspace or ESP-IDF. For Host and firmware maintenance, fetch the
+release's pinned public sources:
+
+```sh
+git clone --branch v0.2.0-rc.1 --recurse-submodules https://github.com/SmartArduino/pxa-workspace.git
+```
+
 `deps/pxa-system` is a standalone Git checkout pinned with its WAMR and
 page-manager submodules. The ESP host owns its small WAMR/ESP-IDF declaration
 shim directly. Source and CMake files contain
