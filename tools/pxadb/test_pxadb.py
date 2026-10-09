@@ -353,6 +353,17 @@ class PxaDbLogStreamingTest(unittest.TestCase):
             self.assertEqual(pxadb.serial_upload_profile("/dev/ttyUSB0"), "uart")
             self.assertEqual(pxadb.serial_upload_profile("/dev/unknown"), "unknown")
 
+    def test_serial_upload_profile_accepts_persistent_device_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            device = pathlib.Path(directory) / "ttyACM1"
+            device.touch()
+            alias = pathlib.Path(directory) / "by-id-pai-touch"
+            alias.symlink_to(device)
+            with mock.patch.object(pxadb, "list_ports") as list_ports:
+                list_ports.comports.return_value = [SimpleNamespace(
+                    device=str(device), vid=pxadb.ESPRESSIF_USB_VID)]
+                self.assertEqual(pxadb.serial_upload_profile(str(alias)), "usb")
+
     def test_simulator_parser_selects_a_unix_socket(self) -> None:
         arguments = pxadb.build_parser().parse_args([
             "package", "list", "--simulator", "pai-touch"

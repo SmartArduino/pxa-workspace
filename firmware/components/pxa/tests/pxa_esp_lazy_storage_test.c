@@ -163,8 +163,32 @@ int main(void) {
     assert(services.scheduler_store != NULL && services.posix_storage != NULL);
     assert(lazy_storage_get(&services, key, bytes, sizeof(bytes), &size) == PXA_STATUS_OK);
     assert(size == 5 && memcmp(bytes, "saved", 5) == 0);
-    assert(lazy_storage_remove(&services, key) == PXA_STATUS_OK);
+    /* An upgrade must retain the old canonical-identity directory's KV data
+     * and expose the same directory to both file and storage services. */
     pxa_esp_services_destroy(&services); release_workspaces();
+    {
+        char identity[80], legacy[256], managed[256], resolved[256];
+        memset(identity, 'a', 64);
+        strcpy(identity + 64, ":app");
+        snprintf(legacy, sizeof(legacy), "%s/data/%s", root, identity);
+        snprintf(managed, sizeof(managed), "%s", legacy);
+        managed[strlen(root) + strlen("/data/") + 64] = '~';
+        assert(rename(path, legacy) == 0);
+        host.identity = identity;
+        assert(initialize_storage(&services, &host, &result) == PXA_STATUS_OK);
+        assert(access(legacy, F_OK) != 0 && access(managed, F_OK) == 0);
+        assert(lazy_storage_get(&services, key, bytes, sizeof(bytes), &size) == PXA_STATUS_OK);
+        assert(size == 5 && memcmp(bytes, "saved", 5) == 0);
+        assert(prepare_private_root(resolved, sizeof(resolved), identity));
+        assert(strcmp(resolved, managed) == 0);
+        /* A conflicting legacy directory is retained, never overwritten or
+         * merged into an existing managed application's data. */
+        assert(mkdir(legacy, 0700) == 0);
+        assert(prepare_private_root(resolved, sizeof(resolved), identity));
+        assert(access(legacy, F_OK) == 0 && access(managed, F_OK) == 0);
+        assert(lazy_storage_remove(&services, key) == PXA_STATUS_OK);
+        pxa_esp_services_destroy(&services); release_workspaces();
+    }
     pxa_runtime_deinit(runtime); free(workspace);
     assert(pxa_posix_fs_remove_tree(root) == PXA_STATUS_OK);
     return 0;

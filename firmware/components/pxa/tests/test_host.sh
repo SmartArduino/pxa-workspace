@@ -52,6 +52,10 @@ build_and_run store_policy \
   -I"$component_dir/src/package" \
   -I"$pxa_system_dir/libpxa/include" \
   "$tests_dir/pxa_esp_store_policy_test.c"
+build_and_run install_space \
+  -I"$pxa_system_dir/libpxa/include" \
+  -I"$pxa_system_dir/libpxa/adapters/include" \
+  "$tests_dir/pxa_install_space_test.c"
 build_and_run surface_transform \
   -I"$component_dir/include" \
   "$tests_dir/pxa_surface_transform_test.c"

@@ -44,8 +44,9 @@ class PxaDbError(RuntimeError):
 def serial_upload_profile(port: str) -> str:
     if list_ports is None:
         return "unknown"
+    resolved_port = os.path.realpath(port)
     for candidate in list_ports.comports():
-        if candidate.device == port:
+        if os.path.realpath(candidate.device) == resolved_port:
             if candidate.vid == ESPRESSIF_USB_VID:
                 return "usb"
             return "uart" if candidate.vid is not None else "unknown"

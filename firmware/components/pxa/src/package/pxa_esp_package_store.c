@@ -2081,6 +2081,15 @@ bool pxa_esp_package_store_uninstall(const char *identity) {
     }
     status = pxa_posix_fs_remove_tree(data_path);
     cleanup_ok = status == PXA_STATUS_OK || status == PXA_STATUS_NOT_FOUND;
+    /* Also remove this verified app's pre-migration runtime namespace. */
+    if (snprintf(data_path, sizeof(data_path), "%s/%s", g_store->data_root,
+                 canonical) >= (int)sizeof(data_path)) {
+        cleanup_ok = false;
+    } else {
+        status = pxa_posix_fs_remove_tree(data_path);
+        if (status != PXA_STATUS_OK && status != PXA_STATUS_NOT_FOUND)
+            cleanup_ok = false;
+    }
     if (!cleanup_ok)
         ESP_LOGW(PXA_ESP_PACKAGE_TAG, "Private data cleanup failed for %s",
                  canonical);
@@ -2133,6 +2142,13 @@ bool pxa_esp_package_store_clear_data(const char *identity) {
     release_lock(g_store->metadata_lock);
     path_size = snprintf(data_path, sizeof(data_path), "%s/%s",
                          g_store->data_root, storage_key);
+    if (path_size < 0 || (size_t)path_size >= sizeof(data_path)) goto done;
+    status = pxa_posix_fs_remove_tree(data_path);
+    if (status != PXA_STATUS_OK && status != PXA_STATUS_NOT_FOUND) goto done;
+    /* Runtime versions before the namespace fix used the canonical colon
+     * identity directly. Clear only this authenticated app's old directory. */
+    path_size = snprintf(data_path, sizeof(data_path), "%s/%s",
+                         g_store->data_root, canonical);
     if (path_size < 0 || (size_t)path_size >= sizeof(data_path)) goto done;
     status = pxa_posix_fs_remove_tree(data_path);
     if (status != PXA_STATUS_OK && status != PXA_STATUS_NOT_FOUND) goto done;

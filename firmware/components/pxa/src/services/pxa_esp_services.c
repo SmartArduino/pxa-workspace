@@ -290,14 +290,27 @@ static pxa_status_t initialize_permission(
  * services must therefore be able to create a first-launch private root. */
 static int prepare_private_root(char *root, size_t capacity,
                                 const char *identity) {
+    char legacy[PXA_ESP_SERVICES_PATH_BYTES];
     int length = snprintf(root, capacity, "%s/%s/data",
                           CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT);
     if (length < 0 || (size_t)length >= capacity ||
         (mkdir(root, 0700) != 0 && errno != EEXIST)) return 0;
     int added = snprintf(root + length, capacity - (size_t)length,
                          "/%s", identity);
-    return added >= 0 && (size_t)added < capacity - (size_t)length &&
-           (mkdir(root, 0700) == 0 || errno == EEXIST);
+    if (added < 0 || (size_t)added >= capacity - (size_t)length) return 0;
+    /* Package management uses publisher~app, while runtime authority uses
+     * publisher:app. Migrate the previously used runtime directory atomically
+     * when the managed directory does not exist; never replace existing data. */
+    if (strlen(identity) > 65u && identity[64] == ':') {
+        struct stat old_info, new_info;
+        if (strlen(root) >= sizeof(legacy)) return 0;
+        strcpy(legacy, root);
+        root[length + 1 + 64] = '~';
+        if (stat(legacy, &old_info) == 0 && S_ISDIR(old_info.st_mode) &&
+            stat(root, &new_info) != 0 && errno == ENOENT &&
+            rename(legacy, root) != 0) return 0;
+    }
+    return mkdir(root, 0700) == 0 || errno == EEXIST;
 }
 
 static pxa_status_t initialize_fs(
@@ -405,10 +418,13 @@ static pxa_status_t initialize_storage(
     size_t workspace_size;
     memset(&config, 0, sizeof(config));
     config.struct_size = sizeof(config);
-    if (!prepare_private_root(root, sizeof(root), host->identity) ||
-        snprintf(root, sizeof(root), "%s/%s/data/%s/.pxa-storage",
-                 CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT,
-                 host->identity) >= (int)sizeof(root) ||
+    if (!prepare_private_root(root, sizeof(root), host->identity)) {
+        return fail(result, "create-private-storage-root", PXA_STATUS_INTERNAL,
+                    PXA_ESP_SERVICES_ISSUE_NONE);
+    }
+    size_t root_size = strlen(root);
+    if (snprintf(root + root_size, sizeof(root) - root_size,
+                 "/.pxa-storage") >= (int)(sizeof(root) - root_size) ||
         (mkdir(root, 0700) != 0 && errno != EEXIST)) {
         return fail(result, "create-private-storage-root", PXA_STATUS_INTERNAL,
                     PXA_ESP_SERVICES_ISSUE_NONE);
