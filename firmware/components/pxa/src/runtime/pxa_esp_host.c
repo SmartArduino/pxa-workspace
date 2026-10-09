@@ -40,6 +40,8 @@
 #include "pxa/lvgl/pxa_lvgl_ui.h"
 #include "pxa/net.h"
 #include "pxa/package.h"
+#include "pxa/profile.h"
+#include "wasm_export.h"
 #include "pxa/permission.h"
 #include "pxa/runtime.h"
 #include "pxa/scheduler.h"
@@ -2918,6 +2920,92 @@ static void stop_active(pxa_stop_reason_t reason) {
     activation_state_reset();
 }
 
+/* Shared by activation and paged diagnostics; no retained cache or allocation. */
+static void host_profiles(pxa_package_host_profile_t *host_profile,
+                          pxa_package_activation_profile_t *capabilities,
+                          pxa_package_service_capability_t *service_capabilities) {
+    size_t index;
+    memset(host_profile, 0, sizeof(*host_profile));
+    host_profile->target =
+        (pxa_bytes_t){(const uint8_t *)PXA_ESP_HOST_TARGET,
+                      sizeof(PXA_ESP_HOST_TARGET) - 1u};
+    host_profile->engine = (pxa_bytes_t){(const uint8_t *)"wamr", 4};
+    host_profile->engine_abi =
+        (pxa_bytes_t){(const uint8_t *)PXSYS_WAMR_ENGINE_ABI,
+                      sizeof(PXSYS_WAMR_ENGINE_ABI) - 1u};
+    host_profile->memory_model = PXA_MEMORY_WASM32;
+    memset(capabilities, 0, sizeof(*capabilities));
+    {
+#define HOST_SERVICE_VERSION(name) \
+    { PXA_##name##_SERVICE_ID, \
+      { PXA_##name##_SERVICE_MAJOR, PXA_##name##_SERVICE_MINOR }, 0 }
+        static const pxa_package_service_capability_t registered_versions[] = {
+            HOST_SERVICE_VERSION(CORE),
+            HOST_SERVICE_VERSION(WINDOW),
+            HOST_SERVICE_VERSION(UI),
+            { PXA_CLOCK_SERVICE_ID,
+              { PXA_CORE_SERVICE_MAJOR, PXA_CORE_SERVICE_MINOR }, 0 },
+            HOST_SERVICE_VERSION(FS),
+            HOST_SERVICE_VERSION(STORAGE),
+            HOST_SERVICE_VERSION(IPC),
+            HOST_SERVICE_VERSION(SENSOR),
+            HOST_SERVICE_VERSION(NET),
+            HOST_SERVICE_VERSION(AUDIO),
+            HOST_SERVICE_VERSION(PERMISSION),
+            HOST_SERVICE_VERSION(WORK),
+            HOST_SERVICE_VERSION(SURFACE),
+            HOST_SERVICE_VERSION(GAME_RENDER),
+            HOST_SERVICE_VERSION(ASSETS),
+            HOST_SERVICE_VERSION(LOG),
+#ifdef CONFIG_PXA_WASI_LIBC
+            HOST_SERVICE_VERSION(WASI),
+#endif
+            HOST_SERVICE_VERSION(DEVICE),
+            HOST_SERVICE_VERSION(HOST_SYSTEM),
+            HOST_SERVICE_VERSION(STORE_INSTALL),
+        };
+#undef HOST_SERVICE_VERSION
+        _Static_assert(sizeof(registered_versions) / sizeof(registered_versions[0]) <=
+                       PXA_ESP_HOST_MAX_SERVICES, "Host service table exceeds its fixed capacity");
+        memcpy(service_capabilities, registered_versions,
+               sizeof(registered_versions));
+        capabilities->core_version.major = PXA_CORE_VERSION_MAJOR;
+        capabilities->core_version.minor = PXA_CORE_VERSION_MINOR;
+        capabilities->services = service_capabilities;
+        capabilities->service_count =
+            (uint16_t)(sizeof(registered_versions) /
+                       sizeof(registered_versions[0]));
+        for (index = 0; index < capabilities->service_count; ++index) {
+#ifdef CONFIG_PXA_WASI_LIBC
+            if (service_capabilities[index].service == PXA_WASI_SERVICE_ID) {
+                service_capabilities[index].features =
+                    PXA_WASI_FEATURE_CLOCKS | PXA_WASI_FEATURE_RANDOM;
+            }
+#endif
+            if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
+                service_capabilities[index].features = PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS;
+            if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {
+                service_capabilities[index].features =
+                    PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
+                    PXA_UI_FEATURE_GRID |
+                    PXA_UI_FEATURE_RGB565_BITMAP |
+                    PXA_UI_FEATURE_CONTROLLER_INPUT |
+                    PXA_UI_FEATURE_CANVAS_STREAM_IO;
+            }
+        }
+    }
+}
+
+int32_t pxa_esp_host_profile_record(size_t record, char *output, size_t capacity) {
+    pxa_package_host_profile_t host;
+    pxa_package_activation_profile_t activation;
+    pxa_package_service_capability_t services[PXA_ESP_HOST_MAX_SERVICES];
+    host_profiles(&host, &activation, services);
+    return pxa_package_profile_record(&host, &activation,
+                                      wasm_runtime_is_running_mode_supported(Mode_Interp),
+                                      record, output, capacity);
+}
+
 static int start_verified(const char *identity) {
     pxa_package_manifest_t *manifest = NULL;
     pxa_activation_plan_t *plan = NULL;
@@ -3122,73 +3210,7 @@ static int start_verified(const char *identity) {
         PXA_ESP_START_FAIL("allocate-job-slots", PXA_STATUS_RESOURCE_LIMIT);
     }
     /* Activation plan + coordinator. */
-    memset(&host_profile, 0, sizeof(host_profile));
-    host_profile.target =
-        (pxa_bytes_t){(const uint8_t *)PXA_ESP_HOST_TARGET,
-                      sizeof(PXA_ESP_HOST_TARGET) - 1u};
-    host_profile.engine = (pxa_bytes_t){(const uint8_t *)"wamr", 4};
-    host_profile.engine_abi =
-        (pxa_bytes_t){(const uint8_t *)PXSYS_WAMR_ENGINE_ABI,
-                      sizeof(PXSYS_WAMR_ENGINE_ABI) - 1u};
-    host_profile.memory_model = PXA_MEMORY_WASM32;
-    memset(&capabilities, 0, sizeof(capabilities));
-    {
-#define HOST_SERVICE_VERSION(name) \
-    { PXA_##name##_SERVICE_ID, \
-      { PXA_##name##_SERVICE_MAJOR, PXA_##name##_SERVICE_MINOR }, 0 }
-        static const pxa_package_service_capability_t registered_versions[] = {
-            HOST_SERVICE_VERSION(CORE),
-            HOST_SERVICE_VERSION(WINDOW),
-            HOST_SERVICE_VERSION(UI),
-            { PXA_CLOCK_SERVICE_ID,
-              { PXA_CORE_SERVICE_MAJOR, PXA_CORE_SERVICE_MINOR }, 0 },
-            HOST_SERVICE_VERSION(FS),
-            HOST_SERVICE_VERSION(STORAGE),
-            HOST_SERVICE_VERSION(IPC),
-            HOST_SERVICE_VERSION(SENSOR),
-            HOST_SERVICE_VERSION(NET),
-            HOST_SERVICE_VERSION(AUDIO),
-            HOST_SERVICE_VERSION(PERMISSION),
-            HOST_SERVICE_VERSION(WORK),
-            HOST_SERVICE_VERSION(SURFACE),
-            HOST_SERVICE_VERSION(GAME_RENDER),
-            HOST_SERVICE_VERSION(ASSETS),
-            HOST_SERVICE_VERSION(LOG),
-#ifdef CONFIG_PXA_WASI_LIBC
-            HOST_SERVICE_VERSION(WASI),
-#endif
-            HOST_SERVICE_VERSION(DEVICE),
-            HOST_SERVICE_VERSION(HOST_SYSTEM),
-            HOST_SERVICE_VERSION(STORE_INSTALL),
-        };
-#undef HOST_SERVICE_VERSION
-        memcpy(service_capabilities, registered_versions,
-               sizeof(registered_versions));
-        capabilities.core_version.major = PXA_CORE_VERSION_MAJOR;
-        capabilities.core_version.minor = PXA_CORE_VERSION_MINOR;
-        capabilities.services = service_capabilities;
-        capabilities.service_count =
-            (uint16_t)(sizeof(registered_versions) /
-                       sizeof(registered_versions[0]));
-        for (index = 0; index < capabilities.service_count; ++index) {
-#ifdef CONFIG_PXA_WASI_LIBC
-            if (service_capabilities[index].service == PXA_WASI_SERVICE_ID) {
-                service_capabilities[index].features =
-                    PXA_WASI_FEATURE_CLOCKS | PXA_WASI_FEATURE_RANDOM;
-            }
-#endif
-            if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
-                service_capabilities[index].features = PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS;
-            if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {
-                service_capabilities[index].features =
-                    PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
-        PXA_UI_FEATURE_GRID |
-                    PXA_UI_FEATURE_RGB565_BITMAP |
-                    PXA_UI_FEATURE_CONTROLLER_INPUT |
-                    PXA_UI_FEATURE_CANVAS_STREAM_IO;
-            }
-        }
-    }
+    host_profiles(&host_profile, &capabilities, service_capabilities);
     plan_size =
         pxa_activation_plan_workspace_size(manifest->component_count);
     g_host.activation.plan_workspace = activation_alloc(plan_size);

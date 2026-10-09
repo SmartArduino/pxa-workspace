@@ -155,6 +155,8 @@ typedef bool (*pxa_host_system_request_fn)(
     uint32_t request_id, const uint8_t *payload, size_t payload_size);
 
 /* Public C facade over the ESP PXA host. */
+/* On-demand runtime capability records; no persistent buffer. */
+int32_t pxa_host_profile_record(size_t record, char *output, size_t capacity);
 bool pxa_host_initialize(void);
 bool pxa_host_start_runtime(void);
 bool pxa_host_scan_packages(void);

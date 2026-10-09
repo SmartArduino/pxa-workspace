@@ -18,6 +18,9 @@ extern "C" {
  * data), esp_timer clock/watchdog and the FreeRTOS command queue.
  * Replaces the legacy C++ runtime host. */
 
+/* One bounded JSON record, PXA_STATUS_NOT_FOUND after the last service. */
+int32_t pxa_esp_host_profile_record(size_t record, char *output, size_t capacity);
+
 bool pxa_esp_host_initialize(void);
 bool pxa_esp_host_start_runtime(void);
 void pxa_esp_host_sync_builtins(void);

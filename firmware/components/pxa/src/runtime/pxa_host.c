@@ -379,6 +379,10 @@ bool pxa_host_set_app_permission(const char *identity_key,
     return pxa_esp_host_set_permission(identity_key, permission_index, granted);
 }
 
+int32_t pxa_host_profile_record(size_t record, char *output, size_t capacity) {
+    return pxa_esp_host_profile_record(record, output, capacity);
+}
+
 bool pxa_host_ready(void) {
     return g_host_ready;
 }

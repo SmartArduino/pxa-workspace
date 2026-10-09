@@ -691,6 +691,28 @@ def command_info(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def runtime_profile(client) -> dict:
+    try:
+        profile = json.loads(client.request("RUNTIMEINFO 0")[-1].payload)
+        count = profile["service_count"]
+        if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 128:
+            raise ValueError("invalid service count")
+        profile["services"] = [json.loads(client.request(f"RUNTIMEINFO {index}")[-1].payload)
+                               for index in range(1, count + 1)]
+        if len({entry["id"] for entry in profile["services"]}) != count:
+            raise ValueError("duplicate runtime service")
+        return profile
+    except (KeyError, ValueError, TypeError) as error:
+        raise PxaDbError("invalid runtime capability profile") from error
+
+
+def command_runtime(arguments: argparse.Namespace) -> int:
+    with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
+                     arguments.timeout, arguments.logcat) as client:
+        print(json.dumps(runtime_profile(client), indent=2))
+    return 0
+
+
 def command_memory(arguments: argparse.Namespace) -> int:
     with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
                      arguments.timeout) as client:
@@ -1738,6 +1760,9 @@ def build_parser() -> argparse.ArgumentParser:
     info = subcommands.add_parser("info", help="print device information")
     add_connection_arguments(info)
     info.set_defaults(handler=command_info)
+    runtime = subcommands.add_parser("runtime", help="query actual Core, services and AOT ABI")
+    add_connection_arguments(runtime)
+    runtime.set_defaults(handler=command_runtime)
 
     memory = subcommands.add_parser("memory", help="read ESP heap and PXA resource memory statistics")
     add_connection_arguments(memory, allow_logcat=False)
