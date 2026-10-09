@@ -1032,6 +1032,12 @@ bool ManageFile(void*, const char* path, const char* destination,
 
 void PublishDisplayProfile(void*, const pxsys_display_profile_t* display) {
     if (display == nullptr) return;
+    // Keep the density source read by the Guest Host in step with live profile
+    // changes as well as the initial board profile.
+    lv_lock();
+    if (auto* panel = lv_display_get_default(); panel != nullptr)
+        lv_display_set_dpi(panel, display->density_dpi);
+    lv_unlock();
     g_display_width = display->width;
     g_display_height = display->height;
     pxsys_reference_layout_t layout;

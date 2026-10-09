@@ -132,6 +132,7 @@ typedef struct {
     /* Real primary display metrics; zero falls back to the legacy default. */
     uint32_t primary_width;
     uint32_t primary_height;
+    uint32_t density_q16;
     uint32_t safe_insets[4];
     uint32_t display_shape;
     uint32_t corner_radii[4];

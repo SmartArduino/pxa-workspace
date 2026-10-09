@@ -922,6 +922,7 @@ static pxa_status_t initialize_window_ui(
                       PXA_UI_FEATURE_CANVAS_STREAM_IO;
     config.primary_width = host->primary_width != 0 ? host->primary_width : 320;
     config.primary_height = host->primary_height != 0 ? host->primary_height : 240;
+    config.density_q16 = host->density_q16 != 0 ? host->density_q16 : UINT32_C(65536);
     for (uint8_t index = 0; index < 4; ++index)
         config.safe_insets[index] = host->safe_insets[index];
     config.display_shape = host->display_shape;

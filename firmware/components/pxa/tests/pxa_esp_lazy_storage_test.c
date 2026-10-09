@@ -112,6 +112,75 @@ static void release_workspaces(void) {
 
 int64_t esp_timer_get_time(void) { return 1000; }
 
+static pxa_status_t startup_ui_begin(void *context,
+    const pxa_ui_transaction_info_t *info, void **transaction) {
+    (void)context; (void)info; (void)transaction;
+    assert(!"startup must not submit a UI transaction");
+    return PXA_STATUS_INTERNAL;
+}
+static pxa_status_t startup_ui_apply(void *context, void *transaction,
+    const pxa_ui_command_view_t *command, void **created) {
+    (void)context; (void)transaction; (void)command; (void)created;
+    return PXA_STATUS_INTERNAL;
+}
+static pxa_status_t startup_ui_commit(void *context, void *transaction) {
+    (void)context; (void)transaction; return PXA_STATUS_INTERNAL;
+}
+static void startup_ui_cancel(void *context, void *transaction) {
+    (void)context; (void)transaction;
+}
+static pxa_status_t startup_ui_canvas(void *context,
+    const pxa_ui_canvas_view_t *frame, pxa_ui_release_fn release,
+    void *release_context) {
+    (void)context; (void)frame; (void)release; (void)release_context;
+    return PXA_STATUS_INTERNAL;
+}
+
+static void test_display_startup(pxa_runtime_t *runtime) {
+    for (unsigned variant = 0; variant < 2; ++variant) {
+        pxa_esp_services_t services = {0};
+        pxa_esp_services_config_t host = {0};
+        pxa_esp_services_result_t result;
+        pxa_ui_backend_t backend = {0};
+        pxa_ui_environment_t environment;
+        pxa_component_t component;
+        uint8_t encoded[128]; size_t encoded_size;
+        host.runtime = runtime; host.allocate = test_allocate;
+        host.primary_width = host.primary_height = 480;
+        host.density_q16 = variant ? 124928u : 0; // Mosaico 305 DPI / legacy default.
+        host.display_shape = 1;
+        for (unsigned i = 0; i < 4; ++i) {
+            host.safe_insets[i] = 12; host.corner_radii[i] = 58;
+        }
+        assert(initialize_window_ui(&services, &host, &result) == PXA_STATUS_OK);
+        assert(pxa_component_create(runtime, variant+1, &component) == PXA_STATUS_OK);
+        assert(pxa_component_begin_start(runtime, component) == PXA_STATUS_OK);
+        backend.struct_size = sizeof(backend);
+        backend.begin = startup_ui_begin; backend.apply = startup_ui_apply;
+        backend.commit = startup_ui_commit; backend.cancel = startup_ui_cancel;
+        backend.present_canvas = startup_ui_canvas;
+        assert(pxa_ui_bind(services.ui, component, &backend) == PXA_STATUS_OK);
+        assert(pxa_ui_get_environment(services.ui, component,
+            PXA_UI_PRIMARY_SURFACE, &environment) == PXA_STATUS_OK);
+        assert(environment.width == 480 && environment.height == 480);
+        assert(environment.density_q16 == (variant ? 124928u : 65536u));
+        assert(environment.font_scale_q16 == 65536u);
+        assert(environment.safe_insets[0] == 12 && environment.corner_radii[0] == 58);
+        assert(pxa_ui_encode_environment(&environment, encoded, sizeof(encoded),
+                                        &encoded_size) == PXA_STATUS_OK);
+        assert(pxa_read_u16(encoded+24) == 4 &&
+               pxa_read_u32(encoded+28) == environment.density_q16);
+        // prepare_start cannot send environment events; onStart needs the
+        // correct snapshot without going through the running event mailbox.
+        assert(pxa_event_post_message(runtime, component, PXA_UI_SERVICE_ID,
+            PXA_UI_ENVIRONMENT_CHANGED, 0, (pxa_bytes_t){encoded, encoded_size},
+            1, 0) == PXA_STATUS_BAD_STATE);
+        assert(pxa_component_finish_start(runtime, component, PXA_STATUS_OK) == PXA_STATUS_OK);
+        pxa_esp_services_destroy(&services); release_workspaces();
+    }
+    puts("ESP Guest UI startup: default/305 DPI encoded before onStart, no startup events OK");
+}
+
 int main(void) {
     char root[] = "/tmp/pxa-lazy-storage-XXXXXX";
     char path[256];
@@ -136,6 +205,7 @@ int main(void) {
     workspace = malloc(pxa_runtime_workspace_size(&limits));
     assert(pxa_runtime_init(workspace, pxa_runtime_workspace_size(&limits),
                             &limits, &runtime) == PXA_STATUS_OK);
+    test_display_startup(runtime);
     host.runtime = runtime; host.identity = "app";
     host.allocate = test_allocate; host.manifest = &manifest;
     host.work_epoch = 1;

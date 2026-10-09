@@ -3068,6 +3068,10 @@ static int start_verified(const char *identity) {
                 (uint32_t)lv_display_get_horizontal_resolution(display);
             services_config.primary_height =
                 (uint32_t)lv_display_get_vertical_resolution(display);
+            uint32_t dpi = lv_display_get_dpi(display);
+            services_config.density_q16 = dpi != 0
+                ? (uint32_t)(((uint64_t)dpi * UINT32_C(65536) + 80u) / 160u)
+                : UINT32_C(65536);
         }
         lv_unlock();
         portENTER_CRITICAL(&g_process_state_lock);
@@ -3536,21 +3540,43 @@ static void apply_ui_palette(const uint32_t rgba[PXA_UI_THEME_ROLE_COUNT]) {
     }
 }
 
-static void apply_window_insets(const pxa_window_insets_t *safe_insets,
-                                const pxa_window_insets_t *system_bar_insets) {
-    pxa_ui_environment_t environment;
-    uint32_t display_shape;
-    uint32_t corner_radii[4];
+/* The board publishes its DPI through the LVGL display. Read it both before
+ * onStart and on profile changes: the adapter is constructed before the
+ * integration publishes the board profile, so its initial values can be stale.
+ * Surface sizes/insets stay in pixels; UI lengths and Canvas pointers use dp. */
+static void read_display_environment(pxa_ui_environment_t *environment) {
     lv_display_t *display;
     lv_lock();
     display = lv_display_get_default();
+    if (display != NULL) {
+        uint32_t dpi = lv_display_get_dpi(display);
+        environment->width = (uint32_t)lv_display_get_horizontal_resolution(display);
+        environment->height = (uint32_t)lv_display_get_vertical_resolution(display);
+        environment->density_q16 = dpi != 0
+            ? (uint32_t)(((uint64_t)dpi * UINT32_C(65536) + 80u) / 160u)
+            : UINT32_C(65536);
+    }
     lv_unlock();
+    portENTER_CRITICAL(&g_process_state_lock);
+    if (g_host.window_insets_valid) {
+        environment->safe_insets[0] = g_host.safe_insets.top;
+        environment->safe_insets[1] = g_host.safe_insets.right;
+        environment->safe_insets[2] = g_host.safe_insets.bottom;
+        environment->safe_insets[3] = g_host.safe_insets.left;
+    }
+    environment->display_shape = g_host.display_shape;
+    memcpy(environment->corner_radii, g_host.corner_radii,
+           sizeof(environment->corner_radii));
+    portEXIT_CRITICAL(&g_process_state_lock);
+}
+
+static void apply_window_insets(const pxa_window_insets_t *safe_insets,
+                                const pxa_window_insets_t *system_bar_insets) {
+    pxa_ui_environment_t environment;
     portENTER_CRITICAL(&g_process_state_lock);
     if (safe_insets != NULL) g_host.safe_insets = *safe_insets;
     if (system_bar_insets != NULL) g_host.system_bar_insets = *system_bar_insets;
     g_host.window_insets_valid = 1;
-    display_shape = g_host.display_shape;
-    memcpy(corner_radii, g_host.corner_radii, sizeof(corner_radii));
     portEXIT_CRITICAL(&g_process_state_lock);
     if (g_host.activation.services.ui == NULL ||
         g_host.activation.ui_component == PXA_COMPONENT_INVALID ||
@@ -3559,19 +3585,7 @@ static void apply_window_insets(const pxa_window_insets_t *safe_insets,
                                PXA_UI_PRIMARY_SURFACE, &environment) !=
             PXA_STATUS_OK)
         return;
-    if (display != NULL) {
-        environment.width = (uint32_t)lv_display_get_horizontal_resolution(display);
-        environment.height = (uint32_t)lv_display_get_vertical_resolution(display);
-    }
-    if (safe_insets != NULL) {
-        environment.safe_insets[0] = safe_insets->top;
-        environment.safe_insets[1] = safe_insets->right;
-        environment.safe_insets[2] = safe_insets->bottom;
-        environment.safe_insets[3] = safe_insets->left;
-    }
-    environment.display_shape = display_shape;
-    memcpy(environment.corner_radii, corner_radii,
-           sizeof(environment.corner_radii));
+    read_display_environment(&environment);
     (void)pxa_ui_update_environment(g_host.activation.services.ui,
                                     g_host.activation.ui_component,
                                     &environment);
@@ -4574,6 +4588,7 @@ static pxa_status_t set_ui_startup_config(
     pxa_status_t status = pxa_ui_get_environment(
         g_host.activation.services.ui, component, PXA_UI_PRIMARY_SURFACE, &environment);
     if (status != PXA_STATUS_OK) return status;
+    read_display_environment(&environment);
     status = pxa_ui_encode_environment(
         &environment, environment_bytes, sizeof(environment_bytes),
         &environment_size);
@@ -4632,10 +4647,14 @@ static pxa_status_t prepare_start(void *context, pxa_component_t component,
         pxa_ui_environment_t environment;
         status = pxa_ui_get_environment(g_host.activation.services.ui, component,
                                         PXA_UI_PRIMARY_SURFACE, &environment);
-        if (status == PXA_STATUS_OK &&
-            g_host.ui_backend.environment_changed != NULL)
-            status = g_host.ui_backend.environment_changed(
-                g_host.ui_backend.context, &environment);
+        if (status == PXA_STATUS_OK) {
+            read_display_environment(&environment);
+            /* The component is STARTING: no event can be posted yet. Its UI
+             * service was seeded above, and onStart receives the snapshot. */
+            if (g_host.ui_backend.environment_changed != NULL)
+                status = g_host.ui_backend.environment_changed(
+                    g_host.ui_backend.context, &environment);
+        }
         if (status != PXA_STATUS_OK) {
             (void)pxa_ui_unbind(g_host.activation.services.ui, component);
             (void)pxa_window_unbind(g_host.activation.services.window, component);
@@ -4762,28 +4781,9 @@ bool pxa_esp_host_initialize(void) {
     ui_config.event_callback = on_ui_event;
     ui_config.now_us = host_now_us;
     ui_config.primary_environment.surface = PXA_UI_PRIMARY_SURFACE;
-    {
-        lv_display_t *display;
-        lv_lock();
-        display = lv_display_get_default();
-        if (display != NULL) {
-            ui_config.primary_environment.width =
-                (uint32_t)lv_display_get_horizontal_resolution(display);
-            ui_config.primary_environment.height =
-                (uint32_t)lv_display_get_vertical_resolution(display);
-        }
-        lv_unlock();
-    }
-    portENTER_CRITICAL(&g_process_state_lock);
-    if (g_host.window_insets_valid) {
-        ui_config.primary_environment.safe_insets[0] = g_host.safe_insets.top;
-        ui_config.primary_environment.safe_insets[1] = g_host.safe_insets.right;
-        ui_config.primary_environment.safe_insets[2] = g_host.safe_insets.bottom;
-        ui_config.primary_environment.safe_insets[3] = g_host.safe_insets.left;
-    }
-    portEXIT_CRITICAL(&g_process_state_lock);
     ui_config.primary_environment.density_q16 = UINT32_C(1) << 16;
     ui_config.primary_environment.font_scale_q16 = UINT32_C(1) << 16;
+    read_display_environment(&ui_config.primary_environment);
     ui_config.primary_environment.color_scheme = g_host.color_scheme;
     ui_config.primary_environment.features =
         PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
