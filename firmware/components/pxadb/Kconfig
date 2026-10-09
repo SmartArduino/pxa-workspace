@@ -25,6 +25,13 @@ menu "PXADB development service"
 
         config PXADB_TRANSPORT_UART
             bool "UART"
+
+        config PXADB_TRANSPORT_USB_CDC
+            bool "USB OTG CDC (board-initialized TinyUSB)"
+            depends on SOC_USB_OTG_SUPPORTED
+            help
+                The board must initialize TinyUSB CDC ACM interface 0 before
+                starting PXADB. Console output may share this interface.
     endchoice
 
     config PXADB_UART_PORT

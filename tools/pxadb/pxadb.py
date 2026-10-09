@@ -396,7 +396,19 @@ class PxaDbClient:
             return self._collect_binary_frames(sequence, terminal_kinds, command,
                                                deadline)
         frames: list[Frame] = []
+        # ESP32-S31 CDC can leave the final deploy response pending after flash
+        # writes until the next OUT packet. Keep the connection active while
+        # waiting, preserving the original request's sequence and result.
+        keepalive = (command.startswith("PACKAGE deploy ")
+                     and getattr(self, "upload_profile", "unknown") == "usb")
+        next_ping = time.monotonic() + 1.0
+        ping_sequences: set[int] = set()
         while time.monotonic() < deadline:
+            if keepalive and time.monotonic() >= next_ping:
+                ping_sequence = self._next_sequence()
+                ping_sequences.add(ping_sequence)
+                self._write_command(ping_sequence, "PING")
+                next_ping = time.monotonic() + 5.0
             raw = self.serial.readline()
             if not raw:
                 continue
@@ -408,6 +420,8 @@ class PxaDbClient:
             if self.log_subscribed and frame.kind in {"LOG", "DROP"}:
                 self._emit_log(frame)
                 continue
+            if frame.sequence in ping_sequences:
+                continue
             if frame.sequence != sequence:
                 self.pending_frames.append(frame)
                 continue
@@ -416,6 +430,11 @@ class PxaDbClient:
             if frame.kind in terminal_kinds:
                 return frames + [frame]
             frames.append(frame)
+        if command.startswith("PACKAGE deploy "):
+            raise PxaDbError(
+                "device did not return the installation result; the package "
+                "may already be installed; check 'pxadb packages' and device logs"
+            )
         operation = command.split(" ", 1)[0]
         raise PxaDbError(
             f"device did not respond to {operation}; verify that PXADB is "

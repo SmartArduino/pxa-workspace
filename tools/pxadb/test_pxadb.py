@@ -123,6 +123,40 @@ class SerialLineReaderTest(unittest.TestCase):
 
 
 class PxaDbLogStreamingTest(unittest.TestCase):
+    def test_usb_deploy_pings_without_confusing_results(self) -> None:
+        client=fake_client([])
+        client.upload_profile="usb"
+        client.timeout=20
+        def write(value):
+            client.serial.writes.append(value)
+            if value.endswith(b" PING\n"):
+                client.serial.lines += [encoded_frame(2,"OK","pong"),
+                                        encoded_frame(1,"OK","installed")]
+            return len(value)
+        client.serial.write=write
+        with mock.patch.object(pxadb.time,"monotonic",side_effect=range(50)):
+            frames=client.request("PACKAGE deploy pxa-test")
+        self.assertEqual(frames[-1].payload,"installed")
+        self.assertEqual(len(client.serial.writes),2)
+        self.assertEqual(client.pending_frames,[])
+
+    def test_usb_deploy_ping_cannot_hide_install_error(self) -> None:
+        client=fake_client([]); client.upload_profile="usb"; client.timeout=20
+        def write(value):
+            if value.endswith(b" PING\n"):
+                client.serial.lines += [encoded_frame(2,"OK","pong"),
+                                        encoded_frame(1,"ERR","bad signature")]
+            return len(value)
+        client.serial.write=write
+        with mock.patch.object(pxadb.time,"monotonic",side_effect=range(50)):
+            with self.assertRaisesRegex(pxadb.PxaDbError,"bad signature"):
+                client.request("PACKAGE deploy pxa-test")
+
+    def test_uart_deploy_does_not_ping(self) -> None:
+        client=fake_client([encoded_frame(1,"OK","installed")]);client.upload_profile="uart"
+        self.assertEqual(client.request("PACKAGE deploy pxa-test")[-1].payload,"installed")
+        self.assertEqual(len(client.serial.writes),1)
+
     def test_request_ignores_raw_console_output_before_response(self) -> None:
         client = fake_client([
             b"I (42) app: boot complete\r\n",

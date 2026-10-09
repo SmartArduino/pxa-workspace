@@ -1,7 +1,8 @@
 # PXADB2 Binary Transport
 
 PXADB2 is the binary transport used by the desktop product simulator. PXADB1
-remains the USB Serial/JTAG protocol for firmware, so existing devices and
+remains the firmware protocol over USB Serial/JTAG, UART or board-initialized
+TinyUSB CDC (ESP-Mosaico), so existing devices and
 tools remain compatible.
 
 ## Framing
@@ -60,6 +61,14 @@ PACKAGE deploy <app-id>
 `READY` or `OK`; its offset supports retry and resume. `PACKAGE deploy` invokes
 the same signed POSIX installation transaction used by the simulator's local
 installer.
+
+On serial USB CDC, the client sends separately sequenced PING keepalives while
+waiting for PACKAGE deploy. This wakes pending IN responses after long flash/
+filesystem operations; PING replies never count as the installation result.
+Deploy still waits for its original OK/ERR sequence. If that result is lost,
+the timeout reports that installation may already have completed and recommends
+checking PACKAGES/logs. It does not diagnose an already-established session as
+PXADB being disabled.
 
 ## Simulator Debug Commands
 

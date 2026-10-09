@@ -21,6 +21,8 @@
 #if CONFIG_PXADB_TRANSPORT_UART
 #include <driver/gpio.h>
 #include <driver/uart.h>
+#elif CONFIG_PXADB_TRANSPORT_USB_CDC
+#include <tinyusb_cdc_acm.h>
 #else
 #include <driver/usb_serial_jtag.h>
 #include <driver/usb_serial_jtag_vfs.h>
@@ -182,6 +184,37 @@ bool TransportTxDone() {
 int TransportRead(uint8_t* buffer, size_t length, uint32_t timeout_ms) {
     return uart_read_bytes(kTransportPort, buffer, length,
                            pdMS_TO_TICKS(timeout_ms));
+}
+#elif CONFIG_PXADB_TRANSPORT_USB_CDC
+constexpr uint32_t kTransportReadPollMs = 5;
+constexpr size_t kTransportWriteChunk = 256;
+
+esp_err_t TransportStart() {
+    return tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0)
+        ? ESP_OK : ESP_ERR_INVALID_STATE;
+}
+
+int TransportWrite(const uint8_t* data, size_t length) {
+    const size_t written = tinyusb_cdcacm_write_queue(
+        TINYUSB_CDC_ACM_0, data, length);
+    (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+    return static_cast<int>(written);
+}
+
+bool TransportTxDone() {
+    return tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, kIoTimeout) == ESP_OK;
+}
+
+int TransportRead(uint8_t* buffer, size_t length, uint32_t timeout_ms) {
+    size_t received = 0;
+    // Resume a pending IN transfer after filesystem writes/cache stalls even
+    // when the host is only waiting for a response and sends no further data.
+    (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+    if (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, buffer, length,
+                           &received) != ESP_OK)
+        return -1;
+    if (received == 0) vTaskDelay(pdMS_TO_TICKS(timeout_ms));
+    return static_cast<int>(received);
 }
 #else
 constexpr uint32_t kTransportReadPollMs = 25;

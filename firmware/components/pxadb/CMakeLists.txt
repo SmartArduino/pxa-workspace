@@ -17,3 +17,7 @@ idf_component_register(
     SRCS "src_pxa_service.cc"
     INCLUDE_DIRS "include"
     PRIV_REQUIRES ${PXADB_PRIV_REQUIRES})
+
+if(CONFIG_PXADB_TRANSPORT_USB_CDC)
+    target_link_libraries(${COMPONENT_LIB} PRIVATE idf::espressif__esp_tinyusb)
+endif()

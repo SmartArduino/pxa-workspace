@@ -62,7 +62,15 @@ def main():
 
             def request(command):
                 record("COMMAND", command)
+                # Statistics can span several DATA frames. Live launch logs
+                # share the firmware's bounded TX queue; pause them while
+                # collecting a complete response, outside the FPS window.
+                quiet = client.log_subscribed and command.startswith(("MEMORY", "PERF"))
+                if quiet:
+                    client.unsubscribe_logs()
                 frames = client.request(command, timeout=20)
+                if quiet:
+                    client.subscribe_logs()
                 record("RESPONSE", [{"kind": f.kind, "payload": f.payload}
                                     for f in frames if f.kind != "DATA"])
                 return frames
