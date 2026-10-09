@@ -1,0 +1,14 @@
+dependencies:
+  idf:
+    version: '>=6.2'
+  78/esp-wifi-connect: ~3.1.5
+  78/esp_lcd_touch_cst92xx: ^0.1.0
+  espressif/button: ^4.2.1
+  espressif/esp_codec_dev: ~1.5.10
+  espressif/esp_lcd_co5300: '2.1.0'
+  espressif/esp_lcd_touch: ^1.2.1
+  espressif/esp_lv_decoder: ^0.4.3
+  espressif/esp_lvgl_adapter: ^0.7.2
+  espressif/esp_tinyusb: '2.2.1'
+  espressif/freetype: ^2.14.3~1
+  lvgl/lvgl: ^9.6.0~1

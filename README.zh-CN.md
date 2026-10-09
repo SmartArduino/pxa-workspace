@@ -34,7 +34,11 @@ ESP-IDF 依赖由拥有对应代码的目录声明。产品基线在 `firmware/m
 
 ## 编译指定板子
 
-通过板级工具编译与调试，并为每块板子使用独立构建目录：
+通过板级工具编译与调试，并为每块板子使用独立构建目录。
+
+`esp-mosaico` 配置适配 ESP32-S31、480 × 480 CO5300 显示、CST92xx 触摸、
+ES8311 播放和原生 USB CDC。硬件版本识别、ESP-IDF main 环境与当前外设限制见
+[板级说明](firmware/boards/esp-mosaico/README.md)。
 
 ```sh
 tools/firmware.sh pai-touch build

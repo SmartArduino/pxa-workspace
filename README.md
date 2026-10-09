@@ -46,7 +46,12 @@ resolution, but do not edit it manually.
 ## Build a selected board
 
 Build and debug board code through the board wrapper. It uses an independent
-build directory per board:
+build directory per board.
+
+The `esp-mosaico` profile targets ESP32-S31 with a 480 × 480 CO5300 panel,
+CST92xx touch, ES8311 playback and native USB CDC. See
+[its board guide](firmware/boards/esp-mosaico/README.md) for revision detection,
+the ESP-IDF main environment and hardware limitations.
 
 ```sh
 tools/firmware.sh pai-touch build

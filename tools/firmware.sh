@@ -55,5 +55,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Recent releases can appear in the official API before the storage index.
+# Honor an explicitly configured wrapper, including for custom registries.
+export IDF_COMPONENT_WRAPPER="${IDF_COMPONENT_WRAPPER:-$script_dir/idf_component_registry.py}"
+
+# Mosaico's external UART supports 2 Mbaud. Explicit --baud still wins, and
+# ESPBAUD remains available for users whose adapter needs a slower rate.
+if [[ "$board" == esp-mosaico && "$action" == flash ]]; then
+  export ESPBAUD="${ESPBAUD:-2000000}"
+fi
+
 exec "$idf_py" -C "$firmware_dir" -B "$build_dir" \
   -DPXA_BOARD="$board" "${global_args[@]}" "$action" "${action_args[@]}"

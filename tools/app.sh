@@ -28,7 +28,7 @@ mode "both" (the default) or "wasm" in package.json.
 declared WASM-only Components remain included.
 
 Default target: the board's own target (pai-touch -> esp32s3,
-esp32s31-korvo-1 -> esp32s31).
+esp32s31-korvo-1 / esp-mosaico -> esp32s31).
 Default output: local/app-output/<board> (container: pxa-<app-id>.pxa).
 EOF
 }
@@ -94,7 +94,7 @@ requested_wasm=0
 board_target=""
 case "$board" in
   pai-touch) board_target="esp32s3" ;;
-  esp32s31-korvo-1) board_target="esp32s31" ;;
+  esp32s31-korvo-1|esp-mosaico) board_target="esp32s31" ;;
 esac
 if [[ -n "$target_spec" ]]; then
   IFS=',' read -r -a raw_targets <<< "$target_spec"
@@ -103,7 +103,7 @@ if [[ -n "$target_spec" ]]; then
     case "$raw_target" in
       all)
         case "$board" in
-          esp32s31-korvo-1) targets+=(esp32s31 esp32s3 simulator) ;;
+          esp32s31-korvo-1|esp-mosaico) targets+=(esp32s31 esp32s3 simulator) ;;
           *) targets+=(esp32s3 esp32s31 simulator) ;;
         esac
         requested_wasm=1

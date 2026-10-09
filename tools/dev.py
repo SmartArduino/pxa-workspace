@@ -176,7 +176,8 @@ class Developer:
 
     def build(self) -> None:
         target = "simulator" if self.args.mode == "sim" else (
-            "esp32s31" if self.args.board == "esp32s31-korvo-1" else "esp32s3"
+            "esp32s31" if self.args.board in ("esp32s31-korvo-1", "esp-mosaico")
+            else "esp32s3"
         )
         command = [
             str(APP_TOOL), "build", self.app_id,

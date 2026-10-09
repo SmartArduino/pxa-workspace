@@ -58,13 +58,29 @@ class DeviceLaunchTest(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[2:5], ["package", "run", "pxa-cpp-counter"])
 
+    def test_build_selects_board_architecture(self) -> None:
+        for board, target in (
+            ("esp-mosaico", "esp32s31"),
+            ("esp32s31-korvo-1", "esp32s31"),
+            ("pai-touch", "esp32s3"),
+            ("sensecap-watcher", "esp32s3"),
+        ):
+            with self.subTest(board=board), \
+                    mock.patch.object(dev, "stream_command") as run:
+                self.developer.args.board = board
+                self.developer.build()
+                command = run.call_args.args[0]
+                self.assertEqual(command[command.index("--target") + 1], target)
+
 
 class SimulatorProfileTest(unittest.TestCase):
     def test_board_selects_matching_profile(self) -> None:
-        with mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon",
-                                             "--board", "sensecap-watcher"]):
-            args = dev.parse_arguments()
-        self.assertEqual(args.profile, "sensecap-watcher")
+        for board in ("sensecap-watcher", "esp-mosaico"):
+            with self.subTest(board=board), \
+                    mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon",
+                                                     "--board", board]):
+                args = dev.parse_arguments()
+                self.assertEqual(args.profile, board)
 
     def test_explicit_profile_overrides_board(self) -> None:
         with mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon",
