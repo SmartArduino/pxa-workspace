@@ -31,7 +31,8 @@ static void load_performance_settings(void) {
 bool pxa_board_register(const pxa_board_port_t* port) {
     if (port == NULL || port->struct_size != sizeof(*port) ||
         port->initialize == NULL || port->display == NULL ||
-        port->display_profile == NULL) {
+        port->display_profile == NULL ||
+        ((port->lock_display == NULL) != (port->unlock_display == NULL))) {
         return false;
     }
     if (g_board_port != NULL && g_board_port != port)

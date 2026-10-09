@@ -1,0 +1,9 @@
+[desktop]
+width = 480
+height = 480
+locale = "zh-CN"
+theme = "dark"
+gestures = true
+corner_radius = 58
+density_dpi = 305
+safe_insets = [12, 12, 12, 12]

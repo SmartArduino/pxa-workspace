@@ -45,6 +45,11 @@ typedef struct {
     void (*set_idle_dim)(void* context, bool enabled, uint8_t percent);
     /* Called on the LVGL thread after the reference UI has locked. */
     void (*idle_screen_off)(void* context);
+    bool (*lock_display)(void* context, uint32_t timeout_ms);
+    void (*unlock_display)(void* context);
+    /* Optional: board initialization can show a boot frame before mounting
+     * storage. Such a board must not depend on mounted product files here. */
+    bool initialize_before_storage;
 } pxa_board_port_t;
 
 bool pxa_board_register(const pxa_board_port_t* port);

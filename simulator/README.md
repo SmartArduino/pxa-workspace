@@ -20,8 +20,10 @@ tools/simulator.sh ui configure --profile pai-touch
 tools/simulator.sh ui build --profile pai-touch
 ```
 
-Profiles may set `corner_radius`, `safe_insets`, and `shape_background`. The
-last value controls only the visible host backdrop outside a rounded panel;
+Profiles may set `corner_radius`, `safe_insets`, `density_dpi`, and `shape_background`.
+`density_dpi` defaults to 160; dense panels receive larger reference UI text
+and controls, matching the firmware display profile. `shape_background`
+controls only the visible host backdrop outside a rounded panel;
 saved PNG screenshots keep those pixels transparent.
 
 `--app-root <root>` selects an external source tree containing

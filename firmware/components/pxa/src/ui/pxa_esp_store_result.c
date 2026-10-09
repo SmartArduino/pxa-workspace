@@ -63,7 +63,8 @@ static void show_result(void *context) {
     pxa_esp_dialog_layout_t layout = pxa_esp_dialog_measure(
         lv_display_get_horizontal_resolution(lv_display_get_default()),
         lv_display_get_vertical_resolution(lv_display_get_default()),
-        heading, result->app_name, message, title_font(), body_font(), 0, 6);
+        heading, result->app_name, message, title_font(), body_font(), 0, 6,
+        lv_display_get_dpi(lv_display_get_default()));
     lv_obj_t *panel;
     lv_obj_t *title;
     lv_obj_t *content;
@@ -85,8 +86,8 @@ static void show_result(void *context) {
     lv_obj_set_size(panel, layout.width, layout.height);
     lv_obj_center(panel);
     lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(panel, 16, 0);
-    lv_obj_set_style_pad_all(panel, 14, 0);
+    lv_obj_set_style_radius(panel, layout.radius, 0);
+    lv_obj_set_style_pad_all(panel, layout.padding, 0);
     lv_obj_set_style_bg_color(panel,
         theme_color(PXA_UI_THEME_SURFACE_CONTAINER_HIGH), 0);
     lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
@@ -110,7 +111,8 @@ static void show_result(void *context) {
     lv_obj_set_scroll_dir(content, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(content, 6, 0);
+    lv_obj_set_style_pad_row(content, pxa_esp_dialog_scale(
+        lv_display_get_dpi(lv_display_get_default()), 6), 0);
     lv_obj_add_event_cb(content, refresh_scrolled_overlay, LV_EVENT_SCROLL,
                         NULL);
 
@@ -131,9 +133,10 @@ static void show_result(void *context) {
     lv_obj_set_style_text_color(body, theme_color(5), 0);
 
     confirm = lv_button_create(panel);
-    lv_obj_set_size(confirm, layout.button_width, 36);
+    lv_obj_set_size(confirm, layout.button_width, layout.button_height);
+    lv_obj_set_style_pad_all(confirm, 0, 0);
     lv_obj_align(confirm, LV_ALIGN_BOTTOM_RIGHT,
-                 result->is_uninstall ? 0 : -layout.button_width - 8, 0);
+                 result->is_uninstall ? 0 : -layout.button_width - layout.button_gap, 0);
     lv_obj_set_style_bg_opa(confirm, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_color(confirm, primary, 0);
     lv_obj_set_style_border_width(confirm, 1, 0);
@@ -146,7 +149,8 @@ static void show_result(void *context) {
 
     if (!result->is_uninstall) {
         lv_obj_t *open = lv_button_create(panel);
-        lv_obj_set_size(open, layout.button_width, 36);
+        lv_obj_set_size(open, layout.button_width, layout.button_height);
+    lv_obj_set_style_pad_all(open, 0, 0);
         lv_obj_align(open, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
         lv_obj_set_style_bg_color(open, primary, 0);
         lv_obj_add_event_cb(open, result_response, LV_EVENT_CLICKED,

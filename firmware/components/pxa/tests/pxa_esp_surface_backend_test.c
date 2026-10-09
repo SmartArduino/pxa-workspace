@@ -125,6 +125,13 @@ static bool missing_ui_alpha_plane(void *context,
     return true;
 }
 
+static bool failed_ui_alpha_plane(void *context,
+                                  pxa_esp_surface_ui_alpha_plane_t *plane) {
+    assert(context == &notifications);
+    (void)plane;
+    return false;
+}
+
 #include "../../../../deps/pxa-system/libpxa/tests/raster_snapshot_scenario.h"
 
 static void replace_during_raster(void) {
@@ -153,6 +160,24 @@ static void close_during_raster(void) {
     close_surface(NULL, (uint64_t)(uintptr_t)g_surface);
 }
 
+static pxa_game_render_backend_t *replacement_backend;
+static uint64_t replacement_surface;
+static void replace_surface_during_raster(void) {
+    uint8_t draw[PXA_RASTER_DRAW_HEADER_BYTES + PXA_RASTER_CLEAR_BYTES];
+    uint8_t palette[PXA_RASTER_UPLOAD_HEADER_BYTES + 512] = {0};
+    pxa_game_render_desc_t desc = {4, 4, 3, 0, PXA_GAME_RENDER_SCRATCH_NONE, 4096};
+    uint32_t capabilities;
+    memcpy(draw, g_surface->raster_draw_lists[g_surface->raster_draw_rendering], sizeof(draw));
+    close_surface(NULL, (uint64_t)(uintptr_t)g_surface);
+    assert(replacement_backend->create(NULL, &desc, &replacement_surface, &capabilities) == 0);
+    snapshot_upload_header(palette, PXA_RASTER_UPLOAD_PALETTE_RGB565, 256, 1);
+    assert(replacement_backend->upload(NULL, replacement_surface, palette, sizeof(palette)) == 0);
+    assert(replacement_backend->submit(NULL, replacement_surface, draw, sizeof(draw)) == 0);
+    // A new surface must not overwrite the old renderer's global worker job.
+    assert(!pxa_esp_surface_prepare_latest_raster());
+    assert(pxa_esp_surface_has_pending_raster_draw());
+}
+
 static void test_close_while_rendering(pxa_game_render_backend_t *backend) {
     pxa_game_render_desc_t desc = {4, 4, 3, 0, PXA_GAME_RENDER_SCRATCH_NONE, 4096};
     uint64_t surface;
@@ -179,6 +204,133 @@ static void test_close_while_rendering(pxa_game_render_backend_t *backend) {
     pxa_esp_surface_memory_snapshot(&memory);
     assert(memory.frame_bytes == 0 && memory.scratch_bytes == 0 &&
            memory.mailbox_bytes == 0 && memory.probe_bytes == 0);
+}
+
+static void test_replace_while_rendering(pxa_game_render_backend_t *backend) {
+    pxa_game_render_desc_t desc = {4, 4, 3, 0, PXA_GAME_RENDER_SCRATCH_NONE, 4096};
+    uint64_t surface;
+    uint32_t capabilities;
+    uint8_t palette[PXA_RASTER_UPLOAD_HEADER_BYTES + 512] = {0};
+    uint8_t draw[PXA_RASTER_DRAW_HEADER_BYTES + PXA_RASTER_CLEAR_BYTES] = {0};
+    pxa_esp_surface_frame_t frame;
+    assert(backend->create(NULL, &desc, &surface, &capabilities) == 0);
+    snapshot_upload_header(palette, PXA_RASTER_UPLOAD_PALETTE_RGB565, 256, 1);
+    assert(backend->upload(NULL, surface, palette, sizeof(palette)) == 0);
+    pxa_write_u32(draw, PXA_RASTER_DRAW_MAGIC);
+    pxa_write_u16(draw + 4, PXA_RASTER_ABI_MAJOR);
+    pxa_write_u16(draw + 6, PXA_RASTER_ABI_MINOR);
+    pxa_write_u32(draw + 8, sizeof(draw));
+    pxa_write_u32(draw + 16, 1);
+    pxa_write_u64(draw + 20, 1);
+    draw[PXA_RASTER_DRAW_HEADER_BYTES] = PXA_RASTER_RECORD_CLEAR_RGB565;
+    pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2, PXA_RASTER_CLEAR_BYTES);
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+    replacement_backend = backend;
+    during_raster = replace_surface_during_raster;
+    assert(!pxa_esp_surface_acquire_latest_for_direct(&frame));
+    assert(during_raster == NULL && !g_materialize_active);
+    assert(pxa_esp_surface_prepare_latest_raster());
+    assert(pxa_esp_surface_acquire_prepared(&frame, true));
+    assert(frame.frame_id == 1);
+    pxa_esp_surface_release_frame(frame.lease);
+    close_surface(NULL, replacement_surface);
+    assert(allocations == 0);
+    pxa_esp_surface_memory_info_t memory = {0};
+    pxa_esp_surface_memory_snapshot(&memory);
+    assert(memory.frame_bytes == 0 && memory.scratch_bytes == 0 &&
+           memory.mailbox_bytes == 0 && memory.probe_bytes == 0);
+}
+
+/* Mimic an asynchronous PPA holding a frame while the raster worker prepares
+ * the next one. Two buffers back-pressure safely; three overlap all stages. */
+static void test_prepared_pipeline(pxa_game_render_backend_t *backend) {
+    for (unsigned count = 2; count <= 3; ++count) {
+        pxa_game_render_desc_t desc = {4, 4, count, 0, PXA_GAME_RENDER_SCRATCH_NONE, 4096};
+        uint64_t surface;
+        uint32_t capabilities;
+        uint8_t palette[PXA_RASTER_UPLOAD_HEADER_BYTES + 512] = {0};
+        uint8_t draw[PXA_RASTER_DRAW_HEADER_BYTES + PXA_RASTER_CLEAR_BYTES] = {0};
+        pxa_esp_surface_frame_t first, second, third;
+        assert(backend->create(NULL, &desc, &surface, &capabilities) == 0);
+        snapshot_upload_header(palette, PXA_RASTER_UPLOAD_PALETTE_RGB565, 256, 1);
+        assert(backend->upload(NULL, surface, palette, sizeof(palette)) == 0);
+        pxa_write_u32(draw, PXA_RASTER_DRAW_MAGIC);
+        pxa_write_u16(draw + 4, PXA_RASTER_ABI_MAJOR);
+        pxa_write_u16(draw + 6, PXA_RASTER_ABI_MINOR);
+        pxa_write_u32(draw + 8, sizeof(draw));
+        pxa_write_u32(draw + 16, 1);
+        draw[PXA_RASTER_DRAW_HEADER_BYTES] = PXA_RASTER_RECORD_CLEAR_RGB565;
+        pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2, PXA_RASTER_CLEAR_BYTES);
+        pxa_write_u64(draw + 20, 1);
+        pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x1111);
+        assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+        assert(pxa_esp_surface_has_pending_raster_draw());
+        assert(!pxa_esp_surface_acquire_prepared(&first, true));
+        assert(pxa_esp_surface_prepare_latest_raster());
+        assert(!pxa_esp_surface_has_pending_raster_draw());
+        assert(pxa_esp_surface_acquire_prepared(&first, true));
+        pxa_write_u64(draw + 20, 2);
+        pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x2222);
+        assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+        assert(pxa_esp_surface_prepare_latest_raster());
+        for (unsigned i = 0; i < 16; ++i)
+            assert(((const uint16_t *)first.pixels)[i] == 0x1111);
+        pxa_esp_surface_release_frame(first.lease);
+        assert(pxa_esp_surface_acquire_prepared(&second, true));
+        assert(second.frame_id == 2);
+        pxa_write_u64(draw + 20, 3);
+        pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x3333);
+        assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+        assert(pxa_esp_surface_prepare_latest_raster() == (count == 3));
+        for (unsigned i = 0; i < 16; ++i)
+            assert(((const uint16_t *)second.pixels)[i] == 0x2222);
+        pxa_esp_surface_release_frame(second.lease);
+        if (count == 2) assert(pxa_esp_surface_prepare_latest_raster());
+        assert(pxa_esp_surface_acquire_prepared(&third, true));
+        assert(third.frame_id == 3);
+        for (unsigned i = 0; i < 16; ++i)
+            assert(((const uint16_t *)third.pixels)[i] == 0x3333);
+        pxa_esp_surface_release_frame(third.lease);
+        pxa_write_u64(draw + 20, 4);
+        assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+        const unsigned before_hidden = notifications;
+        pxa_esp_surface_set_presentation_visible(false);
+        pxa_write_u64(draw + 20, 5);
+        assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+        // Hidden game submissions must not schedule redraws over Recents.
+        assert(notifications == before_hidden);
+        assert(!pxa_esp_surface_has_visible_surface());
+        assert(!pxa_esp_surface_has_pending_frame());
+        assert(!pxa_esp_surface_prepare_latest_raster());
+        assert(!pxa_esp_surface_acquire_prepared(&first, false));
+        assert(!pxa_esp_surface_acquire_prepared_with_alpha(&first));
+        assert(pxa_esp_surface_has_pending_raster_draw());
+        pxa_esp_surface_present_info_t info;
+        assert(pxa_esp_surface_get_present_info(&info) && !info.visible);
+        // Restoring a gesture snapshot must preserve independent host/lock gates.
+        pxa_esp_surface_set_host_visible(false);
+        pxa_esp_surface_set_presentation_visible(true);
+        assert(!pxa_esp_surface_has_visible_surface());
+        pxa_esp_surface_set_display_unlocked(false);
+        pxa_esp_surface_set_host_visible(true);
+        assert(!pxa_esp_surface_has_visible_surface());
+        pxa_esp_surface_set_display_unlocked(true);
+        assert(pxa_esp_surface_has_visible_surface());
+        assert(!pxa_esp_surface_try_resume_direct_scanout(3));
+        assert(pxa_esp_surface_prepare_latest_raster());
+        assert(pxa_esp_surface_acquire_prepared(&first, false));
+        assert(first.frame_id == 5);
+        pxa_esp_surface_release_frame(first.lease);
+        assert(!pxa_esp_surface_acquire_prepared_with_alpha(&first));
+        pxa_write_u64(draw + 20, 6);
+        assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+        assert(pxa_esp_surface_prepare_latest_raster());
+        assert(pxa_esp_surface_acquire_prepared_with_alpha(&first));
+        assert(first.frame_id == 6);
+        pxa_esp_surface_release_frame(first.lease);
+        close_surface(NULL, surface);
+        assert(!g_materialize_active && allocations == 0);
+    }
 }
 
 static void test_retired_display_budget(pxa_game_render_backend_t *backend) {
@@ -800,6 +952,8 @@ int main(void) {
 
     raster_snapshot_scenario(&game_backend, snapshot_present, NULL);
     test_close_while_rendering(&game_backend);
+    test_prepared_pipeline(&game_backend);
+    test_replace_while_rendering(&game_backend);
     test_retired_display_budget(&game_backend);
     assert(allocations == 0);
     assert(pxa_esp_resource_memory_end() == PXA_STATUS_OK);
@@ -880,6 +1034,17 @@ int main(void) {
            PXA_STATUS_OK);
     assert(pxa_esp_surface_composition_required());
     assert(!pxa_esp_surface_acquire_latest_for_direct(&probe));
+    assert(pxa_esp_surface_acquire_prepared_with_alpha(&probe));
+    assert(probe.system_alpha_plane.visible && !probe.suppress_guest_alpha &&
+           probe.opaque_ui_region_count == 0);
+    pxa_esp_surface_release_frame(probe.lease);
+    pxa_esp_surface_set_power_overlay_visible(true);
+    assert(!pxa_esp_surface_acquire_prepared_with_alpha(&probe));
+    pxa_esp_surface_set_power_overlay_visible(false);
+    // Even valid alpha planes cannot bypass the fresh-frame resume barrier.
+    assert(!pxa_esp_surface_acquire_prepared_with_alpha(&probe));
+    assert(backend.write(backend.context, surface, first, sizeof(first)) == PXA_STATUS_OK);
+    assert(backend.queue(backend.context, surface, 13, NULL, 0) == PXA_STATUS_OK);
     assert(pxa_esp_surface_acquire_latest(&probe));
     assert(probe.system_alpha_plane.visible &&
            probe.system_alpha_plane.pixels != NULL &&
@@ -889,13 +1054,24 @@ int main(void) {
     pxa_esp_surface_set_system_alpha_provider(empty_ui_alpha_plane,
                                                &notifications);
     pxa_esp_surface_runtime_modal_enter();
+    assert(pxa_esp_surface_acquire_prepared_with_alpha(&probe));
+    pxa_esp_surface_release_frame(probe.lease);
     assert(pxa_esp_surface_acquire_latest(&probe));
     assert(probe.opaque_ui_region_count == 0 &&
            !probe.suppress_guest_alpha);
     pxa_esp_surface_release_frame(probe.lease);
     pxa_esp_surface_set_system_alpha_provider(missing_ui_alpha_plane,
                                                &notifications);
+    pxa_esp_surface_set_ui_alpha_provider(failed_ui_alpha_plane, &notifications);
+    assert(!pxa_esp_surface_acquire_prepared_with_alpha(&probe));
+    assert(g_acquired_surface == NULL);
+    pxa_esp_surface_set_ui_alpha_provider(NULL, NULL);
+    pxa_esp_surface_set_system_alpha_provider(failed_ui_alpha_plane, &notifications);
+    assert(!pxa_esp_surface_acquire_prepared_with_alpha(&probe));
+    assert(g_acquired_surface == NULL);
+    pxa_esp_surface_set_system_alpha_provider(missing_ui_alpha_plane, &notifications);
     assert(pxa_esp_surface_composition_required());
+    assert(!pxa_esp_surface_acquire_prepared_with_alpha(&probe));
     assert(pxa_esp_surface_acquire_latest(&probe));
     assert(probe.opaque_ui_region_count == 1 &&
            probe.opaque_ui_regions[0].width == 4 &&
@@ -904,6 +1080,7 @@ int main(void) {
     pxa_esp_surface_runtime_modal_leave();
     pxa_esp_surface_set_system_alpha_provider(empty_ui_alpha_plane,
                                                &notifications);
+    assert(!pxa_esp_surface_acquire_prepared_with_alpha(&probe));
     assert(pxa_esp_surface_acquire_latest(&probe));
     assert(probe.opaque_ui_region_count == 0 &&
            !probe.suppress_guest_alpha);

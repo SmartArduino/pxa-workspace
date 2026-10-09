@@ -183,6 +183,11 @@ for key in ("width", "height"):
         raise SystemExit(f"desktop.{key} must be a positive integer")
     print(f"--{key}")
     print(value)
+density = desktop.get("density_dpi", 160)
+if isinstance(density, bool) or not isinstance(density, int) or not 1 <= density <= 65535:
+    raise SystemExit("desktop.density_dpi must be an integer in 1..65535")
+print("--density-dpi")
+print(density)
 corner_radius = desktop.get("corner_radius", 0)
 if not isinstance(corner_radius, int) or corner_radius < 0:
     raise SystemExit("desktop.corner_radius must be a non-negative integer")

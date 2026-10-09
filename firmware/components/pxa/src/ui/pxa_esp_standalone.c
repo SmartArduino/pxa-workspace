@@ -185,7 +185,8 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
     pxa_esp_dialog_layout_t layout = pxa_esp_dialog_measure(
         lv_display_get_horizontal_resolution(lv_display_get_default()),
         lv_display_get_vertical_resolution(lv_display_get_default()),
-        title, body, NULL, system_title_font(), system_body_font(), 3, 0);
+        title, body, NULL, system_title_font(), system_body_font(), 3, 0,
+        lv_display_get_dpi(lv_display_get_default()));
     lv_obj_t *mask = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(mask);
     lv_obj_set_size(mask, LV_PCT(100), LV_PCT(100));
@@ -197,14 +198,14 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
     lv_obj_set_size(panel, layout.width, layout.height);
     lv_obj_center(panel);
     lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(panel, 16, 0);
+    lv_obj_set_style_radius(panel, layout.radius, 0);
     lv_obj_set_style_bg_color(panel,
         system_color(PXA_UI_THEME_SURFACE_CONTAINER_HIGH), 0);
     lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(panel,
         system_color(PXA_UI_THEME_OUTLINE_VARIANT), 0);
     lv_obj_set_style_border_width(panel, 1, 0);
-    lv_obj_set_style_pad_all(panel, 14, 0);
+    lv_obj_set_style_pad_all(panel, layout.padding, 0);
 
     lv_obj_t *title_label = lv_label_create(panel);
     lv_label_set_text(title_label, title);
@@ -227,12 +228,14 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
     lv_obj_set_height(body_label, LV_SIZE_CONTENT);
     lv_obj_set_style_text_color(body_label, system_color(5), 0);
     lv_obj_set_style_text_font(body_label, system_body_font(), 0);
-    lv_obj_set_style_text_line_space(body_label, 3, 0);
+    lv_obj_set_style_text_line_space(body_label, pxa_esp_dialog_scale(
+        lv_display_get_dpi(lv_display_get_default()), 3), 0);
     lv_obj_add_event_cb(content, refresh_scrolled_overlay, LV_EVENT_SCROLL,
                         NULL);
 
     lv_obj_t *left = lv_button_create(panel);
-    lv_obj_set_size(left, layout.button_width, 36);
+    lv_obj_set_size(left, layout.button_width, layout.button_height);
+    lv_obj_set_style_pad_all(left, 0, 0);
     lv_obj_align(left, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_set_style_bg_opa(left, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_color(left, system_color(2), 0);
@@ -246,7 +249,8 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
     lv_obj_center(left_label);
 
     lv_obj_t *right = lv_button_create(panel);
-    lv_obj_set_size(right, layout.button_width, 36);
+    lv_obj_set_size(right, layout.button_width, layout.button_height);
+    lv_obj_set_style_pad_all(right, 0, 0);
     lv_obj_align(right, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(right, system_color(2), 0);
     lv_obj_add_event_cb(right, right_cb, LV_EVENT_CLICKED,

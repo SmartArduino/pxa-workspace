@@ -229,8 +229,14 @@ void pxa_esp_system_overlay_refresh(void) {
       goto failed;
     const uint32_t stride = lv_draw_buf_width_to_stride(
         (uint32_t)source_width, LV_COLOR_FORMAT_ARGB8888);
-    const size_t scratch_bytes =
-        (size_t)stride * source_height + LV_DRAW_BUF_ALIGN - 1u;
+    /* Snapshot reshape rounds the required capacity up to DRAW_BUF_ALIGN,
+     * independently of aligning the start address. Reserve both paddings:
+     * otherwise a 64-byte aligned target can reject an otherwise valid pill
+     * snapshot and the trusted-overlay fallback covers the entire game. */
+    const size_t draw_bytes =
+        ((size_t)stride * source_height + LV_DRAW_BUF_ALIGN - 1u) /
+        LV_DRAW_BUF_ALIGN * LV_DRAW_BUF_ALIGN;
+    const size_t scratch_bytes = draw_bytes + LV_DRAW_BUF_ALIGN - 1u;
     uint8_t *scratch =
         heap_caps_malloc(scratch_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     lv_draw_buf_t draw;
@@ -280,6 +286,14 @@ void pxa_esp_system_overlay_set_reference_objects(lv_obj_t *const *objects,
     ESP_LOGW("PxaOverlay", "Too many reference overlay objects");
     count = PXA_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS;
   }
+  // Shell snapshots are reusable only while their object set is unchanged.
+  // A fullscreen launch can remove both bars before the first game frame;
+  // retaining that shell snapshot would composite the old launcher bars
+  // forever above the newly attached Surface.
+  bool changed = g_reference_count != count;
+  for (size_t index = 0; index < count && !changed; ++index)
+    changed = g_reference_objects[index] != objects[index];
+  if (changed) g_plane_built_for_shell = false;
   g_reference_count = (uint8_t)count;
   for (size_t index = 0; index < count; ++index)
     g_reference_objects[index] = objects[index];
@@ -300,6 +314,7 @@ void pxa_esp_system_overlay_add(lv_obj_t *object) {
     return;
   }
   g_objects[g_object_count++] = object;
+  g_plane_built_for_shell = false;
   pxa_esp_system_overlay_refresh();
 }
 
@@ -312,6 +327,7 @@ void pxa_esp_system_overlay_remove(lv_obj_t *object) {
     memmove(&g_objects[index], &g_objects[index + 1],
             (size_t)(--g_object_count - index) * sizeof(g_objects[0]));
     g_objects[g_object_count] = NULL;
+    g_plane_built_for_shell = false;
     pxa_esp_system_overlay_refresh();
     return;
   }

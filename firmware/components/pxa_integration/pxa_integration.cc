@@ -1,5 +1,6 @@
 #include "pxa_integration.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -219,10 +220,6 @@ void SaveLevels(void*, const pxsys_system_status_snapshot_t* status) {
     }
 }
 
-constexpr uint16_t kTypographyFontSizes[PXSYS_TYPOGRAPHY_ROLE_COUNT] = {
-    28, 24, 20, 16, 14, 12,
-};
-
 const lv_font_t* const kTypographySymbolFallbacks[
     PXSYS_TYPOGRAPHY_ROLE_COUNT] = {
         &lv_font_montserrat_20,
@@ -285,7 +282,7 @@ bool ReadMemoryInfo(void*, uint64_t* available_bytes, uint64_t* total_bytes) {
     return *total_bytes != 0;
 }
 
-void OverlaySurfacePreview(void*, lv_draw_buf_t* image, int32_t screen_x,
+bool CopySurfacePreview(lv_draw_buf_t* image, int32_t screen_x,
                            int32_t screen_y, uint32_t content_width,
                            uint32_t content_height, uint32_t padding,
                            uint16_t display_width, uint16_t display_height) {
@@ -338,12 +335,55 @@ void OverlaySurfacePreview(void*, lv_draw_buf_t* image, int32_t screen_x,
             auto* destination = static_cast<uint16_t*>(lv_draw_buf_goto_xy(
                 image, padding + start_x - screen_x,
                 padding + y - screen_y));
-            for (int32_t x = start_x; x < end_x; ++x)
-                destination[x - start_x] = row_pixels[x / scale];
+            for (int32_t x = start_x; x < end_x; ++x) {
+                uint16_t color = row_pixels[x / scale];
+                const auto& plane = frame.ui_alpha_plane;
+                if (!frame.suppress_guest_alpha && plane.visible && plane.pixels != nullptr &&
+                    plane.alpha != nullptr && x >= plane.x && y >= plane.y &&
+                    x < plane.x + plane.width && y < plane.y + plane.height) {
+                    const auto* colors = reinterpret_cast<const uint16_t*>(
+                        reinterpret_cast<const uint8_t*>(plane.pixels) +
+                        (y - plane.y) * plane.pixel_stride_bytes);
+                    color = pxa_esp_surface_blend_alpha_pixel(color, colors[x - plane.x],
+                        plane.alpha[(y - plane.y) * plane.alpha_stride_bytes + x - plane.x],
+                        plane.opacity);
+                }
+                destination[x - start_x] = color;
+            }
         }
     }
+    if (pixels != nullptr) lv_draw_buf_flush_cache(image, nullptr);
     if (frame.lease != 0) pxa_esp_surface_release_frame(frame.lease);
     if (captured != nullptr) heap_caps_free(captured);
+    return pixels != nullptr;
+}
+
+void OverlaySurfacePreview(void*, lv_draw_buf_t* image, int32_t screen_x,
+                           int32_t screen_y, uint32_t content_width,
+                           uint32_t content_height, uint32_t padding,
+                           uint16_t display_width, uint16_t display_height) {
+    (void)CopySurfacePreview(image, screen_x, screen_y, content_width,
+                             content_height, padding, display_width, display_height);
+}
+
+lv_draw_buf_t* CaptureApplicationSurface(void*, lv_obj_t* application) {
+    if (!pxa_esp_surface_has_visible_surface()) return nullptr;
+    lv_obj_update_layout(application);
+    lv_area_t bounds;
+    lv_obj_get_coords(application, &bounds);
+    lv_draw_buf_t* snapshot = lv_snapshot_take(application, LV_COLOR_FORMAT_RGB565);
+    if (snapshot == nullptr) return nullptr;
+    const auto width = lv_obj_get_width(application);
+    const auto height = lv_obj_get_height(application);
+    auto* display = lv_obj_get_display(application);
+    const uint32_t padding = std::max<int32_t>(0, (snapshot->header.w - width) / 2);
+    if (!CopySurfacePreview(snapshot, bounds.x1, bounds.y1, width, height, padding,
+                            lv_display_get_horizontal_resolution(display),
+                            lv_display_get_vertical_resolution(display))) {
+        lv_draw_buf_destroy(snapshot);
+        return nullptr;
+    }
+    return snapshot;
 }
 
 bool DeveloperGet(void* context, pxsys_reference_performance_option_t option) {
@@ -1076,6 +1116,9 @@ bool CreateSystem(const pxa_board_port_t* board,
         return false;
     }
     board->display_profile(board->context, &system_config.initial_display);
+    lv_display_set_dpi(display, system_config.initial_display.density_dpi);
+    pxsys_reference_theme_adapt_display(&system_config.initial_display,
+                                        &system_config.initial_theme);
     g_display_width = system_config.initial_display.width;
     g_display_height = system_config.initial_display.height;
     system_config.network_control_context = board->context;
@@ -1109,10 +1152,17 @@ bool CreateSystem(const pxa_board_port_t* board,
     if (ui_config.parent != lv_display_get_layer_top(display))
         g_reference_ui_viewport = ui_config.parent;
     for (size_t i = 0; i < PXSYS_TYPOGRAPHY_ROLE_COUNT; ++i) {
-        ui_config.fonts[i] = LoadFont(profile->font_path,
-                                      kTypographyFontSizes[i],
-                                      &g_typography_fonts[i],
-                                      kTypographySymbolFallbacks[i]);
+        const uint16_t size = system_config.initial_theme.typography_px[i];
+        const lv_font_t* fallback = kTypographySymbolFallbacks[i];
+#if CONFIG_LV_FONT_MONTSERRAT_18
+        if (size >= 18) fallback = &lv_font_montserrat_18;
+#endif
+        if (size >= 20) fallback = &lv_font_montserrat_20;
+#if CONFIG_LV_FONT_MONTSERRAT_24
+        if (size >= 24) fallback = &lv_font_montserrat_24;
+#endif
+        ui_config.fonts[i] = LoadFont(profile->font_path, size,
+                                      &g_typography_fonts[i], fallback);
     }
     ui_config.text_font = ui_config.fonts[PXSYS_TYPOGRAPHY_BODY];
     ui_config.title_font = ui_config.fonts[PXSYS_TYPOGRAPHY_HEADLINE];
@@ -1159,6 +1209,10 @@ bool CreateSystem(const pxa_board_port_t* board,
     ui_config.resolve_app_icon = ResolveAppIcon;
     ui_config.memory_info = ReadMemoryInfo;
     ui_config.preview_overlay = OverlaySurfacePreview;
+    ui_config.capture_application = CaptureApplicationSurface;
+    ui_config.application_presentation_changed = [](void*, bool visible) {
+        pxa_esp_surface_set_presentation_visible(visible);
+    };
     ui_config.system_overlay_changed = [](void*, bool visible) {
         if (visible)
             pxa_esp_surface_runtime_modal_enter();
@@ -1229,8 +1283,10 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     if (profile == nullptr || profile->struct_size != sizeof(*profile) ||
         board == nullptr || g_system != nullptr)
         return false;
+    if (board->initialize_before_storage && !board->initialize(board->context)) return false;
     if (profile->mount_storage && !MountPxaStorage()) return false;
-    if (!board->initialize(board->context) || !pxa_host_initialize()) return false;
+    if (!board->initialize_before_storage && !board->initialize(board->context)) return false;
+    if (!pxa_host_initialize()) return false;
     LoadUserPreferences();
     if (board->set_level != nullptr) {
         if (g_preferences.has_volume)
@@ -1240,11 +1296,16 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
             (void)board->set_level(board->context, PXSYS_LEVEL_CONTROL_BRIGHTNESS,
                                    g_preferences.brightness);
     }
-    if (!lvgl_port_lock(2000)) return false;
+    const bool locked = board->lock_display != nullptr
+        ? board->lock_display(board->context, 2000) : lvgl_port_lock(2000);
+    if (!locked) return false;
     lv_lock();
     const bool started = CreateSystem(board, profile);
     lv_unlock();
-    lvgl_port_unlock();
+    if (board->unlock_display != nullptr)
+        board->unlock_display(board->context);
+    else
+        lvgl_port_unlock();
     if (!started) {
         pxa_integration_stop();
         return false;
@@ -1260,7 +1321,12 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     if (pxa_board_performance_get(PXSYS_REFERENCE_PXADB)) {
         const esp_err_t result = pxadb::Start();
         if (result != ESP_OK)
-            ESP_LOGW(kTag, "PXADB startup failed: %s", esp_err_to_name(result));
+            ESP_LOGW(kTag, "PXADB startup failed: %s; free_sram=%u largest_sram=%u",
+                     esp_err_to_name(result),
+                     static_cast<unsigned>(heap_caps_get_free_size(
+                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+                     static_cast<unsigned>(heap_caps_get_largest_free_block(
+                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
     }
 #endif
     if (!pxa_host_start_runtime()) {

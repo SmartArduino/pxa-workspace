@@ -199,6 +199,9 @@ void pxa_esp_surface_set_power_overlay_visible(bool visible);
 void pxa_esp_surface_runtime_modal_enter(void);
 void pxa_esp_surface_runtime_modal_leave(void);
 void pxa_esp_surface_set_host_visible(bool visible);
+/* Temporarily give output to an LVGL application snapshot/Recents, without
+ * altering the running application's lifecycle or lock visibility gates. */
+void pxa_esp_surface_set_presentation_visible(bool visible);
 void pxa_esp_surface_set_display_unlocked(bool unlocked);
 /* A modal/visibility transition arms a barrier at the last submitted frame.
  * Direct scanout may resume only with a newer complete frame; LVGL composition
@@ -230,6 +233,18 @@ bool pxa_esp_surface_acquire_current_for_preview(
  * the composition acquire path, this never consumes a modal-barrier frame. */
 bool pxa_esp_surface_acquire_latest_for_direct(
     pxa_esp_surface_frame_t *frame);
+/* Raster-only work: no LVGL calls or alpha providers. May run outside the UI
+ * lock; returns false if busy or no output buffer is currently available. */
+bool pxa_esp_surface_prepare_latest_raster(void);
+bool pxa_esp_surface_has_pending_raster_draw(void);
+/* Acquire completed pixels without rasterizing. Like acquire_latest, callers
+ * must hold the UI lock while consulting composition/alpha providers. */
+bool pxa_esp_surface_acquire_prepared(pxa_esp_surface_frame_t *frame,
+                                      bool direct_only);
+/* For board presenters which blend both alpha planes themselves. Keeps the
+ * direct-resume barrier and rejects opaque/modal fallback; caller must hold
+ * the UI lock, validate placement/format and apply the returned planes. */
+bool pxa_esp_surface_acquire_prepared_with_alpha(pxa_esp_surface_frame_t *frame);
 bool pxa_esp_surface_has_pending_frame(void);
 /* True while an application Surface owns the panel, i.e. while the compositor
  * draws application frames instead of the LVGL shell. Host overlays only need
