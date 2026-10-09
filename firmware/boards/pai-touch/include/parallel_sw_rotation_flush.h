@@ -18,6 +18,7 @@
 #endif
 
 #include <atomic>
+#include <cstddef>
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
@@ -203,7 +204,8 @@ public:
                                   uint64_t frame_id,
                                   uint64_t input_timestamp_us,
                                   DirectFrameReleaseCallback release,
-                                  void* release_context) {
+                                  void* release_context,
+                                  uint32_t raster_ready_tick_us = 0) {
         auto* context = GetContext();
         const uint8_t scale =
             context == nullptr ? 0 : DirectFrameScale(context, width, height);
@@ -240,6 +242,7 @@ public:
             context->output_source[output_index] = kFrameSourceSurface;
             context->output_input_timestamp_us[output_index] =
                 input_timestamp_us;
+            SetRasterReadyTime(context, output_index, raster_ready_tick_us);
             if (xQueueSend(context->ready_queue, &output_index, 0) != pdTRUE) {
                 context->output_input_timestamp_us[output_index] = 0;
                 copied = false;
@@ -474,6 +477,11 @@ private:
         std::atomic<int8_t> last_completed_output{-1};
         uint64_t output_frame_id[kOutputBufferCount] = {};
         uint8_t output_source[kOutputBufferCount] = {};
+        // These six bytes fill the former padding before the next uint64_t.
+        // Millisecond ticks wrap at 65.5 s; the bounded display queue drains
+        // within its 50 ms transfer timeout. No Context allocation growth.
+        bool output_has_raster_time[kOutputBufferCount] = {};
+        uint16_t output_raster_ready_ms[kOutputBufferCount] = {};
         uint64_t output_input_timestamp_us[kOutputBufferCount] = {};
         std::atomic<uint32_t> completed_sequence{0};
         std::atomic<uint64_t> last_completed_frame_id{0};
@@ -1234,9 +1242,18 @@ private:
                             }
                         }
                     }
-                    pxa_esp_surface_note_frame_presented(
-                        context->output_input_timestamp_us[buffer_index],
-                        completed_us);
+                    if(context->output_has_raster_time[buffer_index]) {
+                        const auto elapsed_ms=static_cast<uint16_t>(
+                            completed_us/1000-context->output_raster_ready_ms[buffer_index]);
+                        pxa_esp_surface_note_raster_frame_presented(
+                            context->output_frame_id[buffer_index],
+                            context->output_input_timestamp_us[buffer_index],
+                            completed_us,static_cast<uint32_t>(elapsed_ms)*1000);
+                    } else {
+                        pxa_esp_surface_note_frame_presented(
+                            context->output_input_timestamp_us[buffer_index],
+                            completed_us);
+                    }
                     pxa_esp_surface_note_game_frame_presented(
                         context->output_frame_id[buffer_index], completed_us);
 #endif
@@ -1312,8 +1329,12 @@ private:
             context->main_total_us / context->frame_count;
         const uint32_t average_worker_us = context->frame_count == 0 ? 0 :
             context->worker_total_us / context->frame_count;
+        // Count panel completions in every path. Direct Surface frames bypass
+        // rotation's frame_count, and the overlay must work with logs disabled.
+        const uint32_t completed = context->completed_frames.exchange(
+            0, std::memory_order_relaxed);
         const uint32_t overlay_fps_x10 = elapsed_us == 0 ? 0 :
-            static_cast<uint32_t>(context->frame_count * UINT64_C(10000000) /
+            static_cast<uint32_t>(completed * UINT64_C(10000000) /
                                   elapsed_us);
         const uint32_t overlay_rotate_us = context->frame_count == 0 ? 0 :
             context->rotate_total_us / context->frame_count;
@@ -1328,8 +1349,6 @@ private:
         const uint32_t average_rotate_us = context->frame_count == 0 ? 0 :
             context->rotate_total_us / context->frame_count;
         const uint32_t submitted = context->submitted_frames.exchange(
-            0, std::memory_order_relaxed);
-        const uint32_t completed = context->completed_frames.exchange(
             0, std::memory_order_relaxed);
         const uint32_t submit_errors = context->submit_errors.exchange(
             0, std::memory_order_relaxed);
@@ -1629,12 +1648,14 @@ private:
         uint8_t output_source = kFrameSourceLvgl;
         uint64_t output_frame_id = 0;
         uint64_t output_input_timestamp_us = 0;
+        uint32_t raster_ready_tick_us = 0;
 #if CONFIG_PXA_ENABLED
         if (context->has_surface_frame) {
             output_source = kFrameSourceComposed;
             output_frame_id = context->surface_frame.frame_id;
             output_input_timestamp_us =
                 context->surface_frame.input_timestamp_us;
+            raster_ready_tick_us=context->surface_frame.raster_ready_tick_us;
             pxa_esp_surface_release_frame(context->surface_frame.lease);
             context->has_surface_frame = false;
         }
@@ -1644,6 +1665,7 @@ private:
         context->output_source[buffer_index] = output_source;
         context->output_input_timestamp_us[buffer_index] =
             output_input_timestamp_us;
+        SetRasterReadyTime(context, buffer_index, raster_ready_tick_us);
 
         if (xQueueSend(context->ready_queue, &buffer_index, 0) != pdTRUE) {
             ++context->dropped_no_buffer_frames;
@@ -1660,6 +1682,18 @@ private:
         lv_display_flush_ready(display);
         LogDiagnostics(context, static_cast<uint32_t>(esp_timer_get_time()));
         xSemaphoreGive(context->rotation_lock);
+    }
+
+    static void SetRasterReadyTime(Context* context, uint8_t index, uint32_t tick_us) {
+        static_assert(kOutputBufferCount == 2);
+        static_assert(offsetof(Context, output_input_timestamp_us) ==
+                      offsetof(Context, output_source) + 8,
+                      "Raster timing must fit existing Context padding");
+        context->output_has_raster_time[index]=tick_us!=0;
+        if(tick_us==0) return;
+        const auto now=static_cast<uint64_t>(esp_timer_get_time());
+        const auto age=static_cast<uint32_t>(now)-tick_us;
+        context->output_raster_ready_ms[index]=static_cast<uint16_t>((now-age)/1000);
     }
 
 #if CONFIG_PXA_ENABLED
@@ -1760,7 +1794,8 @@ private:
                               frame.width, frame.height, false, 0,
                               frame.frame_id,
                               frame.input_timestamp_us,
-                              PxaDirectFrameCopied, context)) {
+                              PxaDirectFrameCopied, context,
+                              frame.raster_ready_tick_us)) {
             return;
         }
         context->pxa_direct_lease = 0;

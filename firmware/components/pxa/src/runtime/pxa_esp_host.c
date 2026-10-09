@@ -2560,8 +2560,13 @@ static void host_log_wamr_usage(void) {
         pxa_wamr_engine_memory_snapshot(g_host.engine, &usage) !=
             PXA_STATUS_OK)
         return;
-    ESP_LOGI(PXA_ESP_HOST_TAG, "WAMR dynamic: peak=%u current=%u",
-             (unsigned)usage.peak_bytes, (unsigned)usage.current_bytes);
+    ESP_LOGI(PXA_ESP_HOST_TAG,
+             "WAMR dynamic: peak=%u current=%u linear=%llu linear_peak=%llu artifact=%llu events=%llu",
+             (unsigned)usage.peak_bytes, (unsigned)usage.current_bytes,
+             (unsigned long long)usage.linear_current_bytes,
+             (unsigned long long)usage.linear_peak_bytes,
+             (unsigned long long)usage.artifact_buffer_bytes,
+             (unsigned long long)usage.event_buffer_bytes);
 }
 
 static void host_log_audio_usage(void) {
@@ -3280,6 +3285,7 @@ static int start_verified(const char *identity) {
     publish_active_state();
     refresh_volume_key_capture_state();
     host_log_heap_usage("launch-ready");
+    host_log_wamr_usage();
     ESP_LOGI(PXA_ESP_HOST_TAG, "Started verified Package %s", identity);
     return 1;
 

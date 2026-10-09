@@ -8,6 +8,14 @@
 #include "../src/services/pxa_esp_resource_memory.c"
 #include "../src/services/pxa_esp_surface.c"
 
+struct frame_alignment_probe { char byte; uint64_t value; };
+enum { frame_u64_alignment = offsetof(struct frame_alignment_probe, value) };
+typedef char raster_ready_tick_fits_existing_padding[
+    offsetof(pxa_esp_surface_frame_t, frame_id) ==
+    ((offsetof(pxa_esp_surface_frame_t, suppress_guest_alpha) + 1 +
+      frame_u64_alignment - 1) / frame_u64_alignment * frame_u64_alignment)
+    ? 1 : -1];
+
 /* This fixture has no file worker; the actual cache reclaimer is exercised
  * by assets_backend and the product runtime tests. */
 size_t pxa_esp_assets_trim(uint8_t cls, size_t bytes) { (void)cls; (void)bytes; return 0; }
@@ -613,8 +621,18 @@ int main(void) {
                PXA_ESP_SURFACE_NONE);
         assert(pxa_esp_surface_acquire_latest_for_direct(&frame));
         assert(frame.frame_id == 1);
+        assert(frame.raster_ready_tick_us == (uint32_t)test_now_us);
         front = (uint16_t *)(uintptr_t)frame.pixels;
         for (color = 0; color < 16; ++color) assert(front[color] == 0x1234);
+        pxa_esp_surface_release_frame(frame.lease);
+        // Pai-touch releases after rotation, before the actual LCD callback.
+        // Keep that completion latency even with no live Surface acquisition.
+        pxa_esp_surface_note_raster_frame_presented(1, 0, 1000, 19000);
+        pxa_esp_surface_note_raster_frame_presented(1, 0, 1100, 20000);
+        assert(game_backend.query(game_backend.context, surface, &telemetry) ==
+               PXA_STATUS_OK && telemetry.present_us == 19000);
+        assert(pxa_esp_surface_acquire_current_for_preview(&frame));
+        assert(frame.raster_ready_tick_us == (uint32_t)test_now_us);
         pxa_esp_surface_release_frame(frame.lease);
         pxa_esp_surface_note_game_frame_presented(1, 1000);
 

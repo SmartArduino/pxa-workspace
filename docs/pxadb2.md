@@ -71,3 +71,15 @@ The local simulator also supports `SCREENSHOT`, `INPUT CAPABILITIES`,
 and `pxadb input`; raw PNG bytes remain inside the local control bridge and
 are Base64 encoded only in the response records required by the existing PXADB
 command contract.
+
+## Firmware performance diagnostics
+
+Firmware HELLO advertises `perf-raster,heap-local` when test control is enabled.
+`PERF START` / `PERF STOP` record bounded raster and distinct FrameId LCD-complete
+intervals. Check both overflow counters before deriving displayed FPS.
+`MEMORY START` resets ESP-IDF allocation minima for the current measurement;
+`MEMORY STOP` returns the snapshot before restoring the boot-wide minima.
+This includes allocations freed between snapshots, without a polling task or
+sampling buffer. Do not treat boot-wide minima or Surface historical peaks as
+the peak of the current app. Separate launch and warmed steady-state windows,
+and always stop the local monitor when a measurement fails.

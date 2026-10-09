@@ -1289,7 +1289,7 @@ def command_package_install(arguments: argparse.Namespace) -> int:
         packages = client.request("PACKAGES")
         installed = any(
             frame.kind == "PKG"
-            and frame.payload.split("\t", 1)[0] == identity
+            and frame.payload.split("\t", 1)[0].rsplit(":", 1)[-1] == identity
             and "installed=1" in frame.payload.rsplit("\t", 1)[-1].split(";")
             for frame in packages
         )

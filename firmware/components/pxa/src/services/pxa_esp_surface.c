@@ -112,7 +112,9 @@ typedef struct {
     int8_t raster_draw_pending;
     int8_t raster_draw_rendering;
     int8_t raster_draw_writing;
-    uint64_t raster_last_frame_id;
+    // last_frame_id already stores the shared monotonic submit id. Reuse the
+    // former duplicate raster submit id for actual presentation deduplication.
+    uint64_t raster_presented_frame_id;
     pxa_raster_telemetry_t raster_telemetry;
     uint32_t raster_main_us;
     uint32_t raster_worker_us;
@@ -595,8 +597,6 @@ static uint64_t latest_frame_id_locked(const pxa_esp_surface_t *surface) {
         frame_id = surface->current_frame_id;
     if (surface->acquired_frame_id > frame_id)
         frame_id = surface->acquired_frame_id;
-    if (surface->raster_last_frame_id > frame_id)
-        frame_id = surface->raster_last_frame_id;
     return frame_id;
 }
 
@@ -1275,7 +1275,7 @@ static pxa_status_t raster_submit_surface(void *context,
         return PXA_STATUS_CANCELLED;
     }
     if (status != PXA_STATUS_OK ||
-        list.frame_id <= surface->raster_last_frame_id) {
+        list.frame_id <= surface->last_frame_id) {
         ++surface->raster_telemetry.rejected_lists;
         taskEXIT_CRITICAL(&g_surface_lock);
         pxa_raster_bindings_release(&bindings);
@@ -1304,7 +1304,6 @@ static pxa_status_t raster_submit_surface(void *context,
     surface->raster_draw_queued_us[mailbox_index] = submit_us;
     surface->raster_draw_pending = (int8_t)mailbox_index;
     surface->last_frame_id = list.frame_id;
-    surface->raster_last_frame_id = list.frame_id;
     if (g_next_input_timestamp_us != 0) {
         const uint32_t elapsed = latency_us(g_next_input_timestamp_us,
                                             submit_us);
@@ -1802,6 +1801,28 @@ void pxa_esp_surface_note_game_frame_presented(uint64_t frame_id,
     taskEXIT_CRITICAL(&g_surface_lock);
 }
 
+void pxa_esp_surface_note_raster_frame_presented(uint64_t frame_id,
+                                                 uint64_t input_timestamp_us,
+                                                 uint64_t presented_us,
+                                                 uint32_t elapsed_us) {
+    taskENTER_CRITICAL(&g_surface_lock);
+    if (g_surface == NULL || g_surface->closing ||
+        (g_surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) == 0 ||
+        frame_id <= g_surface->raster_presented_frame_id) {
+        taskEXIT_CRITICAL(&g_surface_lock);
+        return;
+    }
+    g_surface->raster_presented_frame_id = frame_id;
+    g_surface->raster_telemetry.present_us += elapsed_us;
+    if (input_timestamp_us != 0)
+        record_latency(PXA_ESP_SURFACE_LATENCY_VISIBLE,
+                       latency_us(input_timestamp_us, presented_us),
+                       &g_input_metrics.sample_to_visible_total_us,
+                       &g_input_metrics.sample_to_visible_max_us,
+                       &g_input_metrics.sample_to_visible_count);
+    taskEXIT_CRITICAL(&g_surface_lock);
+}
+
 void pxa_esp_surface_take_input_metrics(
     pxa_esp_surface_input_metrics_t *metrics) {
     if (metrics == NULL) return;
@@ -2179,6 +2200,7 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
                (size_t)frame->opaque_ui_region_count *
                    sizeof(frame->opaque_ui_regions[0]));
     frame->frame_id = surface->acquired_frame_id;
+    frame->raster_ready_tick_us = (uint32_t)surface->raster_buffer_ready_us[index];
     frame->input_timestamp_us = surface->acquired_input_timestamp_us;
     frame->lease = surface->acquire_generation;
     ui_alpha_provider = g_ui_alpha_provider;
@@ -2438,5 +2460,15 @@ bool pxa_esp_surface_get_present_info(
     return false;
 }
 void pxa_esp_surface_release_frame(uint64_t lease) { (void)lease; }
+
+void pxa_esp_surface_note_raster_frame_presented(uint64_t frame_id,
+                                                 uint64_t input_timestamp_us,
+                                                 uint64_t presented_us,
+                                                 uint32_t elapsed_us) {
+    (void)frame_id;
+    (void)input_timestamp_us;
+    (void)presented_us;
+    (void)elapsed_us;
+}
 
 #endif

@@ -80,10 +80,23 @@ typedef struct {
     pxa_esp_surface_ui_alpha_plane_t ui_alpha_plane;
     pxa_esp_surface_ui_alpha_plane_t system_alpha_plane;
     uint8_t suppress_guest_alpha;
+    /* Low 32 bits of raster completion, carried past lease release. This
+     * occupies existing alignment padding before frame_id. */
+    uint32_t raster_ready_tick_us;
     uint64_t frame_id;
     uint64_t input_timestamp_us;
     uint64_t lease;
 } pxa_esp_surface_frame_t;
+
+/* Enforce padding reuse on the target ABI as well as the desktop ABI. */
+typedef struct { char byte; uint64_t value; }
+    pxa_esp_surface_frame_alignment_probe_t;
+typedef char pxa_esp_surface_frame_timing_uses_padding[
+    offsetof(pxa_esp_surface_frame_t, frame_id) ==
+        ((offsetof(pxa_esp_surface_frame_t, suppress_guest_alpha) + 1 +
+          offsetof(pxa_esp_surface_frame_alignment_probe_t, value) - 1) /
+         offsetof(pxa_esp_surface_frame_alignment_probe_t, value) *
+         offsetof(pxa_esp_surface_frame_alignment_probe_t, value)) ? 1 : -1];
 
 typedef struct {
     uint16_t width;
@@ -202,6 +215,12 @@ void pxa_esp_surface_note_frame_presented(uint64_t timestamp_us,
  * frame id deduplicates UI recompositions of the same Surface contents. */
 void pxa_esp_surface_note_game_frame_presented(uint64_t frame_id,
                                                 uint64_t presented_us);
+/* Board-owned output metadata supplies raster-ready to actual panel-complete
+ * latency after releasing the Surface lease. No additional frame queue. */
+void pxa_esp_surface_note_raster_frame_presented(uint64_t frame_id,
+                                                 uint64_t input_timestamp_us,
+                                                 uint64_t presented_us,
+                                                 uint32_t elapsed_us);
 void pxa_esp_surface_take_input_metrics(
     pxa_esp_surface_input_metrics_t *metrics);
 bool pxa_esp_surface_acquire_latest(pxa_esp_surface_frame_t *frame);

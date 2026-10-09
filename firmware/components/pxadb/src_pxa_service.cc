@@ -1095,7 +1095,7 @@ void SendHello(unsigned long sequence) {
         PowerControlAvailable() ? ",poweroff" : "";
     const char* kPerfCapabilities =
 #if CONFIG_PXA_ENABLED && CONFIG_PXADB_TEST_CONTROL
-        ",perf-raster";
+        ",perf-raster,heap-local";
 #else
         "";
 #endif
@@ -1123,7 +1123,7 @@ void SendInfo(unsigned long sequence) {
     SendFrame(sequence, "OK", payload);
 }
 
-void SendMemory(unsigned long sequence) {
+void SendMemory(unsigned long sequence, bool finish = true) {
     char payload[kMaxFramePayload] = {};
     const uint32_t internal_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
     int count = snprintf(payload, sizeof(payload),
@@ -1181,7 +1181,7 @@ void SendMemory(unsigned long sequence) {
     if (count <= 0 || static_cast<size_t>(count) >= sizeof(payload) ||
         !SendFrame(sequence, "DATA", payload)) return;
 #endif
-    SendFrame(sequence, "OK", "");
+    if (finish) SendFrame(sequence, "OK", "");
 }
 
 #if CONFIG_PXADB_TEST_CONTROL
@@ -1861,7 +1861,24 @@ void HandleCommand(char* line) {
     } else if (strcmp(command, "INFO") == 0) {
         SendInfo(sequence);
     } else if (strcmp(command, "MEMORY") == 0) {
-        SendMemory(sequence);
+        if (argument_count == 0) {
+            SendMemory(sequence);
+#if CONFIG_PXADB_TEST_CONTROL
+        } else if (argument_count == 1 && strcmp(argument, "START") == 0) {
+            // ESP-IDF records allocation minima, including allocations freed
+            // between snapshots. No extra sampling buffer or task is needed.
+            const esp_err_t result = heap_caps_monitor_local_minimum_free_size_start();
+            SendFrame(sequence, result == ESP_OK ? "OK" : "ERR",
+                      result == ESP_OK ? "minimum_scope=local" : "already_monitoring");
+        } else if (argument_count == 1 && strcmp(argument, "STOP") == 0) {
+            SendMemory(sequence, false);
+            const esp_err_t result = heap_caps_monitor_local_minimum_free_size_stop();
+            SendFrame(sequence, result == ESP_OK ? "OK" : "ERR",
+                      result == ESP_OK ? "minimum_scope=boot" : "not_monitoring");
+#endif
+        } else {
+            SendFrame(sequence, "ERR", "invalid_memory_command");
+        }
 #if CONFIG_PXA_ENABLED && CONFIG_PXADB_TEST_CONTROL
     } else if (strcmp(command, "PERF") == 0) {
         HandlePerf(sequence, arguments, argument_count);

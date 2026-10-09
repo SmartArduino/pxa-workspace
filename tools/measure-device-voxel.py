@@ -35,9 +35,15 @@ def main():
     parser.add_argument("--menu-tap", type=int, nargs=2)
     parser.add_argument("--unlock-swipe", type=int, nargs=4,
                         help="wake and unlock before each run: X1 Y1 X2 Y2")
+    parser.add_argument("--wake-home", action="store_true",
+                        help="keep an already unlocked device awake without tapping launcher icons")
     parser.add_argument("--package", type=Path)
+    parser.add_argument("--local-heap", action="store_true",
+                        help="record ESP-IDF allocation minima for each launch and steady window")
+    parser.add_argument("--minimum-warm-frames", type=int, default=0,
+                        help="require this many accepted frames before capture (sequential frame IDs)")
     args = parser.parse_args()
-    if args.warmup < 0 or not 0 < args.seconds <= 30 or args.repeat < 1:
+    if args.warmup < 0 or not 0 < args.seconds <= 30 or args.repeat < 1 or args.minimum_warm_frames < 0:
         parser.error("warmup >= 0, 0 < seconds <= 30, repeat >= 1 required")
     args.output.mkdir(parents=True, exist_ok=True)
     report = {"app": args.app, "port": args.port, "warmup_seconds": args.warmup,
@@ -79,25 +85,44 @@ def main():
                         key: int(value) for key, value in props.items()}
                 return output
 
-            running = recording = False
+            running = recording = heap_monitoring = False
             try:
                 report["hello"] = client.hello()
                 if "perf-raster" not in report["hello"] or "memory" not in report["hello"]:
                     raise RuntimeError("firmware requires perf-raster and memory capabilities")
+                if args.local_heap and "heap-local" not in report["hello"]:
+                    raise RuntimeError("firmware requires heap-local capability")
                 client.subscribe_logs()
                 report["packages_before"] = [f.payload for f in request("PACKAGES") if f.kind == "PKG"]
                 if any("active=1" in p for p in report["packages_before"]):
                     raise RuntimeError("stop the active application before measuring")
                 for index in range(args.repeat):
+                    if args.wake_home:
+                        request("INPUT KEY HOME")
+                        pump(.5)
                     if args.unlock_swipe:
                         x1, y1, x2, y2 = args.unlock_swipe
-                        request(f"INPUT TAP {x1} {y1}")
+                        # A tap on the launcher can start an app before the
+                        # launch heap monitor. HOME wakes without selecting it.
+                        request("INPUT KEY HOME")
                         pump(.3)
                         request(f"INPUT SWIPE {x1} {y1} {x2} {y2} 400 8")
-                        pump(.5)
+                        # Launcher activation is asynchronous; check after it
+                        # has settled, rather than accepting a pending launch.
+                        pump(2)
+                        packages = [f.payload for f in request("PACKAGES") if f.kind == "PKG"]
+                        if any("active=1" in p for p in packages):
+                            raise RuntimeError("unlock started an application before the launch monitor")
                     run = {"index": index, "memory_before": memory()}
+                    if any(run["memory_before"]["surface"][key] for key in
+                           ("frame", "scratch", "mailbox", "probe")):
+                        raise RuntimeError("a surface is still alive before the launch monitor")
                     report["runs"].append(run)
                     request("PERF CLEAR")
+                    if args.local_heap:
+                        request("MEMORY START")
+                        heap_monitoring = True
+                        run["memory_launch_start"] = memory()
                     request(f"PACKAGE run {args.app}")
                     running = True
                     pump(args.warmup)
@@ -105,13 +130,41 @@ def main():
                         request(f"INPUT TAP {args.menu_tap[0]} {args.menu_tap[1]}")
                         request("INPUT SYNC")
                         pump(args.warmup)
+                    active = [f.payload for f in request("PACKAGES")
+                              if f.kind == "PKG" and "active=1" in f.payload]
+                    if len(active) != 1 or active[0].split("\t", 1)[0].split(":", 1)[-1] != args.app:
+                        raise RuntimeError("requested application is not the active application")
                     run["memory_warm"] = memory()
+                    if args.local_heap:
+                        request("MEMORY STOP")
+                        heap_monitoring = False
+                        request("MEMORY START")
+                        heap_monitoring = True
+                        run["memory_steady_start"] = memory()
                     request("PERF START")
                     recording = True
                     pump(args.seconds)
                     run["probe"] = pxadb.info_properties(request("PERF STOP")[-1].payload)
                     recording = False
+                    if any(int(run["probe"][key]) for key in
+                           ("raster_overflow", "present_overflow")):
+                        raise RuntimeError("probe overflow: shorten the capture window")
                     run["memory_capture"] = memory()
+                    if args.local_heap:
+                        request("MEMORY STOP")
+                        heap_monitoring = False
+                        for phase, start_key, end_key in (
+                                ("launch", "memory_launch_start", "memory_warm"),
+                                ("steady", "memory_steady_start", "memory_capture")):
+                            before = run[start_key]["heap"]
+                            after = run[end_key]["heap"]
+                            run[phase + "_heap"] = {
+                                kind + suffix: after[kind + "_total"] - after[kind + field]
+                                for kind in ("sram", "psram")
+                                for suffix, field in (("_used", "_free"), ("_peak_used", "_min"))}
+                            run[phase + "_heap"].update({
+                                kind + "_peak_delta": before[kind + "_free"] - after[kind + "_min"]
+                                for kind in ("sram", "psram")})
                     for kind in ("raster", "present"):
                         values = []
                         count = int(run["probe"][kind])
@@ -132,6 +185,11 @@ def main():
                     run["screenshot"] = capture.metadata
                     if not run["present_us"] or int(run["probe"]["surface_changed"]):
                         raise RuntimeError("no displayed frames or surface changed during capture")
+                    if args.minimum_warm_frames:
+                        warmed = int(capture.metadata["frame_id"]) - int(run["probe"]["present"]) - 1
+                        run["minimum_observed_warm_frames"] = warmed
+                        if warmed < args.minimum_warm_frames:
+                            raise RuntimeError("insufficient warm frames: increase --warmup")
                     run["display_fps"] = 1e6 / run["present"]["mean_us"]
                     request("PERF CLEAR")
                     request(f"PACKAGE stop {args.app}")
@@ -149,6 +207,7 @@ def main():
                 print(str(error), file=sys.stderr)
             finally:
                 for command, needed in [("PERF STOP", recording), ("PERF CLEAR", True),
+                                        ("MEMORY STOP", heap_monitoring),
                                         (f"PACKAGE stop {args.app}", running)]:
                     if needed:
                         try:
