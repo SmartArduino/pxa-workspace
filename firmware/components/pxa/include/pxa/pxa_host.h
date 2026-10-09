@@ -7,6 +7,7 @@
 #include "pxa/window.h"
 #include "pxa/asset_object.h"
 #include "pxa/audio_playback.h"
+#include "pxa/audio.h"
 #include "pxa/resource_budget.h"
 
 #if defined(ESP_PLATFORM)
@@ -291,6 +292,10 @@ void pxa_host_set_audio_sink(pxa_host_audio_submit_fn submit,
  * the object, whose cache pin guarantees deferred worker reclamation. */
 typedef bool (*pxa_host_audio_sound_fn)(void *,uint8_t,pxa_asset_object_t *,int16_t);
 void pxa_host_set_audio_sound_sink(pxa_host_audio_sound_fn,void *);
+typedef bool (*pxa_host_audio_sound_track_fn)(void *, uint8_t, pxa_asset_object_t *, const pxa_audio_sound_options_t *);
+typedef bool (*pxa_host_audio_sound_control_fn)(void *, uint8_t, const pxa_audio_sound_control_t *);
+void pxa_host_set_audio_sound_track_sink(pxa_host_audio_sound_track_fn,
+    pxa_host_audio_sound_control_fn, void *);
 
 /* Asset callbacks run on the PXA runtime stack and must only copy/enqueue the
  * command. The absolute package path is valid only until play returns. */
@@ -310,6 +315,7 @@ typedef struct {
     pxa_status_t (*peek)(void *, pxa_audio_playback_event_t *);
     pxa_status_t (*consume)(void *, const pxa_audio_playback_event_t *);
     void (*close)(void *, uint64_t session);
+    pxa_host_audio_asset_control_fn control;
 } pxa_host_audio_music_sink_t;
 void pxa_host_set_audio_music_sink(const pxa_host_audio_music_sink_t *);
 /* Worker-safe signal only; never delivers Guest events on the audio task. */

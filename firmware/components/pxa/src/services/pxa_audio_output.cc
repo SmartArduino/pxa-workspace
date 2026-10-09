@@ -43,7 +43,7 @@ struct PxaAudioOutput::RuntimeStorage {
 static_assert(kMusicTaskStackBytes % sizeof(StackType_t) == 0, "whole stack elements required");
 static_assert(kOutputTaskStackBytes % sizeof(StackType_t) == 0, "whole stack elements required");
 
-bool PxaAudioOutput::Initialize(Write write, void* context) {
+bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced) {
     if (task_ != nullptr) return true;
     if (!write) return false;
     if (pxa_esp_resource_memory_initialize() != PXA_STATUS_OK) return false;
@@ -51,6 +51,7 @@ bool PxaAudioOutput::Initialize(Write write, void* context) {
         PXA_MEMORY_EXTERNAL, PXA_MEMORY_METADATA));
     write_ = write;
     write_context_ = context;
+    device_paced_ = device_paced;
     runtime_storage_ = static_cast<RuntimeStorage*>(pxa_memory_allocate(
         pxa_esp_device_resource_allocator(PXA_MEMORY_INTERNAL, PXA_MEMORY_METADATA),
         sizeof(RuntimeStorage)));
@@ -100,7 +101,8 @@ bool PxaAudioOutput::Initialize(Write write, void* context) {
     pxa_host_set_audio_sink(Submit, Flush, this);
     pxa_host_set_audio_asset_sink(PlayAsset, ControlAsset, this);
     pxa_host_set_audio_sound_sink(PlaySound,this);
-    const pxa_host_audio_music_sink_t music_sink={this,PlayMusic,PlaybackPeek,PlaybackConsume,PlaybackClose};
+    pxa_host_set_audio_sound_track_sink(PlaySoundTrack, ControlSound, this);
+    const pxa_host_audio_music_sink_t music_sink={this,PlayMusic,PlaybackPeek,PlaybackConsume,PlaybackClose,ControlMusic};
     pxa_host_set_audio_music_sink(&music_sink);
     return true;
 }
@@ -112,8 +114,7 @@ void PxaAudioOutput::WakeOutput() {
 }
 
 void PxaAudioOutput::ReleaseSound(PlayingSound& sound) {
-    pxa_asset_object_release_pinned(sound.asset);
-    sound = {};
+    pxa_audio_sound_release(&sound);
 }
 
 bool PxaAudioOutput::Submit(void* context, uint8_t voice, const int16_t* pcm,
@@ -139,22 +140,42 @@ void PxaAudioOutput::Flush(void* context, uint8_t voice) {
 }
 
 bool PxaAudioOutput::PlaySound(void* context,uint8_t voice,pxa_asset_object_t* asset,int16_t gain) {
+    const pxa_audio_sound_options_t options = {gain, PXA_AUDIO_SOUND_APPEND, 0};
+    return PlaySoundTrack(context, voice, asset, &options);
+}
+
+bool PxaAudioOutput::PlaySoundTrack(void* context, uint8_t voice,
+    pxa_asset_object_t* asset, const pxa_audio_sound_options_t* options) {
     auto* self = static_cast<PxaAudioOutput*>(context);
-    if (!self || !self->music_mutex_ || voice >= 3 || gain > 0 || gain < -60*256) return false;
-    pxa_asset_object_view_t view;
-    pxa_asset_object_view(asset,&view);
-    if (view.kind != PXA_ASSET_AUDIO || !view.bytes || view.bytes > 16000) return false;
-    const int32_t gain_q15 = static_cast<int32_t>(32768.f * powf(10.f,gain/5120.f));
+    if (!self || !self->music_mutex_ || voice >= 3 || !options ||
+        options->gain_db_q8 > 0 || options->gain_db_q8 < -60*256) return false;
+    const int32_t gain = static_cast<int32_t>(32768.f * powf(10.f,options->gain_db_q8/5120.f));
     bool accepted = false;
     xSemaphoreTake(self->music_mutex_,portMAX_DELAY);
-    for (auto& sound : self->sounds_) if (!sound.asset) {
-        pxa_asset_object_retain(asset);
-        sound = {asset,view.data,view.bytes,0,gain_q15,voice};
-        self->sound_paused_[voice] = false; accepted = true; break;
-    }
+    PlayingSound* selected = nullptr;
+    for (auto& sound : self->sounds_)
+        if (options->track != PXA_AUDIO_SOUND_APPEND && sound.asset &&
+            sound.voice == voice && sound.track == options->track) { selected = &sound; break; }
+    if (!selected) for (auto& sound : self->sounds_) if (!sound.asset) { selected = &sound; break; }
+    if (selected) accepted = pxa_audio_sound_start(selected,asset,voice,
+        options->track,options->loop,gain);
+    if (accepted) self->sound_paused_[voice] = false;
     xSemaphoreGive(self->music_mutex_);
     if (accepted) self->WakeOutput();
     return accepted;
+}
+
+bool PxaAudioOutput::ControlSound(void* context, uint8_t voice,
+    const pxa_audio_sound_control_t* control) {
+    auto* self = static_cast<PxaAudioOutput*>(context);
+    if (!self || !self->music_mutex_ || voice >= 3 || !control) return false;
+    const int32_t gain = static_cast<int32_t>(32768.f * powf(10.f,control->gain_db_q8/5120.f));
+    xSemaphoreTake(self->music_mutex_,portMAX_DELAY);
+    for (auto& sound : self->sounds_) if (sound.asset && sound.voice == voice && sound.track == control->track)
+        pxa_audio_sound_control(&sound,control->action,gain);
+    xSemaphoreGive(self->music_mutex_);
+    self->WakeOutput();
+    return true;
 }
 
 bool PxaAudioOutput::PlayAsset(void* context, uint8_t voice,
@@ -241,18 +262,24 @@ void PxaAudioOutput::PlaybackClose(void* c,uint64_t session) {
 
 bool PxaAudioOutput::ControlAsset(void* context, uint8_t voice,
                                 uint8_t action, int16_t gain_db_q8) {
+    return ControlAssetImpl(context,voice,action,gain_db_q8,false);
+}
+bool PxaAudioOutput::ControlMusic(void* context,uint8_t voice,uint8_t action,int16_t gain) {
+    return ControlAssetImpl(context,voice,action,gain,true);
+}
+bool PxaAudioOutput::ControlAssetImpl(void* context,uint8_t voice,uint8_t action,int16_t gain_db_q8,bool music_only) {
     auto* self = static_cast<PxaAudioOutput*>(context);
     if (self == nullptr || self->music_task_ == nullptr || voice >= 3) return false;
     if (action < PXA_AUDIO_ASSET_PAUSE || action > PXA_AUDIO_ASSET_SET_GAIN) return false;
     MusicCommand retired_command = {};
     xSemaphoreTake(self->music_mutex_, portMAX_DELAY);
-    if (action == PXA_AUDIO_ASSET_PAUSE) self->sound_paused_[voice] = true;
-    if (action == PXA_AUDIO_ASSET_RESUME) self->sound_paused_[voice] = false;
+    if (!music_only && action == PXA_AUDIO_ASSET_PAUSE) self->sound_paused_[voice] = true;
+    if (!music_only && action == PXA_AUDIO_ASSET_RESUME) self->sound_paused_[voice] = false;
     for (auto& sound : self->sounds_) {
-        if (!sound.asset || sound.voice != voice) continue;
+        if (music_only || !sound.asset || sound.voice != voice) continue;
         if (action == PXA_AUDIO_ASSET_STOP) self->ReleaseSound(sound);
         else if (action == PXA_AUDIO_ASSET_SET_GAIN)
-            sound.gain_q15 = static_cast<int32_t>(32768.f * powf(10.f, gain_db_q8 / 5120.f));
+            sound.gain_q15 = sound.target_gain_q15 = static_cast<int32_t>(32768.f * powf(10.f, gain_db_q8 / 5120.f));
     }
     if (self->music_voice_.load() == voice) {
         switch (action) {
@@ -610,7 +637,7 @@ void PxaAudioOutput::Run() {
         bool sounds_active = false;
         xSemaphoreTake(music_mutex_, portMAX_DELAY);
         for (const auto& sound : sounds_)
-            sounds_active |= sound.asset && !sound_paused_[sound.voice];
+            sounds_active |= sound.asset && !sound.paused && !sound_paused_[sound.voice];
         xSemaphoreGive(music_mutex_);
         if (rendered_token != music_token_.load()) {
             rendered_token = music_token_.load();
@@ -674,20 +701,9 @@ void PxaAudioOutput::Run() {
                     static_cast<int32_t>((static_cast<int64_t>(music_sample) * output_music_gain_q15) >> 15);
                 for (auto& sound : sounds_) {
                     if (!sound.asset || sound_paused_[sound.voice]) continue;
-                    const uint32_t remaining = sound.samples - sound.position;
-                    const uint32_t attack = sound.position + 1;
-                    const uint32_t envelope = std::min<uint32_t>(
-                        64, std::min(attack, remaining));
-                    const int32_t sample =
-                        (static_cast<int32_t>(sound.pcm[sound.position++]) - 128)
-                        * 256;
-                    mixed += static_cast<int32_t>((static_cast<int64_t>(sample) * sound.gain_q15) >> 15) *
-                             static_cast<int32_t>(envelope) / 64;
-                    if (sound.position == sound.samples) ReleaseSound(sound);
+                    mixed += pxa_audio_sound_render(&sound);
                 }
-                frame.pcm[index] = static_cast<int16_t>(std::clamp(
-                    mixed, static_cast<int32_t>(INT16_MIN),
-                    static_cast<int32_t>(INT16_MAX)));
+                frame.pcm[index] = pxa_audio_output_limit(mixed);
             }
         }
         xSemaphoreGive(music_mutex_);
@@ -700,6 +716,15 @@ void PxaAudioOutput::Run() {
         xSemaphoreTake(music_mutex_,portMAX_DELAY);
         if (music_output_token_==frame_music_token) music_output_token_=0;
         xSemaphoreGive(music_mutex_);
+        // A blocking I2S sink supplies the playback clock and lets us refill
+        // its DMA ring ahead of playback. An additional software timer leaves
+        // that ring mostly empty and allows scheduling jitter/clock drift to
+        // insert zero-filled blocks even though every write succeeds.
+        if (device_paced_) {
+            // A broken sink must not turn a priority-6 task into a busy loop.
+            if (!written) vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
         vTaskDelayUntil(&last_send, pdMS_TO_TICKS(20));
         if ((TickType_t)(xTaskGetTickCount() - last_send) > pdMS_TO_TICKS(20))
             last_send = xTaskGetTickCount();

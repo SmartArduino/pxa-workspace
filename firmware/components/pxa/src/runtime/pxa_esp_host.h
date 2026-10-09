@@ -91,6 +91,7 @@ bool pxa_esp_host_respond_unresponsive(uint32_t prompt_id, bool wait);
 void pxa_esp_host_set_audio_sink(pxa_host_audio_submit_fn submit,
                                  pxa_host_audio_flush_fn flush,
                                  void *context);
+void pxa_esp_host_set_audio_sound_track_sink(pxa_host_audio_sound_track_fn, pxa_host_audio_sound_control_fn, void *);
 void pxa_esp_host_set_audio_sound_sink(pxa_host_audio_sound_fn, void *);
 void pxa_esp_host_set_audio_asset_sink(
     pxa_host_audio_asset_play_fn play,

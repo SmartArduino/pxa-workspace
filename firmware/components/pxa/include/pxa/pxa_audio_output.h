@@ -1,4 +1,5 @@
 #pragma once
+#include "pxa/audio_sound.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -20,7 +21,9 @@ public:
     using Write = bool (*)(void*, const int16_t*, size_t);
     // One board-owned instance, lifetime equals the board. Write may block;
     // Guest submit never calls the physical device or decoder directly.
-    bool Initialize(Write write, void* context);
+    // device_paced requires Write to block when its bounded hardware buffer
+    // is full, including silence. It replaces the software 20-ms timer.
+    bool Initialize(Write write, void* context, bool device_paced = false);
     struct MusicStats {
         pxa_audio_buffer_t buffer = {};
         uint64_t ready_max_us = 0;
@@ -46,24 +49,20 @@ private:
         const pxa_memory_allocator_t* temporary_allocator;
         pxa_esp_music_input* input; // Owns the catalog lease and bounded workspace.
     };
-    struct PlayingSound {
-        pxa_asset_object_t* asset = nullptr;
-        const uint8_t* pcm = nullptr;
-        uint32_t samples = 0;
-        uint32_t position = 0;
-        int32_t gain_q15 = 0;
-        uint8_t voice = 0;
-    };
+    using PlayingSound = pxa_audio_sound_voice_t;
     PlayingSound sounds_[kSoundVoices] = {};
     bool sound_paused_[3] = {};
     Write write_ = nullptr;
     void* write_context_ = nullptr;
+    bool device_paced_ = false;
     void ReleaseSound(PlayingSound& sound);
 
     static bool Submit(void* context, uint8_t voice, const int16_t* pcm,
                        size_t samples);
     static void Flush(void* context, uint8_t voice);
     static bool PlaySound(void*, uint8_t, pxa_asset_object_t*, int16_t);
+    static bool PlaySoundTrack(void*, uint8_t, pxa_asset_object_t*, const pxa_audio_sound_options_t*);
+    static bool ControlSound(void*, uint8_t, const pxa_audio_sound_control_t*);
     static bool PlayAsset(void* context, uint8_t voice,
                           const char* absolute_path, bool loop,
                           int16_t gain_db_q8);
@@ -71,6 +70,8 @@ private:
     static pxa_status_t PlaybackPeek(void*,pxa_audio_playback_event_t*);
     static pxa_status_t PlaybackConsume(void*,const pxa_audio_playback_event_t*);
     static void PlaybackClose(void*,uint64_t);
+    static bool ControlMusic(void* context, uint8_t voice, uint8_t action, int16_t gain);
+    static bool ControlAssetImpl(void* context, uint8_t voice, uint8_t action, int16_t gain, bool music_only);
     static bool ControlAsset(void* context, uint8_t voice,
                              uint8_t action, int16_t gain_db_q8);
     static void AudioTask(void* context);

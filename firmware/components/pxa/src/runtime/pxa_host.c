@@ -507,6 +507,11 @@ void pxa_host_set_audio_sink(pxa_host_audio_submit_fn submit,
     pxa_esp_host_set_audio_sink(submit, flush, context);
 }
 
+void pxa_host_set_audio_sound_track_sink(pxa_host_audio_sound_track_fn play,
+    pxa_host_audio_sound_control_fn control, void *context) {
+    pxa_esp_host_set_audio_sound_track_sink(play, control, context);
+}
+
 void pxa_host_set_audio_sound_sink(pxa_host_audio_sound_fn play, void *context) {
     pxa_esp_host_set_audio_sound_sink(play,context);
 }

@@ -87,6 +87,22 @@ static unsigned decoder_calls, decoder_closes, decoded_samples;
 static PxaAudioOutput* decoding_audio;
 static PxaAudioOutput* pending_output;
 static bool natural_drain;
+// Six I2S descriptors leave five writable buffers. The DMA consumes one
+// block every 20 ms, independently of the Host's timer and rendering work.
+static struct {
+    bool active;
+    uint64_t now_us, next_dma_us;
+    unsigned queued, writes, underruns, high_water;
+} output_clock;
+static void advance_output_clock(uint64_t elapsed_us) {
+    const uint64_t until = output_clock.now_us + elapsed_us;
+    while (output_clock.next_dma_us <= until) {
+        if (output_clock.queued) --output_clock.queued;
+        else ++output_clock.underruns;
+        output_clock.next_dma_us += 20000;
+    }
+    output_clock.now_us = until;
+}
 
 void* heap_caps_malloc(size_t n, unsigned) { return malloc(n); }
 void* heap_caps_calloc(size_t n, size_t s, unsigned) { return calloc(n,s); }
@@ -122,9 +138,14 @@ TaskHandle_t xTaskCreateStatic(void(*)(void*),const char*,uint32_t bytes,void* c
 void vTaskDelete(TaskHandle_t) {}
 void xTaskNotifyGive(TaskHandle_t) {}
 uint32_t ulTaskNotifyTake(int,TickType_t) {throw Idle{};}
-TickType_t xTaskGetTickCount() {return 0;}
+TickType_t xTaskGetTickCount() {return output_clock.active ? output_clock.now_us / 1000 : 0;}
 int64_t esp_timer_get_time() {static int64_t us; return ++us;}
-void vTaskDelayUntil(TickType_t*,TickType_t) {throw Tick{};}
+void vTaskDelayUntil(TickType_t* last,TickType_t period) {
+    if (!output_clock.active) throw Tick{};
+    *last += period;
+    const uint64_t until = static_cast<uint64_t>(*last) * 1000;
+    if (until > output_clock.now_us) advance_output_clock(until - output_clock.now_us);
+}
 void vTaskDelay(TickType_t) {
     if (decoding_audio) {
         assert(decoding_audio->music_count_ > 0 && decoding_audio->music_count_ <= 320);
@@ -174,6 +195,7 @@ int esp_audio_simple_dec_get_info(esp_audio_simple_dec_handle_t,esp_audio_simple
 void pxa_host_set_audio_sink(pxa_host_audio_submit_fn,pxa_host_audio_flush_fn,void*){}
 void pxa_host_set_audio_asset_sink(pxa_host_audio_asset_play_fn,pxa_host_audio_asset_control_fn,void*){}
 void pxa_host_set_audio_sound_sink(pxa_host_audio_sound_fn,void*){}
+void pxa_host_set_audio_sound_track_sink(pxa_host_audio_sound_track_fn,pxa_host_audio_sound_control_fn,void*){}
 void pxa_host_set_audio_music_sink(const pxa_host_audio_music_sink_t*){}
 void pxa_host_audio_notify() { assert(!music_lock_depth); }
 static void* sound_allocate(void*,size_t n) { return pxa_esp_resource_allocate(1,PXA_MEMORY_AUDIO,n); }
@@ -185,6 +207,22 @@ static bool write_pcm(void*,const int16_t* pcm,size_t n) {
     bool audible=false; for(size_t i=0;i<n;++i) audible |= pcm[i]>0;
     assert(audible != expect_silence); // The music fade may round its first sample to zero.
     ++frames; return !reject_output;
+}
+static bool write_clocked_pcm(void*,const int16_t* pcm,size_t n) {
+    assert(n==320 && output_clock.active);
+    bool audible=false; for(size_t i=0;i<n;++i) audible |= pcm[i]>0;
+    assert(audible);
+    // The initial attack ends in the first block; buffering must preserve
+    // every subsequent sample of this constant 1,000-amplitude loop.
+    if (output_clock.writes) for(size_t i=0;i<n;++i) assert(pcm[i]==1000);
+    // Mixing is cheap, but occasionally the task is not scheduled for 35 ms.
+    advance_output_clock(500 + (output_clock.writes % 17 == 16 ? 35000 : 0));
+    if (output_clock.queued == 5)
+        advance_output_clock(output_clock.next_dma_us - output_clock.now_us);
+    ++output_clock.queued;
+    output_clock.high_water=std::max(output_clock.high_water,output_clock.queued);
+    if (++output_clock.writes == 320) throw Tick{};
+    return true;
 }
 static void tick(PxaAudioOutput& a){try {a.Run();}catch(Tick&){}catch(Idle&){} }
 int main(){
@@ -214,7 +252,9 @@ int main(){
         const auto device=budget_stats(owners[2]); assert(!device.charged[0] && !device.charged[1]);
         pxa_memory_release(occupied);
     }
-    assert(a.Initialize(write_pcm,nullptr) && created_tasks == 2);
+    assert(a.Initialize(write_pcm,nullptr,true) && created_tasks == 2);
+    assert(a.device_paced_);
+    a.device_paced_=false; // Remaining legacy fixtures end at the software timer.
     const auto device_resident=budget_stats(owners[2]);
     assert(device_resident.charged[0] == pxa_memory_allocation_bytes(sizeof(PxaAudioOutput::RuntimeStorage)) +
         pxa_memory_allocation_bytes(kMusicTaskStackBytes));
@@ -244,6 +284,66 @@ int main(){
     assert(a.ControlAsset(&a,1,PXA_AUDIO_ASSET_RESUME,0));tick(a);assert(frames==26);
     assert(a.ControlAsset(&a,1,PXA_AUDIO_ASSET_STOP,0));
     assert(pxa_asset_object_reference_count(sound)==1);
+    assert(pxa_audio_output_limit(20000)==20000);
+    assert(pxa_audio_output_limit(40000)<pxa_audio_output_limit(80000));
+    assert(pxa_audio_output_limit(80000)<32767);
+    assert(pxa_audio_output_limit(-80000)==-pxa_audio_output_limit(80000));
+    // Tracked signed PCM keeps playing while the Guest issues no commands.
+    pxa_asset_info_t signed_info={}; signed_info.kind=PXA_ASSET_AUDIO;
+    signed_info.encoding=PXA_ASSET_ENCODING_PCM_S16LE_16K_MONO;
+    signed_info.stored_bytes=signed_info.decoded_bytes=2000;
+    pxa_asset_object_t* signed_sound=nullptr;
+    assert(!pxa_asset_object_create(&signed_info,sound_allocate,sound_free,nullptr,&signed_sound,&payload));
+    for(unsigned i=0;i<1000;++i) {payload[2*i]=0xe8;payload[2*i+1]=3;}
+    pxa_asset_object_finish_loading(signed_sound);
+    pxa_audio_sound_options_t track={0,1,1};
+    assert(a.PlaySoundTrack(&a,0,signed_sound,&track));
+    assert(a.PlaySoundTrack(&a,1,signed_sound,&track));
+    for(unsigned i=0;i<12;++i) tick(a); // Host loops beyond the original clip.
+    assert(pxa_asset_object_reference_count(signed_sound)==3);
+    assert(a.ControlMusic(&a,0,PXA_AUDIO_ASSET_SET_GAIN,-20*256));
+    for(auto& v:a.sounds_) if(v.asset) assert(v.target_gain_q15==32768);
+    pxa_audio_sound_control_t track_control={0,1,PXA_AUDIO_ASSET_STOP};
+    assert(a.ControlSound(&a,0,&track_control));tick(a);
+    assert(pxa_asset_object_reference_count(signed_sound)==2); // other session survives
+    assert(a.PlaySoundTrack(&a,1,signed_sound,&track)); // replacing retains exactly one pin
+    assert(pxa_asset_object_reference_count(signed_sound)==2);
+    assert(a.ControlSound(&a,1,&track_control));tick(a);
+    assert(pxa_asset_object_reference_count(signed_sound)==1);
+    // Exercise the actual continuous mixer against a virtual blocking DMA
+    // sink. Timer pacing leaves gaps under jitter; device pacing fills the
+    // existing ring and survives the identical stalls without changing PCM.
+    for (bool device_paced : {false,true}) {
+        assert(a.PlaySoundTrack(&a,0,signed_sound,&track));
+        a.device_paced_=device_paced;
+        a.write_=write_clocked_pcm;
+        output_clock={true,0,20000,0,0,0,0};
+        tick(a);
+        assert(output_clock.writes==320);
+        if (device_paced) assert(!output_clock.underruns && output_clock.high_water==5);
+        else assert(output_clock.underruns>0 && output_clock.high_water<5);
+        if (device_paced) assert(output_clock.now_us>=6300000 && output_clock.now_us<=6400000);
+        printf("DMA clock fixture: device_paced=%u frames=%u gaps=%u buffered=%u elapsed_us=%llu\n",
+            device_paced,output_clock.writes,output_clock.underruns,output_clock.high_water,
+            static_cast<unsigned long long>(output_clock.now_us));
+        output_clock.active=false;
+        a.write_=write_pcm;
+        a.device_paced_=false;
+        assert(a.ControlSound(&a,0,&track_control));tick(a);
+        assert(pxa_asset_object_reference_count(signed_sound)==1);
+    }
+    // An immediately failing hardware sink backs off instead of spinning.
+    assert(a.PlaySoundTrack(&a,0,signed_sound,&track));
+    a.device_paced_=true;
+    reject_output=true;
+    const unsigned before_failure=frames;
+    tick(a);
+    assert(frames==before_failure+1);
+    reject_output=false;
+    a.device_paced_=false;
+    assert(a.ControlSound(&a,0,&track_control));tick(a);
+    assert(pxa_asset_object_reference_count(signed_sound)==1);
+    pxa_asset_object_release(signed_sound);
     // Hot playback requires no allocation, even when all remaining app quota is held.
     void* pressure = pxa_esp_resource_allocate(PXA_MEMORY_EXTERNAL,PXA_MEMORY_RASTER,
         available_external-sound_charge-(pxa_memory_allocation_bytes(1)-1));

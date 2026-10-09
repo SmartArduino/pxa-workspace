@@ -57,6 +57,9 @@ typedef struct {
     pxa_host_audio_music_sink_t music_sink;
     pxa_host_audio_sound_fn play_sound;
     void *sound_context;
+    pxa_host_audio_sound_track_fn play_sound_track;
+    pxa_host_audio_sound_control_fn control_sound;
+    void *sound_track_context;
     const pxa_package_manifest_t *package_manifest;
     char package_root[PXA_ESP_AUDIO_ASSET_PATH_MAX];
     uint64_t next_provider_session;
@@ -256,6 +259,45 @@ static pxa_status_t audio_play_sound(void *context,uint64_t session,pxa_asset_ob
     return PXA_STATUS_OK;
 }
 
+static pxa_status_t audio_play_sound_ex(void *context, uint64_t session,
+    pxa_asset_object_t *sound, const pxa_audio_sound_options_t *options) {
+    pxa_esp_audio_state_t *audio = context;
+    if (audio != &g_audio || !sound || !options) return PXA_STATUS_INVALID_ARGUMENT;
+    audio_lock(audio);
+    int slot = slot_index_locked(audio,session);
+    int committed = slot >= 0 && audio->slots[slot].graph_committed;
+    int suspended = audio->suspended;
+    audio_unlock(audio);
+    if (slot < 0) return PXA_STATUS_NOT_FOUND;
+    if (!committed) return PXA_STATUS_BAD_STATE;
+    if (suspended) return PXA_STATUS_UNAVAILABLE;
+    portENTER_CRITICAL(&audio->sink_lock);
+    pxa_host_audio_sound_track_fn play = audio->play_sound_track;
+    void *sink_context = audio->sound_track_context;
+    portEXIT_CRITICAL(&audio->sink_lock);
+    if (!play) return PXA_STATUS_UNSUPPORTED;
+    if (!play(sink_context,(uint8_t)slot,sound,options)) return PXA_STATUS_WOULD_BLOCK;
+    audio_lock(audio);
+    audio->slots[slot].asset_active = 1;
+    audio_unlock(audio);
+    return PXA_STATUS_OK;
+}
+static pxa_status_t audio_control_sound(void *context, uint64_t session,
+    const pxa_audio_sound_control_t *control) {
+    pxa_esp_audio_state_t *audio = context;
+    if (audio != &g_audio || !control) return PXA_STATUS_INVALID_ARGUMENT;
+    audio_lock(audio);
+    int slot = slot_index_locked(audio,session);
+    audio_unlock(audio);
+    if (slot < 0) return PXA_STATUS_NOT_FOUND;
+    portENTER_CRITICAL(&audio->sink_lock);
+    pxa_host_audio_sound_control_fn apply = audio->control_sound;
+    void *sink_context = audio->sound_track_context;
+    portEXIT_CRITICAL(&audio->sink_lock);
+    if (!apply) return PXA_STATUS_UNSUPPORTED;
+    return apply(sink_context,(uint8_t)slot,control) ? PXA_STATUS_OK : PXA_STATUS_BAD_STATE;
+}
+
 static pxa_status_t audio_play_music_impl(void *context,
                                      uint64_t provider_session,
                                      const pxa_audio_asset_t *asset, uint64_t *instance) {
@@ -369,6 +411,23 @@ void pxa_esp_audio_set_music_sink(const pxa_host_audio_music_sink_t *sink) {
     if (sink) g_audio.music_sink=*sink;
     else memset(&g_audio.music_sink,0,sizeof(g_audio.music_sink));
     portEXIT_CRITICAL(&g_audio.sink_lock);
+}
+
+static pxa_status_t audio_control_music(void *context,uint64_t session,
+    const pxa_audio_asset_control_t *control) {
+    pxa_esp_audio_state_t *audio=context;
+    audio_lock(audio);
+    int slot=slot_index_locked(audio,session);
+    int suspended=audio->suspended;
+    audio_unlock(audio);
+    if (slot<0) return PXA_STATUS_NOT_FOUND;
+    portENTER_CRITICAL(&audio->sink_lock);
+    pxa_host_audio_music_sink_t sink=audio->music_sink;
+    portEXIT_CRITICAL(&audio->sink_lock);
+    if (!sink.control) return PXA_STATUS_UNSUPPORTED;
+    if (suspended && control->action==PXA_AUDIO_ASSET_RESUME) return PXA_STATUS_UNAVAILABLE;
+    return sink.control(sink.context,(uint8_t)slot,control->action,control->gain_db_q8) ?
+        PXA_STATUS_OK : PXA_STATUS_BAD_STATE;
 }
 
 static pxa_status_t audio_control_asset(
@@ -685,6 +744,9 @@ void pxa_esp_audio_backend(pxa_audio_backend_t *output) {
     output->play_tone = audio_play_tone;
     output->play_asset = audio_play_asset;
     output->play_sound = audio_play_sound;
+    output->play_sound_ex = audio_play_sound_ex;
+    output->control_sound = audio_control_sound;
+    output->control_music = audio_control_music;
     output->play_music = audio_play_music;
     output->playback_peek = audio_playback_peek;
     output->playback_consume = audio_playback_consume;
@@ -745,6 +807,13 @@ void pxa_esp_audio_set_sink(pxa_host_audio_submit_fn submit,
     portEXIT_CRITICAL(&g_audio.sink_lock);
 }
 
+void pxa_esp_audio_set_sound_track_sink(pxa_host_audio_sound_track_fn play,
+    pxa_host_audio_sound_control_fn control, void *context) {
+    portENTER_CRITICAL(&g_audio.sink_lock);
+    g_audio.play_sound_track = play; g_audio.control_sound = control;
+    g_audio.sound_track_context = context;
+    portEXIT_CRITICAL(&g_audio.sink_lock);
+}
 void pxa_esp_audio_set_sound_sink(pxa_host_audio_sound_fn play,void *context) {
     portENTER_CRITICAL(&g_audio.sink_lock);
     g_audio.play_sound = play; g_audio.sound_context = context;

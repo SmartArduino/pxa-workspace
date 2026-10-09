@@ -62,6 +62,15 @@ static bool sound_play(void *c, uint8_t voice, pxa_asset_object_t *sound, int16_
     ++sound_plays;
     return true;
 }
+static bool sound_track_play(void *c,uint8_t voice,pxa_asset_object_t *asset,
+    const pxa_audio_sound_options_t *options) {
+    assert(options->track==2 && options->loop==1);
+    return sound_play(c,voice,asset,options->gain_db_q8);
+}
+static bool sound_track_control(void *c,uint8_t voice,const pxa_audio_sound_control_t *control) {
+    (void)c;assert(!locked && !depth && voice==1 && control->track==2);
+    return true;
+}
 static pxa_status_t music_play(void *ctx, uint8_t voice, uint64_t session,
     const char *path, bool loop, int16_t gain, bool initial_pause, uint64_t *instance) {
     assert(ctx == &music_event && !locked && !depth && voice == 1);
@@ -174,6 +183,15 @@ int main(void) {
     assert(paused == before_pause + 2);
     pxa_esp_audio_set_suspended(false);
     assert(resumed == before_resume + 1);
+    pxa_audio_sound_options_t tracked={-6*256,2,1};
+    pxa_audio_sound_control_t stop_track={0,2,PXA_AUDIO_ASSET_STOP};
+    assert(b.play_sound_ex(b.context,c,sound,&tracked)==PXA_STATUS_UNSUPPORTED);
+    pxa_esp_audio_set_sound_track_sink(sound_track_play,sound_track_control,NULL);
+    assert(!b.play_sound_ex(b.context,c,sound,&tracked));
+    assert(!b.control_sound(b.context,c,&stop_track));
+    pxa_esp_audio_set_suspended(true);
+    assert(b.play_sound_ex(b.context,c,sound,&tracked)==PXA_STATUS_UNAVAILABLE);
+    pxa_esp_audio_set_suspended(false);
     pxa_asset_object_release(sound);
     uint64_t instance=99;
     assert(b.play_music(b.context,c,&asset,&instance)==PXA_STATUS_UNSUPPORTED && !instance);

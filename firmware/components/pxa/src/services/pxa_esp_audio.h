@@ -49,6 +49,7 @@ int pxa_esp_audio_bind_package(const pxa_package_manifest_t *manifest,
 
 void pxa_esp_audio_set_sink(pxa_host_audio_submit_fn submit,
                             pxa_host_audio_flush_fn flush, void *context);
+void pxa_esp_audio_set_sound_track_sink(pxa_host_audio_sound_track_fn, pxa_host_audio_sound_control_fn, void *);
 void pxa_esp_audio_set_sound_sink(pxa_host_audio_sound_fn, void *);
 void pxa_esp_audio_set_music_sink(const pxa_host_audio_music_sink_t *);
 void pxa_esp_audio_set_asset_sink(
