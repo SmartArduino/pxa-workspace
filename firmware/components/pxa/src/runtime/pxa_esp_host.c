@@ -63,6 +63,7 @@
 #include "pxa_host_activation_arena.h"
 #include "pxa_host_clock_slots.h"
 #include "pxa_host_command.h"
+#include "pxa_host_ui_event_text.h"
 #include "pxa_host_pointer_mailbox.h"
 #include "pxa_esp_store_policy.h"
 
@@ -2233,6 +2234,11 @@ static void queue_ui_pointer(uint32_t surface, uint32_t node,
     }
 }
 
+static void *allocate_ui_event_text(size_t size) {
+    void *memory = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return memory != NULL ? memory : heap_caps_malloc(size, MALLOC_CAP_8BIT);
+}
+
 static void on_ui_event(uint32_t surface, uint32_t node,
                         pxa_ui_event_kind_t kind, uint16_t flags,
                         const void *value, size_t value_size,
@@ -2256,17 +2262,17 @@ static void on_ui_event(uint32_t surface, uint32_t node,
     command.payload.ui_event.instance_id = public_state.main_instance_id;
     command.payload.ui_event.value =
         value_size >= 4 ? (int32_t)pxa_read_u32(value) : 0;
-    if (kind == PXA_UI_EVENT_TEXT && value != NULL && value_size != 0) {
-        size_t copy = value_size < PXA_HOST_UI_EVENT_TEXT_BYTES
-                          ? value_size
-                          : PXA_HOST_UI_EVENT_TEXT_BYTES;
-        memcpy(command.payload.ui_event.text, value, copy);
-        command.payload.ui_event.text_size = (uint16_t)copy;
+    if (kind == PXA_UI_EVENT_TEXT &&
+        !pxa_host_ui_event_set_text(&command.payload.ui_event, value, value_size,
+                                    allocate_ui_event_text)) {
+        ESP_LOGE(PXA_ESP_HOST_TAG, "UI text event allocation or limit failed");
+        return;
     }
     timestamp_us = pxa_lvgl_ui_event_timestamp_us(g_host.ui_adapter);
     command.payload.ui_event.timestamp_us =
         timestamp_us != 0 ? timestamp_us : host_now_us(NULL);
     if (!post_command(&command)) {
+        pxa_host_ui_event_release_text(&command.payload.ui_event, free);
         ESP_LOGE(PXA_ESP_HOST_TAG, "Reliable UI event queue is full");
     }
 }
@@ -3190,7 +3196,7 @@ static int start_verified(const char *identity) {
                     PXA_UI_FEATURE_RGB565_BITMAP |
                     PXA_UI_FEATURE_CONTROLLER_INPUT |
                     PXA_UI_FEATURE_CANVAS_STREAM_IO |
-                    PXA_UI_FEATURE_TEXT_INPUT_CONTROL;
+                    PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
                 service_capabilities[index].features |= PXA_UI_FEATURE_SIZED_TEXT;
 #endif
@@ -3464,7 +3470,7 @@ static void post_ui_event(const pxa_esp_host_command_t *command) {
         g_host.activation.services.ui, g_host.activation.ui_component,
         event->surface, event->node, event->kind, event->flags,
         event->timestamp_us,
-        has_text ? (const void *)event->text
+        has_text ? pxa_host_ui_event_text(event)
                  : has_value ? &event->value : NULL,
         has_text ? event->text_size
                  : has_value ? sizeof(event->value) : 0);
@@ -4294,6 +4300,7 @@ static void run(void) {
                 break;
             case PXA_ESP_HOST_CMD_UI_EVENT:
                 post_ui_event(&command);
+                pxa_host_ui_event_release_text(&command.payload.ui_event, free);
                 break;
             case PXA_ESP_HOST_CMD_CONTROLLER:
                 post_controller(&command);
@@ -4795,7 +4802,8 @@ bool pxa_esp_host_initialize(void) {
     ui_config.primary_environment.features =
         PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
         PXA_UI_FEATURE_GRID | PXA_UI_FEATURE_RGB565_BITMAP |
-        PXA_UI_FEATURE_CONTROLLER_INPUT | PXA_UI_FEATURE_TEXT_INPUT_CONTROL;
+        PXA_UI_FEATURE_CONTROLLER_INPUT | PXA_UI_FEATURE_TEXT_INPUT_CONTROL |
+        PXA_UI_FEATURE_DYNAMIC_TEXT;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
     ui_config.primary_environment.features |= PXA_UI_FEATURE_SIZED_TEXT;
 #endif

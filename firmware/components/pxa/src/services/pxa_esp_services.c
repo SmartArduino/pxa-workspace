@@ -920,7 +920,7 @@ static pxa_status_t initialize_window_ui(
                       PXA_UI_FEATURE_RGB565_BITMAP |
                       PXA_UI_FEATURE_CONTROLLER_INPUT |
                       PXA_UI_FEATURE_CANVAS_STREAM_IO |
-                      PXA_UI_FEATURE_TEXT_INPUT_CONTROL;
+                      PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
     config.features |= PXA_UI_FEATURE_SIZED_TEXT;
 #endif

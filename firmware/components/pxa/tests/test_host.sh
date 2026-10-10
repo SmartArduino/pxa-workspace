@@ -35,6 +35,9 @@ build_and_run() {
   "$build_dir/$name"
 }
 
+build_and_run ui_event_text \
+  "${adapter_includes[@]}" "$tests_dir/pxa_host_ui_event_text_test.c"
+
 build_and_run activation_arena \
   -I"$component_dir/src/runtime" \
   "$tests_dir/pxa_host_activation_arena_test.c" \

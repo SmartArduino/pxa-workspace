@@ -57,6 +57,7 @@ typedef struct {
     uint16_t flags;
     uint16_t text_size;
     uint8_t text[PXA_HOST_UI_EVENT_TEXT_BYTES];
+    uint8_t *text_heap;
 } pxa_host_ui_event_t;
 
 typedef struct {
