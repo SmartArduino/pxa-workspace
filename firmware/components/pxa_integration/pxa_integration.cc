@@ -16,6 +16,7 @@
 #include <esp_app_desc.h>
 #include <esp_err.h>
 #include <esp_heap_caps.h>
+#include <esp_attr.h>
 #include <esp_littlefs.h>
 #include <esp_log.h>
 #include <esp_lvgl_port.h>
@@ -718,7 +719,7 @@ size_t ListAppPermissions(void*, const char* identity,
                           size_t capacity) {
     /* The host fills a whole list per call; the LVGL thread calls this once
      * per detail-dialog rebuild, so one scratch buffer is enough. */
-    static pxa_host_app_permission_t host_permissions[
+    EXT_RAM_BSS_ATTR static pxa_host_app_permission_t host_permissions[
         PXSYS_REFERENCE_APP_PERMISSION_MAX];
     size_t count;
     size_t index;

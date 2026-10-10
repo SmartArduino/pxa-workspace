@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "esp_heap_caps.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_memory_utils.h"
 #include "esp_pthread.h"
@@ -317,7 +318,8 @@ typedef struct {
     char owner[PXA_ESP_PACKAGE_ID_BYTES];
 } pxa_esp_store_download_entry_t;
 #define PXA_ESP_STORE_DOWNLOAD_SLOTS 8u
-static pxa_esp_store_download_entry_t g_store_downloads[PXA_ESP_STORE_DOWNLOAD_SLOTS];
+/* Download bookkeeping is task-only and never used by cache-disabled code. */
+EXT_RAM_BSS_ATTR static pxa_esp_store_download_entry_t g_store_downloads[PXA_ESP_STORE_DOWNLOAD_SLOTS];
 
 static bool store_download_filename_valid(const char *name) {
     if (name == NULL || strlen(name) != 19u ||

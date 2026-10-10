@@ -18,6 +18,9 @@ CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 CONFIG_SPIRAM_ALLOW_NOINIT_SEG_EXTERNAL_MEMORY=y
 CONFIG_SPIRAM_MEMTEST=n
 CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC=y
+# Keep the 16 KiB instruction cache while internal RAM is tight. A 64-byte
+# data cache line improves frame/PNG PSRAM traffic without growing the cache.
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_COMPILER_CXX_EXCEPTIONS=y
@@ -72,8 +75,7 @@ CONFIG_PXA_HOST_MANAGED_HEAP_SIZE=16384
 CONFIG_PXA_RUNTIME_TASK_STACK_SIZE=12288
 CONFIG_PXA_RUNTIME_TASK_PRIORITY=3
 CONFIG_PXA_RUNTIME_TASK_AFFINITY=1
-# The App runtime is pinned to CPU0; split GameRender rasterization so the
-# worker renders its row range on CPU1 concurrently.
+# The App runtime is pinned to CPU1; the raster worker runs on CPU0.
 CONFIG_PXA_PARALLEL_RASTER=y
 CONFIG_PXA_RASTER_WORKER_AFFINITY=0
 CONFIG_PXA_RASTER_WORKER_PRIORITY=4
@@ -114,8 +116,7 @@ CONFIG_PXADB_AUTOSTART=y
 CONFIG_PXADB_TEST_CONTROL=y
 
 # The reference UI renders CJK text through FreeType and draws icons from
-# packages. Without an LVGL cache every glyph and image is rasterised again on
-# each frame, which made large moving surfaces (the notification shade drag)
-# cost tens of milliseconds per frame. Other boards already size this cache.
+# packages. Cache decoded PNGs in PSRAM instead of decoding on each redraw.
+# FreeType has its own glyph cache, independent of this image cache.
 CONFIG_LV_CACHE_DEF_SIZE=1048576
 CONFIG_LV_IMAGE_HEADER_CACHE_DEF_CNT=32

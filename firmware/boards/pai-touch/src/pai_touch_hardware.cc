@@ -1,6 +1,9 @@
 #include "pai_touch_hardware.h"
 
 #include "pai_touch_config.h"
+#include <src/draw/lv_draw_buf_private.h>
+#include <src/misc/cache/instance/lv_image_cache.h>
+#include <src/misc/cache/instance/lv_image_header_cache.h>
 
 #include <algorithm>
 #include <cmath>
@@ -54,6 +57,16 @@ constexpr int64_t kPowerButtonTouchGuardUs = 350 * 1000;
 constexpr char kPerformanceNamespace[] = "pxa_perf";
 constexpr char kPerformanceOverlayKey[] = "overlay";
 constexpr char kPerformanceLogKey[] = "log";
+
+void* AllocateImagePixels(size_t bytes, lv_color_format_t) {
+    // Match LVGL's default alignment padding. No internal-RAM fallback: an
+    // exhausted image cache must not take RAM needed by audio or Flash I/O.
+    if (bytes > SIZE_MAX - (LV_DRAW_BUF_ALIGN - 1)) return nullptr;
+    return heap_caps_malloc(bytes + LV_DRAW_BUF_ALIGN - 1,
+                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+}
+
+void FreeImagePixels(void* pixels) { heap_caps_free(pixels); }
 
 struct LcdCommand {
     uint8_t command;
@@ -274,6 +287,24 @@ bool PaiTouchHardware::InitializeDisplay() {
         .timer_period_ms = 2,
     };
     ESP_ERROR_CHECK(lvgl_port_init(&port));
+
+    // sdkconfig.defaults does not override a saved board sdkconfig. Enforce
+    // the board's image budget at runtime too, including existing builds.
+    // CLIB malloc on this board prefers PSRAM; decoded images are not DMA
+    // buffers and must not consume the remaining internal RAM.
+    if (!lvgl_port_lock(1000)) return false;
+    lv_lock();
+#if LVGL_VERSION_MAJOR == 9 && LVGL_VERSION_MINOR >= 6
+    auto* image_handlers = lv_draw_buf_get_image_handlers();
+#else
+    auto* image_handlers = lv_draw_buf_get_image_cache_handlers();
+#endif
+    image_handlers->buf_malloc_cb = AllocateImagePixels;
+    image_handlers->buf_free_cb = FreeImagePixels;
+    lv_image_cache_resize(1024 * 1024, true);
+    lv_image_header_cache_resize(32, true);
+    lv_unlock();
+    lvgl_port_unlock();
 
     const lvgl_port_display_cfg_t display_config = {
         .io_handle = panel_io_,

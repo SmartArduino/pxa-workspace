@@ -28,6 +28,7 @@
 #include <driver/usb_serial_jtag_vfs.h>
 #endif
 #include <esp_app_desc.h>
+#include <esp_attr.h>
 #include <esp_heap_caps.h>
 #include <esp_jpeg_enc.h>
 #include <esp_log.h>
@@ -93,7 +94,8 @@ constexpr size_t kFsDataChunkSize = 192;
 constexpr size_t kFsReadWindowChunks = 32;
 // Filled by SendFsRead; the PXADB task serializes commands, so one buffer is
 // enough and it stays out of the 20 KiB task stack.
-uint8_t s_fs_read_buffer[kFsDataChunkSize * kFsReadWindowChunks] = {};
+// Task-only staging data; transport drivers retain their internal ISR buffers.
+EXT_RAM_BSS_ATTR uint8_t s_fs_read_buffer[kFsDataChunkSize * kFsReadWindowChunks] = {};
 // Host-to-device uploads are request/response paced, so a larger FSDATA chunk
 // is the main throughput lever on UART links. Device-to-host FSGET frames
 // stay at kFsDataChunkSize because they share the 320-byte frame payload.
