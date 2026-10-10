@@ -203,7 +203,13 @@ void TestPpaDirectAndFallback() {
                 source[y * (width + 4) + x] = static_cast<uint16_t>(x * 131 + y * 37);
         PrepareFrame(source.data(), width, width, (width + 4) * 2);
         std::vector<uint16_t> accelerated(480 * 480), software(accelerated.size());
-        assert(TryAcceleratedDirectFrame(g_frame, reinterpret_cast<uint8_t*>(accelerated.data())));
+        const unsigned initial_calls = g_ppa_calls;
+        assert(TryAcceleratedDirectFrame(g_frame, reinterpret_cast<uint8_t*>(accelerated.data())) == (scale == 1));
+        if (scale != 1) {
+            assert(g_ppa_calls == initial_calls); // SRM must not filter pixel art.
+            for (uint16_t pixel : accelerated) assert(pixel == 0);
+            ComposeFrame(g_frame, &full, reinterpret_cast<uint8_t*>(accelerated.data()));
+        }
         ComposeFrame(g_frame, &full, reinterpret_cast<uint8_t*>(software.data()));
         assert(accelerated == software);
         const unsigned calls = g_ppa_calls;
@@ -260,7 +266,12 @@ void TestPpaAlphaComposition() {
                 assert(DirectFrameEligible(g_frame));
                 std::vector<uint16_t> actual(480 * 480), expected(actual.size());
                 ComposeFrame(g_frame, &full, reinterpret_cast<uint8_t*>(expected.data()));
-                assert(TryAcceleratedDirectFrame(g_frame, reinterpret_cast<uint8_t*>(actual.data())));
+                const unsigned initial_calls = g_ppa_calls;
+                assert(TryAcceleratedDirectFrame(g_frame, reinterpret_cast<uint8_t*>(actual.data())) == (scale == 1));
+                if (scale != 1) {
+                    assert(g_ppa_calls == initial_calls);
+                    ComposeFrame(g_frame, &full, reinterpret_cast<uint8_t*>(actual.data()));
+                }
                 assert(actual == expected);
                 // A failed accelerator leaves the CPU path responsible for
                 // painting both the game and every overlay exactly once.

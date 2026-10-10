@@ -283,6 +283,11 @@ bool TryAcceleratedDirectFrame(const pxa_esp_surface_frame_t& frame, uint8_t* pi
     if (!g_ppa_srm || !pixels || !DirectFrameEligible(frame)) return false;
     const uint8_t scale = pxa_surface_fit_scale(frame.width, frame.height,
         mosaico_board::kWidth, mosaico_board::kHeight);
+    // SRM upscaling on S31 changes edge colors (82,468 differing pixels in
+    // the 240x240 dungeon title). The panel byte swap must preserve exact
+    // RGB565 pixels. Use CPU nearest-neighbor expansion for 2x/4x; retain
+    // the verified byte-exact PPA copy at 1x without extra frame buffers.
+    if (scale != 1) return false;
     const ppa_srm_oper_config_t config = {
         .in = {.buffer = const_cast<uint8_t*>(frame.pixels),
                .pic_w = frame.stride_bytes / 2u, .pic_h = frame.height,
@@ -295,7 +300,7 @@ bool TryAcceleratedDirectFrame(const pxa_esp_surface_frame_t& frame, uint8_t* pi
         .rotation_angle = PPA_SRM_ROTATION_ANGLE_0,
         .scale_x = static_cast<float>(scale), .scale_y = static_cast<float>(scale),
         // CO5300 needs big-endian RGB565. PPA's input byte swap preserves
-        // those bytes through RGB565 -> RGB565, including exact 2x/4x scaling.
+        // those bytes through the verified RGB565 -> RGB565 1x copy.
         .byte_swap = true,
         .mode = PPA_TRANS_MODE_BLOCKING,
     };
