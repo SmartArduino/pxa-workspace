@@ -34,6 +34,28 @@ Behaviour measured on the device, which the link is built around:
 The two CST826 contacts are exposed as independent LVGL pointer devices, so PXA
 apps receive stable `pointer_id` values for simultaneous touches.
 
+The launcher picks its target page on release and settles in 160 ms, without
+an inertial coast followed by another snap. Short fast flicks also turn pages.
+Icons and captions are vertically centered as one block. Delete buttons use a
+40×40 pixel touch target around a 32 pixel circle on this display, and swipes
+cancel deletion taps. Small displays omit icon shadows.
+Clock and slider values update in place in the notification shade, keeping
+status refreshes from rebuilding the launcher. Decoded PNG pixels use PSRAM
+exclusively, with a 1 MiB image cache limit enforced during board initialization
+even with a saved sdkconfig; the cache does not allocate its full budget upfront.
+The data cache uses 64-byte lines while the instruction cache stays at 16 KiB
+to preserve internal SRAM. Moving PXADB read staging, permission-list scratch
+and store download records to PSRAM reduces internal static BSS by 10,992 bytes
+in the ESP32-S3 linker map. Audio/Flash task stacks and ISR buffers remain internal.
+For an existing `firmware/sdkconfig.pai-touch`, select 64-byte data cache lines
+explicitly; defaults do not override saved options.
+
+Launcher icons cancel activation once movement from the press origin exceeds
+a DPI-scaled tap tolerance, including swipes that return to their origin or
+cannot scroll farther at a page edge. Presses during page-settle animations
+also suppress activation. Ordinary taps tolerate small jitter, and stationary
+long presses still enter icon rearrangement.
+
 After Wi-Fi obtains an IP address, the board synchronizes its system clock
 with `pool.ntp.org`. The ESP-IDF SNTP service refreshes it periodically while
 connected, and a later reconnection starts synchronization again.

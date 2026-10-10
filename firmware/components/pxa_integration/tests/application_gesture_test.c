@@ -40,6 +40,7 @@ static void advance(unsigned milliseconds) {
         (void)lv_timer_handler();
     }
 }
+
 static lv_indev_data_t launcher_pointer;
 static unsigned launcher_launches;
 static void read_launcher_pointer(lv_indev_t* indev, lv_indev_data_t* data) {
@@ -86,7 +87,7 @@ static void test_launcher_pointer(lv_display_t* display, unsigned dpi) {
     lv_obj_set_size(ui.content, 296, 240);
     lv_obj_set_scroll_dir(ui.content, LV_DIR_HOR);
     lv_obj_set_scroll_elastic(ui.content, false);
-    launcher_item_t item = {.ui = &ui};
+    launcher_item_t item = {.ui = &ui, .uninstallable = 1};
     strcpy(item.app_id, "test.launcher");
     item.identity.app_id = pxsys_string_from_cstr(item.app_id);
     memset(item.identity.publisher_root, 0x51, PXSYS_PUBLISHER_ROOT_BYTES);
@@ -116,6 +117,12 @@ static void test_launcher_pointer(lv_display_t* display, unsigned dpi) {
     lv_obj_set_pos(item.tile, 25, 25);
     lv_obj_set_size(item.tile, 180, 150);
     lv_obj_update_layout(ui.root);
+    lv_area_t tile_area, icon_area, label_area;
+    lv_obj_get_coords(item.tile, &tile_area);
+    lv_obj_get_coords(lv_obj_get_child(item.tile, 0), &icon_area);
+    lv_obj_get_coords(lv_obj_get_child(item.tile, 1), &label_area);
+    assert(LV_ABS(icon_area.y1 + label_area.y2 -
+                  tile_area.y1 - tile_area.y2) <= 1);
     lv_indev_t* indev = lv_indev_create();
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_display(indev, display);
@@ -165,11 +172,99 @@ static void test_launcher_pointer(lv_display_t* display, unsigned dpi) {
     assert(ui.launcher_editing);
     pointer_sample(indev, 80, 80, false);
     assert(launcher_launches == before + 2);
+    /* The enlarged transparent margin is a real delete target. Swiping from
+     * it must still cancel, including a return to the original point. */
+    lv_obj_update_layout(ui.root);
+    lv_area_t remove_area;
+    lv_obj_get_coords(item.remove_button, &remove_area);
+    assert(lv_area_get_width(&remove_area) == 40);
+    const int rx = remove_area.x1 + 1, ry = remove_area.y1 + 20;
+    pointer_sample(indev, rx, ry, true);
+    pointer_sample(indev, rx, ry + 30, true);
+    pointer_sample(indev, rx, ry, true);
+    pointer_sample(indev, rx, ry, false);
+    assert(ui.confirm_dialog == NULL);
+    pointer_sample(indev, rx, ry, true);
+    pointer_sample(indev, rx, ry, false);
+    assert(ui.confirm_dialog != NULL);
+    assert(ui.pending_action == PXSYS_REFERENCE_APP_ACTION_UNINSTALL);
+    page_close_dialogs(&ui);
     lv_indev_delete(indev);
     lv_obj_delete(ui.root);
     assert(pxsys_standard_system_destroy(ui.system) == PXSYS_STATUS_OK);
 }
 
+static void settle_launcher(lv_indev_t* indev) {
+    for (unsigned elapsed = 0; elapsed < 200; elapsed += 10) {
+        lv_tick_inc(10);
+        lv_indev_read(indev);
+        (void)lv_timer_handler();
+    }
+}
+
+static void test_launcher_paging(lv_display_t* display) {
+    pxsys_reference_lvgl_t ui = {.magic = REFERENCE_MAGIC};
+    pxsys_display_profile_init(&ui.display, 296, 240);
+    pxsys_theme_snapshot_init(&ui.theme, PXSYS_COLOR_SCHEME_DARK);
+    ui.root = lv_obj_create(lv_layer_top());
+    style_plain(ui.root);
+    lv_obj_set_size(ui.root, 296, 240);
+    ui.content = lv_obj_create(ui.root);
+    style_plain(ui.content);
+    lv_obj_set_size(ui.content, 296, 200);
+    lv_obj_set_y(ui.content, 25);
+    pxsys_lvgl_add_flags(ui.content,
+                        LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    launcher_configure_paging(&ui);
+    launcher_item_t items[PXSYS_REFERENCE_UI_LAUNCHER_COLUMNS *
+                          PXSYS_REFERENCE_UI_LAUNCHER_ROWS + 1] = {0};
+    ui.launcher_items = items;
+    ui.launcher_count = sizeof(items) / sizeof(items[0]);
+    ui.launcher_gap = 4;
+    for (unsigned i = 0; i < ui.launcher_count; ++i) {
+        items[i].ui = &ui;
+        make_launcher_tile(&ui, "Page test", &items[i]);
+    }
+    lv_obj_update_layout(ui.root);
+    launcher_position_tiles(&ui);
+    lv_obj_t* end = lv_obj_create(ui.content);
+    style_plain(end);
+    lv_obj_set_pos(end, 591, 0);
+    lv_obj_set_size(end, 1, 1);
+    lv_obj_update_layout(ui.root);
+    lv_indev_t* indev = lv_indev_create();
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_display(indev, display);
+    lv_indev_set_read_cb(indev, read_launcher_pointer);
+    lv_timer_pause(lv_indev_get_read_timer(indev));
+    /* A normal drag settles directly to the next page within 200 ms. */
+    pointer_sample(indev, 220, 80, true);
+    for (int x = 200; x >= 100; x -= 20) pointer_sample(indev, x, 80, true);
+    pointer_sample(indev, 100, 80, false);
+    settle_launcher(indev);
+    assert(ui.launcher_page == 1);
+    assert(lv_obj_get_scroll_x(ui.content) == 296);
+    assert(!lv_obj_is_scrolling(ui.content));
+    /* A short fast flick goes back without requiring a long drag. */
+    pointer_sample(indev, 80, 80, true);
+    pointer_sample(indev, 100, 80, true);
+    pointer_sample(indev, 120, 80, true);
+    pointer_sample(indev, 120, 80, false);
+    settle_launcher(indev);
+    assert(ui.launcher_page == 0);
+    assert(lv_obj_get_scroll_x(ui.content) == 0);
+    /* A short drag with a pause at release returns to the current page. */
+    pointer_sample(indev, 220, 80, true);
+    pointer_sample(indev, 200, 80, true);
+    pointer_sample(indev, 185, 80, true);
+    for (unsigned i = 0; i < 12; ++i) pointer_sample(indev, 185, 80, true);
+    pointer_sample(indev, 185, 80, false);
+    settle_launcher(indev);
+    assert(ui.launcher_page == 0);
+    assert(lv_obj_get_scroll_x(ui.content) == 0);
+    lv_indev_delete(indev);
+    lv_obj_delete(ui.root);
+}
 int main(void) {
     lv_init();
     lv_display_t* display = lv_display_create(480, 480);
@@ -341,6 +436,7 @@ int main(void) {
     lv_obj_delete(ui.root);
     test_launcher_pointer(display, 160);
     test_launcher_pointer(display, 320);
+    test_launcher_paging(display);
     lv_deinit();
     puts("Game gestures, launcher swipe rejection and compact shade status updates passed");
     return 0;
