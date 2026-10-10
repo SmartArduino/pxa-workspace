@@ -37,6 +37,8 @@ def main():
     parser.add_argument("--menu-tap", type=int, nargs=2)
     parser.add_argument("--hold-pointer", type=int, nargs=2,
                         help="hold at X Y after startup, warm again, then measure the held scene")
+    parser.add_argument("--require-surface", action="store_true",
+                        help="reject lock screens or overlays: screenshots must come directly from the game surface")
     parser.add_argument("--unlock-swipe", type=int, nargs=4,
                         help="wake and unlock before each run: X1 Y1 X2 Y2")
     parser.add_argument("--wake-home", action="store_true",
@@ -58,7 +60,8 @@ def main():
         parser.error("--hold-pointer cannot be combined with --menu-tap or --pixel-search")
     args.output.mkdir(parents=True, exist_ok=True)
     report = {"app": args.app, "port": args.port, "warmup_seconds": args.warmup,
-              "capture_seconds": args.seconds, "runs": [], "passed": False}
+              "capture_seconds": args.seconds, "require_surface": args.require_surface,
+              "runs": [], "passed": False}
     if args.hold_pointer:
         report["scene"] = {"name": "held-pointer", "pixel": args.hold_pointer,
                            "held_warmup_seconds": args.warmup}
@@ -290,6 +293,8 @@ def main():
                     capture = pxadb.screenshot_capture(request("SCREENSHOT JPEG"))
                     pxadb.write_screenshot(capture, args.output / f"frame-{index}.jpg")
                     run["screenshot"] = capture.metadata
+                    if args.require_surface and capture.metadata.get("source") != "surface":
+                        raise RuntimeError("game surface is obscured or display is inactive")
                     if args.pixel_search and (int(capture.metadata["width"]) != 296 or
                                               int(capture.metadata["height"]) != 240):
                         raise RuntimeError("Pixel benchmark requires 296x240 display")
