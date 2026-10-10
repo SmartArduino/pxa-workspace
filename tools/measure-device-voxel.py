@@ -7,8 +7,10 @@ import json
 import math
 from pathlib import Path
 import statistics
+import struct
 import sys
 import time
+import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "pxadb"))
 import pxadb
@@ -42,12 +44,23 @@ def main():
                         help="record ESP-IDF allocation minima for each launch and steady window")
     parser.add_argument("--minimum-warm-frames", type=int, default=0,
                         help="require this many accepted frames before capture (sequential frame IDs)")
+    parser.add_argument("--pixel-search", action="store_true",
+                        help="fixed-seed Pixel test package: reset selected app data each run, new warrior, twelve searches, verify save")
     args = parser.parse_args()
     if args.warmup < 0 or not 0 < args.seconds <= 30 or args.repeat < 1 or args.minimum_warm_frames < 0:
         parser.error("warmup >= 0, 0 < seconds <= 30, repeat >= 1 required")
+    if args.pixel_search and (args.seconds < 4 or args.menu_tap or args.app not in
+                             ("pxa-pixel-dungeon", "pxa-pixel-dungeon-cpp")):
+        parser.error("--pixel-search requires a Pixel package and >= 4 seconds, without --menu-tap")
     args.output.mkdir(parents=True, exist_ok=True)
     report = {"app": args.app, "port": args.port, "warmup_seconds": args.warmup,
               "capture_seconds": args.seconds, "runs": [], "passed": False}
+    if args.pixel_search:
+        report["scene"] = {"name": "new-warrior-twelve-searches", "seed": "0x51ed270b",
+                           "width": 296, "height": 240, "dpi": 160,
+                           "safe_insets": [8, 10, 8, 10], "corner_radius": 58,
+                           "search_pixel": [113, 213], "pointer_hold_ms": 80,
+                           "music": "original-region-music"}
     if args.package:
         report["local_package_sha256"] = hashlib.sha256(args.package.read_bytes()).hexdigest()
     started = time.monotonic()
@@ -93,6 +106,50 @@ def main():
                         key: int(value) for key, value in props.items()}
                 return output
 
+            def pixel_tap(x, y):
+                # Explicit edges span several touch/LVGL samples. INPUT SYNC
+                # acknowledges router delivery, not Guest processing.
+                request(f"INPUT POINTER DOWN {x} {y} 0")
+                request("INPUT SYNC")
+                pump(.08)
+                request(f"INPUT POINTER UP {x} {y} 0")
+                request("INPUT SYNC")
+
+            def pixel_save(index):
+                private = ("pxa-state/data/17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171~"
+                           + args.app + "/.pxa-storage")
+                fs = pxadb.NormalFsClient(client)
+                snapshots = []
+                for kind, size, name in fs.list(private):
+                    if kind != "F" or not name.startswith(".pxa-kv-"):
+                        continue
+                    path = args.output / f"save-{index}-{name.removeprefix('.pxa-')}"
+                    fs.get(private + "/" + name, path)
+                    raw = path.read_bytes()
+                    if len(raw) < 24:
+                        continue
+                    magic, version, _, generation, length, crc = struct.unpack("<4sHHQII", raw[:24])
+                    body = raw[24:]
+                    if magic != b"PXKV" or version != 1 or len(body) != length or zlib.crc32(body) != crc:
+                        continue
+                    values = {}; at = 2
+                    for _ in range(struct.unpack_from("<H", body)[0]):
+                        n = body[at]; at += 1; key = body[at:at+n]; at += n
+                        n = struct.unpack_from("<H", body, at)[0]; at += 2
+                        values[key] = body[at:at+n]; at += n
+                    if at != len(body):
+                        raise RuntimeError("invalid KV snapshot length")
+                    snapshots.append((generation, values))
+                if not snapshots:
+                    raise RuntimeError("no valid committed Pixel save")
+                saved = max(snapshots, key=lambda row: row[0])[1][b"pixel-dungeon.save"]
+                if len(saved) < 30 or struct.unpack_from("<H", saved, 28)[0] != 24:
+                    raise RuntimeError("twelve searches did not commit twenty-four turns")
+                if struct.unpack_from("<I", saved, 4)[0] != 0x51ed270b or saved[12:14] != bytes([1, 0]):
+                    raise RuntimeError("wrong Pixel benchmark seed, floor or class")
+                return {"turn": 24, "seed": "0x51ed270b", "depth": 1, "class": 0,
+                        "sha256": hashlib.sha256(saved).hexdigest()}
+
             running = recording = heap_monitoring = False
             try:
                 report["hello"] = client.hello()
@@ -121,6 +178,10 @@ def main():
                         packages = [f.payload for f in request("PACKAGES") if f.kind == "PKG"]
                         if any("active=1" in p for p in packages):
                             raise RuntimeError("unlock started an application before the launch monitor")
+                    if args.pixel_search:
+                        # Only the explicitly selected test game's private data.
+                        request(f"PACKAGE clear-data {args.app}")
+                        pump(1)
                     run = {"index": index, "memory_before": memory()}
                     if any(run["memory_before"]["surface"][key] for key in
                            ("frame", "scratch", "mailbox", "probe")):
@@ -134,6 +195,13 @@ def main():
                     request(f"PACKAGE run {args.app}")
                     running = True
                     pump(args.warmup)
+                    if args.pixel_search:
+                        # Same native-verified layout in both 296x240, 160 DPI
+                        # packages. Cold-start catalog -> empty slot -> warrior.
+                        for x, y in ((148, 122), (148, 120), (62, 129)):
+                            pixel_tap(x, y)
+                            pump(1)
+                        pump(args.warmup)
                     if args.menu_tap:
                         request(f"INPUT TAP {args.menu_tap[0]} {args.menu_tap[1]}")
                         request("INPUT SYNC")
@@ -151,7 +219,17 @@ def main():
                         run["memory_steady_start"] = memory()
                     request("PERF START")
                     recording = True
-                    pump(args.seconds)
+                    if args.pixel_search:
+                        capture_started = time.monotonic()
+                        run["search_input_seconds"] = []
+                        for search in range(12):
+                            pump(max(0, capture_started + (search+1)*.24 - time.monotonic()))
+                            run["search_input_seconds"].append(time.monotonic() - capture_started)
+                            pixel_tap(113, 213)
+                        pump(max(0, capture_started + args.seconds - time.monotonic()))
+                        run["capture_elapsed_seconds"] = time.monotonic() - capture_started
+                    else:
+                        pump(args.seconds)
                     run["probe"] = pxadb.info_properties(request("PERF STOP")[-1].payload)
                     recording = False
                     if any(int(run["probe"][key]) for key in
@@ -191,6 +269,9 @@ def main():
                     capture = pxadb.screenshot_capture(request("SCREENSHOT JPEG"))
                     pxadb.write_screenshot(capture, args.output / f"frame-{index}.jpg")
                     run["screenshot"] = capture.metadata
+                    if args.pixel_search and (int(capture.metadata["width"]) != 296 or
+                                              int(capture.metadata["height"]) != 240):
+                        raise RuntimeError("Pixel benchmark requires 296x240 display")
                     if not run["present_us"] or int(run["probe"]["surface_changed"]):
                         raise RuntimeError("no displayed frames or surface changed during capture")
                     if args.minimum_warm_frames:
@@ -199,6 +280,14 @@ def main():
                         if warmed < args.minimum_warm_frames:
                             raise RuntimeError("insufficient warm frames: increase --warmup")
                     run["display_fps"] = 1e6 / run["present"]["mean_us"]
+                    if args.pixel_search:
+                        # C persists on a user back request before the Host
+                        # suspends the component; C++ also saves on background.
+                        request("INPUT KEY BACK")
+                        pump(1)
+                        request("INPUT KEY HOME")
+                        pump(2)
+                        run["committed_save"] = pixel_save(index)
                     request("PERF CLEAR")
                     request(f"PACKAGE stop {args.app}")
                     running = False
