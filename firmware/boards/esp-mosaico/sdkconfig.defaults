@@ -141,3 +141,6 @@ CONFIG_LITTLEFS_MALLOC_STRATEGY_SPIRAM_PREFER=y
 CONFIG_PXA_ASSET_EXTERNAL_BYTES=1572864
 # Continue servicing audio DMA during flash/NVS writes with cache disabled.
 CONFIG_I2S_ISR_IRAM_SAFE=y
+
+# Bounded on-disk caches (e.g. UTF-8 books); no RAM or disk reservation.
+CONFIG_PXA_PRIVATE_FS_QUOTA_BYTES=8388608

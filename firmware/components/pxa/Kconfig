@@ -249,10 +249,12 @@ menu "PXA Development Apps"
 
         config PXA_PRIVATE_FS_QUOTA_BYTES
             int "Per-App private FS quota in bytes"
-            range 4096 1048576
+            range 4096 16777216
             default 65536
             help
                 Logical regular-file byte quota for one signed PXA App identity.
+                This is a disk limit, not a RAM allocation or reserved disk space.
+                Actual downloads remain limited by free filesystem capacity.
 
         config PXA_STORE_ORIGIN
             string "Trusted HTTPS origin for Host-managed App Store downloads"
