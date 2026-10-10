@@ -40,6 +40,136 @@ static void advance(unsigned milliseconds) {
         (void)lv_timer_handler();
     }
 }
+static lv_indev_data_t launcher_pointer;
+static unsigned launcher_launches;
+static void read_launcher_pointer(lv_indev_t* indev, lv_indev_data_t* data) {
+    (void)indev;
+    *data = launcher_pointer;
+}
+static void pointer_sample(lv_indev_t* indev, int x, int y, bool down) {
+    launcher_pointer.point = (lv_point_t){x, y};
+    launcher_pointer.state = down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    lv_tick_inc(20);
+    lv_indev_read(indev);
+}
+static void* launcher_allocate(void* context, size_t size) {
+    (void)context;
+    return malloc(size);
+}
+static void launcher_release(void* context, void* memory) {
+    (void)context;
+    free(memory);
+}
+static pxsys_status_t launcher_launch_attempt(void* context,
+    const pxsys_app_descriptor_t* app, uint64_t id, void** instance) {
+    (void)context; (void)app; (void)id; (void)instance;
+    ++launcher_launches;
+    /* Count real task-manager launch attempts without replacing the test UI. */
+    return PXSYS_STATUS_NO_MEMORY;
+}
+static void test_launcher_pointer(lv_display_t* display, unsigned dpi) {
+    pxsys_standard_system_config_t config;
+    pxsys_standard_system_config_init(&config);
+    config.allocator.allocate = launcher_allocate;
+    config.allocator.release = launcher_release;
+    pxsys_reference_lvgl_t ui = {0};
+    ui.magic = REFERENCE_MAGIC;
+    assert(pxsys_standard_system_create(&config, &ui.system) == PXSYS_STATUS_OK);
+    pxsys_display_profile_init(&ui.display, 296, 240);
+    ui.display.density_dpi = dpi;
+    pxsys_theme_snapshot_init(&ui.theme, PXSYS_COLOR_SCHEME_DARK);
+    ui.root = lv_obj_create(lv_layer_top());
+    style_plain(ui.root);
+    lv_obj_set_size(ui.root, 296, 240);
+    ui.content = lv_obj_create(ui.root);
+    style_plain(ui.content);
+    lv_obj_set_size(ui.content, 296, 240);
+    lv_obj_set_scroll_dir(ui.content, LV_DIR_HOR);
+    lv_obj_set_scroll_elastic(ui.content, false);
+    launcher_item_t item = {.ui = &ui};
+    strcpy(item.app_id, "test.launcher");
+    item.identity.app_id = pxsys_string_from_cstr(item.app_id);
+    memset(item.identity.publisher_root, 0x51, PXSYS_PUBLISHER_ROOT_BYTES);
+    pxsys_app_descriptor_t app = {0};
+    app.struct_size = sizeof(app);
+    app.identity = item.identity;
+    app.display_name = pxsys_string_from_cstr("Launcher test");
+    app.version = pxsys_string_from_cstr("1.0.0");
+    app.runtime_id = pxsys_string_from_cstr(PXSYS_NATIVE_RUNTIME_ID);
+    app.flags = PXSYS_APP_FLAG_ENABLED;
+    assert(pxsys_app_registry_register(pxsys_standard_system_apps(ui.system), &app) == PXSYS_STATUS_OK);
+    pxsys_native_app_t implementation = {0};
+    implementation.struct_size = sizeof(implementation);
+    implementation.identity = item.identity;
+    implementation.create = launcher_launch_attempt;
+    implementation.start = app_start;
+    implementation.foreground = app_foreground;
+    implementation.background = app_background;
+    implementation.event = app_event;
+    implementation.back = app_back;
+    implementation.stop = app_stop;
+    implementation.destroy = app_destroy;
+    assert(pxsys_native_runtime_register_app(pxsys_standard_system_native_runtime(ui.system), &implementation) == PXSYS_STATUS_OK);
+    ui.launcher_items = &item;
+    ui.launcher_count = 1;
+    make_launcher_tile(&ui, "Test", &item);
+    lv_obj_set_pos(item.tile, 25, 25);
+    lv_obj_set_size(item.tile, 180, 150);
+    lv_obj_update_layout(ui.root);
+    lv_indev_t* indev = lv_indev_create();
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_display(indev, display);
+    lv_indev_set_read_cb(indev, read_launcher_pointer);
+    lv_timer_pause(lv_indev_get_read_timer(indev));
+    const unsigned before = launcher_launches;
+    /* A tap tolerates sensor jitter. */
+    pointer_sample(indev, 80, 80, true);
+    pointer_sample(indev, 83, 82, true);
+    pointer_sample(indev, 83, 82, false);
+    assert(launcher_launches == before + 1);
+    /* One-page/outer-edge horizontal swipes cannot scroll, but must not launch. */
+    pointer_sample(indev, 80, 80, true);
+    pointer_sample(indev, 115, 80, true);
+    pointer_sample(indev, 115, 80, false);
+    assert(launcher_launches == before + 1);
+    /* A slow vertical gesture returning to its origin stays cancelled. */
+    pointer_sample(indev, 80, 80, true);
+    for (int y = 82; y <= 110; y += 2) pointer_sample(indev, 80, y, true);
+    pointer_sample(indev, 80, 80, true);
+    pointer_sample(indev, 80, 80, false);
+    assert(launcher_launches == before + 1);
+    /* Movement that only appears in the release sample is also a swipe. */
+    pointer_sample(indev, 80, 80, true);
+    pointer_sample(indev, 115, 80, false);
+    assert(launcher_launches == before + 1);
+    /* The next intentional tap works after a cancelled gesture. */
+    pointer_sample(indev, 80, 80, true);
+    pointer_sample(indev, 80, 80, false);
+    assert(launcher_launches == before + 2);
+    /* Catching a page-settle animation must not open the moving icon. */
+    lv_obj_t* end = lv_obj_create(ui.content);
+    lv_obj_set_pos(end, 600, 0);
+    lv_obj_set_size(end, 1, 1);
+    lv_obj_update_layout(ui.root);
+    lv_obj_scroll_to_x(ui.content, 100, LV_ANIM_ON);
+    assert(lv_obj_is_scrolling(ui.content));
+    pointer_sample(indev, 80, 80, true);
+    pointer_sample(indev, 80, 80, false);
+    assert(launcher_launches == before + 2);
+    lv_obj_stop_scroll_anim(ui.content);
+    lv_obj_scroll_to_x(ui.content, 0, LV_ANIM_OFF);
+    /* A stationary long press still enters icon rearrangement. */
+    pointer_sample(indev, 80, 80, true);
+    lv_tick_inc(600);
+    lv_indev_read(indev);
+    assert(ui.launcher_editing);
+    pointer_sample(indev, 80, 80, false);
+    assert(launcher_launches == before + 2);
+    lv_indev_delete(indev);
+    lv_obj_delete(ui.root);
+    assert(pxsys_standard_system_destroy(ui.system) == PXSYS_STATUS_OK);
+}
+
 int main(void) {
     lv_init();
     lv_display_t* display = lv_display_create(480, 480);
@@ -209,7 +339,9 @@ int main(void) {
 
     lv_obj_delete(ui.task_switcher);
     lv_obj_delete(ui.root);
+    test_launcher_pointer(display, 160);
+    test_launcher_pointer(display, 320);
     lv_deinit();
-    puts("Game gestures and compact shade status updates passed");
+    puts("Game gestures, launcher swipe rejection and compact shade status updates passed");
     return 0;
 }
