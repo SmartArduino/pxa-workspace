@@ -770,10 +770,11 @@ def command_package_action(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def package_manifest_identity(source: pathlib.Path) -> str:
-    """Read the package ID from bounded manifest metadata, before uploading."""
+def read_package_manifest(source: pathlib.Path) -> bytes:
+    """Read bounded metadata without decompressing package contents."""
     if source.is_dir():
-        manifest = (source / "manifest.pxm").read_bytes()
+        with (source / "manifest.pxm").open("rb") as stream:
+            manifest = stream.read(1024 * 1024 + 1)
     else:
         with source.open("rb") as stream:
             header = stream.read(64)
@@ -784,26 +785,36 @@ def package_manifest_identity(source: pathlib.Path) -> str:
             if size < 12 or size > 1024 * 1024:
                 raise PxaDbError("invalid PXA container manifest size")
             manifest = stream.read(size)
-    if len(manifest) < 12 or manifest[:4] != b"PXAM" or \
+    if not 12 <= len(manifest) <= 1024 * 1024 or manifest[:4] != b"PXAM" or \
             struct.unpack_from("<I", manifest, 8)[0] != len(manifest) - 12:
         raise PxaDbError("invalid PXA package manifest")
-    offset = 12
-    identity = None
-    while offset < len(manifest):
-        if len(manifest) - offset < 4:
+    return manifest
+
+
+def manifest_records(data: bytes) -> Iterable[tuple[int, bytes]]:
+    offset = 0
+    while offset < len(data):
+        if len(data) - offset < 4:
             raise PxaDbError("truncated PXA package manifest")
-        tag, size = struct.unpack_from("<HH", manifest, offset)
+        tag, size = struct.unpack_from("<HH", data, offset)
         offset += 4
-        if size > len(manifest) - offset:
+        if size > len(data) - offset:
             raise PxaDbError("truncated PXA package manifest")
-        if (tag & 0x7FFF) == 2:
+        yield tag & 0x7FFF, data[offset:offset + size]
+        offset += size
+
+
+def package_manifest_identity(source: pathlib.Path) -> str:
+    """Read the package ID from bounded manifest metadata, before uploading."""
+    identity = None
+    for tag, value in manifest_records(read_package_manifest(source)[12:]):
+        if tag == 2:
             if identity is not None:
                 raise PxaDbError("duplicate package identity in manifest")
             try:
-                identity = manifest[offset:offset + size].decode("ascii")
+                identity = value.decode("ascii")
             except UnicodeDecodeError as error:
                 raise PxaDbError("non-ASCII package identity") from error
-        offset += size
     if identity is None:
         raise PxaDbError("package identity missing from manifest")
     return identity
@@ -1231,6 +1242,81 @@ def fs_remove_tree(client: NormalFsClient, path: str, timeout: float) -> None:
         pass
 
 
+def package_storage_required(source: pathlib.Path) -> tuple[int, int]:
+    """Estimate peak LittleFS usage: staged input plus a new installed tree.
+
+    Mirror the firmware install-space budget (4096-byte blocks, CTZ pointers,
+    file metadata, unique directory pairs and 128 KiB commit headroom).
+    Existing app files remain live until commit, including during upgrades.
+    This is an admission estimate; device signature verification stays final.
+    """
+    block, payload = 4096, 4096 - 64
+
+    def file_bytes(size: int) -> int:
+        return ((size + payload - 1) // payload + 1) * block
+
+    manifest = read_package_manifest(source)
+    install = 128 * 1024 + len(manifest) + 4 * block
+    directories: set[bytes] = set()
+    for tag, value in manifest_records(manifest[12:]):
+        if tag != 17:
+            continue
+        path, size = None, None
+        for field, content in manifest_records(value):
+            if field == 1:
+                if path is not None:
+                    raise PxaDbError("duplicate file path in package manifest")
+                path = content
+            elif field == 2:
+                if size is not None or len(content) != 8:
+                    raise PxaDbError("invalid file size in package manifest")
+                size = struct.unpack("<Q", content)[0]
+        if not path or size is None:
+            raise PxaDbError("missing file path or size in package manifest")
+        install += file_bytes(size)
+        directories.update(path[:i] for i, byte in enumerate(path) if byte == ord("/"))
+    install += len(directories) * 2 * block
+    if source.is_file():
+        upload = file_bytes(source.stat().st_size) + 4 * block
+    else:
+        files = list(iter_package_files(source))
+        staged_directories = {parent for file in files
+                              for parent in file.relative_to(source).parents
+                              if parent != pathlib.Path(".")}
+        upload = sum(file_bytes(file.stat().st_size) for file in files)
+        upload += (len(staged_directories) + 2) * 2 * block
+    return upload, install
+
+
+def check_package_storage(client: NormalFsClient, source: pathlib.Path) -> None:
+    frames = client.client.request("INFO")
+    properties = {}
+    for frame in frames:
+        if frame.kind == "OK":
+            properties.update(info_properties(frame.payload))
+    # Older firmware and desktop simulators do not expose LittleFS metrics.
+    if "storage_free" not in properties:
+        return
+    try:
+        free = int(properties["storage_free"])
+        if free < 0:
+            raise ValueError
+    except ValueError as error:
+        raise PxaDbError("invalid device storage information") from error
+    upload, install = package_storage_required(source)
+    required = upload + install
+    if required > free:
+        mib = 1024 * 1024
+        raise PxaDbError(
+            f"insufficient device storage: free={free / mib:.2f} MiB; "
+            f"upload needs about {upload / mib:.2f} MiB and installation "
+            f"another {install / mib:.2f} MiB "
+            f"(peak={required / mib:.2f} MiB). "
+            f"Free at least {(required - free) / mib:.2f} MiB by uninstalling "
+            "apps you no longer need, then retry. Upload has not started."
+        )
+
+
 def stage_package_files(client: "NormalFsClient", source: pathlib.Path,
                         identity: str, timeout: float) -> None:
     """Stage one package through an already open file client.
@@ -1238,6 +1324,7 @@ def stage_package_files(client: "NormalFsClient", source: pathlib.Path,
     The GUI owns the only connection to a device, so package installation
     stages through the client it already holds instead of opening a second one.
     """
+    check_package_storage(client, source)
     inbox = "pxa-state/inbox"
     root = f"{inbox}/{identity}"
     for directory in ("pxa-state", inbox):

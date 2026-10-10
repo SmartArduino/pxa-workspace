@@ -70,6 +70,15 @@ the timeout reports that installation may already have completed and recommends
 checking PACKAGES/logs. It does not diagnose an already-established session as
 PXADB being disabled.
 
+Before staging a local package, the client reads INFO storage metrics when the
+firmware exposes them. Its LittleFS estimate includes the uploaded source, the
+decoded installation files, file/directory metadata and commit headroom. An
+upgrade must keep the current installed files until commit, so their space is
+not counted as available. Insufficient space fails before any upload or inbox
+mutation and reports the estimated deficit. Older peers without storage metrics
+retain the existing behavior. This check is an estimate, not a reservation;
+device signature verification and installation checks remain authoritative.
+
 ## Simulator Debug Commands
 
 Simulator application management uses `PACKAGE enable <app-id>`,

@@ -848,6 +848,69 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         ])
 
 
+class PackageStorageTest(unittest.TestCase):
+    @staticmethod
+    def container(root: pathlib.Path) -> pathlib.Path:
+        def record(tag, data):
+            return struct.pack("<HH", tag, len(data)) + data
+        body = record(2, b"pxa-storage-test")
+        for path, size in ((b"assets/audio/one.s16", 500000),
+                           (b"assets/audio/two.s16", 700000)):
+            body += record(17, record(1, path) + record(2, struct.pack("<Q", size)))
+        manifest = b"PXAM" + struct.pack("<HHI", 0, 7, len(body)) + body
+        header = bytearray(64)
+        struct.pack_into("<4sH", header, 0, b"PXAC", 0)
+        struct.pack_into("<H", header, 8, 64)
+        struct.pack_into("<I", header, 16, len(manifest))
+        source = root / "test.pxa"
+        source.write_bytes(header + manifest + b"compressed data")
+        return source
+
+    def test_budget_counts_decoded_files_and_shared_directory_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = self.container(pathlib.Path(directory))
+            upload, install = pxadb.package_storage_required(source)
+            expected_files = sum(((n + 4031) // 4032 + 1) * 4096
+                                 for n in (500000, 700000))
+            self.assertEqual(install, 128 * 1024 + len(pxadb.read_package_manifest(source)) +
+                             4 * 4096 + expected_files + 2 * 2 * 4096)
+            self.assertGreater(install, 1200000)
+            self.assertEqual(upload, 5 * 4096 +
+                             ((source.stat().st_size + 4031) // 4032) * 4096)
+
+    def test_install_space_shortage_fails_before_any_filesystem_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = self.container(pathlib.Path(directory))
+            upload, install = pxadb.package_storage_required(source)
+            peer = mock.Mock()
+            peer.request.return_value = [pxadb.Frame(1, "OK", f"storage_free={upload + install - 1}")]
+            fs = mock.Mock(client=peer)
+            with self.assertRaisesRegex(pxadb.PxaDbError, "Upload has not started"):
+                pxadb.stage_package_files(fs, source, "pxa-storage-test", 10)
+            peer.request.assert_called_once_with("INFO")
+            fs.put.assert_not_called()
+            fs.mkdir.assert_not_called()
+            fs.remove.assert_not_called()
+
+    def test_exact_budget_and_missing_legacy_metrics_are_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = self.container(pathlib.Path(directory))
+            required = sum(pxadb.package_storage_required(source))
+            peer = mock.Mock()
+            fs = pxadb.NormalFsClient(peer)
+            for info in (f"storage_free={required}", "target=esp32s3"):
+                peer.request.return_value = [pxadb.Frame(1, "OK", info)]
+                pxadb.check_package_storage(fs, source)
+
+    def test_invalid_nested_file_size_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = self.container(pathlib.Path(directory))
+            source.write_bytes(source.read_bytes().replace(struct.pack("<HHQ", 2, 8, 500000),
+                                                          struct.pack("<HHQ", 2, 7, 500000)))
+            with self.assertRaisesRegex(pxadb.PxaDbError, "invalid file size"):
+                pxadb.package_storage_required(source)
+
+
 class PxaDbFileTransferTest(unittest.TestCase):
     class ScriptedClient:
         def __init__(self, responses: list[list[pxadb.Frame]]) -> None:
