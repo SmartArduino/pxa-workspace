@@ -342,6 +342,16 @@ Firmware flashing does not populate or erase `pxa_data`. App sources and the
 system font must be supplied locally as described in the workspace README.
 The matching simulator profile is `esp-mosaico` (480 × 480).
 
+ESP32-S31 app packages use O3, the ILP32F ABI and the RV32IMAFCB instruction
+set (`+m,+a,+f,+c,+zba,+zbb,+zbs`). Compressed instructions reduce instruction
+fetches, while bit-manipulation instructions shorten address and bit operations.
+WAMR's `--size-level=3` selects the Small code model; it does not select Os/Oz.
+The bundled LLVM has no ESP32-S31 CPU model, so `generic-rv32` remains explicit.
+Rebuild and reinstall the app package to apply these compiler settings; this
+change does not require reflashing firmware. FPS gains require device measurement
+and depend on how much time the app spends in Guest code versus Host rendering
+and panel transfers.
+
 Compile and host tests do not establish hardware correctness. Verify revision
 detection, cold boot, USB reconnect, panel colors, edge touch coordinates,
 speaker playback, Wi-Fi provisioning, trusted overlays and idle wake on device.
