@@ -3189,7 +3189,11 @@ static int start_verified(const char *identity) {
         PXA_UI_FEATURE_GRID |
                     PXA_UI_FEATURE_RGB565_BITMAP |
                     PXA_UI_FEATURE_CONTROLLER_INPUT |
-                    PXA_UI_FEATURE_CANVAS_STREAM_IO;
+                    PXA_UI_FEATURE_CANVAS_STREAM_IO |
+                    PXA_UI_FEATURE_TEXT_INPUT_CONTROL;
+#if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+                service_capabilities[index].features |= PXA_UI_FEATURE_SIZED_TEXT;
+#endif
             }
         }
     }
@@ -4778,6 +4782,9 @@ bool pxa_esp_host_initialize(void) {
     ui_config.resolve_asset = pxa_esp_ui_asset_resolve;
     ui_config.acquire_image = acquire_ui_image;
     ui_config.release_asset = pxa_esp_ui_asset_release;
+#if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+    ui_config.sized_text_font_path = PXA_ESP_HOST_CJK_FONT_PATH;
+#endif
     ui_config.event_callback = on_ui_event;
     ui_config.now_us = host_now_us;
     ui_config.primary_environment.surface = PXA_UI_PRIMARY_SURFACE;
@@ -4788,7 +4795,10 @@ bool pxa_esp_host_initialize(void) {
     ui_config.primary_environment.features =
         PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
         PXA_UI_FEATURE_GRID | PXA_UI_FEATURE_RGB565_BITMAP |
-        PXA_UI_FEATURE_CONTROLLER_INPUT;
+        PXA_UI_FEATURE_CONTROLLER_INPUT | PXA_UI_FEATURE_TEXT_INPUT_CONTROL;
+#if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+    ui_config.primary_environment.features |= PXA_UI_FEATURE_SIZED_TEXT;
+#endif
     workspace_size = pxa_lvgl_ui_workspace_size();
     if (workspace_size == 0) {
         failed_stage = "size-lvgl-workspace";

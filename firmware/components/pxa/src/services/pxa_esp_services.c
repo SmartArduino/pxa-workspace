@@ -919,7 +919,11 @@ static pxa_status_t initialize_window_ui(
                       PXA_UI_FEATURE_GRID |
                       PXA_UI_FEATURE_RGB565_BITMAP |
                       PXA_UI_FEATURE_CONTROLLER_INPUT |
-                      PXA_UI_FEATURE_CANVAS_STREAM_IO;
+                      PXA_UI_FEATURE_CANVAS_STREAM_IO |
+                      PXA_UI_FEATURE_TEXT_INPUT_CONTROL;
+#if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+    config.features |= PXA_UI_FEATURE_SIZED_TEXT;
+#endif
     config.primary_width = host->primary_width != 0 ? host->primary_width : 320;
     config.primary_height = host->primary_height != 0 ? host->primary_height : 240;
     config.density_q16 = host->density_q16 != 0 ? host->density_q16 : UINT32_C(65536);
