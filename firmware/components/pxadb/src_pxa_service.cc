@@ -31,6 +31,7 @@
 #include <esp_heap_caps.h>
 #include <esp_jpeg_enc.h>
 #include <esp_log.h>
+#include <esp_littlefs.h>
 #include <esp_mac.h>
 #include <esp_private/log_lock.h>
 #include <esp_rom_crc.h>
@@ -867,10 +868,18 @@ void WriteFsUpload(unsigned long sequence, const char* offset_text, const char* 
     uint8_t bytes[kFsUploadChunkSize] = {};
     size_t length = 0;
     if (!DecodeFileChunk(encoded_data, bytes, sizeof(bytes), &length) || length == 0 ||
-        length > s_file_upload.remaining ||
-        fwrite(bytes, 1, length, s_file_upload.file) != length) {
+        length > s_file_upload.remaining) {
         AbortFileUpload();
-        SendFrame(sequence, "ERR", "file_write_failed");
+        SendFrame(sequence, "ERR", "invalid_file_chunk");
+        return;
+    }
+    errno = 0;
+    if (fwrite(bytes, 1, length, s_file_upload.file) != length) {
+        const int write_error = errno;
+        AbortFileUpload();
+        char reason[64];
+        snprintf(reason,sizeof(reason),"file_write_failed;errno=%d",write_error);
+        SendFrame(sequence, "ERR", reason);
         return;
     }
     s_file_upload.remaining -= length;
@@ -1153,6 +1162,15 @@ void SendInfo(unsigned long sequence) {
              "disabled"
 #endif
     );
+#if CONFIG_PXA_ENABLED
+    size_t storage_total=0,storage_used=0;
+    if(esp_littlefs_info(CONFIG_PXA_STORAGE_PARTITION_LABEL,&storage_total,&storage_used)==ESP_OK){
+        const size_t used=strlen(payload);
+        snprintf(payload+used,sizeof(payload)-used,";storage_total=%u;storage_used=%u;storage_free=%u",
+                 static_cast<unsigned>(storage_total),static_cast<unsigned>(storage_used),
+                 static_cast<unsigned>(storage_total>=storage_used?storage_total-storage_used:0));
+    }
+#endif
     SendFrame(sequence, "OK", payload);
 }
 

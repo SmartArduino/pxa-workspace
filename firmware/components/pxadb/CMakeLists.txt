@@ -10,6 +10,7 @@ set(PXADB_PRIV_REQUIRES
     esp_timer
     freertos
     log
+    joltwallet__littlefs
     mbedtls
     pxa)
 
