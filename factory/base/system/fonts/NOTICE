@@ -1,0 +1,27 @@
+PXA Sans SC Regular (SIL Open Font License 1.1)
+
+Based on the previously bundled Noto Sans SC system subset, preserving all
+of its mapped characters and outlines. Additional Chinese mainland glyphs
+come from Noto Sans CJK SC Regular, Version 2.004, face 2 of the upstream
+NotoSansCJK-Regular.ttc collection.
+
+Noto Sans CJK SC copyright: 2014-2021 Adobe (http://www.adobe.com/).
+Noto is a trademark of Google Inc.
+
+The derivative's internal family name is PXA Sans SC. It retains the legacy
+filename noto_sans_cjk_common.ttf for existing firmware and simulator paths.
+The accompanying OFL.txt is the font license. This file must accompany the
+font when distributing it, along with OFL.txt.
+
+Build tool: tools/fonts/build_common_font.py
+Coverage: previous system subset + Big5 level-one Chinese characters + all
+non-whitespace characters of the unmodified Gutenberg/GITenberg Xi You Ji
+acceptance corpus. This is not a complete Unicode font. Unknown characters
+have a visible .notdef outline instead of disappearing.
+
+Base font SHA-256:
+17f6e5bd2b8fbac78e38f16a8d454a551a064f6edc0070917c152c9caeaab543
+Source TTC SHA-256:
+b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a
+Corpus SHA-256:
+fc9a3956fd22b9a4356af8dd0dca27596fd0c9da87c35eae45c4f331c1b8f597

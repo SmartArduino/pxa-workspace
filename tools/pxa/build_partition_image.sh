@@ -187,6 +187,12 @@ if [[ "$include_system_font" -eq 1 ]]; then
   fi
   mkdir -p "$storage_root/system/fonts"
   cp "$system_font" "$storage_root/system/fonts/noto_sans_cjk_common.ttf"
+  for font_notice in OFL.txt NOTICE; do
+    notice_path="$(dirname "$system_font")/$font_notice"
+    if [[ -f "$notice_path" ]]; then
+      cp "$notice_path" "$storage_root/system/fonts/$font_notice"
+    fi
+  done
 fi
 
 if [[ -n "${PXA_LITTLEFS_PYTHON:-}" ]]; then
