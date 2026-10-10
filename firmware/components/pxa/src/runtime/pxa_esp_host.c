@@ -64,6 +64,7 @@
 #include "pxa_host_activation_arena.h"
 #include "pxa_host_clock_slots.h"
 #include "pxa_host_command.h"
+#include "pxa_host_maintenance.h"
 #include "pxa_host_ui_event_text.h"
 #include "pxa_host_pointer_mailbox.h"
 #include "pxa_esp_store_policy.h"
@@ -236,7 +237,7 @@ typedef struct {
     uint64_t last_clock_us;
     uint64_t next_maintenance_us;
     uint64_t next_lifecycle_us;
-    uint8_t scheduler_maintenance_pending;
+    uint8_t maintenance_pending; /* queued maintenance + scheduler, same byte */
     uint8_t ui_foreground_requested; /* guarded by g_process_state_lock */
     uint8_t display_interactive;     /* guarded by g_process_state_lock */
     uint8_t shutdown_complete;       /* guarded by g_process_state_lock */
@@ -1231,16 +1232,25 @@ static pxa_status_t host_store_install_control(
 
 static int post_maintenance(pxa_esp_host_command_type_t type) {
     pxa_esp_host_command_t command;
+    int marked;
+    portENTER_CRITICAL(&g_process_state_lock);
+    marked = pxa_host_maintenance_mark(&g_host.maintenance_pending, type);
+    portEXIT_CRITICAL(&g_process_state_lock);
+    if (!marked) return 1;
     memset(&command, 0, sizeof(command));
     command.type = (uint8_t)type;
-    return post_command(&command);
+    if (post_command(&command)) return 1;
+    portENTER_CRITICAL(&g_process_state_lock);
+    pxa_host_maintenance_clear(&g_host.maintenance_pending, type);
+    portEXIT_CRITICAL(&g_process_state_lock);
+    return 0;
 }
 
 /* Lifecycle work must not be lost merely because the regular UI command queue
  * is full. The timer only marks it due; the Core owner thread consumes it. */
 static void mark_scheduler_maintenance_due(void) {
     portENTER_CRITICAL(&g_process_state_lock);
-    g_host.scheduler_maintenance_pending = 1;
+    g_host.maintenance_pending |= PXA_HOST_SCHEDULER_PENDING;
     portEXIT_CRITICAL(&g_process_state_lock);
     wake_runtime_thread();
 }
@@ -1248,8 +1258,8 @@ static void mark_scheduler_maintenance_due(void) {
 static int take_scheduler_maintenance_due(void) {
     int pending;
     portENTER_CRITICAL(&g_process_state_lock);
-    pending = g_host.scheduler_maintenance_pending != 0;
-    g_host.scheduler_maintenance_pending = 0;
+    pending = (g_host.maintenance_pending & PXA_HOST_SCHEDULER_PENDING) != 0;
+    g_host.maintenance_pending &= (uint8_t)~PXA_HOST_SCHEDULER_PENDING;
     portEXIT_CRITICAL(&g_process_state_lock);
     return pending;
 }
@@ -2036,6 +2046,7 @@ static void refresh_volume_key_capture_state(void) {
 
 static int drain_active_events(void) {
     uint8_t round;
+    const uint64_t started_us = host_now_us(NULL);
     for (round = 0; round < PXA_ESP_HOST_EVENT_DRAIN_ROUNDS; ++round) {
         size_t index;
         int delivered = 0;
@@ -2055,7 +2066,11 @@ static int drain_active_events(void) {
                 return 0;
             }
         }
-        if (!delivered) break;
+        /* An immediate response can resume another synchronous Flash block.
+         * Return to the command queue after a slow callback so input and
+         * lifecycle work are serviced between blocks. Fast drains keep their
+         * established three-round batch. */
+        if (!delivered || host_now_us(NULL) - started_us >= 8000) break;
     }
     refresh_volume_key_capture_state();
     return 1;
@@ -4257,6 +4272,10 @@ static void run(void) {
         }
         if (xQueueReceive(g_host.queue, &command, 0) == pdTRUE) {
             handled = 1;
+            portENTER_CRITICAL(&g_process_state_lock);
+            pxa_host_maintenance_clear(&g_host.maintenance_pending,
+                (pxa_esp_host_command_type_t)command.type);
+            portEXIT_CRITICAL(&g_process_state_lock);
             switch (command.type) {
             case PXA_ESP_HOST_CMD_START:
                 ESP_LOGI(PXA_ESP_HOST_TAG, "Processing launch request: %s",
