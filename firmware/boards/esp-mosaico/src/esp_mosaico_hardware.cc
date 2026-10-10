@@ -275,7 +275,10 @@ bool EspMosaicoHardware::InitializeDisplay() {
     xSemaphoreGive(present_available_);
 
     esp_lv_adapter_config_t adapter_config = ESP_LV_ADAPTER_DEFAULT_CONFIG();
-    adapter_config.task_priority = 5;
+    // Input timers must win the lock handoff over the continuously notified
+    // priority-5 game presenter; equal priority can let it reacquire the
+    // recursive adapter mutex before the sleeping LVGL worker runs.
+    adapter_config.task_priority = 6;
     adapter_config.task_stack_size = 12288;
     adapter_config.task_core_id = 1;
     adapter_config.task_max_delay_ms = 16;

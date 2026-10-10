@@ -94,8 +94,34 @@ int main(void) {
     assert(overlay_failures == 0);
     navigation_back_indicator_reset(&ui);
     assert(!g_plane.visible && overlay_allocations == 0);
+    /* A temporarily revealed hidden status bar must enter the trusted overlay
+     * object list. Its alpha plane is only a top strip, not an opaque game-sized
+     * fallback; hidden navigation remains absent. */
+    pxsys_display_profile_init(&ui.display, 480, 480);
+    ui.display.density_dpi = 305;
+    ui.display.safe_insets = (pxsys_insets_t){12, 12, 12, 12};
+    ui.display.shape = PXSYS_DISPLAY_SHAPE_ROUNDED_RECTANGLE;
+    ui.display.corner_radii = (pxsys_corner_radii_t){58, 58, 58, 58};
+    ui.text_font = LV_FONT_DEFAULT;
+    ui.window.status_bar_mode = PXSYS_WINDOW_BAR_HIDDEN;
+    ui.window.navigation_bar_mode = PXSYS_WINDOW_BAR_HIDDEN;
+    ui.transient_revealed = CHROME_REVEALED_HIDDEN_STATUS;
+    pxsys_reference_layout_t layout;
+    assert(pxsys_reference_layout_compute(&ui.display, &layout) == PXSYS_STATUS_OK);
+    build_status_bar(&ui, &layout);
+    update_system_overlay(&ui);
+    pxa_esp_surface_ui_alpha_plane_t plane;
+    assert(provide_plane(NULL, &plane));
+    assert(plane.visible && plane.alpha != NULL && plane.pixels != NULL);
+    assert(plane.y == 0 && plane.height == layout.status_bar.height);
+    assert(plane.width == 480 && plane.height < 480 / 4);
+    assert(!bar_is_visible(&ui, navigation_bar_mode(&ui)));
+    assert(overlay_failures == 0);
+    ui.transient_revealed = 0;
+    update_system_overlay(&ui);
+    assert(!g_plane.visible && overlay_allocations == 0);
     lv_obj_delete(ui.root);
     lv_deinit();
-    puts("Game Back overlay: all progress sizes preserve alpha with 64-byte alignment");
+    puts("Game Back/status overlays preserve alpha with 64-byte alignment and release their planes");
     return 0;
 }

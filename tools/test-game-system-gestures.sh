@@ -37,6 +37,17 @@ link += sanitizers
 subprocess.run(link, cwd=build, check=True)
 subprocess.run([str(temporary/'test')],
     env={**os.environ, 'SDL_VIDEODRIVER':'dummy', 'SDL_AUDIODRIVER':'dummy'}, check=True)
+# Also exercise actual task-manager navigation and reveal-first fullscreen
+# chrome with the same real LVGL input loop, including sanitizer runs.
+subprocess.run(['cc', *arguments, '-c',
+    str(root/'deps/pxa-system/simulator/desktop/tests/system_gestures_test.c'),
+    '-o', str(temporary/'system.o')], check=True)
+system_link = [str(temporary/'system.o') if arg == str(temporary/'test.o') else arg
+               for arg in link]
+system_link[system_link.index('-o')+1] = str(temporary/'system')
+subprocess.run(system_link, cwd=build, check=True)
+subprocess.run([str(temporary/'system')],
+    env={**os.environ, 'SDL_VIDEODRIVER':'dummy', 'SDL_AUDIODRIVER':'dummy'}, check=True)
 # Re-run the production overlay path against a complete LVGL build using the
 # device's alignment. Keep the two renderer configurations in separate programs.
 overlay_arguments = [arg for arg in arguments if not arg.startswith('-DLV_CONF_PATH=')]
