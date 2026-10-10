@@ -240,9 +240,10 @@ class SimulatorPxaDb:
                 root = entry / "current" if (entry / "current").is_dir() else entry
                 if entry.name.startswith(".") or not (root / "manifest.pxm").is_file():
                     continue
+                enabled = int(not (entry / ".disabled").exists())
                 self.send(connection, sequence, "PKG",
                           f"{entry.name}\t{entry.name}\tunknown\t"
-                          "builtin=0;installed=1;staged=0;enabled=1;active=0")
+                          f"builtin=0;installed=1;staged=0;enabled={enabled};active=0")
         self.send(connection, sequence, "OK")
 
     def begin_upload(self, connection: "BinaryHandler", sequence: int,
@@ -407,6 +408,29 @@ class SimulatorPxaDb:
                 pass
         self.send(connection, sequence, "OK", "installed")
 
+    def package_action(self, connection: "BinaryHandler", sequence: int,
+                       action: str, identity: str) -> None:
+        if not safe_identity(identity):
+            raise ServiceError("invalid_identity")
+        # The UI owner stops live Guests and mutates the same store as Settings.
+        # Never bypass it on an application error or a busy store.
+        with self.lock:
+            if self.control_socket is not None and self.control_socket.exists():
+                self.control(f"PACKAGE {action} {identity}")
+                self.send(connection, sequence, "OK", "accepted")
+                return
+            completed = subprocess.run(
+                [str(self.installer), "--storage-root", str(self.state_root),
+                 "--publisher-key", str(self.publisher_key), "--action", action,
+                 "--expected-id", identity],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=60, check=False,
+            )
+        if completed.returncode:
+            detail = completed.stderr.strip().replace("\n", ": ")[:240]
+            raise ServiceError(f"package_action_failed: {detail or 'unknown error'}")
+        self.send(connection, sequence, "OK", "completed")
+
     def dispatch(self, connection: "BinaryHandler", sequence: int,
                  command: str, arguments: list[str]) -> None:
         if command == "HELLO":
@@ -452,6 +476,8 @@ class SimulatorPxaDb:
             self.file_remove_tree(connection, sequence, arguments)
         elif command == "PACKAGE" and len(arguments) == 2 and arguments[0] == "deploy":
             self.deploy(connection, sequence, arguments[1])
+        elif command == "PACKAGE" and len(arguments) == 2 and arguments[0] in {"enable", "disable", "clear-data", "uninstall"}:
+            self.package_action(connection, sequence, arguments[0], arguments[1])
         else:
             raise ServiceError("unsupported_simulator_command")
 

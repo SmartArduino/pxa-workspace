@@ -72,6 +72,17 @@ PXADB being disabled.
 
 ## Simulator Debug Commands
 
+Simulator application management uses `PACKAGE enable <app-id>`,
+`PACKAGE disable <app-id>`, `PACKAGE clear-data <app-id>` and
+`PACKAGE uninstall <app-id>`. A live full-system UI owns the operation and stops
+the app before changing files. `OK accepted` acknowledges the request;
+completion updates the app list and posts a system toast. Without a live control
+socket, the offline installer helper returns `OK completed` after the change.
+Errors from a live owner never trigger offline deletion. Uninstall removes the
+user package and its private data; clear-data keeps the package. Disable state
+persists across restarts and replacement installs. Built-in system apps cannot
+be uninstalled. `PACKAGES` reflects the persistent enabled state.
+
 The local simulator also supports `SCREENSHOT`, `INPUT CAPABILITIES`,
 `INPUT POINTER <DOWN|MOVE|UP> X Y 0`, `INPUT TAP X Y`,
 `INPUT SWIPE X1 Y1 X2 Y2 DURATION_MS STEPS`, `INPUT KEY <KEY>`, and

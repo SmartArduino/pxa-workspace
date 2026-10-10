@@ -4,6 +4,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch, Mock
 import zlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -131,6 +132,47 @@ class SimulatorFileCommandTest(unittest.TestCase):
         with self.assertRaisesRegex(simulator_pxadb.ServiceError,
                                     "path must remain inside"):
             self.service.storage_path("../outside")
+
+
+class SimulatorPackageCommandTest(unittest.TestCase):
+    setUp = SimulatorFileCommandTest.setUp
+    tearDown = SimulatorFileCommandTest.tearDown
+    storage = SimulatorFileCommandTest.storage
+    def test_management_uses_live_ui_owner(self) -> None:
+        control = self.storage("control.sock"); control.touch()
+        self.service.control_socket = control
+        with patch.object(self.service, "control") as owner, patch("simulator_pxadb.subprocess.run") as installer:
+            self.service.dispatch(self.connection, 1, "PACKAGE", ["uninstall", "pxa-reader"])
+            owner.assert_called_once_with("PACKAGE uninstall pxa-reader")
+            installer.assert_not_called()
+        self.assertEqual(self.connection.decoded(), [("OK", "accepted")])
+
+    def test_management_does_not_bypass_owner_failure(self) -> None:
+        control = self.storage("control.sock"); control.touch()
+        self.service.control_socket = control
+        with patch.object(self.service, "control", side_effect=simulator_pxadb.ServiceError("package_action_failed")), patch("simulator_pxadb.subprocess.run") as installer:
+            with self.assertRaisesRegex(simulator_pxadb.ServiceError, "package_action_failed"):
+                self.service.dispatch(self.connection, 1, "PACKAGE", ["clear-data", "pxa-reader"])
+            installer.assert_not_called()
+
+    def test_offline_management_uses_package_helper(self) -> None:
+        with patch("simulator_pxadb.subprocess.run", return_value=Mock(returncode=0)) as installer:
+            self.service.dispatch(self.connection, 1, "PACKAGE", ["clear-data", "pxa-reader"])
+            command = installer.call_args.args[0]
+            self.assertEqual(command[-4:], ["--action", "clear-data", "--expected-id", "pxa-reader"])
+        self.assertEqual(self.connection.decoded(), [("OK", "completed")])
+
+    def test_management_rejects_traversal_before_calling_helper(self) -> None:
+        with patch("simulator_pxadb.subprocess.run") as installer:
+            with self.assertRaisesRegex(simulator_pxadb.ServiceError, "invalid_identity"):
+                self.service.dispatch(self.connection, 1, "PACKAGE", ["uninstall", "../pxa-reader"])
+            installer.assert_not_called()
+
+    def test_listing_reflects_disabled_marker(self) -> None:
+        self.storage("packages/pxa-reader/current/manifest.pxm").touch()
+        self.storage("packages/pxa-reader/.disabled").touch()
+        self.service.package_list(self.connection, 1)
+        self.assertIn("enabled=0", self.connection.decoded()[0][1])
 
 
 if __name__ == "__main__":
