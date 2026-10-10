@@ -152,9 +152,64 @@ int main(void) {
     navigation_back_indicator_reset(&ui);
     assert(ui.navigation_back_indicator == NULL);
 
+    /* Status samples must preserve the launcher and an open shade. Test the
+     * real compact layout, including updates deferred until touch release. */
+    pxsys_display_profile_init(&ui.display, 296, 240);
+    ui.content_active = 1;
+    ui.active_page = REFERENCE_PAGE_HOME;
+    ui.text_font = LV_FONT_DEFAULT;
+    pxsys_system_status_snapshot_init(&ui.system_status);
+    ui.system_status.time_valid = ui.system_status.date_valid = 1;
+    ui.system_status.hour = 12;
+    ui.system_status.minute = 34;
+    ui.system_status.year = 2026;
+    ui.system_status.month = 10;
+    ui.system_status.day = 10;
+    ui.system_status.volume_supported = 1;
+    ui.system_status.brightness_supported = 1;
+    ui.system_status.volume_percent = 40;
+    ui.system_status.brightness_percent = 70;
+    lv_obj_t* launcher_sentinel = lv_obj_create(ui.root);
+    build_notification_shade(&ui, 256);
+    lv_obj_t* shade = ui.notification_shade;
+    lv_obj_t* shade_content = ui.notification_content;
+    lv_obj_t* clock = ui.notification_time;
+    assert(clock != NULL && ui.notification_volume != NULL);
+    lv_timer_t* status_timer = lv_timer_create(status_refresh_poll, 50, &ui);
+    ui.system_status.minute = 35;
+    ui.system_status.day = 11;
+    ui.system_status.volume_percent = 55;
+    ui.system_status.brightness_percent = 85;
+    ui.status_refresh_pending = 1;
+    ui.notification_dragging = 1;
+    status_refresh_poll(status_timer);
+    assert(ui.status_refresh_pending && strcmp(lv_label_get_text(clock), "12:34") == 0);
+    ui.notification_dragging = 0;
+    status_refresh_poll(status_timer);
+    assert(!ui.status_refresh_pending);
+    assert(ui.notification_shade == shade && ui.notification_content == shade_content);
+    assert(ui.notification_time == clock && lv_obj_is_valid(launcher_sentinel));
+    assert(strcmp(lv_label_get_text(clock), "12:35") == 0);
+    assert(strcmp(lv_label_get_text(ui.notification_date), "2026-10-11") == 0);
+    assert(lv_slider_get_value(ui.notification_volume) == 55);
+    assert(lv_slider_get_value(ui.notification_brightness) == 85);
+    /* A new supported control needs a new shade, but not new launcher icons. */
+    ui.system_status.wifi_supported = 1;
+    ui.system_status.wifi_enabled = 1;
+    ui.status_refresh_pending = ui.status_rebuild_pending = 1;
+    status_refresh_poll(status_timer);
+    assert(lv_obj_is_valid(launcher_sentinel));
+    assert(!ui.status_rebuild_pending && ui.notification_shade_open);
+    assert(strcmp(lv_label_get_text(ui.notification_time), "12:35") == 0);
+    close_notification_shade(&ui);
+    ui.status_refresh_pending = 1;
+    status_refresh_poll(status_timer);
+    assert(lv_obj_is_valid(launcher_sentinel));
+    lv_timer_delete(status_timer);
+
     lv_obj_delete(ui.task_switcher);
     lv_obj_delete(ui.root);
     lv_deinit();
-    puts("Game Home drag: snapshot, scale, Recents handoff, cancellation and Back first frame passed");
+    puts("Game gestures and compact shade status updates passed");
     return 0;
 }
