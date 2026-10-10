@@ -80,8 +80,9 @@ idf.py -C firmware -B build/firmware/pai-touch -DPXA_BOARD=pai-touch build
 source_root = "/home/me/work/pxa-apps"
 ```
 
-模拟器模式会保持 PXADB2 服务运行，在每次保存后重启 App 进程，并将运行器及 Guest 的
-`pxa_log_*` 日志输出到终端：
+模拟器模式会安装应用，启动完整 PXA 系统（与 `tools/simulator.sh run` 相同），并自动进入该应用。
+系统桌面、设置、输入法、主题、DPI 和屏幕形状都会生效。PXADB2 服务保持运行，
+每次保存后重启系统并进入更新后的 App；Host 及 Guest 的 `pxa_log_*` 日志输出到终端：
 
 ```sh
 tools/dev.sh sim my-app --watch
@@ -89,9 +90,16 @@ tools/dev.sh sim my-app --watch
 tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
 # 使用 Watcher 的 412×412 圆屏配置：
 tools/dev.sh sim --board sensecap-watcher pixel-dungeon
+tools/dev.sh sim --board esp-mosaico voxel-craft-cpp
 ```
 
 模拟器默认使用与 `--board` 同名的屏幕 profile；需要单独覆盖时传入 `--profile`。
+设置和 App 数据与 `tools/simulator.sh run` 共用该 profile 的持久化目录；传入
+`--instance <名称>` 可使用独立的开发实例。只需要单独运行应用时，可使用
+`tools/simulator.sh product --profile <板型> --installed <包 ID>`。
+`dev.sh` 默认只打包当前目标的 AOT，不附带 `.wasm` 回退文件（包括声明为 `artifact: "both"`
+的组件）；应用中明确声明为
+Wasm-only 的组件仍会保留。需要同时打包 Wasm 时，可直接使用 `tools/app.sh build`。
 
 设备模式独立构建 `esp32s3` 包并覆盖安装到现有固件，不会重新烧录固件；部署后默认会显示
 `pxadb logcat`，下一次更新前会自动暂时关闭它以释放 USB Serial/JTAG 连接：
@@ -101,7 +109,7 @@ tools/dev.sh device my-app --port /dev/ttyACM0 --baud 2000000 --watch
 ```
 
 所有构建、部署和运行器输出同时保存在 `local/dev-logs/<mode>/<app-id>.log`。这是重新加载
-WASM/AOT 应用的快速循环，而非运行时热重载，因此每次代码更新会重新启动该 App 窗口。
+WASM/AOT 应用的快速循环，而非运行时热重载，因此每次代码更新会重启运行环境。
 
 ## PXADB GUI
 

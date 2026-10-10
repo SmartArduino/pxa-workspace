@@ -1,6 +1,10 @@
 import pathlib
+import os
+import signal
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -71,6 +75,7 @@ class DeviceLaunchTest(unittest.TestCase):
                 self.developer.build()
                 command = run.call_args.args[0]
                 self.assertEqual(command[command.index("--target") + 1], target)
+                self.assertIn("--aot-only", command)
 
 
 class SimulatorProfileTest(unittest.TestCase):
@@ -88,6 +93,106 @@ class SimulatorProfileTest(unittest.TestCase):
                                              "--profile", "pai-touch"]):
             args = dev.parse_arguments()
         self.assertEqual(args.profile, "pai-touch")
+
+    def test_instance_is_only_supported_for_simulators(self) -> None:
+        with mock.patch.object(sys, "argv", ["dev.sh", "sim", "voxel-craft-cpp",
+                                             "--instance", "dpi-qa"]):
+            self.assertEqual(dev.parse_arguments().instance, "dpi-qa")
+        with mock.patch.object(sys, "argv", ["dev.sh", "device", "voxel-craft-cpp",
+                                             "--instance", "dpi-qa"]), \
+                mock.patch.object(sys, "stderr"), self.assertRaises(SystemExit):
+            dev.parse_arguments()
+
+
+class SimulatorLaunchTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.args = SimpleNamespace(
+            mode="sim", app_id="voxel-craft-cpp", board="esp-mosaico",
+            profile="esp-mosaico", instance=None,
+        )
+        self.developer = dev.Developer(self.args, mock.Mock(), pathlib.Path("."))
+        # Launch must use the manifest ID, not the source directory name.
+        self.developer.package_id = "pxa-cpp-counter"
+
+    def test_build_omits_wasm_fallback(self) -> None:
+        with mock.patch.object(dev, "stream_command") as stream:
+            self.developer.build()
+        command = stream.call_args.args[0]
+        self.assertEqual(command[command.index("--target") + 1], "simulator")
+        self.assertIn("--aot-only", command)
+
+    def test_opens_app_inside_full_system(self) -> None:
+        with mock.patch.object(dev, "start_logged_process") as start:
+            self.developer.start_app()
+        command = start.call_args.args[0]
+        self.assertEqual(command, [
+            str(dev.SIMULATOR_TOOL), "ui", "run", "--profile", "esp-mosaico",
+            "--", "--launch", "pxa-cpp-counter",
+        ])
+        self.assertIs(self.developer.runner, start.return_value)
+
+    def test_instance_routes_install_and_system_to_same_state(self) -> None:
+        self.args.instance = "dpi-qa"
+        with mock.patch.object(dev, "stream_command") as stream, \
+                mock.patch.object(dev, "start_logged_process") as start:
+            self.developer.start_simulator_service()
+            self.developer.install()
+            self.developer.start_app()
+        service = stream.call_args_list[0].args[0]
+        install = stream.call_args_list[1].args[0]
+        system = start.call_args.args[0]
+        self.assertEqual(service[-4:], ["--profile", "esp-mosaico", "--instance", "dpi-qa"])
+        self.assertEqual(install[-2:], ["--simulator", "esp-mosaico@dpi-qa"])
+        self.assertEqual(system[-5:], ["--instance", "dpi-qa", "--", "--launch", "pxa-cpp-counter"])
+
+
+@unittest.skipUnless(hasattr(os, "fork") and pathlib.Path("/proc").is_dir(),
+                     "process-group cleanup integration requires Linux")
+class ProcessCleanupTest(unittest.TestCase):
+    def test_cleans_runner_when_shell_exits_first(self) -> None:
+        self.check_process_group_cleanup(False)
+
+    def test_cleans_runner_when_shell_already_exited(self) -> None:
+        self.check_process_group_cleanup(True)
+
+    def check_process_group_cleanup(self, shell_exited: bool) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ready = pathlib.Path(directory) / "runner.pid"
+            script = """
+import os, pathlib, signal, sys, time
+if os.fork() == 0:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))
+    time.sleep(60)
+elif sys.argv[2] == 'stay':
+    time.sleep(60)
+"""
+            process = subprocess.Popen([sys.executable, "-c", script, str(ready),
+                                        "exit" if shell_exited else "stay"],
+                                       start_new_session=True)
+            try:
+                deadline = time.monotonic() + 3
+                while not ready.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(ready.exists())
+                runner_pid = int(ready.read_text())
+                if shell_exited:
+                    process.wait(timeout=3)
+                dev.stop_process(process, "test runner", mock.Mock(), timeout=0.15)
+                # A killed orphan may briefly await reaping by the OS.
+                state = pathlib.Path(f"/proc/{runner_pid}/stat")
+                deadline = time.monotonic() + 2
+                while state.exists() and state.read_text().split()[2] != "Z" \
+                        and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(not state.exists() or state.read_text().split()[2] == "Z")
+                self.assertIsNotNone(process.returncode)
+            finally:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
 
 
 if __name__ == "__main__":

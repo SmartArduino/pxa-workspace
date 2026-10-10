@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fast PXA development loop for desktop product simulation and devices."""
+"""Fast PXA development loop for the desktop PXA system and devices."""
 
 from __future__ import annotations
 
@@ -71,23 +71,32 @@ def stream_command(command: list[str], log: LogWriter) -> None:
         )
 
 
-def stop_process(process: subprocess.Popen[str] | None, label: str, log: LogWriter) -> None:
-    if process is None or process.poll() is not None:
+def stop_process(process: subprocess.Popen[str] | None, label: str, log: LogWriter,
+                 timeout: float = 5) -> None:
+    if process is None:
         return
     log.write(f"[dev] stopping {label}\n")
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
-        return
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        log.write(f"[dev] {label} did not exit; killing it\n")
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
         process.wait()
+        return
+    # The shell wrapper can exit before SDL finishes handling SIGTERM. Wait
+    # for its entire private process group, including already orphaned runners.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        process.poll()
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.05)
+    log.write(f"[dev] {label} did not exit; killing its process group\n")
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
 
 
 def pipe_process(process: subprocess.Popen[str], label: str, log: LogWriter) -> None:
@@ -164,10 +173,21 @@ class Developer:
         self.runner: subprocess.Popen[str] | None = None
         self.logcat: subprocess.Popen[str] | None = None
 
+    @property
+    def simulator_id(self) -> str:
+        instance = self.args.instance
+        return f"{self.args.profile}@{instance}" if instance else self.args.profile
+
+    def simulator_command(self, *arguments: str) -> list[str]:
+        command = [str(SIMULATOR_TOOL), *arguments, "--profile", self.args.profile]
+        if self.args.instance:
+            command.extend(["--instance", self.args.instance])
+        return command
+
     def pxadb(self, *arguments: str) -> list[str]:
         command = [sys.executable, str(PXADB_TOOL), *arguments]
         if self.args.mode == "sim":
-            command.extend(["--simulator", self.args.profile])
+            command.extend(["--simulator", self.simulator_id])
         elif self.args.port:
             command.extend(["--port", self.args.port])
         if self.args.mode == "device" and self.args.baud:
@@ -183,6 +203,7 @@ class Developer:
             str(APP_TOOL), "build", self.app_id,
             "--board", self.args.board,
             "--target", target,
+            "--aot-only",
             "--source-root", str(self.source_root),
         ]
         stream_command(command, self.log)
@@ -193,7 +214,7 @@ class Developer:
 
     def start_simulator_service(self) -> None:
         stream_command(
-            [str(SIMULATOR_TOOL), "service", "start", "--profile", self.args.profile],
+            self.simulator_command("service", "start"),
             self.log,
         )
 
@@ -206,10 +227,7 @@ class Developer:
             raise DevError("package identity is unavailable; build the package first")
         if self.args.mode == "sim":
             self.runner = start_logged_process(
-                [
-                    str(SIMULATOR_TOOL), "product", "run", "--profile", self.args.profile,
-                    "--installed", self.package_id,
-                ],
+                self.simulator_command("ui", "run") + ["--", "--launch", self.package_id],
                 "simulator",
                 self.log,
             )
@@ -278,7 +296,7 @@ def parse_arguments() -> argparse.Namespace:
         prog="tools/dev.sh",
         description="Build, deploy and run a PXA App with an optional source watcher.",
     )
-    parser.add_argument("mode", choices=("sim", "device"), help="desktop product simulator or ESP device")
+    parser.add_argument("mode", choices=("sim", "device"), help="full desktop PXA system or ESP device")
     parser.add_argument(
         "app_id",
         help="App source directory name; the installed ID is read from the built package",
@@ -286,6 +304,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--source-root", help="parent directory containing the App directory")
     parser.add_argument("--board", default="pai-touch", help="PXA board profile (default: pai-touch)")
     parser.add_argument("--profile", help="simulator profile (default: --board)")
+    parser.add_argument("--instance", help="isolated simulator instance (separate settings and App data)")
     parser.add_argument("--port", help="PXADB USB Serial/JTAG port for device mode")
     parser.add_argument("--baud", type=int, help="PXADB UART baud rate for device mode")
     parser.add_argument("--watch", action="store_true", help="rebuild and restart after source changes")
@@ -302,6 +321,8 @@ def parse_arguments() -> argparse.Namespace:
         parser.error("--baud is only valid in device mode")
     if args.mode == "device" and args.profile is not None:
         parser.error("--profile is only valid in sim mode")
+    if args.mode == "device" and args.instance is not None:
+        parser.error("--instance is only valid in sim mode")
     if args.baud is not None and args.baud <= 0:
         parser.error("--baud must be positive")
     if args.mode == "sim" and args.profile is None:

@@ -99,19 +99,29 @@ package manifest. These names may differ.
 source_root = "/home/me/work/pxa-apps"
 ```
 
-Simulator mode keeps its PXADB2 service running and restarts the App after each
-source save. Product-runner and Guest `pxa_log_*` output is streamed to the
-terminal:
+Simulator mode installs the App, starts the full PXA system (the same path as
+`tools/simulator.sh run`) and automatically opens the App. The launcher,
+settings, system input method, theme, DPI and display shape are available.
+It keeps its PXADB2 service running and restarts the system with the updated App
+after each source save. Host and Guest `pxa_log_*` output is streamed to the terminal:
 
 ```sh
 tools/dev.sh sim my-app --watch
 # Or without a local catalog:
 tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
 tools/dev.sh sim --board sensecap-watcher pixel-dungeon
+tools/dev.sh sim --board esp-mosaico voxel-craft-cpp
 ```
 
 Simulator mode selects the display profile matching `--board` by default;
-pass `--profile` to override it.
+pass `--profile` to override it. Settings and App data use the same persistent
+profile state as `tools/simulator.sh run`. Use `--instance <name>` to keep a
+separate development instance. For standalone App testing, use
+`tools/simulator.sh product --profile <board> --installed <package-id>`.
+`dev.sh` packages only the current target's AOT, omitting the `.wasm` fallback
+(including components declaring `artifact: "both"`);
+explicitly declared Wasm-only components are preserved. Use `tools/app.sh build`
+directly when you need both artifacts.
 
 Device mode independently builds an `esp32s3` package and replaces the App in
 the existing firmware without reflashing it. It starts `pxadb logcat` after

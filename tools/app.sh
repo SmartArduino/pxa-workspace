@@ -24,7 +24,7 @@ remaining AOT targets are built into the same package as extra architecture
 artifacts. The wasm artifact is included whenever the App declares artifact
 mode "both" (the default) or "wasm" in package.json.
 
---aot-only omits the default WASM fallback in AOT packages. Explicitly
+--aot-only omits the WASM fallback (including explicit "both") in AOT packages. Explicitly
 declared WASM-only Components remain included.
 
 Default target: the board's own target (pai-touch -> esp32s3,

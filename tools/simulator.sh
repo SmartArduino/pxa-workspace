@@ -257,7 +257,9 @@ esac
 product_args=("${profile_args[0]}" "${profile_args[1]}"
               "${profile_args[2]}" "${profile_args[3]}")
 for ((profile_index = 0; profile_index < ${#profile_args[@]}; ++profile_index)); do
-  if [[ "${profile_args[profile_index]}" == "--safe-insets" ]]; then
+  if [[ "${profile_args[profile_index]}" == "--density-dpi" ]]; then
+    product_args+=("--density-dpi" "${profile_args[profile_index + 1]}")
+  elif [[ "${profile_args[profile_index]}" == "--safe-insets" ]]; then
     product_args+=("--safe-insets" "${profile_args[profile_index + 1]}")
   elif [[ "${profile_args[profile_index]}" == "--corner-radius" ]]; then
     product_args+=("--corner-radius" "${profile_args[profile_index + 1]}")
