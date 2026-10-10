@@ -35,6 +35,8 @@ def main():
     parser.add_argument("--seconds", type=float, default=8)
     parser.add_argument("--repeat", type=int, default=3)
     parser.add_argument("--menu-tap", type=int, nargs=2)
+    parser.add_argument("--hold-pointer", type=int, nargs=2,
+                        help="hold at X Y after startup, warm again, then measure the held scene")
     parser.add_argument("--unlock-swipe", type=int, nargs=4,
                         help="wake and unlock before each run: X1 Y1 X2 Y2")
     parser.add_argument("--wake-home", action="store_true",
@@ -52,9 +54,14 @@ def main():
     if args.pixel_search and (args.seconds < 4 or args.menu_tap or args.app not in
                              ("pxa-pixel-dungeon", "pxa-pixel-dungeon-cpp")):
         parser.error("--pixel-search requires a Pixel package and >= 4 seconds, without --menu-tap")
+    if args.hold_pointer and (args.menu_tap or args.pixel_search):
+        parser.error("--hold-pointer cannot be combined with --menu-tap or --pixel-search")
     args.output.mkdir(parents=True, exist_ok=True)
     report = {"app": args.app, "port": args.port, "warmup_seconds": args.warmup,
               "capture_seconds": args.seconds, "runs": [], "passed": False}
+    if args.hold_pointer:
+        report["scene"] = {"name": "held-pointer", "pixel": args.hold_pointer,
+                           "held_warmup_seconds": args.warmup}
     if args.pixel_search:
         report["scene"] = {"name": "new-warrior-twelve-searches", "seed": "0x51ed270b",
                            "width": 296, "height": 240, "dpi": 160,
@@ -89,8 +96,15 @@ def main():
                 return frames
 
             def pump(seconds):
+                nonlocal hold_refresh
                 deadline = time.monotonic() + seconds
                 while time.monotonic() < deadline:
+                    if holding and time.monotonic() - hold_refresh >= 1:
+                        # PXADB cancels a synthetic hold after five seconds
+                        # without pointer input. Refresh at the same position;
+                        # actual touch samples continue at the driver's rate.
+                        request(f"INPUT POINTER MOVE {args.hold_pointer[0]} {args.hold_pointer[1]} 0")
+                        hold_refresh = time.monotonic()
                     client.pump_logs()
                     time.sleep(.02)
 
@@ -150,7 +164,8 @@ def main():
                 return {"turn": 24, "seed": "0x51ed270b", "depth": 1, "class": 0,
                         "sha256": hashlib.sha256(saved).hexdigest()}
 
-            running = recording = heap_monitoring = False
+            running = recording = heap_monitoring = holding = False
+            hold_refresh = 0.0
             try:
                 report["hello"] = client.hello()
                 if "perf-raster" not in report["hello"] or "memory" not in report["hello"]:
@@ -204,6 +219,12 @@ def main():
                         pump(args.warmup)
                     if args.menu_tap:
                         request(f"INPUT TAP {args.menu_tap[0]} {args.menu_tap[1]}")
+                        request("INPUT SYNC")
+                        pump(args.warmup)
+                    if args.hold_pointer:
+                        request(f"INPUT POINTER DOWN {args.hold_pointer[0]} {args.hold_pointer[1]} 0")
+                        holding = True
+                        hold_refresh = time.monotonic()
                         request("INPUT SYNC")
                         pump(args.warmup)
                     active = [f.payload for f in request("PACKAGES")
@@ -289,6 +310,9 @@ def main():
                         pump(2)
                         run["committed_save"] = pixel_save(index)
                     request("PERF CLEAR")
+                    if holding:
+                        request("INPUT CANCEL")
+                        holding = False
                     request(f"PACKAGE stop {args.app}")
                     running = False
                     pump(2)
@@ -305,6 +329,7 @@ def main():
             finally:
                 for command, needed in [("PERF STOP", recording), ("PERF CLEAR", True),
                                         ("MEMORY STOP", heap_monitoring),
+                                        ("INPUT CANCEL", holding),
                                         (f"PACKAGE stop {args.app}", running)]:
                     if needed:
                         try:
