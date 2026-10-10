@@ -279,6 +279,33 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         self.assertIn("FSDATA 0 YWI=", writes[1])
         self.assertIn("FSDATA 2 Yw==", writes[2])
 
+    def test_upload_write_rejection_is_not_retried(self) -> None:
+        client = fake_client([
+            encoded_frame(1, "READY", "3"),
+            encoded_frame(2, "ERR", "file_write_failed;errno=28"),
+        ])
+        client.device_info = "max_chunk=3;fs_offset=1"
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "payload.bin"
+            source.write_bytes(b"abc")
+            with self.assertRaisesRegex(pxadb.PxaDbRejectedError, "errno=28"):
+                pxadb.NormalFsClient(client).put(source, "pxa-state/inbox/payload.bin")
+        self.assertEqual(len(client.serial.writes), 2)
+
+    def test_upload_lost_data_responses_have_a_retry_limit(self) -> None:
+        client = fake_client([])
+        client.device_info = "max_chunk=3;fs_offset=1"
+        responses = []
+        for _ in range(3):
+            responses.extend(([pxadb.Frame(1, "READY", "3")], pxadb.PxaDbError("lost response")))
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "payload.bin"
+            source.write_bytes(b"abc")
+            with mock.patch.object(client, "request_until", side_effect=responses) as request:
+                with self.assertRaisesRegex(pxadb.PxaDbError, "lost response"):
+                    pxadb.NormalFsClient(client).put(source, "pxa-state/inbox/payload.bin")
+                self.assertEqual(request.call_count, 6)
+
     def test_uart_upload_chunk_override(self) -> None:
         payload = b"abcdef"
         client = fake_client([

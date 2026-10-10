@@ -41,6 +41,11 @@ class PxaDbError(RuntimeError):
     pass
 
 
+class PxaDbRejectedError(PxaDbError):
+    """The peer returned ERR, rather than losing a transport response."""
+    pass
+
+
 def serial_upload_profile(port: str) -> str:
     if list_ports is None:
         return "unknown"
@@ -426,7 +431,7 @@ class PxaDbClient:
                 self.pending_frames.append(frame)
                 continue
             if frame.kind == "ERR":
-                raise PxaDbError(frame.payload or "device rejected the request")
+                raise PxaDbRejectedError(frame.payload or "device rejected the request")
             if frame.kind in terminal_kinds:
                 return frames + [frame]
             frames.append(frame)
@@ -461,7 +466,7 @@ class PxaDbClient:
                 self.pending_frames.append(frame)
                 continue
             if frame.kind == "ERR":
-                raise PxaDbError(frame.payload or "device rejected the request")
+                raise PxaDbRejectedError(frame.payload or "device rejected the request")
             if frame.kind in terminal_kinds:
                 return frames + [frame]
             frames.append(frame)
@@ -1079,6 +1084,8 @@ class NormalFsClient:
                         timeout=10.0,
                     )
                     return frames[-1]
+                except PxaDbRejectedError:
+                    raise
                 except PxaDbError:
                     recoveries += 1
                     if recoveries >= 3:
@@ -1113,7 +1120,12 @@ class NormalFsClient:
                             command, {"READY", "OK"}, timeout=10.0
                         )
                     terminal = frames[-1]
-                except PxaDbError:
+                except PxaDbError as error:
+                    if isinstance(error, PxaDbRejectedError) and str(error) != "invalid_offset":
+                        raise
+                    recoveries += 1
+                    if recoveries >= 3:
+                        raise
                     # The digest identifies an upload. A new device resumes at
                     # its confirmed offset; legacy firmware restarts safely.
                     terminal = begin_upload()
