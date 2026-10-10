@@ -504,11 +504,17 @@ bool ForgetSavedWifi(void*, const char* ssid) {
 }
 
 bool MountPxaStorage() {
+#ifdef CONFIG_PXA_STORAGE_FORMAT_IF_MOUNT_FAILED
+    constexpr bool format_if_mount_failed =
+        CONFIG_PXA_STORAGE_FORMAT_IF_MOUNT_FAILED;
+#else
+    constexpr bool format_if_mount_failed = false;
+#endif
     const esp_vfs_littlefs_conf_t config = {
         .base_path = CONFIG_PXA_MOUNT_POINT,
         .partition_label = CONFIG_PXA_STORAGE_PARTITION_LABEL,
         .partition = nullptr,
-        .format_if_mount_failed = CONFIG_PXA_STORAGE_FORMAT_IF_MOUNT_FAILED,
+        .format_if_mount_failed = format_if_mount_failed,
         .read_only = false,
         .dont_mount = false,
         .grow_on_mount = false,
