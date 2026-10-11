@@ -82,13 +82,13 @@ class SimulatorProfileTest(unittest.TestCase):
     def test_board_selects_matching_profile(self) -> None:
         for board in ("sensecap-watcher", "esp-mosaico"):
             with self.subTest(board=board), \
-                    mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon",
+                    mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon-cpp",
                                                      "--board", board]):
                 args = dev.parse_arguments()
                 self.assertEqual(args.profile, board)
 
     def test_explicit_profile_overrides_board(self) -> None:
-        with mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon",
+        with mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon-cpp",
                                              "--board", "sensecap-watcher",
                                              "--profile", "pai-touch"]):
             args = dev.parse_arguments()

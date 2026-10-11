@@ -106,6 +106,20 @@ command contract.
 Firmware HELLO advertises `perf-raster,heap-local` when test control is enabled.
 `PERF START` / `PERF STOP` record bounded raster and distinct FrameId LCD-complete
 intervals. Check both overflow counters before deriving displayed FPS.
+`PERF INPUT` drains the existing sampled-pointer latency counters, returning
+`guest`, `present` and `visible` total microseconds, count, p95 and maximum in
+three `DATA` frames followed by `OK`. Start an explicit `PERF START` window,
+read `PERF INPUT` to clear startup/history, apply input, then read it at the end
+and release the probe with `PERF CLEAR`. During this window the periodic display
+consumer leaves the counters untouched; without it, a read may only cover the
+remainder since the display's last drain. This reuses the optional raster probe
+(2112 bytes on pai-touch), with no new permanent counters or persistent setting.
+All stages start at the sampled input timestamp: `present` ends at submission
+to the render pipeline; `visible` ends at completed LCD transfer. Captures must
+also prove that the game surface is visible and that input changes pixels below
+the FPS overlay. Counts can differ because delivery and presentation coalesce.
+`tools/measure-device-game-input.py` performs that check; it does not measure
+physical touch scanning delay before the timestamped synthetic sample.
 `MEMORY START` resets ESP-IDF allocation minima for the current measurement;
 `MEMORY STOP` returns the snapshot before restoring the boot-wide minima.
 This includes allocations freed between snapshots, without a polling task or

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Reproduce the implemented resource path. Firmware builds and the unfinished
-# UI/audio integration gates remain separate parts of the overall goal.
+# Reproduce resource, UI-image and audio integration on the product Host.
+# Firmware builds and device interaction/performance checks run separately.
 set -euo pipefail
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 pxa_root="$project_root/deps/pxa-system"
@@ -30,21 +30,21 @@ run_logged scenes-generate python3 "$app_root/resource-scenes/generate_resources
 run_logged scenes-package env PXA_APP_SOURCE_ROOT="$app_root" \
     PXA_PACKAGE_OUTPUT_ROOT="$test_root/packages" \
     bash "$pxa_root/tools/package/package_app.sh" resource-scenes simulator "$test_root/packages/pxa-resource-scenes"
-run_logged pixel-audio-controller-build cc -std=c99 -Wno-attributes \
-    -I "$app_root/pixel-dungeon" -I "$pxa_root/sdk/guest-c/include" \
-    "$app_root/pixel-dungeon/audio.c" "$app_root/pixel-dungeon/tools/audio_selftest.c" \
+run_logged pixel-audio-controller-build "${CC:-clang}" -std=c11 -Wno-attributes \
+    -I "$app_root/common/cpp/tests/reference/c/pixel-dungeon" -I "$pxa_root/sdk/testing" -I "$pxa_root/sdk/guest-c/include" \
+    "$app_root/common/cpp/tests/reference/c/pixel-dungeon/audio.c" "$app_root/common/cpp/tests/reference/c/pixel-dungeon/tools/audio_selftest.c" \
     -o "$test_root/pixel-audio-controller-test"
 run_logged pixel-audio-controller "$test_root/pixel-audio-controller-test"
-run_logged plane-image-controller-build cc -std=c99 -Wno-attributes \
+run_logged plane-image-controller-build "${CXX:-clang++}" -std=c++26 -DPXA_GUEST_CPP_TRANSPORT=1 -Wno-attributes \
     -fsanitize=address,undefined -fno-omit-frame-pointer -g \
-    -I "$app_root/plane-shooter" -I "$pxa_root/sdk/guest-c/include" \
-    "$app_root/plane-shooter/images.c" "$app_root/plane-shooter/tests/images_test.c" \
+    -I "$app_root/plane-shooter" -I "$pxa_root/sdk/guest-c/include" -I "$pxa_root/sdk/guest-cpp/include" -I "$pxa_root/sdk/testing" \
+    "$app_root/plane-shooter/images.cpp" "$app_root/plane-shooter/tests/images_test.cpp" \
     -o "$test_root/plane-image-controller-test"
 run_logged plane-image-controller "$test_root/plane-image-controller-test"
-run_logged store-image-controller-build cc -std=c99 -Wno-attributes \
+run_logged store-image-controller-build "${CXX:-clang++}" -std=c++26 -DPXA_GUEST_CPP_TRANSPORT=1 -Wno-attributes \
     -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -g \
-    -I "$app_root/store" -I "$pxa_root/sdk/guest-c/include" \
-    "$app_root/store/search_image.c" "$app_root/store/tests/search_image_test.c" \
+    -I "$app_root/store" -I "$pxa_root/sdk/guest-c/include" -I "$pxa_root/sdk/guest-cpp/include" -I "$pxa_root/sdk/testing" \
+    "$app_root/store/search_image.cpp" "$app_root/store/tests/search_image_test.cpp" \
     -o "$test_root/store-image-controller-test"
 run_logged store-image-controller "$test_root/store-image-controller-test"
 run_logged store-image-stop-loading "$test_root/store-image-controller-test" stop-loading
@@ -56,7 +56,7 @@ run_logged plane-package env PXA_APP_SOURCE_ROOT="$app_root" \
     bash "$pxa_root/tools/package/package_app.sh" plane-shooter simulator "$test_root/packages/pxa-plane-shooter"
 run_logged pixel-package env PXA_APP_SOURCE_ROOT="$app_root" \
     PXA_PACKAGE_OUTPUT_ROOT="$test_root/packages" \
-    bash "$pxa_root/tools/package/package_app.sh" pixel-dungeon simulator "$test_root/packages/pxa-pixel-dungeon"
+    bash "$pxa_root/tools/package/package_app.sh" pixel-dungeon-cpp simulator "$test_root/packages/pxa-pixel-dungeon-cpp"
 run_logged simulator-configure bash "$project_root/tools/simulator.sh" product configure --profile "$profile"
 run_logged simulator-build cmake --build "$project_root/build/simulator/$profile" \
     --target pxsys_resource_app_test pxsys_resource_budget_test pxsys_audio_test pxsys_audio_app_test pxsys_ui_images_test pxsys_store_images_test -j "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
@@ -104,7 +104,7 @@ run_logged store-exit env PXA_ASSET_READ_DELAY_US=100000 "$store_runner" \
 run_logged store-low env PXA_ASSET_EXTERNAL_BYTES=4096 "$store_runner" \
     "$store_package" "$key" "$test_root/store-low" low-budget
 run_logged pixel-audio-app "$project_root/build/simulator/$profile/pxsys_audio_app_test" \
-    "$test_root/packages/pxa-pixel-dungeon" "$key"
+    "$test_root/packages/pxa-pixel-dungeon-cpp" "$key"
 run_logged scenes-default "$runner" "$package" "$key"
 run_logged scenes-low-budget env PXA_RESOURCE_EXTERNAL_BYTES=300000 "$runner" "$package" "$key"
 run_logged storage-steady "$runner" "$package" "$key" storage-steady

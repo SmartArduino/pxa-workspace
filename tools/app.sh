@@ -172,6 +172,9 @@ if [[ ${#targets[@]} -eq 1 ]]; then
 else
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/pxa-$app_id-arch.XXXXXX")"
   trap 'rm -rf "$work_dir"' EXIT
+  # All architectures consume the same Wasm. The package tool locks and
+  # incrementally rebuilds this cache when sources or CMake options change.
+  export PXA_BUILD_CACHE_DIR="${PXA_BUILD_CACHE_DIR:-$work_dir/wasm-cache}"
   extra_aot_dir="$work_dir/extra-aot"
   mkdir -p "$extra_aot_dir"
 

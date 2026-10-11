@@ -90,7 +90,7 @@ def main():
                 # collecting a complete response, outside the FPS window.
                 quiet = client.log_subscribed and command.startswith(("MEMORY", "PERF"))
                 if quiet:
-                    client.unsubscribe_logs()
+                    client.unsubscribe_logs(timeout=3)
                 frames = client.request(command, timeout=20)
                 if quiet:
                     client.subscribe_logs()

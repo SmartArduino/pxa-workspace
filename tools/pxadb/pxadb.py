@@ -517,11 +517,11 @@ class PxaDbClient:
             self.log_subscribed = False
             raise
 
-    def unsubscribe_logs(self) -> None:
+    def unsubscribe_logs(self, timeout: float = 0.5) -> None:
         if not self.log_subscribed:
             return
         try:
-            self.request("LOGUNSUB", timeout=0.5)
+            self.request("LOGUNSUB", timeout=timeout)
         finally:
             self.log_subscribed = False
 
