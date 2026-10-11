@@ -1251,6 +1251,37 @@ bool ParseUnsigned(const char* text, uint32_t maximum, uint32_t* value) {
 #if CONFIG_PXA_ENABLED
 void HandlePerf(unsigned long sequence, char* const* arguments,
                 size_t argument_count) {
+    if (argument_count == 1 && strcmp(arguments[0], "INPUT") == 0) {
+        // Drain the existing counters at explicit test-window boundaries.
+        // This does not enable display logging, change settings or allocate.
+        pxa_esp_surface_input_metrics_t metrics = {};
+        pxa_esp_surface_take_input_metrics(&metrics);
+        auto send_stage = [&](const char* stage, uint64_t total, uint32_t count,
+                              uint32_t p95, uint32_t maximum) {
+            char payload[kMaxFramePayload] = {};
+            const int length = snprintf(payload, sizeof(payload),
+                "%s_total_us=%llu;%s_count=%u;%s_p95_us=%u;%s_max_us=%u",
+                stage, static_cast<unsigned long long>(total), stage,
+                static_cast<unsigned>(count), stage, static_cast<unsigned>(p95),
+                stage, static_cast<unsigned>(maximum));
+            return length > 0 && static_cast<size_t>(length) < sizeof(payload) &&
+                SendFrame(sequence, "DATA", payload);
+        };
+        if (!send_stage("guest", metrics.sample_to_guest_total_us,
+                        metrics.sample_to_guest_count,
+                        metrics.sample_to_guest_p95_us,
+                        metrics.sample_to_guest_max_us) ||
+            !send_stage("present", metrics.sample_to_present_total_us,
+                        metrics.sample_to_present_count,
+                        metrics.sample_to_present_p95_us,
+                        metrics.sample_to_present_max_us) ||
+            !send_stage("visible", metrics.sample_to_visible_total_us,
+                        metrics.sample_to_visible_count,
+                        metrics.sample_to_visible_p95_us,
+                        metrics.sample_to_visible_max_us)) return;
+        SendFrame(sequence, "OK", "");
+        return;
+    }
     if (argument_count == 1 && strcmp(arguments[0], "START") == 0) {
         SendFrame(sequence, pxa_esp_surface_perf_start() ? "OK" : "ERR",
                   "recording");

@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "pxa_esp_package_store.h"
+#include "pxa/wire.h"
 
 #define PXA_STORE_INSTALL_SERVICE_ID UINT16_C(20)
 #define PXA_STORE_INSTALL_SERVICE_MAJOR UINT16_C(0)
@@ -23,7 +24,7 @@
 #define PXA_STORE_WORKER_STACK_BYTES (10u * 1024u)
 
 typedef struct pxa_esp_store_job {
-    uint32_t request_id;
+    pxa_request_token_t request_token;
     uint32_t component;
     uint32_t prompt_id;
     uint64_t instance_id;

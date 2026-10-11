@@ -55,11 +55,11 @@ typedef struct {
 } runtime_event_t;
 
 typedef struct {
+    uint64_t request_id;
     uint32_t generation;
     uint32_t component;
-    uint32_t request_id;
-    uint16_t opcode;
     size_t payload_size;
+    uint16_t opcode;
     uint8_t invoke_returned;
     uint8_t completed;
     pxa_host_system_caller_t caller;
@@ -1201,7 +1201,7 @@ static void process_system_request(void* context) {
 }
 
 static bool system_request(void* context, const pxa_host_system_caller_t* caller, uint16_t opcode,
-                           uint32_t request_id, const uint8_t* payload, size_t payload_size) {
+                           uint64_t request_id, const uint8_t* payload, size_t payload_size) {
     system_request_t* request;
     uint32_t generation = 0;
     if (caller == NULL || request_id == 0 || (payload == NULL && payload_size != 0) ||

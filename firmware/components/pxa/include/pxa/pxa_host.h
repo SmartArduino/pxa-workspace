@@ -152,7 +152,7 @@ typedef struct {
 } pxa_host_system_caller_t;
 typedef bool (*pxa_host_system_request_fn)(
     void *context, const pxa_host_system_caller_t *caller, uint16_t opcode,
-    uint32_t request_id, const uint8_t *payload, size_t payload_size);
+    pxa_request_token_t request_token, const uint8_t *payload, size_t payload_size);
 
 /* Public C facade over the ESP PXA host. */
 bool pxa_host_initialize(void);
@@ -248,12 +248,12 @@ void pxa_host_set_system_request_callback(pxa_host_system_request_fn callback,
                                           void *context);
 /* Thread-safe completion; payload is copied before this function returns. */
 bool pxa_host_complete_system_request(const char *app_id, uint32_t component,
-                                      uint32_t request_id, int32_t status,
+                                      pxa_request_token_t request_token, int32_t status,
                                       const void *payload,
                                       size_t payload_size);
 /* Thread-safe unsolicited event delivery; payload is copied. */
 bool pxa_host_post_system_event(const char *app_id, uint32_t component,
-                                uint16_t opcode, uint32_t request_id,
+                                uint16_t opcode, pxa_request_token_t request_token,
                                 const void *payload,
                                 size_t payload_size);
 bool pxa_host_post_app_system_event(const char *identity_key, uint16_t opcode,

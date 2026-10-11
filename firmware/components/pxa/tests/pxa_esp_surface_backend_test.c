@@ -333,6 +333,90 @@ static void test_prepared_pipeline(pxa_game_render_backend_t *backend) {
     }
 }
 
+/* Commands are consumed before submit returns, including on close/rebind.
+ * No command mailbox exists; framebuffer leases still impose backpressure. */
+static void test_borrowed_submit(pxa_game_render_backend_t *backend) {
+    pxa_game_render_desc_t desc = {4, 4, 2, PXA_GAME_RENDER_FLAG_BORROW_COMMANDS,
+                                  PXA_GAME_RENDER_SCRATCH_DEPTH16, 4096};
+    uint64_t surface;
+    uint32_t capabilities;
+    uint8_t palette[PXA_RASTER_UPLOAD_HEADER_BYTES + 512] = {0};
+    uint8_t draw[PXA_RASTER_DRAW_HEADER_BYTES + PXA_RASTER_CLEAR_BYTES] = {0};
+    pxa_esp_surface_frame_t first, second, third;
+    pxa_esp_surface_memory_info_t memory;
+    assert(backend->create(NULL, &desc, &surface, &capabilities) == 0);
+    pxa_esp_surface_memory_snapshot(&memory);
+    /* Native malloc may round a 32-byte depth plane up; ASan reports the
+     * requested size. The telemetry counts the allocator's actual storage. */
+    assert(memory.mailbox_bytes == 0 && memory.scratch_bytes >= 32);
+    assert(memory.scratch_bytes ==
+           heap_caps_get_allocated_size(g_surface->raster_depth_buffer));
+    for (unsigned i = 0; i < PXA_ESP_RASTER_MAILBOX_SLOTS; ++i)
+        assert(g_surface->raster_draw_lists[i] == NULL);
+    snapshot_upload_header(palette, PXA_RASTER_UPLOAD_PALETTE_RGB565, 256, 1);
+    assert(backend->upload(NULL, surface, palette, sizeof(palette)) == 0);
+    pxa_write_u32(draw, PXA_RASTER_DRAW_MAGIC);
+    pxa_write_u16(draw + 4, PXA_RASTER_ABI_MAJOR);
+    pxa_write_u16(draw + 6, PXA_RASTER_ABI_MINOR);
+    pxa_write_u32(draw + 8, sizeof(draw));
+    pxa_write_u32(draw + 16, 1);
+    draw[PXA_RASTER_DRAW_HEADER_BYTES] = PXA_RASTER_RECORD_CLEAR_RGB565;
+    pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2, PXA_RASTER_CLEAR_BYTES);
+    pxa_write_u64(draw + 20, 1);
+    pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x1111);
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+    assert(!pxa_esp_surface_has_pending_raster_draw());
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == PXA_STATUS_BAD_STATE);
+    assert(pxa_esp_surface_acquire_prepared(&first, true));
+    pxa_write_u64(draw + 20, 2);
+    pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x2222);
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+    for (unsigned i = 0; i < 16; ++i)
+        assert(((const uint16_t *)first.pixels)[i] == 0x1111);
+    pxa_esp_surface_release_frame(first.lease);
+    assert(pxa_esp_surface_acquire_prepared(&second, true));
+    pxa_write_u64(draw + 20, 3);
+    pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x3333);
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == PXA_STATUS_WOULD_BLOCK);
+    pxa_esp_surface_release_frame(second.lease);
+    pxa_esp_surface_set_presentation_visible(false);
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == PXA_STATUS_WOULD_BLOCK);
+    pxa_esp_surface_set_presentation_visible(true);
+    pxa_esp_surface_set_host_visible(false);
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == PXA_STATUS_WOULD_BLOCK);
+    pxa_esp_surface_set_host_visible(true);
+    pxa_esp_surface_set_display_unlocked(false);
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == PXA_STATUS_WOULD_BLOCK);
+    pxa_esp_surface_set_display_unlocked(true);
+    draw[PXA_RASTER_DRAW_HEADER_BYTES] = 255;
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) != 0);
+    draw[PXA_RASTER_DRAW_HEADER_BYTES] = PXA_RASTER_RECORD_CLEAR_RGB565;
+    during_raster = replace_during_raster;
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+    assert(during_raster == NULL);
+    memset(draw, 0, sizeof(draw)); // The Guest may immediately reuse its memory.
+    assert(pxa_esp_surface_acquire_prepared(&third, true));
+    assert(third.frame_id == 3);
+    for (unsigned i = 0; i < 16; ++i)
+        assert(((const uint16_t *)third.pixels)[i] == 0x3333);
+    pxa_esp_surface_release_frame(third.lease);
+    close_surface(NULL, surface);
+    assert(allocations == 0);
+    assert(backend->create(NULL, &desc, &surface, &capabilities) == 0);
+    pxa_write_u32(draw, PXA_RASTER_DRAW_MAGIC);
+    pxa_write_u16(draw + 4, PXA_RASTER_ABI_MAJOR);
+    pxa_write_u16(draw + 6, PXA_RASTER_ABI_MINOR);
+    pxa_write_u32(draw + 8, sizeof(draw));
+    pxa_write_u32(draw + 16, 1);
+    pxa_write_u64(draw + 20, 1);
+    draw[PXA_RASTER_DRAW_HEADER_BYTES] = PXA_RASTER_RECORD_CLEAR_RGB565;
+    pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2, PXA_RASTER_CLEAR_BYTES);
+    assert(backend->upload(NULL, surface, palette, sizeof(palette)) == 0);
+    during_raster = close_during_raster;
+    assert(backend->submit(NULL, surface, draw, sizeof(draw)) == PXA_STATUS_CANCELLED);
+    assert(during_raster == NULL && allocations == 0 && !g_materialize_active);
+}
+
 static void test_retired_display_budget(pxa_game_render_backend_t *backend) {
     pxa_game_render_desc_t desc = {4, 4, 3, 0, PXA_GAME_RENDER_SCRATCH_NONE, 4096};
     uint64_t surface;
@@ -653,7 +737,7 @@ int main(void) {
            frame.input_timestamp_us == 1000 &&
            frame.pixels == mapped_pixels + 64);
     pxa_esp_surface_note_frame_presented(frame.input_timestamp_us, 2200);
-    pxa_esp_surface_take_input_metrics(&input_metrics);
+    pxa_esp_surface_take_display_input_metrics(&input_metrics);
     assert(input_metrics.sample_to_guest_count == 1 &&
            input_metrics.sample_to_guest_total_us == 450 &&
            input_metrics.sample_to_guest_max_us == 450 &&
@@ -682,6 +766,14 @@ int main(void) {
            input_metrics.sample_to_visible_count == 100 &&
            input_metrics.sample_to_visible_p95_us == 11000 &&
            input_metrics.sample_to_visible_max_us == 80000);
+    assert(pxa_esp_surface_perf_start());
+    pxa_esp_surface_note_input_delivered(1000, 1600);
+    pxa_esp_surface_take_display_input_metrics(&input_metrics);
+    assert(input_metrics.sample_to_guest_count == 0);
+    pxa_esp_surface_take_input_metrics(&input_metrics);
+    assert(input_metrics.sample_to_guest_count == 1 &&
+           input_metrics.sample_to_guest_total_us == 600);
+    pxa_esp_surface_perf_clear();
     pxa_esp_surface_release_frame(frame.lease);
     assert(release_notifications == 4);
     assert(backend.peek_release(backend.context, surface, &released) ==
@@ -953,6 +1045,7 @@ int main(void) {
     raster_snapshot_scenario(&game_backend, snapshot_present, NULL);
     test_close_while_rendering(&game_backend);
     test_prepared_pipeline(&game_backend);
+    test_borrowed_submit(&game_backend);
     test_replace_while_rendering(&game_backend);
     test_retired_display_budget(&game_backend);
     assert(allocations == 0);

@@ -1397,7 +1397,7 @@ private:
             context->pxa_presenter_task == nullptr ? 0 :
             uxTaskGetStackHighWaterMark(context->pxa_presenter_task);
         pxa_esp_surface_input_metrics_t input_metrics = {};
-        pxa_esp_surface_take_input_metrics(&input_metrics);
+        pxa_esp_surface_take_display_input_metrics(&input_metrics);
         const uint32_t sample_to_guest_us =
             input_metrics.sample_to_guest_count == 0 ? 0 :
             static_cast<uint32_t>(input_metrics.sample_to_guest_total_us /

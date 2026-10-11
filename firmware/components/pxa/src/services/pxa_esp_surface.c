@@ -32,6 +32,7 @@
 #define PXA_ESP_SURFACE_FLAG_GAME_RENDER UINT8_C(8)
 #define PXA_ESP_SURFACE_FLAG_RASTER_NO_SCRATCH UINT8_C(16)
 #define PXA_ESP_SURFACE_FLAG_RASTER_COVERAGE UINT8_C(32)
+#define PXA_ESP_SURFACE_FLAG_BORROW_COMMANDS UINT8_C(64)
 
 static const char *const PXA_ESP_SURFACE_TAG = "PxaSurface";
 
@@ -209,6 +210,8 @@ static uint64_t g_next_input_timestamp_us;
 static pxa_esp_surface_input_metrics_t g_input_metrics;
 static uint32_t latency_us(uint64_t started_us, uint64_t finished_us);
 static bool materialize_latest_raster_draw(void);
+static bool render_raster_draw(pxa_esp_surface_t *borrowed_surface,
+    const uint8_t *borrowed_bytes, size_t borrowed_size, pxa_status_t *result);
 
 static bool perf_surface_matches_locked(pxa_esp_surface_t *surface) {
     if (g_perf == NULL || !g_perf->active || surface == NULL) return false;
@@ -621,7 +624,8 @@ static pxa_status_t create_surface_with_raster_capacity(
     if ((desc->flags & ~(PXA_SURFACE_FLAG_KNOWN_MASK |
                          PXA_ESP_SURFACE_FLAG_GAME_RENDER |
                          PXA_ESP_SURFACE_FLAG_RASTER_NO_SCRATCH |
-                         PXA_ESP_SURFACE_FLAG_RASTER_COVERAGE)) != 0)
+                         PXA_ESP_SURFACE_FLAG_RASTER_COVERAGE |
+                         PXA_ESP_SURFACE_FLAG_BORROW_COMMANDS)) != 0)
         return PXA_STATUS_UNSUPPORTED;
     if ((desc->flags & (PXA_ESP_SURFACE_FLAG_RASTER_NO_SCRATCH |
                         PXA_ESP_SURFACE_FLAG_RASTER_COVERAGE)) != 0 &&
@@ -732,7 +736,8 @@ static pxa_status_t create_surface_with_raster_capacity(
                 surface_native_note_alloc(PXA_SURFACE_NATIVE_SCRATCH,
                                           surface->raster_depth_buffer);
             }
-            for (index = 0; index < PXA_ESP_RASTER_MAILBOX_SLOTS; ++index) {
+            for (index = 0; index < PXA_ESP_RASTER_MAILBOX_SLOTS &&
+                 !(desc->flags & PXA_ESP_SURFACE_FLAG_BORROW_COMMANDS); ++index) {
                 const uint32_t initial_capacity =
                     raster_draw_capacity != 0
                         ? raster_draw_capacity
@@ -1195,6 +1200,21 @@ static pxa_status_t raster_submit_surface(void *context,
         return PXA_STATUS_LIMIT_EXCEEDED;
     }
 
+    if (surface->flags & PXA_ESP_SURFACE_FLAG_BORROW_COMMANDS) {
+        /* Keep the context alive across the renderer's separate lock scope. */
+        ++surface->writer_active;
+        taskEXIT_CRITICAL(&g_surface_lock);
+        status = PXA_STATUS_WOULD_BLOCK;
+        (void)render_raster_draw(surface, bytes, size, &status);
+        taskENTER_CRITICAL(&g_surface_lock);
+        --surface->writer_active;
+        if (surface->closing) status = PXA_STATUS_CANCELLED;
+        destroy = surface->closing && !surface->writer_active && !surface->acquire_active;
+        taskEXIT_CRITICAL(&g_surface_lock);
+        if (destroy) destroy_surface(surface);
+        return status;
+    }
+
     target.pixels = (uint16_t *)surface->buffers[0];
     target.depth_pixels = surface->raster_depth_buffer;
     target.scratch_mode = surface->raster_scratch_mode;
@@ -1487,6 +1507,8 @@ static pxa_status_t create_game_render_context(
     surface_desc.format = PXA_SURFACE_FORMAT_RGB565;
     surface_desc.buffer_count = desc->buffer_count;
     surface_desc.flags = PXA_ESP_SURFACE_FLAG_GAME_RENDER;
+    if (desc->flags & PXA_GAME_RENDER_FLAG_BORROW_COMMANDS)
+        surface_desc.flags |= PXA_ESP_SURFACE_FLAG_BORROW_COMMANDS;
     if (desc->scratch_mode == PXA_GAME_RENDER_SCRATCH_NONE)
         surface_desc.flags |= PXA_ESP_SURFACE_FLAG_RASTER_NO_SCRATCH;
     else if (desc->scratch_mode == PXA_GAME_RENDER_SCRATCH_COVERAGE_2BIT)
@@ -1830,10 +1852,17 @@ void pxa_esp_surface_note_raster_frame_presented(uint64_t frame_id,
     taskEXIT_CRITICAL(&g_surface_lock);
 }
 
-void pxa_esp_surface_take_input_metrics(
-    pxa_esp_surface_input_metrics_t *metrics) {
+static void take_input_metrics(
+    pxa_esp_surface_input_metrics_t *metrics, bool display_consumer) {
     if (metrics == NULL) return;
     taskENTER_CRITICAL(&g_surface_lock);
+    /* Explicit PERF windows own the counters. The periodic presenter must
+     * not drain part of a test window, even when its logs are disabled. */
+    if (display_consumer && g_perf != NULL && g_perf->active) {
+        *metrics = (pxa_esp_surface_input_metrics_t){0};
+        taskEXIT_CRITICAL(&g_surface_lock);
+        return;
+    }
     g_input_metrics.sample_to_guest_p95_us = latency_p95_us(
         PXA_ESP_SURFACE_LATENCY_GUEST,
         g_input_metrics.sample_to_guest_count,
@@ -1851,6 +1880,16 @@ void pxa_esp_surface_take_input_metrics(
     memset(g_input_latency_histograms, 0,
            sizeof(g_input_latency_histograms));
     taskEXIT_CRITICAL(&g_surface_lock);
+}
+
+void pxa_esp_surface_take_input_metrics(
+    pxa_esp_surface_input_metrics_t *metrics) {
+    take_input_metrics(metrics, false);
+}
+
+void pxa_esp_surface_take_display_input_metrics(
+    pxa_esp_surface_input_metrics_t *metrics) {
+    take_input_metrics(metrics, true);
 }
 
 static void execute_raster_draw_list(
@@ -1897,7 +1936,8 @@ static void execute_raster_draw_list(
     *main_us = latency_us(main_started_us, (uint64_t)esp_timer_get_time());
 }
 
-static bool materialize_latest_raster_draw(void) {
+static bool render_raster_draw(pxa_esp_surface_t *borrowed_surface,
+    const uint8_t *borrowed_bytes, size_t borrowed_size, pxa_status_t *result) {
     pxa_esp_surface_t *surface;
     pxa_raster_resources_t resources;
     pxa_raster_bindings_t bindings;
@@ -1931,10 +1971,12 @@ static bool materialize_latest_raster_draw(void) {
     uint8_t candidate;
 
     taskENTER_CRITICAL(&g_surface_lock);
-    surface = g_surface;
-    if (g_materialize_active || !g_presentation_visible || surface == NULL || surface->closing ||
+    surface = borrowed_surface != NULL ? borrowed_surface : g_surface;
+    if (g_materialize_active || !g_host_visible || !g_display_unlocked ||
+        !g_presentation_visible || surface == NULL || surface->closing ||
+        !surface->layer.visible ||
         (surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) == 0 ||
-        surface->raster_draw_pending == PXA_ESP_SURFACE_NONE ||
+        (borrowed_bytes == NULL && surface->raster_draw_pending == PXA_ESP_SURFACE_NONE) ||
         surface->raster_draw_rendering != PXA_ESP_SURFACE_NONE) {
         taskEXIT_CRITICAL(&g_surface_lock);
         return false;
@@ -1950,19 +1992,25 @@ static bool materialize_latest_raster_draw(void) {
         return false;
     }
     g_materialize_active = true;
-    draw_index = surface->raster_draw_pending;
-    surface->raster_draw_pending = PXA_ESP_SURFACE_NONE;
+    draw_index = borrowed_bytes != NULL ? 0 : surface->raster_draw_pending;
     surface->raster_draw_rendering = (int8_t)draw_index;
     surface->writing = (int8_t)buffer_index;
     ++surface->writer_active;
-    draw_bytes = surface->raster_draw_lists[draw_index];
-    list = surface->raster_draw_views[draw_index];
-    frame_id = surface->raster_draw_frame_ids[draw_index];
-    input_timestamp_us =
-        surface->raster_draw_input_timestamps_us[draw_index];
-    queued_us = surface->raster_draw_queued_us[draw_index];
-    bindings = surface->raster_frame_bindings[draw_index];
-    memset(&surface->raster_frame_bindings[draw_index], 0, sizeof(bindings));
+    if (borrowed_bytes != NULL) {
+        draw_bytes = borrowed_bytes;
+        queued_us = (uint64_t)esp_timer_get_time();
+        input_timestamp_us = g_next_input_timestamp_us;
+        pxa_raster_bindings_snapshot(&bindings, &surface->raster_bindings);
+    } else {
+        surface->raster_draw_pending = PXA_ESP_SURFACE_NONE;
+        draw_bytes = surface->raster_draw_lists[draw_index];
+        list = surface->raster_draw_views[draw_index];
+        frame_id = surface->raster_draw_frame_ids[draw_index];
+        input_timestamp_us = surface->raster_draw_input_timestamps_us[draw_index];
+        queued_us = surface->raster_draw_queued_us[draw_index];
+        bindings = surface->raster_frame_bindings[draw_index];
+        memset(&surface->raster_frame_bindings[draw_index], 0, sizeof(bindings));
+    }
     target.pixels = (uint16_t *)surface->buffers[buffer_index];
     target.depth_pixels = surface->raster_depth_buffer;
     target.scratch_mode = surface->raster_scratch_mode;
@@ -1974,6 +2022,40 @@ static bool materialize_latest_raster_draw(void) {
     taskEXIT_CRITICAL(&g_surface_lock);
 
     pxa_raster_bindings_view(&bindings, raster_capabilities(), &resources);
+    if (borrowed_bytes != NULL) {
+        pxa_status_t status = pxa_raster_validate_draw_list(
+            borrowed_bytes, borrowed_size, &target, &resources, &list);
+        taskENTER_CRITICAL(&g_surface_lock);
+        if (surface->closing) status = PXA_STATUS_CANCELLED;
+        else if (status == PXA_STATUS_OK && list.frame_id <= surface->last_frame_id)
+            status = PXA_STATUS_BAD_STATE;
+        if (status != PXA_STATUS_OK) {
+            ++surface->raster_telemetry.rejected_lists;
+            g_materialize_active = false;
+            --surface->writer_active;
+            surface->writing = PXA_ESP_SURFACE_NONE;
+            surface->raster_draw_rendering = PXA_ESP_SURFACE_NONE;
+            destroy = surface->closing && !surface->writer_active && !surface->acquire_active;
+            taskEXIT_CRITICAL(&g_surface_lock);
+            pxa_raster_bindings_release(&bindings);
+            if (destroy) destroy_surface(surface);
+            *result = status;
+            return false;
+        }
+        frame_id = list.frame_id;
+        surface->last_frame_id = frame_id;
+        ++surface->submitted_frames;
+        ++surface->raster_telemetry.submitted_frames;
+        if (input_timestamp_us != 0) {
+            record_latency(PXA_ESP_SURFACE_LATENCY_PRESENT,
+                latency_us(input_timestamp_us, queued_us),
+                &g_input_metrics.sample_to_present_total_us,
+                &g_input_metrics.sample_to_present_max_us,
+                &g_input_metrics.sample_to_present_count);
+        }
+        g_next_input_timestamp_us = 0;
+        taskEXIT_CRITICAL(&g_surface_lock);
+    }
     started_us = (uint64_t)esp_timer_get_time();
     target.prefilled_commands =
         prefill_raster_background(draw_bytes, &list, &target);
@@ -2006,6 +2088,7 @@ static bool materialize_latest_raster_draw(void) {
                   !surface->writer_active && !surface->acquire_active;
         taskEXIT_CRITICAL(&g_surface_lock);
         if (destroy) destroy_surface(surface);
+        if (result != NULL) *result = PXA_STATUS_CANCELLED;
         return false;
     }
     if (surface->pending != PXA_ESP_SURFACE_NONE) {
@@ -2111,7 +2194,15 @@ static bool materialize_latest_raster_draw(void) {
                  (unsigned)mailbox_capacity_0,
                  (unsigned)mailbox_capacity_1);
     }
+    if (result != NULL) {
+        *result = PXA_STATUS_OK;
+        notify_frame_ready();
+    }
     return true;
+}
+
+static bool materialize_latest_raster_draw(void) {
+    return render_raster_draw(NULL, NULL, 0, NULL);
 }
 
 static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
@@ -2462,6 +2553,10 @@ void pxa_esp_surface_note_game_frame_presented(uint64_t frame_id,
 void pxa_esp_surface_take_input_metrics(
     pxa_esp_surface_input_metrics_t *metrics) {
     if (metrics != NULL) *metrics = (pxa_esp_surface_input_metrics_t){0};
+}
+void pxa_esp_surface_take_display_input_metrics(
+    pxa_esp_surface_input_metrics_t *metrics) {
+    pxa_esp_surface_take_input_metrics(metrics);
 }
 void pxa_esp_surface_memory_snapshot(pxa_esp_surface_memory_info_t *info) {
     if (info != NULL) *info = (pxa_esp_surface_memory_info_t){0};

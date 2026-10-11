@@ -472,18 +472,18 @@ void pxa_host_set_system_request_callback(pxa_host_system_request_fn callback,
 }
 
 bool pxa_host_complete_system_request(const char *app_id, uint32_t component,
-                                      uint32_t request_id, int32_t status,
+                                      pxa_request_token_t request_token, int32_t status,
                                       const void *payload,
                                       size_t payload_size) {
     return pxa_esp_host_complete_system_request(
-        app_id, component, request_id, status, payload, payload_size);
+        app_id, component, request_token, status, payload, payload_size);
 }
 
 bool pxa_host_post_system_event(const char *app_id, uint32_t component,
-                                uint16_t opcode, uint32_t request_id,
+                                uint16_t opcode, pxa_request_token_t request_token,
                                 const void *payload,
                                 size_t payload_size) {
-    return pxa_esp_host_post_system_event(app_id, component, opcode, request_id,
+    return pxa_esp_host_post_system_event(app_id, component, opcode, request_token,
                                           payload, payload_size);
 }
 

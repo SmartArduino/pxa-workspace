@@ -226,6 +226,10 @@ void pxa_esp_surface_note_raster_frame_presented(uint64_t frame_id,
                                                  uint32_t elapsed_us);
 void pxa_esp_surface_take_input_metrics(
     pxa_esp_surface_input_metrics_t *metrics);
+/* Presenter telemetry yields the counters to an active explicit PERF window.
+ * Uses the existing optional probe; no additional queue, counters or setting. */
+void pxa_esp_surface_take_display_input_metrics(
+    pxa_esp_surface_input_metrics_t *metrics);
 bool pxa_esp_surface_acquire_latest(pxa_esp_surface_frame_t *frame);
 bool pxa_esp_surface_acquire_current_for_preview(
     pxa_esp_surface_frame_t *frame);

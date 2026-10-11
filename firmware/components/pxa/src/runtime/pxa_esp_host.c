@@ -156,10 +156,9 @@ static size_t runtime_task_stack_size(void) {
 }
 
 typedef struct {
-    uint8_t active;
+    pxa_request_token_t request_token;
     uint32_t prompt_id;
     pxa_component_t component;
-    uint32_t request_id;
 } pxa_esp_host_permission_prompt_t;
 
 typedef struct {
@@ -277,7 +276,7 @@ static pxa_esp_store_job_t *g_store_install;
 static struct {
     uint32_t prompt_id;
     uint32_t component;
-    uint32_t request_id;
+    pxa_request_token_t request_token;
     uint64_t instance_id;
     char identity[PXA_ESP_PACKAGE_ID_BYTES];
     char name[PXA_ESP_PACKAGE_NAME_BYTES];
@@ -453,7 +452,7 @@ static void release_ui_fonts(void) {
 typedef struct {
     char app_id[PXA_HOST_PACKAGE_ID_MAX];
     pxa_component_t component;
-    uint32_t request_id;
+    pxa_request_token_t request_token;
     pxa_status_t status;
     size_t payload_size;
     uint8_t payload[];
@@ -462,7 +461,7 @@ typedef struct {
 typedef struct {
     char app_id[PXA_HOST_PACKAGE_ID_MAX];
     pxa_component_t component;
-    uint32_t request_id;
+    pxa_request_token_t request_token;
     uint16_t opcode;
     size_t payload_size;
     uint8_t payload[];
@@ -530,7 +529,7 @@ static pxa_status_t host_system_control(
     pxa_host_system_caller_t caller;
     pxa_status_t status;
     (void)context;
-    if (runtime == NULL || message == NULL || message->request_id == 0)
+    if (runtime == NULL || message == NULL || message->request_token == 0)
         return PXA_STATUS_INVALID_ARGUMENT;
     if (message->opcode != PXA_HOST_SYSTEM_INTENT_START &&
         message->opcode != PXA_HOST_SYSTEM_SERVICE_INVOKE &&
@@ -543,7 +542,7 @@ static pxa_status_t host_system_control(
         return PXA_STATUS_UNSUPPORTED;
     if (!system_caller_for_component(component, &caller))
         return PXA_STATUS_NOT_FOUND;
-    status = pxa_request_begin(runtime, component, message->request_id,
+    status = pxa_request_begin(runtime, component, message->request_token,
                                PXA_HOST_SYSTEM_SERVICE_ID, message->opcode, 0);
     if (status != PXA_STATUS_OK) return status;
     portENTER_CRITICAL(&g_system_request_lock);
@@ -552,14 +551,14 @@ static pxa_status_t host_system_control(
     portEXIT_CRITICAL(&g_system_request_lock);
     if (callback != NULL &&
         callback(callback_context, &caller, message->opcode,
-                 message->request_id, message->payload.data,
+                 message->request_token, message->payload.data,
                  message->payload.size)) {
         return PXA_STATUS_OK;
     }
-    status = pxa_request_complete(runtime, component, message->request_id,
+    status = pxa_request_complete(runtime, component, message->request_token,
                                   PXA_STATUS_UNAVAILABLE, NULL, 0);
     if (status != PXA_STATUS_OK)
-        (void)pxa_request_cancel(runtime, component, message->request_id);
+        (void)pxa_request_cancel(runtime, component, message->request_token);
     return PXA_STATUS_OK;
 }
 
@@ -569,16 +568,16 @@ static void complete_system_request(pxa_host_system_response_t *response) {
     if (g_host.activation.runtime != NULL &&
         strcmp(g_host.activation.active_identity, response->app_id) == 0 &&
         pxa_request_is_active(g_host.activation.runtime, response->component,
-                              response->request_id)) {
+                              response->request_token)) {
         status = pxa_request_complete(
             g_host.activation.runtime, response->component,
-            response->request_id, response->status,
+            response->request_token, response->status,
             response->status == PXA_STATUS_OK ? response->payload : NULL,
             response->status == PXA_STATUS_OK ? response->payload_size : 0);
         if (status != PXA_STATUS_OK) {
             (void)pxa_request_cancel(g_host.activation.runtime,
                                      response->component,
-                                     response->request_id);
+                                     response->request_token);
         }
     }
     free(response);
@@ -598,7 +597,7 @@ static void post_system_event(pxa_host_system_event_t *event) {
         }
         (void)pxa_event_post_message(
             g_host.activation.runtime, component,
-            PXA_HOST_SYSTEM_SERVICE_ID, event->opcode, event->request_id,
+            PXA_HOST_SYSTEM_SERVICE_ID, event->opcode, event->request_token,
             (pxa_bytes_t){event->payload, event->payload_size}, 1, 0);
         drain_active_events();
     }
@@ -980,16 +979,16 @@ static pxa_status_t store_begin_request(pxa_runtime_t *runtime,
                                         pxa_component_t component,
                                         const pxa_message_view_t *message,
                                         size_t payload_capacity) {
-    uint16_t core_major = 0;
-    pxa_status_t status = pxa_component_core_major(runtime, component,
-                                                   &core_major);
+    uint16_t wire_profile = 0;
+    pxa_status_t status = pxa_component_wire_profile(runtime, component,
+                                                   &wire_profile);
     if (status != PXA_STATUS_OK) return status;
-    if (core_major == 1)
+    if (wire_profile == 1)
         return pxa_request_begin_reserved(
-            runtime, component, message->request_id,
+            runtime, component, message->request_token,
             PXA_STORE_INSTALL_SERVICE_ID, message->opcode, 0,
             payload_capacity);
-    return pxa_request_begin(runtime, component, message->request_id,
+    return pxa_request_begin(runtime, component, message->request_token,
                              PXA_STORE_INSTALL_SERVICE_ID, message->opcode,
                              0);
 }
@@ -1001,9 +1000,9 @@ static pxa_status_t store_complete_now(pxa_runtime_t *runtime,
     pxa_status_t result = store_begin_request(runtime, component, message,
                                               length);
     if (result != PXA_STATUS_OK) return result;
-    result = pxa_request_commit(runtime, component, message->request_id);
+    result = pxa_request_commit(runtime, component, message->request_token);
     if (result != PXA_STATUS_OK) return result;
-    return pxa_request_complete(runtime, component, message->request_id,
+    return pxa_request_complete(runtime, component, message->request_token,
                                 PXA_STATUS_OK, payload, length);
 }
 
@@ -1027,7 +1026,7 @@ static pxa_status_t host_store_install_control(
     pxa_status_t status;
     bool authorized = false;
     (void)context;
-    if (message == NULL || message->request_id == 0)
+    if (message == NULL || message->request_token == 0)
         return PXA_STATUS_INVALID_ARGUMENT;
     (void)pxa_esp_package_store_visit(PXA_ESP_PACKAGE_VIEW_RUNNABLE,
                                       store_installer_authorized_visit,
@@ -1103,7 +1102,7 @@ static pxa_status_t host_store_install_control(
             memchr(message->payload.data, '\0', message->payload.size) != NULL)
             return PXA_STATUS_INVALID_ARGUMENT;
         if (g_store_install != NULL || g_store_uninstall.prompt_id != 0 ||
-            g_host.activation.permission_prompt.active)
+            g_host.activation.permission_prompt.prompt_id != 0)
             return PXA_STATUS_BUSY;
         memcpy(app_id, message->payload.data, message->payload.size);
         app_id[message->payload.size] = '\0';
@@ -1130,7 +1129,7 @@ static pxa_status_t host_store_install_control(
                            "This app will be removed from this device");
         g_store_uninstall.prompt_id = prompt.prompt_id;
         g_store_uninstall.component = component;
-        g_store_uninstall.request_id = message->request_id;
+        g_store_uninstall.request_token = message->request_token;
         g_store_uninstall.instance_id = g_host.activation.active_instance_id;
         snprintf(g_store_uninstall.identity, sizeof(g_store_uninstall.identity),
                  "%s", target.identity);
@@ -1141,7 +1140,7 @@ static pxa_status_t host_store_install_control(
             pxa_esp_surface_runtime_modal_leave();
             memset(&g_store_uninstall, 0, sizeof(g_store_uninstall));
             status = pxa_request_complete(runtime, component,
-                                          message->request_id,
+                                          message->request_token,
                                           PXA_STATUS_RESOURCE_LIMIT,
                                           NULL, 0);
             return status;
@@ -1161,7 +1160,7 @@ static pxa_status_t host_store_install_control(
         status = store_begin_request(runtime, component, message, 0);
         if (status != PXA_STATUS_OK) { free(job); return status; }
         job->component = component;
-        job->request_id = message->request_id;
+        job->request_token = message->request_token;
         job->instance_id = g_host.activation.active_instance_id;
         job->separate = 2u;
         job->notify = store_install_notify;
@@ -1171,7 +1170,7 @@ static pxa_status_t host_store_install_control(
                         job, 3, &job->worker) != pdPASS) {
             g_store_install = NULL;
             status = pxa_request_complete(runtime, component,
-                                          message->request_id,
+                                          message->request_token,
                                           PXA_STATUS_RESOURCE_LIMIT,
                                           NULL, 0);
             free(job);
@@ -1204,7 +1203,7 @@ static pxa_status_t host_store_install_control(
         return status;
     }
     job->component = component;
-    job->request_id = message->request_id;
+    job->request_token = message->request_token;
     job->separate = message->opcode == PXA_STORE_DOWNLOAD_REQUEST;
     job->instance_id = g_host.activation.active_instance_id;
     job->notify = store_install_notify;
@@ -1221,7 +1220,7 @@ static pxa_status_t host_store_install_control(
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         g_store_install = NULL;
         status = pxa_request_complete(runtime, component,
-                                      message->request_id,
+                                      message->request_token,
                                       PXA_STATUS_RESOURCE_LIMIT,
                                       NULL, 0);
         free(job);
@@ -1376,7 +1375,7 @@ static void copy_permission_prompt_name(char *output, size_t capacity,
 }
 
 static void dismiss_runtime_permission_prompt(void) {
-    if (!g_host.activation.permission_prompt.active) return;
+    if (g_host.activation.permission_prompt.prompt_id == 0) return;
     pxa_esp_ui_shell_dismiss_permission_prompt(
         g_host.activation.permission_prompt.prompt_id);
     memset(&g_host.activation.permission_prompt, 0, sizeof(g_host.activation.permission_prompt));
@@ -1396,18 +1395,18 @@ static void dismiss_unresponsive_prompt(void) {
 }
 
 static pxa_status_t request_runtime_permission_prompt(
-    void *context, pxa_component_t component, uint32_t request_id,
+    void *context, pxa_component_t component, pxa_request_token_t request_token,
     pxa_bytes_t app_identity, pxa_bytes_t name, pxa_bytes_t scope) {
     pxa_esp_ui_permission_prompt_t prompt;
     uint32_t prompt_id;
     (void)context;
     if ((g_host.activation.active_component != PXA_COMPONENT_INVALID &&
          component != g_host.activation.active_component) ||
-        request_id == 0 ||
+        request_token == 0 ||
         app_identity.size != strlen(g_host.activation.active_identity) ||
         app_identity.size == 0 ||
         memcmp(app_identity.data, g_host.activation.active_identity, app_identity.size) != 0 ||
-        (g_host.activation.permission_prompt.active ||
+        (g_host.activation.permission_prompt.prompt_id != 0 ||
          (g_store_install != NULL && g_store_install->prompt_id != 0))) {
         return PXA_STATUS_BUSY;
     }
@@ -1438,10 +1437,9 @@ static pxa_status_t request_runtime_permission_prompt(
         if (strcmp(prompt.scope, "media") == 0)
             snprintf(prompt.scope, sizeof(prompt.scope), "媒体音频");
     }
-    g_host.activation.permission_prompt.active = 1;
     g_host.activation.permission_prompt.prompt_id = prompt_id;
     g_host.activation.permission_prompt.component = component;
-    g_host.activation.permission_prompt.request_id = request_id;
+    g_host.activation.permission_prompt.request_token = request_token;
     pxa_esp_surface_runtime_modal_enter();
     if (!pxa_esp_ui_shell_post_permission_prompt(&prompt)) {
         memset(&g_host.activation.permission_prompt, 0, sizeof(g_host.activation.permission_prompt));
@@ -2401,8 +2399,8 @@ typedef struct {
 static pxa_guest_perf_trace_t g_guest_perf_trace;
 
 static void trace_guest_perf_marker(pxa_component_t component,
-                                    uint32_t request_id, uint64_t now_us) {
-    if (request_id == PXA_GUEST_PERF_FRAME_START) {
+                                    pxa_request_token_t request_token, uint64_t now_us) {
+    if (request_token == PXA_GUEST_PERF_FRAME_START) {
         g_guest_perf_trace = (pxa_guest_perf_trace_t){
             .component = component,
             .frame_start_us = now_us,
@@ -2413,7 +2411,7 @@ static void trace_guest_perf_marker(pxa_component_t component,
         g_guest_perf_trace.frame_start_us == 0) {
         return;
     }
-    switch (request_id) {
+    switch (request_token) {
         case PXA_GUEST_PERF_UPDATE_END:
             g_guest_perf_trace.update_end_us = now_us;
             break;
@@ -2469,46 +2467,46 @@ static pxa_status_t host_set_timer(pxa_component_t component,
 static pxa_status_t host_clock_control(void *context, pxa_runtime_t *runtime,
                                        pxa_component_t component,
                                        const pxa_message_view_t *message) {
-    uint8_t response[24];
+    uint8_t response[PXA_ENVELOPE_SIZE + 12];
     uint8_t payload[12];
     pxa_writer_t writer;
-    uint16_t core_major = 0;
+    uint16_t wire_profile = 0;
     uint16_t period_ms;
     uint64_t now_us;
     (void)context;
     if (message->opcode == PXA_CLOCK_NOW) {
         pxa_status_t status;
-        if (message->request_id == 0 || message->payload.size != 0) {
+        if (message->request_token == 0 || message->payload.size != 0) {
             return PXA_STATUS_INVALID_ARGUMENT;
         }
-        status = pxa_component_core_major(runtime, component, &core_major);
+        status = pxa_component_wire_profile(runtime, component, &wire_profile);
         if (status != PXA_STATUS_OK) return status;
-        if (core_major == 1) {
+        if (wire_profile == 1) {
             status = pxa_request_begin_reserved(
-                runtime, component, message->request_id,
+                runtime, component, message->request_token,
                 PXA_CLOCK_SERVICE_ID, PXA_CLOCK_NOW, 0, sizeof(now_us));
             if (status != PXA_STATUS_OK) return status;
             status = pxa_request_commit(runtime, component,
-                                        message->request_id);
+                                        message->request_token);
             if (status != PXA_STATUS_OK) return status;
             now_us = host_now_us(NULL);
 #if PXA_ESP_ACCEPTANCE_PERF
-            trace_guest_perf_marker(component, message->request_id, now_us);
+            trace_guest_perf_marker(component, message->request_token, now_us);
 #endif
             pxa_write_u64(payload, now_us);
             return pxa_request_complete(runtime, component,
-                                        message->request_id, PXA_STATUS_OK,
+                                        message->request_token, PXA_STATUS_OK,
                                         payload, sizeof(now_us));
         }
         now_us = host_now_us(NULL);
 #if PXA_ESP_ACCEPTANCE_PERF
-        trace_guest_perf_marker(component, message->request_id, now_us);
+        trace_guest_perf_marker(component, message->request_token, now_us);
 #endif
         pxa_write_u32(payload, PXA_STATUS_OK);
         pxa_write_u64(payload + 4, now_us);
         pxa_writer_init(&writer, response, sizeof(response));
         if (pxa_writer_message(&writer, PXA_CLOCK_SERVICE_ID,
-                               PXA_CLOCK_NOW_RESULT, message->request_id,
+                               PXA_CLOCK_NOW_RESULT, message->request_token,
                                payload, sizeof(payload)) != PXA_STATUS_OK) {
             return PXA_STATUS_INTERNAL;
         }
@@ -2516,9 +2514,9 @@ static pxa_status_t host_clock_control(void *context, pxa_runtime_t *runtime,
             runtime, component, response, writer.size, 0,
             ((uint64_t)PXA_CLOCK_SERVICE_ID << 48) |
                 ((uint64_t)PXA_CLOCK_NOW_RESULT << 32) |
-                message->request_id);
+                message->request_token);
     }
-    if (message->opcode != PXA_CLOCK_SET_PERIOD || message->request_id != 0 ||
+    if (message->opcode != PXA_CLOCK_SET_PERIOD || message->request_token != 0 ||
         message->payload.size != 2) {
         return PXA_STATUS_INVALID_ARGUMENT;
     }
@@ -2860,7 +2858,7 @@ static void stop_active(pxa_stop_reason_t reason) {
         if (g_host.activation.runtime != NULL)
             (void)pxa_request_cancel(g_host.activation.runtime,
                                      g_store_uninstall.component,
-                                     g_store_uninstall.request_id);
+                                     g_store_uninstall.request_token);
         memset(&g_store_uninstall, 0, sizeof(g_store_uninstall));
     }
     if (g_store_result.prompt_id != 0) {
@@ -3642,9 +3640,7 @@ static void update_ui_resource_pressure(void) {
 
 static void post_tick(uint8_t slot, uint32_t generation,
                       uint64_t timestamp_us) {
-    uint8_t message[12 + 8];
     uint8_t payload[8];
-    pxa_writer_t writer;
     uint32_t component_value;
     pxa_component_t component;
     portENTER_CRITICAL(&g_clock_slots_lock);
@@ -3656,13 +3652,10 @@ static void post_tick(uint8_t slot, uint32_t generation,
     portEXIT_CRITICAL(&g_clock_slots_lock);
     component = (pxa_component_t)component_value;
     pxa_write_u64(payload, timestamp_us);
-    pxa_writer_init(&writer, message, sizeof(message));
-    if (pxa_writer_message(&writer, PXA_CLOCK_SERVICE_ID, PXA_CLOCK_TICK, 0,
-                           payload, sizeof(payload)) == PXA_STATUS_OK) {
-        (void)pxa_event_post(g_host.activation.runtime, component, message, writer.size,
-                             0, 0x000400008001ULL);
-        drain_active_events();
-    }
+    (void)pxa_event_post_message(g_host.activation.runtime, component,
+        PXA_CLOCK_SERVICE_ID, PXA_CLOCK_TICK, 0,
+        (pxa_bytes_t){payload, sizeof(payload)}, 0, UINT64_C(0x000400008001));
+    drain_active_events();
 }
 
 static void stop_active_after_back(void) {
@@ -3743,7 +3736,7 @@ static int dispatch_back_request(uint8_t *close_requested) {
         memset(&event, 0, sizeof(event));
         event.service = result.service;
         event.opcode = result.opcode;
-        event.request_id = result.request_id;
+        event.request_token = result.request_token;
         event.payload.size = result.payload_size;
         status = pxa_window_resolve_event_result(&event, result.guest_result,
                                                  close_requested);
@@ -3827,13 +3820,13 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
             g_store_install->instance_id == g_host.activation.active_instance_id &&
             pxa_request_commit(g_host.activation.runtime,
                                g_store_install->component,
-                               g_store_install->request_id) == PXA_STATUS_OK;
+                               g_store_install->request_token) == PXA_STATUS_OK;
         xTaskNotifyGive(g_store_install->worker);
         return;
     }
     if (g_store_uninstall.prompt_id == prompt_id) {
         const uint32_t component = g_store_uninstall.component;
-        const uint32_t request_id = g_store_uninstall.request_id;
+        const pxa_request_token_t request_token = g_store_uninstall.request_token;
         const uint64_t instance_id = g_store_uninstall.instance_id;
         char identity[PXA_ESP_PACKAGE_ID_BYTES];
         char name[PXA_ESP_PACKAGE_NAME_BYTES];
@@ -3845,17 +3838,17 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
         if (g_host.activation.runtime != NULL &&
             instance_id == g_host.activation.active_instance_id &&
             pxa_request_is_active(g_host.activation.runtime, component,
-                                  request_id)) {
+                                  request_token)) {
             status = PXA_STATUS_DENIED;
             if (granted) {
                 status = pxa_request_commit(g_host.activation.runtime,
-                                            component, request_id);
+                                            component, request_token);
                 if (status == PXA_STATUS_OK)
                     status = pxa_esp_package_store_uninstall(identity) ?
                              PXA_STATUS_OK : PXA_STATUS_IO_ERROR;
             }
             (void)pxa_request_complete(g_host.activation.runtime, component,
-                                       request_id, status, NULL, 0);
+                                       request_token, status, NULL, 0);
             if (status == PXA_STATUS_OK) {
                 pxa_esp_ui_shell_refresh_apps();
                 show_store_result(true, name, identity);
@@ -3863,7 +3856,7 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
         }
         return;
     }
-    if (!g_host.activation.permission_prompt.active ||
+    if (g_host.activation.permission_prompt.prompt_id == 0 ||
         g_host.activation.permission_prompt.prompt_id != prompt_id ||
         g_host.activation.services.permission == NULL) {
         return;
@@ -3871,7 +3864,7 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
     pending = g_host.activation.permission_prompt;
     memset(&g_host.activation.permission_prompt, 0, sizeof(g_host.activation.permission_prompt));
     status = pxa_permission_prompt_complete(
-        g_host.activation.services.permission, pending.component, pending.request_id,
+        g_host.activation.services.permission, pending.component, pending.request_token,
         granted ? PXA_PERMISSION_ALLOW : PXA_PERMISSION_DENY);
     if (status == PXA_STATUS_OK) {
         (void)pxa_esp_package_store_refresh_permission_summary(
@@ -3894,17 +3887,14 @@ static void handle_store_install_event(pxa_esp_store_job_t *job,
     pxa_esp_ui_permission_prompt_t prompt = {0};
     if (job == NULL || job != g_store_install) return;
     if (phase == 4u) {
-        uint8_t payload[20];
+        uint8_t payload[24];
         if (g_host.activation.runtime == NULL ||
             job->instance_id != g_host.activation.active_instance_id ||
             !pxa_request_is_active(g_host.activation.runtime, job->component,
-                                   job->request_id)) return;
-        for (uint8_t index = 0; index < 4u; ++index)
-            payload[index] = (uint8_t)(job->request_id >> (index * 8u));
-        for (uint8_t index = 0; index < 8u; ++index) {
-            payload[4u + index] = (uint8_t)(downloaded_bytes >> (index * 8u));
-            payload[12u + index] = (uint8_t)(job->size >> (index * 8u));
-        }
+                                   job->request_token)) return;
+        pxa_write_u64(payload, job->request_token);
+        pxa_write_u64(payload + 8, downloaded_bytes);
+        pxa_write_u64(payload + 16, job->size);
         (void)pxa_event_post_message(
             g_host.activation.runtime, job->component,
             PXA_STORE_INSTALL_SERVICE_ID, PXA_STORE_DOWNLOAD_PROGRESS, 0,
@@ -3942,8 +3932,8 @@ static void handle_store_install_event(pxa_esp_store_job_t *job,
         if (g_host.activation.runtime == NULL ||
             job->instance_id != g_host.activation.active_instance_id ||
             !pxa_request_is_active(g_host.activation.runtime, job->component,
-                                   job->request_id) ||
-            g_host.activation.permission_prompt.active) {
+                                   job->request_token) ||
+            g_host.activation.permission_prompt.prompt_id != 0) {
             job->approved = 0;
             xTaskNotifyGive(job->worker);
             return;
@@ -3984,9 +3974,9 @@ static void handle_store_install_event(pxa_esp_store_job_t *job,
     if (g_host.activation.runtime != NULL &&
         job->instance_id == g_host.activation.active_instance_id &&
         pxa_request_is_active(g_host.activation.runtime, job->component,
-                              job->request_id)) {
+                              job->request_token)) {
         (void)pxa_request_complete(g_host.activation.runtime, job->component,
-                                   job->request_id, job->status,
+                                   job->request_token, job->status,
                                    job->separate == 1u && job->status == PXA_STATUS_OK ?
                                        job->filename : NULL,
                                    job->separate == 1u && job->status == PXA_STATUS_OK ?
@@ -5147,14 +5137,14 @@ void pxa_esp_host_set_window_changed_callback(
 
 bool pxa_esp_host_complete_system_request(const char *app_id,
                                           uint32_t component,
-                                          uint32_t request_id, int32_t status,
+                                          pxa_request_token_t request_token, int32_t status,
                                           const void *payload,
                                           size_t payload_size) {
     pxa_host_system_response_t *response;
     pxa_esp_host_command_t command;
     size_t app_id_size;
     if (!g_host.initialized || app_id == NULL || component == 0 ||
-        request_id == 0 || (payload == NULL && payload_size != 0) ||
+        request_token == 0 || (payload == NULL && payload_size != 0) ||
         payload_size > PXA_MAX_CONTROL_MESSAGE - 16u ||
         payload_size > SIZE_MAX - sizeof(*response)) {
         return false;
@@ -5167,7 +5157,7 @@ bool pxa_esp_host_complete_system_request(const char *app_id,
     memset(response, 0, sizeof(*response));
     memcpy(response->app_id, app_id, app_id_size + 1u);
     response->component = (pxa_component_t)component;
-    response->request_id = request_id;
+    response->request_token = request_token;
     response->status = pxa_status_is_known((pxa_status_t)status)
                            ? (pxa_status_t)status
                            : PXA_STATUS_INTERNAL;
@@ -5184,7 +5174,7 @@ bool pxa_esp_host_complete_system_request(const char *app_id,
 }
 
 bool pxa_esp_host_post_system_event(const char *app_id, uint32_t component,
-                                    uint16_t opcode, uint32_t request_id,
+                                    uint16_t opcode, pxa_request_token_t request_token,
                                     const void *payload,
                                     size_t payload_size) {
     pxa_host_system_event_t *event;
@@ -5204,7 +5194,7 @@ bool pxa_esp_host_post_system_event(const char *app_id, uint32_t component,
     memset(event, 0, sizeof(*event));
     memcpy(event->app_id, app_id, app_id_size + 1u);
     event->component = (pxa_component_t)component;
-    event->request_id = request_id;
+    event->request_token = request_token;
     event->opcode = opcode;
     event->payload_size = payload_size;
     if (payload_size != 0) memcpy(event->payload, payload, payload_size);
