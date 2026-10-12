@@ -104,6 +104,7 @@ typedef struct {
     uint8_t built_in;
     uint8_t enabled;
     uint8_t has_private_data;
+    uint8_t input_method;
 } pxa_esp_package_entry_t;
 
 typedef struct {
@@ -167,7 +168,10 @@ static bool allocate_store(void) {
 }
 
 static int take_lock(SemaphoreHandle_t lock) {
-    return lock != NULL && xSemaphoreTake(lock, portMAX_DELAY) == pdTRUE;
+    /* In-flight cooperative IME verification owns the transaction lease.
+     * Refuse accidental owner re-entry instead of deadlocking on its mutex. */
+    return lock != NULL && xSemaphoreGetMutexHolder(lock) != xTaskGetCurrentTaskHandle() &&
+        xSemaphoreTake(lock, portMAX_DELAY) == pdTRUE;
 }
 
 static void release_lock(SemaphoreHandle_t lock) {
@@ -672,6 +676,9 @@ static void update_installed_metadata(
     pxa_esp_package_entry_t *entry,
     const pxa_package_manifest_t *manifest) {
     if (entry == NULL || manifest == NULL) return;
+    entry->input_method = 0;
+    for (uint16_t i = 0; i < manifest->component_count; ++i)
+        if (pxa_ime_is_provider(&manifest->components[i])) entry->input_method = 1;
     update_entry_metadata(entry, manifest);
     cache_manifest_path(entry->icon_path, sizeof(entry->icon_path),
                         manifest->icon_path);
@@ -1987,7 +1994,7 @@ bool pxa_esp_package_store_deploy(const char *identity) {
     return pxa_esp_package_store_deploy_detailed(identity, NULL);
 }
 
-bool pxa_esp_package_store_uninstall(const char *identity) {
+static bool uninstall_package(const char *identity, bool keep_data) {
     pxa_posix_installer_identity_t identity_struct;
     pxa_posix_installer_result_t result;
     pxa_status_t status;
@@ -2079,33 +2086,36 @@ bool pxa_esp_package_store_uninstall(const char *identity) {
         release_lock(g_store->transaction_lock);
         return false;
     }
-    status = pxa_posix_fs_remove_tree(data_path);
-    cleanup_ok = status == PXA_STATUS_OK || status == PXA_STATUS_NOT_FOUND;
-    /* Also remove this verified app's pre-migration runtime namespace. */
-    if (snprintf(data_path, sizeof(data_path), "%s/%s", g_store->data_root,
-                 canonical) >= (int)sizeof(data_path)) {
-        cleanup_ok = false;
-    } else {
+    cleanup_ok = true;
+    if (!keep_data) {
         status = pxa_posix_fs_remove_tree(data_path);
-        if (status != PXA_STATUS_OK && status != PXA_STATUS_NOT_FOUND)
+        cleanup_ok = status == PXA_STATUS_OK || status == PXA_STATUS_NOT_FOUND;
+        /* Also remove this verified app's pre-migration runtime namespace. */
+        if (snprintf(data_path, sizeof(data_path), "%s/%s", g_store->data_root,
+                     canonical) >= (int)sizeof(data_path)) {
+            cleanup_ok = false;
+        } else {
+            status = pxa_posix_fs_remove_tree(data_path);
+            if (status != PXA_STATUS_OK && status != PXA_STATUS_NOT_FOUND)
+                cleanup_ok = false;
+        }
+        if (!cleanup_ok)
+            ESP_LOGW(PXA_ESP_PACKAGE_TAG, "Private data cleanup failed for %s",
+                     canonical);
+        if (pxa_esp_permission_store_clear_app(
+                (pxa_bytes_t){(const uint8_t *)canonical, strlen(canonical)},
+                manifest->permissions, manifest->permission_count) != PXA_STATUS_OK)
+            cleanup_ok = false;
+        if (clear_legacy && pxa_esp_permission_store_clear_app(
+                (pxa_bytes_t){id_bytes, id_size}, manifest->permissions,
+                manifest->permission_count) != PXA_STATUS_OK)
             cleanup_ok = false;
     }
-    if (!cleanup_ok)
-        ESP_LOGW(PXA_ESP_PACKAGE_TAG, "Private data cleanup failed for %s",
-                 canonical);
-    if (pxa_esp_permission_store_clear_app(
-            (pxa_bytes_t){(const uint8_t *)canonical, strlen(canonical)},
-            manifest->permissions, manifest->permission_count) != PXA_STATUS_OK)
-        cleanup_ok = false;
-    if (clear_legacy && pxa_esp_permission_store_clear_app(
-            (pxa_bytes_t){id_bytes, id_size}, manifest->permissions,
-            manifest->permission_count) != PXA_STATUS_OK)
-        cleanup_ok = false;
     if (!take_lock(g_store->metadata_lock)) {
         release_lock(g_store->transaction_lock);
         return false;
     }
-    if (!pxa_esp_package_policy_set_enabled(canonical, true))
+    if (!keep_data && !pxa_esp_package_policy_set_enabled(canonical, true))
         cleanup_ok = false;
     for (index = 0; index < g_store->entry_count; ++index) {
         if (strcmp(g_store->entries[index].identity, canonical) == 0) {
@@ -2117,6 +2127,14 @@ bool pxa_esp_package_store_uninstall(const char *identity) {
     release_lock(g_store->metadata_lock);
     release_lock(g_store->transaction_lock);
     return cleanup_ok;
+}
+
+bool pxa_esp_package_store_uninstall(const char *identity) {
+    return uninstall_package(identity, false);
+}
+
+bool pxa_esp_package_store_archive(const char *identity) {
+    return uninstall_package(identity, true);
 }
 
 bool pxa_esp_package_store_clear_data(const char *identity) {
@@ -2298,6 +2316,56 @@ size_t pxa_esp_package_store_installed_manifest_workspace_size(
     return workspace_size;
 }
 
+bool pxa_esp_package_store_is_input_method(const char *identity) {
+    if (!store_is_initialized() || !identity || !take_lock(g_store->metadata_lock)) return false;
+    const pxa_esp_package_entry_t *entry = find_entry(identity);
+    bool valid = entry && entry->installed && entry->enabled && entry->input_method;
+    release_lock(g_store->metadata_lock);
+    return valid;
+}
+pxa_status_t pxa_esp_package_store_begin_ime(const char *identity,
+    pxa_runtime_t *runtime, const pxa_component_engine_t *engine,
+    const pxa_package_activation_profile_t *services,
+    const pxa_package_host_profile_t *host, pxa_posix_ime_provider_t **provider) {
+    if (!store_is_initialized() || !identity || !provider) return PXA_STATUS_BAD_STATE;
+    *provider=NULL;
+    /* A concurrent installation must not stall the foreground runtime owner. */
+    if (xSemaphoreTake(g_store->transaction_lock,0)!=pdTRUE) return PXA_STATUS_WOULD_BLOCK;
+    pxa_status_t status = PXA_STATUS_NOT_FOUND;
+    char root[PXA_ESP_PACKAGE_ROOT_BYTES] = {0};
+    if (take_lock(g_store->metadata_lock)) {
+        const pxa_esp_package_entry_t *entry = find_entry(identity);
+        if (entry && entry->installed && entry->enabled && entry->input_method)
+            snprintf(root, sizeof(root), "%s", entry->root);
+        release_lock(g_store->metadata_lock);
+    }
+    if (*root) {
+        status = pxa_posix_ime_provider_open_begin(g_store->installer, root, runtime,
+            engine, services, host, provider);
+    }
+    if (status != PXA_STATUS_OK) release_lock(g_store->transaction_lock);
+    return status;
+}
+pxa_status_t pxa_esp_package_store_step_ime(pxa_posix_ime_provider_t *provider,
+    size_t budget, uint64_t (*next_instance)(void), pxa_component_t *component) {
+    if (!provider || !pxa_posix_ime_provider_loading(provider) || !component || !budget || !next_instance)
+        return PXA_STATUS_BAD_STATE;
+    pxa_status_t status=pxa_posix_ime_provider_open_step(provider,budget);
+    if (status==PXA_STATUS_WOULD_BLOCK) return status;
+    if (status==PXA_STATUS_OK) {
+        int64_t start=esp_timer_get_time();
+        status=pxa_posix_ime_provider_start(provider,next_instance(),component);
+        ESP_LOGI("PxaIme","activation status=%d us=%lld",status,(long long)(esp_timer_get_time()-start));
+    }
+    release_lock(g_store->transaction_lock);
+    return status;
+}
+void pxa_esp_package_store_close_ime(pxa_posix_ime_provider_t *provider) {
+    bool leased=pxa_posix_ime_provider_loading(provider);
+    pxa_posix_ime_provider_close(provider);
+    if (leased) release_lock(g_store->transaction_lock);
+}
+
 static void fill_package_record(const pxa_esp_package_entry_t *entry,
                                 pxa_esp_package_record_t *record) {
     memset(record, 0, sizeof(*record));
@@ -2315,6 +2383,7 @@ static void fill_package_record(const pxa_esp_package_entry_t *entry,
     record->staged = entry->staged != 0;
     record->enabled = entry->enabled != 0;
     record->has_private_data = entry->installed && entry->has_private_data;
+    record->input_method = entry->installed && entry->input_method;
     if (entry->installed) {
         record->has_release_sequence = entry->has_release_sequence != 0;
         record->release_sequence = entry->release_sequence;

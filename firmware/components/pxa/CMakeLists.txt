@@ -7,6 +7,7 @@ set(PXA_SRCS
     "src/runtime/pxa_host_clock_slots.c"
     "src/runtime/pxa_host_pointer_mailbox.c"
     "src/runtime/pxa_esp_host.c"
+    "src/runtime/pxa_esp_ime.c"
     "src/services/pxa_esp_audio.c"
     "src/services/pxa_esp_assets.c"
     "src/services/pxa_esp_resource_memory.c"
@@ -61,6 +62,8 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_scheduler_store.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_storage.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_installer.c"
+    "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_ime.c"
+    "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ime.c"
     "${PXA_C_CORE_ROOT}/adapters/wamr/pxa_wamr_engine.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ui.c")
 set(PXA_PRIV_REQUIRES

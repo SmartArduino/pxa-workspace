@@ -1153,7 +1153,7 @@ void SendHello(unsigned long sequence) {
         PowerControlAvailable() ? ",poweroff" : "";
     const char* kPerfCapabilities =
 #if CONFIG_PXA_ENABLED && CONFIG_PXADB_TEST_CONTROL
-        ",perf-raster,heap-local";
+        ",perf-raster,heap-local,ime";
 #else
         "";
 #endif
@@ -1798,6 +1798,8 @@ void HandlePackageAction(unsigned long sequence, const char* action, const char*
     pxa_host_app_action_t requested_action;
     if (strcmp(action, "install") == 0) {
         requested_action = PXA_HOST_APP_ACTION_INSTALL;
+    } else if (strcmp(action, "archive") == 0) {
+        requested_action = PXA_HOST_APP_ACTION_ARCHIVE;
     } else if (strcmp(action, "uninstall") == 0) {
         requested_action = PXA_HOST_APP_ACTION_UNINSTALL;
     } else if (strcmp(action, "enable") == 0) {
@@ -1980,6 +1982,36 @@ void HandleCommand(char* line) {
             SendFrame(sequence, "ERR", "invalid_memory_command");
         }
 #if CONFIG_PXA_ENABLED && CONFIG_PXADB_TEST_CONTROL
+    } else if (strcmp(command, "IME") == 0) {
+        if (argument_count == 0) {
+            char selected[PXA_HOST_PACKAGE_ID_MAX]={};
+            pxa_host_selected_input_method(selected,sizeof(selected));
+            SendFrame(sequence,"SELECTED",selected);
+            pxa_host_input_method_timing_t timing={}; pxa_host_input_method_timing(&timing);
+            char metrics[448]; std::snprintf(metrics,sizeof(metrics),
+                "count=%llu;queue_us=%llu;processing_us=%llu;queue_max_us=%llu;processing_max_us=%llu;"
+                "provider_load_us=%llu;keyboard_drawn=%u;first_draw_ms=%u;candidates_ready=%u;candidates_ready_ms=%u;provider_steps=%u;provider_step_max_us=%u",
+                (unsigned long long)timing.count,(unsigned long long)timing.queue_us,
+                (unsigned long long)timing.processing_us,(unsigned long long)timing.queue_max_us,
+                (unsigned long long)timing.processing_max_us,(unsigned long long)timing.provider_load_us,
+                (unsigned)timing.keyboard_drawn,(unsigned)timing.first_draw_ms,
+                (unsigned)timing.candidates_ready,(unsigned)timing.candidates_ready_ms,
+                (unsigned)timing.provider_steps,(unsigned)timing.provider_step_max_us);
+            SendFrame(sequence,"TIMING",metrics);
+            const auto count=pxa_host_list_input_methods(nullptr,0);
+            auto* methods=static_cast<pxa_host_input_method_info_t*>(
+                std::calloc(count,sizeof(pxa_host_input_method_info_t)));
+            if (methods) {
+                const auto listed=pxa_host_list_input_methods(methods,count);
+                for (size_t i=0;i<listed;++i) SendFrame(sequence,"METHOD",methods[i].identity);
+                std::free(methods);
+            }
+            SendFrame(sequence,"OK","listed");
+        } else if (argument_count==2 && strcmp(argument,"select")==0) {
+            const char* identity=strcmp(second_argument,"builtin")==0 ? "" : second_argument;
+            const bool success=pxa_host_select_input_method(identity);
+            SendFrame(sequence,success ? "OK" : "ERR",success ? "selected" : "invalid_input_method");
+        } else SendFrame(sequence,"ERR","invalid_ime_command");
     } else if (strcmp(command, "PERF") == 0) {
         HandlePerf(sequence, arguments, argument_count);
 #endif

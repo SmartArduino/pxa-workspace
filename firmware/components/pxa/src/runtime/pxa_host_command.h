@@ -34,6 +34,7 @@ typedef enum {
     PXA_ESP_HOST_CMD_SYSTEM_EVENT,
     PXA_ESP_HOST_CMD_STORE_INSTALL,
     PXA_ESP_HOST_CMD_SHUTDOWN,
+    PXA_ESP_HOST_CMD_IME_INPUT,
 } pxa_esp_host_command_type_t;
 
 typedef struct {
@@ -115,7 +116,17 @@ typedef struct {
     uint8_t granted;
 } pxa_host_permission_set_command_t;
 
+typedef struct {
+    uint64_t generation;
+    uint64_t queued_at_us;
+    uint32_t value;
+    uint16_t action;
+    uint8_t layout, language, text_size;
+    uint8_t text[8];
+} pxa_host_ime_input_command_t;
+
 typedef union {
+    pxa_host_ime_input_command_t ime_input;
     pxa_host_identity_command_t identity;
     pxa_host_stop_command_t stop;
     pxa_host_instance_command_t instance;

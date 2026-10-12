@@ -6,11 +6,14 @@
  * thread. Replaces the legacy C++ runtime host. */
 
 #include "pxa_esp_host.h"
+#include "pxa_esp_ime.h"
 
 #if defined(ESP_PLATFORM)
 #include "sdkconfig.h"
 
 #include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,7 +75,7 @@
 #define PXA_ESP_HOST_TAG "PxaHost"
 #define PXA_ESP_HOST_MAX_APP_ID PXA_HOST_COMMAND_MAX_IDENTITY_BYTES
 #define PXA_ESP_HOST_MAX_PATH 160
-#define PXA_ESP_HOST_MAX_SERVICES 20
+#define PXA_ESP_HOST_MAX_SERVICES 21
 #define PXA_ESP_HOST_EVENT_DRAIN_ROUNDS 3
 #define PXA_ESP_HOST_BACK_EVENT_DRAIN_LIMIT 32
 #define PXA_ESP_HOST_CLOCK_PERIOD_US 5000
@@ -209,6 +212,7 @@ typedef struct {
     uint8_t initialized;
     uint8_t runtime_started;
     uint8_t runtime_starting;
+    uint8_t ime_only_runtime;
     QueueHandle_t queue;
     TaskHandle_t runtime_task;
     esp_timer_handle_t clock_timer;
@@ -2070,6 +2074,7 @@ static int drain_active_events(void) {
          * established three-round batch. */
         if (!delivered || host_now_us(NULL) - started_us >= 8000) break;
     }
+    pxa_esp_ime_drain();
     refresh_volume_key_capture_state();
     return 1;
 }
@@ -2789,43 +2794,48 @@ static void destroy_services(void) {
 static pxa_status_t read_artifact(void *host_context, pxa_bytes_t path,
                                   uint8_t *output, size_t capacity,
                                   size_t *size) {
-    FILE *file;
-    long file_size;
+    struct stat metadata;
     (void)host_context;
     if (path.data == NULL || size == NULL ||
         (output == NULL && capacity != 0)) {
         return PXA_STATUS_INVALID_ARGUMENT;
     }
-    file = fopen((const char *)path.data, "rb");
-    if (file == NULL) return PXA_STATUS_NOT_FOUND;
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fclose(file);
+    int file = open((const char *)path.data, O_RDONLY);
+    if (file < 0) return PXA_STATUS_NOT_FOUND;
+    if (fstat(file, &metadata) != 0) {
+        close(file);
         return PXA_STATUS_INTERNAL;
     }
-    file_size = ftell(file);
-    if (file_size <= 0) {
-        fclose(file);
+    if (!S_ISREG(metadata.st_mode) || metadata.st_size <= 0 ||
+        (uint64_t)metadata.st_size > SIZE_MAX) {
+        close(file);
         return PXA_STATUS_RESOURCE_LIMIT;
     }
+    size_t file_size = (size_t)metadata.st_size;
     if (output == NULL) {
-        fclose(file);
-        *size = (size_t)file_size;
+        close(file);
+        *size = file_size;
         return PXA_STATUS_OK;
     }
-    if ((size_t)file_size > capacity) {
-        fclose(file);
+    if (file_size > capacity) {
+        close(file);
         return PXA_STATUS_RESOURCE_LIMIT;
     }
-    if (fseek(file, 0, SEEK_SET) != 0) {
-        fclose(file);
-        return PXA_STATUS_INTERNAL;
+    /* Bulk reads write into WAMR's final artifact allocation. A FILE cache
+     * otherwise fragments flash reads and adds a transient allocation. */
+    size_t offset = 0;
+    while (offset < file_size) {
+        ssize_t count;
+        do { count = read(file, output + offset, file_size - offset); }
+        while (count < 0 && errno == EINTR);
+        if (count <= 0) {
+            close(file);
+            return PXA_STATUS_INTERNAL;
+        }
+        offset += (size_t)count;
     }
-    if (fread(output, 1, (size_t)file_size, file) != (size_t)file_size) {
-        fclose(file);
-        return PXA_STATUS_INTERNAL;
-    }
-    fclose(file);
-    *size = (size_t)file_size;
+    close(file);
+    *size = file_size;
     return PXA_STATUS_OK;
 }
 
@@ -2834,6 +2844,8 @@ static pxa_status_t read_artifact(void *host_context, pxa_bytes_t path,
 static void stop_active(pxa_stop_reason_t reason) {
     pxa_esp_host_public_state_t public_state;
     char stopped_identity[PXA_ESP_HOST_MAX_APP_ID];
+    pxa_esp_ime_suspend();
+    pxa_esp_ime_stop();
     g_host.graceful_stop_active = 0;
     g_host.deferred_launch_identity[0] = '\0';
     public_state_snapshot(&public_state);
@@ -2924,6 +2936,8 @@ static void stop_active(pxa_stop_reason_t reason) {
         pxa_runtime_deinit(g_host.activation.runtime);
         g_host.activation.runtime = NULL;
     }
+    pxa_esp_ime_release();
+    g_host.ime_only_runtime = 0;
     /* Stop queued/decoding music before waiting for its catalog leases. */
     pxa_esp_audio_reset_sessions();
     destroy_services();
@@ -3053,11 +3067,11 @@ static int start_verified(const char *identity) {
         goto failed;                                                            \
     } while (0)
 
-    status = reset_runtime(manifest->component_count);
+    status = reset_runtime(manifest->component_count + 1u);
     if (status != PXA_STATUS_OK) {
         PXA_ESP_START_FAIL("reset-runtime", status);
     }
-    status = initialize_engine(manifest->component_count);
+    status = initialize_engine(manifest->component_count + 1u);
     if (status != PXA_STATUS_OK) {
         PXA_ESP_START_FAIL("initialize-engine", status);
     }
@@ -3156,6 +3170,8 @@ static int start_verified(const char *identity) {
         (pxa_bytes_t){(const uint8_t *)PXSYS_WAMR_ENGINE_ABI,
                       sizeof(PXSYS_WAMR_ENGINE_ABI) - 1u};
     host_profile.memory_model = PXA_MEMORY_WASM32;
+    pxa_esp_ime_attach(g_host.activation.runtime,g_host.engine,&g_host.engine_ops,
+        &host_profile,allocate_instance_id,post_command,wake_runtime_thread);
     memset(&capabilities, 0, sizeof(capabilities));
     {
 #define HOST_SERVICE_VERSION(name) \
@@ -3185,6 +3201,7 @@ static int start_verified(const char *identity) {
             HOST_SERVICE_VERSION(DEVICE),
             HOST_SERVICE_VERSION(HOST_SYSTEM),
             HOST_SERVICE_VERSION(STORE_INSTALL),
+            {PXA_IME_SERVICE_ID,{0,1},PXA_IME_FEATURE_ALL},
         };
 #undef HOST_SERVICE_VERSION
         memcpy(service_capabilities, registered_versions,
@@ -3385,6 +3402,10 @@ static void on_watchdog_timer(void *arg) {
     int prompt_pending;
     (void)arg;
     if (g_host.engine == NULL) return;
+    if (pxa_esp_ime_poll_deadline(host_now_us(NULL))) {
+        ESP_LOGW(PXA_ESP_HOST_TAG,"Input method callback timed out; isolating provider");
+        return;
+    }
     /* A package can only have one actionable operator decision. Further
      * deadline expirations are folded into the existing prompt. */
     portENTER_CRITICAL(&g_wamr_watchdog_lock);
@@ -4147,6 +4168,7 @@ static void sync_ui_lifecycle(void) {
                                               !effective, host_now_us(NULL));
         portEXIT_CRITICAL(&g_clock_slots_lock);
         pxa_esp_audio_set_suspended(!effective);
+        if (!effective) pxa_esp_ime_suspend();
         g_host.lifecycle_effective = effective;
         ESP_LOGI(PXA_ESP_HOST_TAG,
                  "UI lifecycle: component=%u foreground=%u requested=%u display_interactive=%u",
@@ -4215,6 +4237,30 @@ static void advance_graceful_stop(void) {
     }
 }
 
+/* Native system editors use the same engine on demand, without a foreground
+ * App, UI service workspace, frame/depth buffers or background worker task. */
+static void maintain_native_ime_runtime(void) {
+    if (g_host.activation.runtime == NULL && pxa_esp_ime_needs_runtime()) {
+        pxa_status_t status=reset_runtime(1);
+        if (status==PXA_STATUS_OK) status=initialize_engine(1);
+        if (status==PXA_STATUS_OK) {
+            const pxa_package_host_profile_t profile={
+                .target={(const uint8_t *)PXA_ESP_HOST_TARGET,sizeof(PXA_ESP_HOST_TARGET)-1},
+                .engine={(const uint8_t *)"wamr",4},
+                .engine_abi={(const uint8_t *)PXSYS_WAMR_ENGINE_ABI,sizeof(PXSYS_WAMR_ENGINE_ABI)-1},
+                .memory_model=PXA_MEMORY_WASM32};
+            pxa_esp_ime_attach(g_host.activation.runtime,g_host.engine,&g_host.engine_ops,
+                &profile,allocate_instance_id,post_command,wake_runtime_thread);
+            g_host.ime_only_runtime=1;
+        } else {
+            ESP_LOGW(PXA_ESP_HOST_TAG,"Native IME runtime allocation failed: %d",status);
+            g_host.ime_only_runtime=1;
+            pxa_esp_ime_failed();
+        }
+    }
+    if (g_host.ime_only_runtime && !pxa_esp_ime_active()) stop_active(PXA_STOP_NORMAL);
+}
+
 static void run(void) {
     pxa_esp_host_command_t command;
     for (;;) {
@@ -4224,6 +4270,10 @@ static void run(void) {
         pxa_window_insets_t pending_system_bar_insets;
         sync_ui_lifecycle();
         advance_graceful_stop();
+        maintain_native_ime_runtime();
+        pxa_esp_ime_pump();
+        pxa_esp_ime_drain();
+        if (pxa_esp_ime_loading()) handled=1;
         if (take_pending_color_scheme(&color_scheme)) {
             apply_color_scheme(color_scheme);
             handled = 1;
@@ -4262,7 +4312,7 @@ static void run(void) {
             drain_net_completions();
             handled = 1;
         }
-        if (take_scheduler_maintenance_due()) {
+        if (!pxa_esp_ime_loading() && take_scheduler_maintenance_due()) {
             maintain_scheduler();
             handled = 1;
         }
@@ -4273,6 +4323,10 @@ static void run(void) {
                 (pxa_esp_host_command_type_t)command.type);
             portEXIT_CRITICAL(&g_process_state_lock);
             switch (command.type) {
+            case PXA_ESP_HOST_CMD_IME_INPUT:
+                pxa_esp_ime_input(&command.payload.ime_input);
+                pxa_esp_ime_pump(); pxa_esp_ime_drain();
+                break;
             case PXA_ESP_HOST_CMD_START:
                 ESP_LOGI(PXA_ESP_HOST_TAG, "Processing launch request: %s",
                          command.payload.identity.identity);
@@ -4283,6 +4337,9 @@ static void run(void) {
                                          PXA_STOP_NORMAL);
                     break;
                 }
+                /* Native editors can hold an IME verification lease without
+                 * a foreground App. Cancel it before package launch lookups. */
+                pxa_esp_ime_suspend(); pxa_esp_ime_stop();
                 if (g_host.activation.active_identity[0] != '\0') {
                     if (g_host.deferred_launch_identity[0] != '\0' &&
                         strcmp(g_host.deferred_launch_identity,
@@ -4402,7 +4459,7 @@ static void run(void) {
                 }
                 break;
             case PXA_ESP_HOST_CMD_SCHEDULER_MAINTENANCE:
-                maintain_scheduler();
+                if (!pxa_esp_ime_loading()) maintain_scheduler();
                 break;
             case PXA_ESP_HOST_CMD_SHUTDOWN:
                 begin_graceful_stop(PXA_STOP_SHUTDOWN, 0,
@@ -4659,6 +4716,8 @@ static pxa_status_t prepare_start(void *context, pxa_component_t component,
     pxa_window_backend_t backend;
     pxa_status_t status;
     (void)context;
+    status = pxa_esp_ime_prepare(component,instance_id);
+    if (status != PXA_STATUS_NOT_FOUND) return status;
     if (kind != 1) return PXA_STATUS_OK;
     memset(&backend, 0, sizeof(backend));
     backend.struct_size = sizeof(backend);
@@ -4677,6 +4736,7 @@ static pxa_status_t prepare_start(void *context, pxa_component_t component,
                                         PXA_UI_PRIMARY_SURFACE, &environment);
         if (status == PXA_STATUS_OK) {
             read_display_environment(&environment);
+            pxa_esp_ime_environment(&environment,&g_host.ui_theme);
             /* The component is STARTING: no event can be posted yet. Its UI
              * service was seeded above, and onStart receives the snapshot. */
             if (g_host.ui_backend.environment_changed != NULL)
@@ -4764,6 +4824,7 @@ bool pxa_esp_host_initialize(void) {
         ESP_LOGE(PXA_ESP_HOST_TAG, "Package store initialization failed");
         return false;
     }
+    pxa_esp_ime_initialize(allocate_instance_id,post_command,wake_runtime_thread);
     store_registry_load();
     pxa_esp_store_cleanup_interrupted(store_registry_keep, NULL);
     (void)store_registry_save();
@@ -4810,11 +4871,13 @@ bool pxa_esp_host_initialize(void) {
     ui_config.sized_text_font_path = PXA_ESP_HOST_CJK_FONT_PATH;
 #endif
     ui_config.event_callback = on_ui_event;
+    ui_config.text_input_focus = pxa_esp_ime_editor_focus;
     ui_config.now_us = host_now_us;
     ui_config.primary_environment.surface = PXA_UI_PRIMARY_SURFACE;
     ui_config.primary_environment.density_q16 = UINT32_C(1) << 16;
     ui_config.primary_environment.font_scale_q16 = UINT32_C(1) << 16;
     read_display_environment(&ui_config.primary_environment);
+    pxa_esp_ime_environment(&ui_config.primary_environment,&g_host.ui_theme);
     ui_config.primary_environment.color_scheme = g_host.color_scheme;
     ui_config.primary_environment.features =
         PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
@@ -5501,6 +5564,8 @@ bool pxa_esp_host_manage_app(pxa_host_app_action_t action,
             return pxa_esp_package_store_install(identity);
         case PXA_HOST_APP_ACTION_UNINSTALL:
             return pxa_esp_package_store_uninstall(identity);
+        case PXA_HOST_APP_ACTION_ARCHIVE:
+            return pxa_esp_package_store_archive(identity);
         case PXA_HOST_APP_ACTION_CLEAR_DATA:
             return pxa_esp_package_store_clear_data(identity);
         case PXA_HOST_APP_ACTION_ENABLE:

@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "pxa/package.h"
+#include "pxa/posix/pxa_posix_ime.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,6 +51,7 @@ typedef struct {
     bool staged;
     bool enabled;
     bool has_private_data;
+    bool input_method;
     bool has_release_sequence;
     bool has_staged_release_sequence;
     bool downgrade_warning;
@@ -120,6 +122,8 @@ bool pxa_esp_package_store_deploy(const char *identity);
 bool pxa_esp_package_store_deploy_detailed(
     const char *identity, pxa_esp_package_store_deploy_result_t *result);
 bool pxa_esp_package_store_uninstall(const char *identity);
+/* Remove executable package; keep private files, grants and enabled policy. */
+bool pxa_esp_package_store_archive(const char *identity);
 bool pxa_esp_package_store_clear_data(const char *identity);
 
 /* Load the currently installed package; outputs live in the caller buffers
@@ -159,8 +163,20 @@ bool pxa_esp_package_store_set_permission(const char *identity,
                                           bool granted);
 bool pxa_esp_package_store_refresh_permission_summary(const char *identity);
 
+/* Single runtime owner. begin leases the transaction mutex until step finishes
+ * or close cancels it, so source files cannot change between verification and
+ * activation. Other owner-side package maintenance must wait until completion.
+ * step publishes the provider before prepare_start binds dictionary config. */
+pxa_status_t pxa_esp_package_store_begin_ime(const char *identity,
+    pxa_runtime_t *runtime, const pxa_component_engine_t *engine,
+    const pxa_package_activation_profile_t *services,
+    const pxa_package_host_profile_t *host, pxa_posix_ime_provider_t **provider);
+pxa_status_t pxa_esp_package_store_step_ime(pxa_posix_ime_provider_t *,
+    size_t byte_budget, uint64_t (*next_instance)(void), pxa_component_t *component);
+void pxa_esp_package_store_close_ime(pxa_posix_ime_provider_t *);
+bool pxa_esp_package_store_is_input_method(const char *identity);
+
 /* Expose the installer for the host (install path only). */
-typedef struct pxa_posix_installer pxa_posix_installer_t;
 pxa_posix_installer_t *pxa_esp_package_store_installer(void);
 
 #ifdef __cplusplus

@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "pxa/window.h"
+#include "pxa/ime.h"
 #include "pxa/asset_object.h"
 #include "pxa/audio_playback.h"
 #include "pxa/audio.h"
@@ -98,6 +99,7 @@ typedef enum {
     PXA_HOST_APP_ACTION_CLEAR_DATA,
     PXA_HOST_APP_ACTION_ENABLE,
     PXA_HOST_APP_ACTION_DISABLE,
+    PXA_HOST_APP_ACTION_ARCHIVE, /* uninstall code, retain private data/grants */
 } pxa_host_app_action_t;
 
 /* Declared permission of an installed package. Entries keep manifest order, so
@@ -153,6 +155,25 @@ typedef struct {
 typedef bool (*pxa_host_system_request_fn)(
     void *context, const pxa_host_system_caller_t *caller, uint16_t opcode,
     pxa_request_token_t request_token, const uint8_t *payload, size_t payload_size);
+
+typedef struct {
+    char identity[PXA_HOST_PACKAGE_ID_MAX];
+    char name[PXA_HOST_PACKAGE_NAME_MAX];
+} pxa_host_input_method_info_t;
+size_t pxa_host_list_input_methods(pxa_host_input_method_info_t *methods, size_t capacity);
+bool pxa_host_input_method_preferences(pxa_ime_preferences_t *preferences,bool save);
+bool pxa_host_select_input_method(const char *identity);
+bool pxa_host_selected_input_method(char *identity, size_t capacity);
+bool pxa_host_input_method_managed(void *textarea);
+bool pxa_host_focus_input_method(void *textarea);
+typedef struct {
+    uint64_t count, queue_us, processing_us, queue_max_us, processing_max_us;
+    uint64_t provider_load_us;
+    uint32_t provider_steps, provider_step_max_us;
+    uint32_t first_draw_ms, candidates_ready_ms;
+    bool keyboard_drawn, candidates_ready;
+} pxa_host_input_method_timing_t;
+void pxa_host_input_method_timing(pxa_host_input_method_timing_t *output);
 
 /* Public C facade over the ESP PXA host. */
 bool pxa_host_initialize(void);

@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 
 #include "pxa_esp_host.h"
+#include "pxa_esp_ime.h"
 #include "pxa_esp_package_icon.h"
 #include "pxa_esp_package_store.h"
 #include "pxa_esp_resource_memory.h"
@@ -30,6 +31,33 @@ static void *g_catalog_changed_context;
 static pxa_host_launch_request_fn g_launch_request_callback;
 static void *g_launch_request_context;
 static portMUX_TYPE g_callback_lock = portMUX_INITIALIZER_UNLOCKED;
+
+typedef struct { pxa_host_input_method_info_t *items; size_t capacity, count; } ime_list_t;
+static bool copy_input_method(const pxa_esp_package_record_t *record, void *context) {
+    ime_list_t *list=context;
+    if (record->installed && record->enabled && record->input_method) {
+        if (list->items && list->count < list->capacity) {
+            pxa_host_input_method_info_t *item=&list->items[list->count];
+            snprintf(item->identity,sizeof(item->identity),"%s",record->id);
+            snprintf(item->name,sizeof(item->name),"%.*s",(int)sizeof(item->name)-1,record->name);
+        }
+        ++list->count;
+    }
+    return true;
+}
+size_t pxa_host_list_input_methods(pxa_host_input_method_info_t *methods, size_t capacity) {
+    ime_list_t list={methods,capacity,0};
+    pxa_esp_package_store_visit(PXA_ESP_PACKAGE_VIEW_MANAGED,copy_input_method,&list);
+    return methods && list.count>capacity ? capacity : list.count;
+}
+void pxa_host_input_method_timing(pxa_host_input_method_timing_t *output) { pxa_esp_ime_timing(output); }
+bool pxa_host_input_method_preferences(pxa_ime_preferences_t *preferences,bool save) { return pxa_esp_ime_preferences(preferences,save); }
+bool pxa_host_select_input_method(const char *identity) { return pxa_esp_ime_select(identity); }
+bool pxa_host_selected_input_method(char *identity,size_t capacity) { return pxa_esp_ime_selected(identity,capacity); }
+bool pxa_host_input_method_managed(void *textarea) { return pxa_esp_ime_managed(textarea); }
+bool pxa_host_focus_input_method(void *textarea) {
+    pxa_esp_ime_editor_focus(NULL,textarea,true); return pxa_esp_ime_managed(textarea);
+}
 
 static bool format_identity_key(
     const uint8_t publisher_root[PXA_HOST_PUBLISHER_ROOT_BYTES],

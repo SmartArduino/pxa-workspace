@@ -696,6 +696,21 @@ void FillDeviceInfo(
     }
 }
 
+void ListInputMethods(void*, pxsys_reference_input_method_emit_fn emit, void* context) {
+    char selected[PXA_HOST_PACKAGE_ID_MAX]={};
+    pxa_host_selected_input_method(selected,sizeof(selected));
+    constexpr char builtin[]="系统键盘";
+    emit(context,"",pxsys_string_t{builtin,sizeof(builtin)-1},!*selected);
+    const auto count=pxa_host_list_input_methods(nullptr,0);
+    auto* items=static_cast<pxa_host_input_method_info_t*>(std::calloc(count,sizeof(pxa_host_input_method_info_t)));
+    if (!items) return;
+    const auto listed=pxa_host_list_input_methods(items,count);
+    for (size_t i=0;i<listed;++i)
+        emit(context,items[i].identity,pxsys_string_t{items[i].name,std::strlen(items[i].name)},
+             std::strcmp(selected,items[i].identity)==0);
+    std::free(items);
+}
+
 size_t ListManagedApps(void*,
                        pxsys_reference_managed_app_t* apps,
                        size_t capacity) {
@@ -1244,6 +1259,18 @@ bool CreateSystem(const pxa_board_port_t* board,
                           PXSYS_REFERENCE_UI_FILE_MANAGER;
     ui_config.device_info = FillDeviceInfo;
     ui_config.app_list = ListManagedApps;
+    ui_config.input_method_list = ListInputMethods;
+    ui_config.input_method_preferences = [](void*,pxsys_reference_input_method_preferences_t* value,bool save) {
+        pxa_ime_preferences_t preferences{value->layout,value->language};
+        const bool success=pxa_host_input_method_preferences(&preferences,save);
+        if (success) *value={preferences.layout,preferences.language};
+        return success;
+    };
+    ui_config.input_method_select = [](void*,const char* identity) { return pxa_host_select_input_method(identity); };
+    ui_config.input_method_focus = [](void*,void* textarea) {
+        return pxa_host_focus_input_method(textarea);
+    };
+    ui_config.input_method_managed = [](void*,void* textarea) { return pxa_host_input_method_managed(textarea); };
     ui_config.app_action = ManageApp;
     ui_config.launcher_order_load = LoadLauncherOrder;
     ui_config.launcher_order_save = SaveLauncherOrder;
