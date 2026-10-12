@@ -150,6 +150,92 @@ static void test_move_throttle_and_reset(void) {
     assert(!mailbox.move_clocks[0].active);
 }
 
+static void test_interleaved_streams_keep_only_latest_samples(void) {
+    pxa_host_pointer_mailbox_t mailbox;
+    pxa_host_pointer_event_t output;
+    unsigned sample, stream;
+    pxa_host_pointer_mailbox_init(&mailbox);
+    for (sample = 0; sample < 100; ++sample) {
+        for (stream = 0; stream < 4; ++stream) {
+            /* Two fingers, each subscribed at a child and its ancestor. */
+            pxa_host_pointer_event_t value = pointer_event(
+                (uint8_t)(stream / 2), PXA_HOST_POINTER_MOVE_PHASE,
+                (int32_t)sample);
+            value.node += stream % 2;
+            value.timestamp_us = sample * 5000;
+            assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+        }
+        assert(mailbox.count == 4);
+    }
+    for (stream = 0; stream < 4; ++stream) {
+        assert(pxa_host_pointer_mailbox_take(&mailbox, stream * 16000,
+                                             16000, &output));
+        assert(output.id == stream / 2 && output.node == 2 + stream % 2);
+        assert(output.x == 99 && output.timestamp_us == 495000);
+    }
+    assert(mailbox.count == 0);
+}
+
+static void test_coalescing_never_crosses_an_edge(void) {
+    pxa_host_pointer_mailbox_t mailbox;
+    pxa_host_pointer_event_t output;
+    pxa_host_pointer_event_t value = pointer_event(
+        0, PXA_HOST_POINTER_MOVE_PHASE, 10);
+    unsigned index;
+    pxa_host_pointer_mailbox_init(&mailbox);
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    value.phase = 2;
+    value.x = 20;
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    value.phase = PXA_HOST_POINTER_DOWN_PHASE;
+    value.x = 30;
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    value.phase = PXA_HOST_POINTER_MOVE_PHASE;
+    value.x = 40;
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    value.x = 50;
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    assert(mailbox.count == 4);
+    for (index = 0; index < 4; ++index) {
+        assert(pxa_host_pointer_mailbox_take(&mailbox, index * 16000,
+                                             16000, &output));
+        assert(output.x == (index == 3 ? 50 : (int32_t)(index + 1) * 10));
+    }
+
+    /* A full queue must reject a new move rather than rewrite a move from
+     * before a reliable edge (including an edge of another finger). */
+    pxa_host_pointer_mailbox_init(&mailbox);
+    value.phase = PXA_HOST_POINTER_MOVE_PHASE;
+    value.x = 10;
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    for (index = 1; index < PXA_HOST_POINTER_MAILBOX_CAPACITY; ++index) {
+        value.phase = 2;
+        assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    }
+    value.phase = PXA_HOST_POINTER_MOVE_PHASE;
+    value.x = 99;
+    assert(!pxa_host_pointer_mailbox_push(&mailbox, &value));
+    assert(mailbox.events[0].x == 10);
+}
+
+static void test_stream_identity_includes_owner_surface_and_node(void) {
+    pxa_host_pointer_mailbox_t mailbox;
+    pxa_host_pointer_event_t value = pointer_event(
+        0, PXA_HOST_POINTER_MOVE_PHASE, 1);
+    pxa_host_pointer_mailbox_init(&mailbox);
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    value.instance_id++;
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    value.surface++;
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    value.node++;
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    assert(mailbox.count == 4);
+    value.x = 99;
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &value));
+    assert(mailbox.count == 4 && mailbox.events[3].x == 99);
+}
+
 static void test_internal_layout_stays_bounded(void) {
     assert(sizeof(pxa_esp_host_command_t) <= 144u);
     assert(sizeof(pxa_host_pointer_event_t) <= 40u);
@@ -164,6 +250,9 @@ int main(void) {
     test_edge_evicts_move_from_full_mailbox();
     test_full_edge_mailbox_rejects_new_events();
     test_move_throttle_and_reset();
+    test_interleaved_streams_keep_only_latest_samples();
+    test_coalescing_never_crosses_an_edge();
+    test_stream_identity_includes_owner_surface_and_node();
     test_internal_layout_stays_bounded();
     return 0;
 }

@@ -83,27 +83,22 @@ int pxa_host_pointer_mailbox_push(pxa_host_pointer_mailbox_t *mailbox,
     }
 
     if (event->phase == PXA_HOST_POINTER_MOVE_PHASE) {
-        if (mailbox->count != 0 &&
-            mailbox->events[mailbox->count - 1u].phase ==
-                PXA_HOST_POINTER_MOVE_PHASE &&
-            same_pointer_stream(&mailbox->events[mailbox->count - 1u],
-                                event)) {
-            mailbox->events[mailbox->count - 1u] = *event;
-            return 1;
-        }
-        if (mailbox->count < PXA_HOST_POINTER_MAILBOX_CAPACITY) {
-            mailbox->events[mailbox->count++] = *event;
-            return 1;
-        }
+        /* Fingers and bubbling UI nodes interleave. Coalesce throughout the
+         * trailing run of moves before appending, so a slow consumer sees
+         * the latest position per stream rather than a FIFO of stale samples.
+         * Never move a sample across a reliable edge. Retain its queue slot
+         * so a frequently updated stream cannot starve the other streams. */
         for (index = mailbox->count; index != 0; --index) {
-            if (mailbox->events[index - 1u].phase ==
-                    PXA_HOST_POINTER_MOVE_PHASE &&
-                same_pointer_stream(&mailbox->events[index - 1u], event)) {
+            if (mailbox->events[index - 1u].phase !=
+                PXA_HOST_POINTER_MOVE_PHASE) break;
+            if (same_pointer_stream(&mailbox->events[index - 1u], event)) {
                 mailbox->events[index - 1u] = *event;
                 return 1;
             }
         }
-        return 0;
+        if (mailbox->count == PXA_HOST_POINTER_MAILBOX_CAPACITY) return 0;
+        mailbox->events[mailbox->count++] = *event;
+        return 1;
     }
 
     if (mailbox->count == PXA_HOST_POINTER_MAILBOX_CAPACITY) {
