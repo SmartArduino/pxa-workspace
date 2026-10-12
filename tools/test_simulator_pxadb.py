@@ -134,6 +134,42 @@ class SimulatorFileCommandTest(unittest.TestCase):
             self.service.storage_path("../outside")
 
 
+class SimulatorMultitouchTest(unittest.TestCase):
+    setUp = SimulatorFileCommandTest.setUp
+    tearDown = SimulatorFileCommandTest.tearDown
+
+    def test_independent_contacts_and_real_cancellation(self) -> None:
+        with patch.object(self.service, "control") as owner:
+            self.service.input(["POINTER", "DOWN", "75", "150", "0"])
+            self.service.input(["POINTER", "DOWN", "225", "115", "1"])
+            self.service.input(["POINTER", "MOVE", "75", "100", "0"])
+            self.service.input(["POINTER", "CANCEL", "225", "115", "1"])
+            self.service.input(["CANCEL"])
+            self.assertEqual([call.args[0] for call in owner.call_args_list], [
+                "TOUCH DOWN 0 75 150", "TOUCH DOWN 1 225 115",
+                "TOUCH MOVE 0 75 100", "TOUCH CANCEL 1 225 115",
+                "TOUCH CANCEL_ALL",
+            ])
+            caps = self.service.input(["CAPABILITIES"])
+            self.assertIn("max_pointers=2", caps)
+
+    def test_unsupported_identity_never_reaches_owner(self) -> None:
+        with patch.object(self.service, "control") as owner:
+            for identity in ("-1", "2", "255", "bad"):
+                with self.assertRaises(simulator_pxadb.ServiceError):
+                    self.service.input(["POINTER", "DOWN", "75", "150", identity])
+            owner.assert_not_called()
+
+    def test_tap_and_swipe_use_contact_zero(self) -> None:
+        with patch.object(self.service, "control") as owner, patch("simulator_pxadb.time.sleep"):
+            self.service.input(["TAP", "148", "120"])
+            self.service.input(["SWIPE", "75", "150", "75", "100", "20", "2"])
+            self.assertEqual([call.args[0] for call in owner.call_args_list], [
+                "TOUCH DOWN 0 148 120", "TOUCH UP 0 148 120",
+                "TOUCH DOWN 0 75 150", "TOUCH MOVE 0 75 125", "TOUCH UP 0 75 100",
+            ])
+
+
 class SimulatorPackageCommandTest(unittest.TestCase):
     setUp = SimulatorFileCommandTest.setUp
     tearDown = SimulatorFileCommandTest.tearDown

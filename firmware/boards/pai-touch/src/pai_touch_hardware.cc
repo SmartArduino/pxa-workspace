@@ -650,46 +650,6 @@ void PaiTouchHardware::ShowInitialFrame() {
     SetBrightness(brightness());
 }
 
-void PaiTouchHardware::ReadInjectedPointer(lv_indev_t* indev,
-                                           lv_indev_data_t* data) {
-    auto* self = static_cast<PaiTouchHardware*>(lv_indev_get_user_data(indev));
-    if (self == nullptr || data == nullptr) return;
-    data->timestamp = lv_tick_get();
-    const int32_t logical_x =
-        self->injected_pointer_x_.load(std::memory_order_relaxed);
-    const int32_t logical_y =
-        self->injected_pointer_y_.load(std::memory_order_relaxed);
-    const int32_t original_width =
-        lv_display_get_original_horizontal_resolution(self->display_);
-    const int32_t original_height =
-        lv_display_get_original_vertical_resolution(self->display_);
-
-    display_input::Rotation rotation = display_input::Rotation::k0;
-    switch (lv_display_get_rotation(self->display_)) {
-        case LV_DISPLAY_ROTATION_90:
-            rotation = display_input::Rotation::k90;
-            break;
-        case LV_DISPLAY_ROTATION_180:
-            rotation = display_input::Rotation::k180;
-            break;
-        case LV_DISPLAY_ROTATION_270:
-            rotation = display_input::Rotation::k270;
-            break;
-        default:
-            break;
-    }
-    // LVGL rotates pointer samples after the read callback. PXADB coordinates
-    // are already logical, so provide the inverse-rotated raw point here.
-    const display_input::Point raw = display_input::LogicalToRaw(
-        logical_x, logical_y, original_width, original_height, rotation);
-    data->point.x = raw.x;
-    data->point.y = raw.y;
-    data->state = self->injected_pointer_pressed_.load(
-                      std::memory_order_acquire)
-                      ? LV_INDEV_STATE_PRESSED
-                      : LV_INDEV_STATE_RELEASED;
-}
-
 void IRAM_ATTR PaiTouchHardware::TouchInterrupt(esp_lcd_touch_handle_t tp) {
     auto* self = static_cast<PaiTouchHardware*>(tp->config.user_data);
     if (self == nullptr) return;
@@ -715,23 +675,40 @@ void PaiTouchHardware::ReadPhysicalPointer(lv_indev_t* indev,
     // polling window refreshes that snapshot; the remaining callbacks merely
     // publish their own slot and never consume another report.
     const int64_t now_us = esp_timer_get_time();
-    if (self->touch_irq_pending_.exchange(false, std::memory_order_acquire) ||
-        now_us - self->touch_last_poll_us_ >=
-            static_cast<int64_t>(kTouchPollMs) * 1000) {
+    portENTER_CRITICAL(&self->touch_lock_);
+    bool injected = self->injected_mode_;
+    portEXIT_CRITICAL(&self->touch_lock_);
+    if (!injected &&
+        (self->touch_irq_pending_.exchange(false, std::memory_order_acquire) ||
+         now_us - self->touch_last_poll_us_ >=
+             static_cast<int64_t>(kTouchPollMs) * 1000)) {
         self->PollTouchController();
     }
 
     portENTER_CRITICAL(&self->touch_lock_);
+    injected = self->injected_mode_;
     const bool pressed =
         self->touch_slot_pressed_[slot] && self->screen_enabled_.load();
+    const bool transition = pressed != self->touch_logged_pressed_[slot];
+    self->touch_logged_pressed_[slot] = pressed;
     data->point = self->touch_slot_point_[slot];
     data->state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    const uint8_t bit = uint8_t{1} << slot;
+    const bool cancelled = (self->injected_cancels_ & bit) != 0;
+    self->injected_cancels_ &= ~bit;
+    self->injected_pending_samples_ &= ~bit;
+    bool any_pressed = false;
+    for (int i = 0; i < kTouchMaxPointers; ++i)
+        any_pressed |= self->touch_slot_pressed_[i];
+    if (!any_pressed && !self->injected_pending_samples_) self->injected_mode_ = false;
     portEXIT_CRITICAL(&self->touch_lock_);
-    if (pressed != self->touch_logged_pressed_[slot]) {
-        self->touch_logged_pressed_[slot] = pressed;
-        ESP_LOGI(kTag, "lvgl pointer %d %s x=%d y=%d", slot,
-                 pressed ? "down" : "up", (int)data->point.x,
-                 (int)data->point.y);
+    // Executed by the LVGL owner task: CANCEL emits PRESS_LOST, never UP/tap.
+    if (cancelled) lv_indev_wait_release(indev);
+    if (transition) {
+        if (!injected)
+            ESP_LOGI(kTag, "lvgl pointer %d %s x=%d y=%d", slot,
+                     pressed ? "down" : "up", (int)data->point.x,
+                     (int)data->point.y);
     }
     if (pressed) self->last_touch_activity_us_.store(now_us);
 }
@@ -743,8 +720,9 @@ void PaiTouchHardware::PollTouchController() {
         if (touch_last_poll_us_ - touch_last_report_us_ >=
             kTouchReleaseTimeoutUs) {
             portENTER_CRITICAL(&touch_lock_);
-            for (int slot = 0; slot < kTouchMaxPointers; ++slot) {
-                touch_slot_pressed_[slot] = false;
+            if (!injected_mode_) {
+                for (int slot = 0; slot < kTouchMaxPointers; ++slot)
+                    touch_slot_pressed_[slot] = false;
             }
             portEXIT_CRITICAL(&touch_lock_);
         }
@@ -771,6 +749,11 @@ void PaiTouchHardware::PollTouchController() {
 
     bool slot_seen[kTouchMaxPointers] = {};
     portENTER_CRITICAL(&touch_lock_);
+    // An injection can arrive while the controller I2C read is in progress.
+    if (injected_mode_) {
+        portEXIT_CRITICAL(&touch_lock_);
+        return;
+    }
     for (uint8_t i = 0; i < point_count; ++i) {
         const uint8_t track_id = points[i].track_id;
         int slot = -1;
@@ -807,41 +790,69 @@ bool PaiTouchHardware::RouteInjectedPointerDown() {
     return false;
 }
 
-bool PaiTouchHardware::InjectPointer(uint16_t x, uint16_t y, bool pressed) {
-    if (display_ == nullptr || x >= PAI_DISPLAY_WIDTH ||
-        y >= PAI_DISPLAY_HEIGHT) {
+bool PaiTouchHardware::InjectPointer(uint8_t id, uint16_t x, uint16_t y,
+                                     bool pressed) {
+    if (display_ == nullptr || id >= kTouchMaxPointers ||
+        physical_pointers_[id] == nullptr || x >= PAI_DISPLAY_WIDTH ||
+        y >= PAI_DISPLAY_HEIGHT) return false;
+    // LVGL rotates physical samples after ReadPhysicalPointer. Convert the
+    // debug protocol's logical pixels back to the same raw controller space.
+    const display_input::Point raw = display_input::LogicalToRaw(
+        x, y, lv_display_get_original_horizontal_resolution(display_),
+        lv_display_get_original_vertical_resolution(display_),
+        display_input::Rotation::k270);
+    portENTER_CRITICAL(&touch_lock_);
+    if (!injected_mode_) {
+        // Do not steal a user's physical gesture for a synthetic session.
+        for (int i = 0; i < kTouchMaxPointers; ++i) {
+            if (touch_slot_pressed_[i] || touch_logged_pressed_[i]) {
+                portEXIT_CRITICAL(&touch_lock_);
+                return false;
+            }
+        }
+        injected_mode_ = true;
+    }
+    const uint8_t bit = uint8_t{1} << id;
+    // Never overwrite a sample that the LVGL owner task has not read yet.
+    if (injected_pending_samples_ & bit) {
+        portEXIT_CRITICAL(&touch_lock_);
         return false;
     }
-    injected_pointer_x_.store(x, std::memory_order_relaxed);
-    injected_pointer_y_.store(y, std::memory_order_relaxed);
-    injected_pointer_pressed_.store(pressed, std::memory_order_release);
-    /* The injected indev's read timer runs lv_indev_read() inside the LVGL
-     * task, which owns the display pipeline. Reading it here would run UI
-     * event callbacks on the PXADB input task while holding the LVGL lock;
-     * opening a heavy screen then stalls the whole UI for seconds. */
-    if (injected_pointer_ != nullptr) return true;
-    if (!lvgl_port_lock(1000)) return false;
-    lv_lock();
-    if (injected_pointer_ == nullptr) {
-        injected_pointer_ = lv_indev_create();
-        if (injected_pointer_ != nullptr) {
-            lv_indev_set_type(injected_pointer_, LV_INDEV_TYPE_POINTER);
-            lv_indev_set_display(injected_pointer_, display_);
-            lv_indev_set_user_data(injected_pointer_, this);
-            lv_indev_set_read_cb(injected_pointer_, ReadInjectedPointer);
-            lv_timer_set_period(lv_indev_get_read_timer(injected_pointer_),
-                                kTouchPollMs);
-        }
-    }
-    const bool ready = injected_pointer_ != nullptr;
-    lv_unlock();
-    lvgl_port_unlock();
-    return ready;
+    touch_slot_point_[id] = {raw.x, raw.y};
+    touch_slot_pressed_[id] = pressed;
+    injected_pending_samples_ |= bit;
+    portEXIT_CRITICAL(&touch_lock_);
+    (void)lvgl_port_task_wake(LVGL_PORT_EVENT_TOUCH, nullptr);
+    return WaitForInjectedPointer(id);
 }
 
-bool PaiTouchHardware::CancelInjectedPointer() {
-    injected_pointer_pressed_.store(false, std::memory_order_release);
-    return injected_pointer_ != nullptr;
+bool PaiTouchHardware::CancelInjectedPointer(uint8_t id) {
+    if (id >= kTouchMaxPointers || physical_pointers_[id] == nullptr) return false;
+    portENTER_CRITICAL(&touch_lock_);
+    if (injected_mode_) {
+        const uint8_t bit = uint8_t{1} << id;
+        touch_slot_pressed_[id] = false;
+        injected_pending_samples_ |= bit;
+        injected_cancels_ |= bit;
+    }
+    portEXIT_CRITICAL(&touch_lock_);
+    (void)lvgl_port_task_wake(LVGL_PORT_EVENT_TOUCH, nullptr);
+    return WaitForInjectedPointer(id);
+}
+
+bool PaiTouchHardware::WaitForInjectedPointer(uint8_t id) {
+    const uint8_t bit = uint8_t{1} << id;
+    const int64_t deadline = esp_timer_get_time() + 1000000;
+    do {
+        portENTER_CRITICAL(&touch_lock_);
+        const bool pending = (injected_pending_samples_ & bit) != 0;
+        portEXIT_CRITICAL(&touch_lock_);
+        if (!pending) return true;
+        // Only the PXADB task waits. UI callbacks always run on LVGL's task;
+        // gameplay and physical input do not use this synchronization path.
+        vTaskDelay(1);
+    } while (esp_timer_get_time() < deadline);
+    return false;
 }
 
 bool PaiTouchHardware::RouteInjectedKey(pxadb::TestControlKey key) {
@@ -893,18 +904,19 @@ bool PaiTouchHardware::ConfigurePxadbControls() {
     adapter.context = this;
     adapter.width = PAI_DISPLAY_WIDTH;
     adapter.height = PAI_DISPLAY_HEIGHT;
+    adapter.max_pointers = kTouchMaxPointers;
     adapter.route_pointer_down = [](void* context) {
         return static_cast<PaiTouchHardware*>(context)
             ->RouteInjectedPointerDown();
     };
-    adapter.inject_pointer = [](void* context, uint16_t x, uint16_t y,
+    adapter.inject_pointer = [](void* context, uint8_t id, uint16_t x, uint16_t y,
                                 bool pressed) {
         return static_cast<PaiTouchHardware*>(context)
-            ->InjectPointer(x, y, pressed);
+            ->InjectPointer(id, x, y, pressed);
     };
-    adapter.cancel_pointer = [](void* context) {
+    adapter.cancel_pointer = [](void* context, uint8_t id) {
         return static_cast<PaiTouchHardware*>(context)
-            ->CancelInjectedPointer();
+            ->CancelInjectedPointer(id);
     };
     adapter.route_key = [](void* context, pxadb::TestControlKey key) {
         return static_cast<PaiTouchHardware*>(context)->RouteInjectedKey(key);

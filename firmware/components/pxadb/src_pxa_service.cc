@@ -1389,7 +1389,8 @@ bool QueueInput(const InputCommand& requested, const char** error) {
     portENTER_CRITICAL(&s_input_lock);
     next_state = s_accepted_pointer;
     if (command.kind == InputCommandKind::kPointer) {
-        valid = next_state.Apply(command.pointer_action, command.pointer_id);
+        valid = command.pointer_id < s_test_control.max_pointers &&
+                next_state.Apply(command.pointer_action, command.pointer_id);
     } else if (command.kind == InputCommandKind::kTap ||
                command.kind == InputCommandKind::kSwipe) {
         valid = !next_state.pressed();
@@ -1452,9 +1453,10 @@ void SendInputCapabilities(unsigned long sequence) {
     }
     char payload[160] = {};
     snprintf(payload, sizeof(payload),
-             "protocol=1;width=%d;height=%d;max_pointers=1;keys=back,home,volume-up,volume-down;coordinates=logical",
+             "protocol=1;width=%d;height=%d;max_pointers=%u;keys=back,home,volume-up,volume-down;coordinates=logical",
              static_cast<int>(s_test_control.width),
-             static_cast<int>(s_test_control.height));
+             static_cast<int>(s_test_control.height),
+             static_cast<unsigned>(s_test_control.max_pointers));
     SendFrame(sequence, "OK", payload);
 }
 
@@ -2106,30 +2108,26 @@ void ResetAcceptedPointer() {
     portEXIT_CRITICAL(&s_input_lock);
 }
 
-bool ExecutePointer(PointerState* state, bool* delivered,
+bool ExecutePointer(PointerState* state, uint16_t* delivered,
                     PointerAction action, uint16_t x,
                     uint16_t y, uint8_t pointer_id) {
     if (!TestControlAvailable() || state == nullptr || delivered == nullptr ||
-        !state->Apply(action, pointer_id)) {
-        return false;
-    }
-    if (action == PointerAction::kDown) {
-        *delivered = s_test_control.route_pointer_down(s_test_control.context);
-        return !*delivered || s_test_control.inject_pointer(
-                                  s_test_control.context, x, y, true);
-    }
-    if (action == PointerAction::kMove) {
-        return !*delivered || s_test_control.inject_pointer(
-                                  s_test_control.context, x, y, true);
-    }
+        pointer_id >= s_test_control.max_pointers) return false;
+    return DeliverPointer(*state, *delivered, s_test_control, action, x, y,
+                          pointer_id);
+}
+
+bool CancelPointers(PointerState* state, uint16_t* delivered) {
     bool success = true;
-    if (*delivered) {
-        success = action == PointerAction::kCancel
-                      ? s_test_control.cancel_pointer(s_test_control.context)
-                      : s_test_control.inject_pointer(s_test_control.context,
-                                                      x, y, false);
+    while (state->pressed()) {
+        const uint8_t id = state->pointer_id();
+        if (!ExecutePointer(state, delivered, PointerAction::kCancel, 0, 0, id)) {
+            // Clear local ownership even if a disconnected adapter rejects it.
+            (void)state->Apply(PointerAction::kCancel, id);
+            *delivered &= ~(uint16_t{1} << id);
+            success = false;
+        }
     }
-    *delivered = false;
     return success;
 }
 
@@ -2144,23 +2142,17 @@ void DelayUntil(TickType_t target) {
 }
 
 bool ExecuteInput(const InputCommand& command, PointerState* pointer,
-                  bool* delivered) {
+                  uint16_t* delivered) {
     if (command.kind == InputCommandKind::kPointer) {
         return ExecutePointer(pointer, delivered,
                               command.pointer_action, command.x, command.y,
                               command.pointer_id);
     }
     if (command.kind == InputCommandKind::kCancel) {
-        if (!pointer->pressed()) return true;
-        return ExecutePointer(pointer, delivered,
-                              PointerAction::kCancel, 0, 0,
-                              pointer->pointer_id());
+        return CancelPointers(pointer, delivered);
     }
     if (command.kind == InputCommandKind::kKey) {
-        if (pointer->pressed() &&
-            !ExecutePointer(pointer, delivered,
-                            PointerAction::kCancel, 0, 0,
-                            pointer->pointer_id())) {
+        if (!CancelPointers(pointer, delivered)) {
             return false;
         }
         TestControlKey key = TestControlKey::kBack;
@@ -2215,7 +2207,7 @@ bool ExecuteInput(const InputCommand& command, PointerState* pointer,
 
 void PxadbInputTask(void*) {
     PointerState pointer;
-    bool delivered = false;
+    uint16_t delivered = 0;
     uint64_t last_activity_us = static_cast<uint64_t>(esp_timer_get_time());
     while (s_running.load()) {
         (void)xSemaphoreTake(s_input_signal, pdMS_TO_TICKS(50));
@@ -2224,10 +2216,8 @@ void PxadbInputTask(void*) {
             const bool success = ExecuteInput(command, &pointer, &delivered);
             last_activity_us = static_cast<uint64_t>(esp_timer_get_time());
             SendInputAck(command, success ? "processed" : "rejected");
-            if (!success && pointer.pressed()) {
-                (void)ExecutePointer(&pointer, &delivered,
-                                     PointerAction::kCancel, 0, 0,
-                                     pointer.pointer_id());
+            if (!success) {
+                (void)CancelPointers(&pointer, &delivered);
                 ResetAcceptedPointer();
             }
         }
@@ -2235,17 +2225,13 @@ void PxadbInputTask(void*) {
         if (pointer.pressed() &&
             now_us - last_activity_us >=
                 static_cast<uint64_t>(kInputTimeoutMs) * 1000u) {
-            (void)ExecutePointer(&pointer, &delivered,
-                                 PointerAction::kCancel, 0, 0,
-                                 pointer.pointer_id());
+            (void)CancelPointers(&pointer, &delivered);
             ResetAcceptedPointer();
             ESP_LOGW(kTag, "Synthetic pointer cancelled after input timeout");
         }
     }
     if (pointer.pressed()) {
-        (void)ExecutePointer(&pointer, &delivered,
-                             PointerAction::kCancel, 0, 0,
-                             pointer.pointer_id());
+        (void)CancelPointers(&pointer, &delivered);
     }
     ResetAcceptedPointer();
     s_input_task_active.store(false);
@@ -2390,6 +2376,8 @@ esp_err_t ConfigureTestControl(const TestControlAdapter* adapter) {
     }
     if (adapter->struct_size < sizeof(TestControlAdapter) ||
         adapter->width == 0 || adapter->height == 0 ||
+        adapter->max_pointers == 0 ||
+        adapter->max_pointers > PointerState::kMaximumPointers ||
         adapter->route_pointer_down == nullptr ||
         adapter->inject_pointer == nullptr ||
         adapter->cancel_pointer == nullptr || adapter->route_key == nullptr ||

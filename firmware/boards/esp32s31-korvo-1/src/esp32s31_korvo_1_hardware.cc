@@ -1061,12 +1061,13 @@ bool Esp32S31Korvo1Hardware::ConfigurePxadbControls() {
      * component injects the pointer only when this hook reports "deliver":
      * returning false swallows the whole gesture. */
     adapter.route_pointer_down = [](void*) { return true; };
-    adapter.inject_pointer = [](void* context, uint16_t x, uint16_t y,
+    adapter.inject_pointer = [](void* context, uint8_t id, uint16_t x, uint16_t y,
                                 bool pressed) {
-        return static_cast<Esp32S31Korvo1Hardware*>(context)
+        return id == 0 && static_cast<Esp32S31Korvo1Hardware*>(context)
             ->InjectPointer(x, y, pressed);
     };
-    adapter.cancel_pointer = [](void* context) {
+    adapter.cancel_pointer = [](void* context, uint8_t id) {
+        if (id != 0) return false;
         return static_cast<Esp32S31Korvo1Hardware*>(context)
             ->CancelInjectedPointer();
     };

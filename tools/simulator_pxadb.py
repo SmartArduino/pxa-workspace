@@ -167,17 +167,18 @@ class SimulatorPxaDb:
         action = arguments[0].upper()
         if action == "CAPABILITIES" and len(arguments) == 1:
             self.control("CAPABILITIES")
-            return "pointers=1;keys=back,home,volume-up,volume-down"
+            return "pointers=2;max_pointers=2;keys=back,home,volume-up,volume-down"
         if action == "SYNC" and len(arguments) == 1:
             self.control("SYNC")
             return ""
         if action == "CANCEL" and len(arguments) == 1:
-            self.control("POINTER UP 0 0")
+            self.control("TOUCH CANCEL_ALL")
             return ""
         if action == "KEY" and len(arguments) == 2:
             key = arguments[1].upper().replace("-", "_")
             if key not in {"BACK", "HOME", "VOLUME_UP", "VOLUME_DOWN"}:
                 raise ServiceError("unsupported_input_key")
+            self.control("TOUCH CANCEL_ALL")
             self.control(f"KEY {key}")
             return ""
         if action == "POINTER" and len(arguments) == 5:
@@ -188,14 +189,16 @@ class SimulatorPxaDb:
                 pointer_id = int(arguments[4])
             except ValueError as error:
                 raise ServiceError("invalid_pointer_id") from error
-            if phase not in {"DOWN", "MOVE", "UP", "CANCEL"} or pointer_id != 0:
+            if phase not in {"DOWN", "MOVE", "UP", "CANCEL"} or not 0 <= pointer_id < 2:
                 raise ServiceError("unsupported_pointer")
-            self.control(f"POINTER {'UP' if phase == 'CANCEL' else phase} {x} {y}")
+            self.control(f"TOUCH {phase} {pointer_id} {x} {y}")
             return ""
         if action == "TAP" and len(arguments) == 3:
             x = self.coordinate(arguments[1])
             y = self.coordinate(arguments[2])
-            self.control(f"TAP {x} {y}")
+            self.control(f"TOUCH DOWN 0 {x} {y}")
+            time.sleep(.016)
+            self.control(f"TOUCH UP 0 {x} {y}")
             return ""
         if action == "SWIPE" and len(arguments) == 7:
             x1 = self.coordinate(arguments[1])
@@ -209,13 +212,13 @@ class SimulatorPxaDb:
                 raise ServiceError("invalid_swipe_duration") from error
             if duration_ms < 0 or duration_ms > 60000 or steps < 1 or steps > 120:
                 raise ServiceError("invalid_swipe_duration")
-            self.control(f"POINTER DOWN {x1} {y1}")
+            self.control(f"TOUCH DOWN 0 {x1} {y1}")
             for step in range(1, steps + 1):
                 if duration_ms:
                     time.sleep(duration_ms / steps / 1000.0)
                 x = x1 + (x2 - x1) * step // steps
                 y = y1 + (y2 - y1) * step // steps
-                self.control(f"POINTER {'UP' if step == steps else 'MOVE'} {x} {y}")
+                self.control(f"TOUCH {'UP' if step == steps else 'MOVE'} 0 {x} {y}")
             return ""
         raise ServiceError("invalid_input_command")
 

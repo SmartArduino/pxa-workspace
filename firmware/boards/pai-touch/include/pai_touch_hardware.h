@@ -68,14 +68,14 @@ private:
     void PowerOff();
     void PollTouchController();
     bool RouteInjectedPointerDown();
-    bool InjectPointer(uint16_t x, uint16_t y, bool pressed);
-    bool CancelInjectedPointer();
+    bool InjectPointer(uint8_t id, uint16_t x, uint16_t y, bool pressed);
+    bool CancelInjectedPointer(uint8_t id);
+    bool WaitForInjectedPointer(uint8_t id);
     bool RouteInjectedKey(pxadb::TestControlKey key);
     bool CaptureRgb565(uint16_t* pixels, size_t pixel_count,
                        bool after_present,
                        pxadb::TestControlCaptureInfo* info);
     static void TouchInterrupt(esp_lcd_touch_handle_t tp);
-    static void ReadInjectedPointer(lv_indev_t* indev, lv_indev_data_t* data);
     static void ReadPhysicalPointer(lv_indev_t* indev, lv_indev_data_t* data);
     static void StatusTimer(void* context);
     static void StatusOnLvgl(void* context);
@@ -85,7 +85,6 @@ private:
     lv_display_t* display_ = nullptr;
     esp_lcd_touch_handle_t touch_ = nullptr;
     lv_indev_t* physical_pointers_[kTouchMaxPointers] = {};
-    lv_indev_t* injected_pointer_ = nullptr;
     portMUX_TYPE touch_lock_ = portMUX_INITIALIZER_UNLOCKED;
     bool touch_slot_pressed_[kTouchMaxPointers] = {};
     bool touch_logged_pressed_[kTouchMaxPointers] = {};
@@ -94,6 +93,11 @@ private:
     int64_t touch_last_poll_us_ = 0;
     int64_t touch_last_report_us_ = 0;
     uint8_t touch_reported_points_ = 0;
+    // Synthetic input borrows the existing contact slots; all three fields
+    // are protected by touch_lock_. Physical input resumes after final read.
+    bool injected_mode_ = false;
+    uint8_t injected_pending_samples_ = 0;
+    uint8_t injected_cancels_ = 0;
     std::atomic<bool> touch_irq_pending_{false};
     adc_oneshot_unit_handle_t adc_ = nullptr;
     AdcBatteryMonitor* battery_ = nullptr;
@@ -112,9 +116,6 @@ private:
     std::atomic<bool> wifi_enabled_{true};
     std::atomic<bool> time_sync_initialized_{false};
     std::atomic<bool> status_update_pending_{false};
-    std::atomic<uint16_t> injected_pointer_x_{0};
-    std::atomic<uint16_t> injected_pointer_y_{0};
-    std::atomic<bool> injected_pointer_pressed_{false};
     std::atomic<int64_t> last_touch_activity_us_{0};
     int64_t power_button_pressed_at_us_ = 0;
     bool power_button_long_press_ = false;

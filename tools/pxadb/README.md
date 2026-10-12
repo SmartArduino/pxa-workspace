@@ -129,6 +129,19 @@ transfer and package management.
 
 ## 简体中文
 
+多点触摸调试先查询 `input capabilities`。pai-touch 和产品模拟器支持两个独立
+接触点；其他板卡继续按实际实现报告数量。协议为
+`INPUT POINTER <DOWN|MOVE|UP|CANCEL> x y id`，`INPUT CANCEL` 取消全部接触点，
+KEY 在切换界面前也取消所有注入手势。CANCEL 不应触发点击或射击。
+连续手势应复用一个 `PxaDbClient` 连接；每指必须先 DOWN，独立 MOVE，最后 UP
+或 CANCEL。设备编号不合法、重复 DOWN 或没有 DOWN 的 MOVE 会被拒绝。
+
+模拟器控制 socket 的内部命令为 `TOUCH phase id x y` 和 `TOUCH CANCEL_ALL`，
+两根手指对应独立 LVGL 输入设备。`POINTER phase x y` 保留单鼠标 SDL 测试路径。
+pai-touch 的注入复用两个物理触点设备，调试期间暂停控制器采样，最后释放被 LVGL
+读到后恢复；正在进行的实体手势不会被调试注入抢占。这里验证驱动后的游戏链路，
+不包含实体触摸传感器采样延迟。
+
 PXADB 是本工作区固件 PXADB USB Serial/JTAG 服务的主机客户端。它可安装独立构建的
 PXA 容器，不会重新编译或烧录固件。
 

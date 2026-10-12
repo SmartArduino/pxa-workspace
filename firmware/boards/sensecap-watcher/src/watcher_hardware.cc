@@ -1370,12 +1370,13 @@ bool SensecapWatcherHardware::ConfigurePxadbControls() {
         return static_cast<SensecapWatcherHardware*>(context)
             ->RouteInjectedPointerDown();
     };
-    adapter.inject_pointer = [](void* context, uint16_t x, uint16_t y,
+    adapter.inject_pointer = [](void* context, uint8_t id, uint16_t x, uint16_t y,
                                 bool pressed) {
-        return static_cast<SensecapWatcherHardware*>(context)
+        return id == 0 && static_cast<SensecapWatcherHardware*>(context)
             ->InjectPointer(x, y, pressed);
     };
-    adapter.cancel_pointer = [](void* context) {
+    adapter.cancel_pointer = [](void* context, uint8_t id) {
+        if (id != 0) return false;
         return static_cast<SensecapWatcherHardware*>(context)
             ->CancelInjectedPointer();
     };
