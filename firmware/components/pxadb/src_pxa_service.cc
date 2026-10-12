@@ -933,8 +933,22 @@ void MakeFsDirectory(unsigned long sequence, const char* encoded_path) {
 void RemoveFsPath(unsigned long sequence, const char* encoded_path) {
     char relative[kFsPathLength] = {};
     char path[kFsAbsolutePathLength] = {};
-    if (!DecodeFsPath(encoded_path, relative, sizeof(relative), path, sizeof(path)) ||
-        !IsWritableFsPath(relative) || strcmp(relative, "pxa-state") == 0) {
+    if (!DecodeFsPath(encoded_path, relative, sizeof(relative), path, sizeof(path))) {
+        SendFrame(sequence, "ERR", "invalid_path");
+        return;
+    }
+    // A full private-data volume can prevent the Host from initializing.
+    // After explicit FSUNLOCK, allow removing an interrupted .part upload
+    // during that failed boot. Keep installed packages, completed user files,
+    // recursive deletion and normal-boot private data protected.
+    constexpr char recovery_root[] = CONFIG_PXA_STATE_ROOT "/data/";
+    const size_t length = strlen(relative);
+    const bool recovery_partial = !pxa_host_ready() && IsSystemWriteUnlocked() &&
+        strncmp(relative, recovery_root, sizeof(recovery_root) - 1) == 0 &&
+        length > sizeof(recovery_root) - 1 + 5 &&
+        strcmp(relative + length - 5, ".part") == 0;
+    if ((!IsWritableFsPath(relative) && !recovery_partial) ||
+        strcmp(relative, kPxaStateRoot) == 0) {
         SendFrame(sequence, "ERR", "invalid_path");
         return;
     }

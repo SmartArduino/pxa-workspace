@@ -528,6 +528,51 @@ bool MountPxaStorage() {
     return false;
 }
 
+void ShowStartupRecovery(const pxa_board_port_t* board) {
+    // Recovery must work without the package store, external fonts or a
+    // running Host. Do not format storage or change the user's diagnostics
+    // preference: USB recovery is enabled only for this failed boot.
+    if (board->configure_diagnostics != nullptr)
+        (void)board->configure_diagnostics(board->context);
+    const esp_err_t debug_result = pxadb::Start();
+    if (debug_result != ESP_OK)
+        ESP_LOGE(kTag, "Recovery PXADB startup failed: %s",
+                 esp_err_to_name(debug_result));
+
+    const bool locked = board->lock_display != nullptr
+        ? board->lock_display(board->context, 2000) : lvgl_port_lock(2000);
+    if (!locked) return;
+    lv_lock();
+    lv_display_t* display = board->display(board->context);
+    if (display != nullptr) {
+        lv_obj_t* screen = lv_display_get_screen_active(display);
+        lv_obj_set_style_bg_color(screen, lv_color_hex(0x121820), 0);
+        lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+        lv_obj_t* message = lv_label_create(screen);
+        lv_obj_set_width(message,
+            lv_display_get_horizontal_resolution(display) * 3 / 4);
+        lv_obj_set_style_text_font(message, LV_FONT_DEFAULT, 0);
+        lv_obj_set_style_text_color(message, lv_color_white(), 0);
+        lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_text(message,
+            "Startup recovery\n\n"
+            "System could not start.\n"
+            "Storage may be full.\n\n"
+            "Use PXADB to free space,\n"
+            "then restart.\n\n"
+            "Your files are preserved.");
+        lv_obj_center(message);
+    }
+    lv_unlock();
+    if (board->unlock_display != nullptr)
+        board->unlock_display(board->context);
+    else
+        lvgl_port_unlock();
+    if (board->show_initial_frame != nullptr)
+        board->show_initial_frame(board->context);
+    ESP_LOGW(kTag, "Startup recovery active; storage has not been erased");
+}
+
 bool ResolveAppMetadata(void* context, const pxsys_app_descriptor_t* app,
                         const pxsys_locale_snapshot_t* locale,
                         pxsys_app_metadata_t* metadata) {
@@ -1299,7 +1344,10 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     if (board->initialize_before_storage && !board->initialize(board->context)) return false;
     if (profile->mount_storage && !MountPxaStorage()) return false;
     if (!board->initialize_before_storage && !board->initialize(board->context)) return false;
-    if (!pxa_host_initialize()) return false;
+    if (!pxa_host_initialize()) {
+        ShowStartupRecovery(board);
+        return false;
+    }
     LoadUserPreferences();
     if (board->set_level != nullptr) {
         if (g_preferences.has_volume)

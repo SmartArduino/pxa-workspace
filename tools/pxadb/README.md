@@ -70,6 +70,15 @@ register a controllable power latch also advertise `poweroff` and accept
 `pxadb poweroff --port /dev/ttyACM0`; unsupported boards report that software
 power-off is unavailable rather than restarting.
 
+If Host initialization fails (for example, storage is full), the firmware
+shows a recovery screen and starts PXADB for that boot without changing the
+saved diagnostics preference. Back up files with `fs pull` before cleanup.
+After `fs unlock`, `fs rm` may remove individual `.part` files under
+`pxa-state/data/` while the Host is unavailable. This exception does not permit
+recursive deletion, uploads, completed private files or installed packages,
+and is disabled once the Host initializes. Finish with `fs lock` and `reboot`;
+recovery never automatically deletes files or formats storage.
+
 Capture the final visible frame with `pxadb screenshot`. Firmware that
 advertises the `screenshot-jpeg` capability also accepts `--jpeg`, which asks
 the device to encode the frame on-board (about 10 KB instead of a 142 KB
