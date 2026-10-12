@@ -49,6 +49,9 @@ idf_component_register(
 # port API and remains selected only for the pai-touch build profile.
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG=1)
+if(PXA_AUDIO_LATENCY_TRACE)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_AUDIO_LATENCY_TRACE=1)
+endif()
 
 if(CONFIG_LV_USE_FREETYPE)
     idf_component_get_property(LVGL_COMPONENT_LIB lvgl__lvgl COMPONENT_LIB)

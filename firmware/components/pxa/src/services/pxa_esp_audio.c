@@ -8,6 +8,9 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#if PXA_AUDIO_LATENCY_TRACE
+#include "esp_timer.h"
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
@@ -221,14 +224,89 @@ static pxa_status_t audio_play_tone(void *context, uint64_t session,
     if (status == PXA_STATUS_OK) {
         ++audio->submitted_frames;
         ++audio->tone_commands;
+#if PXA_AUDIO_LATENCY_TRACE
+        unsigned packet = audio->mixer->voices[index].read;
+        while (audio->mixer->voices[index].packets[packet].next != PXA_AUDIO_MIXER_PACKETS)
+            packet = audio->mixer->voices[index].packets[packet].next;
+        esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: tone us=%lld session=%llu packet=%u duration=%u delay=%u queued=%u\n",
+                 (long long)esp_timer_get_time(), (unsigned long long)session,
+                 packet,
+                 tone->duration_ms, tone->delay_ms,
+                 (unsigned)audio->mixer->voices[index].state.queued_samples);
+#endif
         update_queue_peak(audio);
     }
     if (status == PXA_STATUS_WOULD_BLOCK) {
+#if PXA_AUDIO_LATENCY_TRACE
+        esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: tone_rejected us=%lld session=%llu duration=%u delay=%u\n",
+                 (long long)esp_timer_get_time(), (unsigned long long)session,
+                 tone->duration_ms, tone->delay_ms);
+#endif
         ++audio->queue_full_frames;
         ++audio->tone_dropped_commands;
     }
     audio_unlock(audio);
     if (status == PXA_STATUS_OK) xTaskNotifyGive(audio->task);
+    return status;
+}
+
+static pxa_status_t audio_play_effect(void *context, uint64_t session,
+    const pxa_audio_tone_t *tones, size_t count, uint8_t track) {
+    pxa_esp_audio_state_t *audio = context;
+    if (audio != &g_audio) return PXA_STATUS_INVALID_ARGUMENT;
+    audio_lock(audio);
+    int index = slot_index_locked(audio, session);
+#if PXA_AUDIO_LATENCY_TRACE
+    /* Identify the published slot without guessing FIFO placement. A fresh
+     * independent group consumes a previously free slot; named replacement
+     * has a unique track even if another group has identical layers. */
+    uint8_t occupied = 0;
+    if (index >= 0) for (unsigned slot = 0; slot < PXA_AUDIO_MIXER_PACKETS; ++slot) {
+        const pxa_audio_mixer_packet_t *p = &audio->mixer->voices[index].packets[slot];
+        if (p->position < p->length) occupied |= 1u << slot;
+    }
+#endif
+    pxa_status_t status = index < 0 ? PXA_STATUS_NOT_FOUND :
+        pxa_audio_mixer_effect(&audio->mixer->voices[index], tones, count, track);
+    if (status == PXA_STATUS_OK) {
+        ++audio->submitted_frames;
+        audio->tone_commands += count;
+        update_queue_peak(audio);
+#if PXA_AUDIO_LATENCY_TRACE
+        const pxa_audio_mixer_voice_t *v = &audio->mixer->voices[index];
+        for (unsigned slot = 0; slot < PXA_AUDIO_MIXER_PACKETS; ++slot) {
+            const pxa_audio_mixer_packet_t *p = &v->packets[slot];
+            if (p->kind == PXA_AUDIO_PACKET_EFFECT && p->position == 0 &&
+                (!(occupied & (1u << slot)) ||
+                 (track != PXA_AUDIO_SOUND_APPEND && p->meta.effect.track == track))) {
+                esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: effect us=%lld session=%llu packet=%u layers=%u track=%u queued=%u\n",
+                    (long long)esp_timer_get_time(), (unsigned long long)session, slot,
+                    (unsigned)count, track, (unsigned)v->state.queued_samples);
+                break;
+            }
+        }
+#endif
+    }
+    if (status == PXA_STATUS_WOULD_BLOCK) {
+#if PXA_AUDIO_LATENCY_TRACE
+        esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: effect_rejected us=%lld session=%llu layers=%u track=%u\n",
+            (long long)esp_timer_get_time(), (unsigned long long)session, (unsigned)count, track);
+#endif
+        ++audio->queue_full_frames;
+        audio->tone_dropped_commands += count;
+    }
+    audio_unlock(audio);
+    if (status == PXA_STATUS_OK) xTaskNotifyGive(audio->task);
+    return status;
+}
+static pxa_status_t audio_stop_effect(void *context, uint64_t session, uint8_t track) {
+    pxa_esp_audio_state_t *audio = context;
+    if (audio != &g_audio) return PXA_STATUS_INVALID_ARGUMENT;
+    audio_lock(audio);
+    int index = slot_index_locked(audio, session);
+    pxa_status_t status = index < 0 ? PXA_STATUS_NOT_FOUND :
+        pxa_audio_mixer_stop_effect(&audio->mixer->voices[index], track);
+    audio_unlock(audio);
     return status;
 }
 
@@ -574,10 +652,28 @@ static void audio_output_tick(pxa_esp_audio_state_t *audio) {
         int had_tone = 0;
         for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i) {
             pxa_audio_mixer_voice_t *v = &audio->mixer->voices[i];
-            had_tone |= v->count && v->packets[v->read].is_tone;
+            for (unsigned j = 0; j < PXA_AUDIO_MIXER_PACKETS; ++j)
+                had_tone |= v->packets[j].position < v->packets[j].length && v->packets[j].kind;
         }
         size_t count = pxa_audio_mixer_render(audio->mixer, output,
                                              PXA_AUDIO_MIXER_FRAME);
+#if PXA_AUDIO_LATENCY_TRACE
+        /* One timestamp per starting FIFO packet, before sink submission.
+         * The position check also detects a packet starting inside a frame. */
+        for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i) {
+            for (unsigned j = 0; j < PXA_AUDIO_MIXER_PACKETS; ++j) {
+                const pxa_audio_mixer_packet_t *p = &audio->mixer->voices[i].packets[j];
+                if (p->kind == PXA_AUDIO_PACKET_TONE && checkpoint[i].position[j] == 0 && p->position != 0)
+                    esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: render us=%lld voice=%u packet=%u duration=%u delay=%u\n",
+                        (long long)esp_timer_get_time(), i, j,
+                        p->meta.tone.duration_ms, p->meta.tone.delay_ms);
+                if (p->kind == PXA_AUDIO_PACKET_EFFECT && checkpoint[i].position[j] == 0 && p->position != 0)
+                    esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: effect_render us=%lld voice=%u packet=%u layers=%u track=%u\n",
+                        (long long)esp_timer_get_time(), i, j, p->meta.effect.count, p->meta.effect.track);
+
+            }
+        }
+#endif
         if (count != 0 && !sink.submit(sink.context, 0, output, PXA_AUDIO_MIXER_FRAME)) {
             ++audio->sink_rejected_frames;
             /* Backpressure preserves the exact sample and filter phase. */
@@ -742,6 +838,8 @@ void pxa_esp_audio_backend(pxa_audio_backend_t *output) {
     output->query = audio_query;
     output->flush = audio_flush;
     output->play_tone = audio_play_tone;
+    output->play_effect = audio_play_effect;
+    output->stop_effect = audio_stop_effect;
     output->play_asset = audio_play_asset;
     output->play_sound = audio_play_sound;
     output->play_sound_ex = audio_play_sound_ex;

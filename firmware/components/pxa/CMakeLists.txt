@@ -102,6 +102,11 @@ endif()
 include("${PXSYS_ROOT}/cmake/PxaWamrMetadata.cmake")
 pxsys_apply_wamr_metadata(${COMPONENT_LIB})
 
+# Explicit diagnostic build only: release builds incur no audio tracing cost.
+if(PXA_AUDIO_LATENCY_TRACE)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_AUDIO_LATENCY_TRACE=1)
+endif()
+
 if(CONFIG_IDF_TARGET_ESP32S3 OR CONFIG_IDF_TARGET_ESP32S31)
     include("${PXSYS_ROOT}/platforms/esp-idf/cmake/pxsys_wamr.cmake")
     pxsys_configure_wamr_esp_idf(__idf_wamr)

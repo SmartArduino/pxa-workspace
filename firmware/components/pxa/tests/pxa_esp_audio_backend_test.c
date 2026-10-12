@@ -148,6 +148,20 @@ int main(void) {
     for (unsigned i = 0; i < 49; ++i) audio_output_tick(&g_audio);
     assert(b.query(b.context, c, &state) == PXA_STATUS_OK && state.queued_samples == 0);
     assert(state.accepted_samples == 16640);
+    /* Rejected physical output must preserve all parallel layer samples. */
+    pxa_audio_tone_t layers[2] = {tone, tone};
+    layers[0].waveform = PXA_AUDIO_TONE_NOISE;
+    layers[1].delay_ms = 10;
+    assert(b.play_effect(b.context, c, layers, 2, 0) == PXA_STATUS_OK);
+    pxa_audio_mixer_t checkpoint = *g_audio.mixer;
+    int16_t expected[PXA_AUDIO_MIXER_FRAME];
+    pxa_audio_mixer_render(&checkpoint, expected, PXA_AUDIO_MIXER_FRAME);
+    reject = 1; audio_output_tick(&g_audio);
+    assert(b.query(b.context, c, &state) == PXA_STATUS_OK && state.queued_samples == 16160);
+    reject = 0; audio_output_tick(&g_audio);
+    assert(!memcmp(expected, rendered, sizeof(expected)));
+    assert(b.stop_effect(b.context, c, 0) == PXA_STATUS_OK);
+    assert(b.query(b.context, c, &state) == PXA_STATUS_OK && !state.queued_samples);
     pxa_esp_audio_set_asset_sink(asset_play, asset_control, NULL);
     static const uint8_t path[] = "assets/test.ogg";
     pxa_package_file_t file = {{path, sizeof(path)-1}, 1234, NULL};

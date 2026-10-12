@@ -320,6 +320,21 @@ bool jl701_audio_link_write_pcm(const int16_t* pcm, size_t samples) {
         const size_t count = std::min(kPcmPacketSamples, samples - offset);
         auto* packet = reinterpret_cast<uint8_t*>(
             const_cast<int16_t*>(pcm + offset));
+#if PXA_AUDIO_LATENCY_TRACE
+        /* Trace only silence/activity edges and starts after an idle gap.
+         * Raw logging avoids ESP_LOGI's multiple prefix/newline queue records.
+         * TX submission is not an acknowledgement of audible playback. */
+        static int64_t previous_us = 0;
+        static bool previous_nonzero = false;
+        const int64_t now_us = esp_timer_get_time();
+        const bool nonzero = std::any_of(pcm + offset, pcm + offset + count,
+            [](int16_t sample) { return sample != 0; });
+        if (nonzero != previous_nonzero || now_us - previous_us > 40000)
+            esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: uart us=%lld samples=%u nonzero=%d\n",
+                (long long)now_us, static_cast<unsigned>(count), nonzero);
+        previous_us = now_us;
+        previous_nonzero = nonzero;
+#endif
         if (rpc_sen_audio_pcm(packet, count * sizeof(int16_t)) != RPC_ERR_SUCCESS) {
             return false;
         }

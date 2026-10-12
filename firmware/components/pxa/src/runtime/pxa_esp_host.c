@@ -3451,6 +3451,12 @@ static void post_pointer(const pxa_esp_host_command_t *command) {
         pxa_write_u32(value + 8, (uint32_t)event->y);
         pxa_esp_surface_note_input_sample(event->timestamp_us);
         if (event->phase != PXA_HOST_POINTER_MOVE_PHASE) {
+#if PXA_AUDIO_LATENCY_TRACE
+            esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: input us=%llu sampled=%llu phase=%u x=%d y=%d\n",
+                     (unsigned long long)host_now_us(NULL),
+                     (unsigned long long)event->timestamp_us,
+                     (unsigned)event->phase, (int)event->x, (int)event->y);
+#endif
             ESP_LOGI(PXA_ESP_HOST_TAG,
                      "pointer delivered id=%u phase=%u x=%d y=%d",
                      (unsigned)event->id, (unsigned)event->phase,
