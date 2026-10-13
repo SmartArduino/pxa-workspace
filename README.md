@@ -1,57 +1,65 @@
-# PXA ESP Platform
+# PXA ESP 平台工程
 
-[简体中文](README.zh-CN.md)
+[English](README.en.md)
 
-An ESP-IDF product workspace that imports `pxa-system` without depending on a
-legacy product firmware tree. It supports two board entry paths through the
-same `pxa_board_port_t` contract:
+这是一个独立的 ESP-IDF 产品工程。它以依赖方式引入 `pxa-system`，不会依赖旧产品
+固件目录。通过同一份 `pxa_board_port_t` 合约支持两种板级接入方式：
 
-- A new BSP implements the port directly in `firmware/boards/<board>/`.
-- An existing firmware adds a small adapter that maps its current board API to
-  the port after its display becomes ready.
+- 新 BSP 在 `firmware/boards/<board>/` 中直接实现 board port。
+- 已有固件在其显示初始化完成后，增加一个小型 adapter，将既有板级 API 映射为
+  board port。
 
-## Layout
+## 只开发应用？先用 DevKit
 
-```text
-firmware/                    The only ESP-IDF project
-firmware/boards/             Per-board drivers, defaults and partitions
-simulator/                   Desktop UI/display-profile simulation profiles
-factory/                     Reproducible board-specific factory profiles
-tools/                       Firmware, App, simulator and factory entry points
-local/pxa-apps/              Separate pxa-apps Git checkout (ignored by this workspace)
-local/                       Ignored App catalog, overrides and outputs
-deps/pxa-system/             Imported upstream system and package tooling
+无需克隆本仓库或安装 ESP-IDF。下载 [DevKit 0.3.0](https://pxa.doit.am/docs/downloads/)，解压后：
+
+```sh
+export PATH="$PWD/pxa-devkit-0.3.0-linux-x86_64/bin:$PATH"
+pxa init hello
+pxa run hello
 ```
 
-Clone the product App repository into `local/pxa-apps`; this workspace ignores
-that checkout. The imported system also has App examples and signing fixtures
-in `deps/pxa-system/apps/pxa`. The workspace App tooling detects the local
-source root automatically, or accepts `--source-root` explicitly.
+默认 C++26、O3，项目通过 `pxa.lock` 固定 SDK 与工具链版本。当前发行包要求 Linux x86_64、glibc 2.39+。应用包需要 Core 2.0 及其声明的服务能力。
+[中文入门教程](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [发布说明](https://github.com/SmartArduino/pxa-system/releases/tag/v0.3.0)
 
-`firmware/boards/pai-touch` is itself an ESP-IDF component. Select another board with
-the CMake cache value `PXA_BOARD`; no global board-type Kconfig choice is
-required. Its `sdkconfig.defaults` is loaded as a board overlay after the
-cross-board root defaults.
+以下命令面向修改系统或板级驱动的开发者，在本仓库根目录运行：
 
-## Managed dependencies
+```sh
+git clone --recurse-submodules https://github.com/SmartArduino/pxa-workspace.git
+cd pxa-workspace
+git clone https://github.com/SmartArduino/pxa-apps.git local/pxa-apps
+```
 
-ESP-IDF dependencies are declared beside the code that owns them. The product
-baseline is in `firmware/main/idf_component.yml`; every board declares its display,
-input, power, connectivity and optional font packages in
-`firmware/boards/<board>/idf_component.yml`. This keeps boards with incompatible driver
-versions in separate dependency graphs. The Component Manager generates the
-board-specific `dependencies.lock.<board>` file; commit it after dependency
-resolution, but do not edit it manually.
+## 目录
 
-## Build a selected board
+```text
+firmware/                    唯一的 ESP-IDF 工程
+firmware/boards/             每块板子的驱动、默认配置和分区表
+simulator/                   桌面 UI/显示 Profile 模拟配置
+factory/                     可复现的板级出厂预置 Profile
+tools/                       固件、应用、模拟器和出厂工具入口
+local/                       忽略的本机 App catalog、覆盖配置与输出
+deps/pxa-system/             引入的上游系统与应用打包工具
+```
 
-Build and debug board code through the board wrapper. It uses an independent
-build directory per board.
+`firmware/boards/pai-touch` 本身就是 ESP-IDF component。通过 CMake cache 中的 `PXA_BOARD`
+选择板子，无需维护一个全局 `CONFIG_BOARD_TYPE` choice。该目录下的
+`sdkconfig.defaults` 会在根目录的跨板默认配置之后作为板级 overlay 加载。
 
-The `esp-mosaico` profile targets ESP32-S31 with a 480 × 480 CO5300 panel,
-CST92xx touch, ES8311 playback and native USB CDC. See
-[its board guide](firmware/boards/esp-mosaico/README.md) for revision detection,
-the ESP-IDF main environment and hardware limitations.
+## 托管依赖
+
+ESP-IDF 依赖由拥有对应代码的目录声明。产品基线在 `firmware/main/idf_component.yml`；每块板子的
+显示、输入、电源、联网和可选字体包写在 `firmware/boards/<board>/idf_component.yml`。这样即使板子
+使用不兼容版本的驱动，也能保持依赖图隔离。Component Manager 会在 `firmware/` 中生成
+`dependencies.lock.<board>`；依赖解析后应提交对应板子的该文件，但绝不可手工编辑。
+
+## 编译指定板子
+
+通过板级工具编译与调试，并为每块板子使用独立构建目录。
+
+`esp-mosaico` 配置适配 ESP32-S31、480 × 480 CO5300 显示、CST92xx 触摸、
+ES8311 播放和原生 USB CDC。硬件版本识别、ESP-IDF main 环境与当前外设限制见
+[板级说明](firmware/boards/esp-mosaico/README.md)。
 
 ```sh
 tools/firmware.sh pai-touch build
@@ -59,39 +67,33 @@ tools/firmware.sh pai-touch flash --port /dev/ttyACM0 --baud 406800
 tools/firmware.sh pai-touch monitor --port /dev/ttyACM0 --baud 115200
 ```
 
-The equivalent direct ESP-IDF build command is:
+等效的 ESP-IDF 直接构建命令为：
 
 ```sh
 idf.py -C firmware -B build/firmware/pai-touch -DPXA_BOARD=pai-touch build
 ```
 
-`PXA_BOARD` selects `firmware/boards/<board>/`, its `board.cmake`,
-`sdkconfig.defaults`, partition table and `idf_component.yml`. `board.cmake`
-selects the matching ESP target before component discovery. The first
-configuration resolves the selected board's managed components and generates
-`firmware/dependencies.lock.<board>`. Do not reuse a build directory for
-another board.
+`PXA_BOARD` 会选择 `firmware/boards/<board>/`、其 `board.cmake`、`sdkconfig.defaults`、
+分区表和 `idf_component.yml`。`board.cmake` 会在 component 发现前选择匹配的 ESP
+目标芯片。第一次配置会解析该板子的托管 component，并生成
+`firmware/dependencies.lock.<board>`。不要将同一个构建目录复用于另一块板子。
 
-## PXA App Delivery
+## PXA 应用交付
 
-Firmware builds and PXA App delivery are intentionally separate. App source
-roots are resolved from ignored `local/apps.toml`, so private Apps do not dirty
-this workspace. Normal firmware builds and flashes neither package Apps nor
-write the PXA storage partition. See
-[PXA App Delivery](docs/pxa-app-delivery.md).
-Directory ownership and daily workflows are documented in
-[Workspace Layout](docs/workspace-layout.md).
+产品应用源码放在独立的 `local/pxa-apps` Git 仓库；本工作区忽略该目录。
+`deps/pxa-system/apps/pxa` 保存开发签名夹具与部分历史示例；新应用使用 pxa init 生成的 C++26 模板。
+工作区的 App 工具会自动发现 `local/pxa-apps`，也可显式传入 `--source-root`。
 
-## Fast PXA Development
+固件构建和 PXA 应用交付被刻意拆开。App 源码根目录优先由被忽略的 `local/apps.toml` 解析，
+未配置时使用 `local/pxa-apps`；
+私有 App 不会污染本工程。常规固件编译与烧录既不会打包应用，也不会写入 PXA 数据分区。
+详见 [PXA 应用交付](docs/zh-CN/pxa-app-delivery.md)。
+目录职责与日常流程见 [工作区结构](docs/zh-CN/workspace-layout.md)。
 
-`tools/dev.sh` combines incremental App packaging, PXADB replacement and
-launching into one development loop. An App source root is the parent directory
-that contains `<app-id>/`; configure it once in ignored `local/apps.toml`, or
-supply it for a one-off command:
+## PXA 快速开发
 
-The command argument names the source directory. The output file uses
-`pxa-<app-id>.pxa`, while installation and launch use the ID in the signed
-package manifest. These names may differ.
+`tools/dev.sh` 将应用的增量打包、PXADB 覆盖安装和启动串为一个开发循环。App 源码根目录是
+包含 `<app-id>/` 的父目录：可在被忽略的 `local/apps.toml` 中登记，也可在命令中临时传入。
 
 ```toml
 # local/apps.toml
@@ -99,51 +101,43 @@ package manifest. These names may differ.
 source_root = "/home/me/work/pxa-apps"
 ```
 
-Simulator mode installs the App, starts the full PXA system (the same path as
-`tools/simulator.sh run`) and automatically opens the App. The launcher,
-settings, system input method, theme, DPI and display shape are available.
-It keeps its PXADB2 service running and restarts the system with the updated App
-after each source save. Host and Guest `pxa_log_*` output is streamed to the terminal:
+模拟器模式会安装应用，启动完整 PXA 系统（与 `tools/simulator.sh run` 相同），并自动进入该应用。
+系统桌面、设置、输入法、主题、DPI 和屏幕形状都会生效。PXADB2 服务保持运行，
+每次保存后重启系统并进入更新后的 App；Host 及 Guest 的 `pxa_log_*` 日志输出到终端：
 
 ```sh
 tools/dev.sh sim my-app --watch
-# Or without a local catalog:
+# 或者不登记本机 catalog：
 tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
+# 使用 Watcher 的 412×412 圆屏配置：
 tools/dev.sh sim --board sensecap-watcher pixel-dungeon
 tools/dev.sh sim --board esp-mosaico voxel-craft
 ```
 
-Simulator mode selects the display profile matching `--board` by default;
-pass `--profile` to override it. Settings and App data use the same persistent
-profile state as `tools/simulator.sh run`. Use `--instance <name>` to keep a
-separate development instance. For standalone App testing, use
-`tools/simulator.sh product --profile <board> --installed <package-id>`.
-`dev.sh` packages only the current target's AOT, omitting the `.wasm` fallback
-(including components declaring `artifact: "both"`);
-explicitly declared Wasm-only components are preserved. Use `tools/app.sh build`
-directly when you need both artifacts.
+模拟器默认使用与 `--board` 同名的屏幕 profile；需要单独覆盖时传入 `--profile`。
+设置和 App 数据与 `tools/simulator.sh run` 共用该 profile 的持久化目录；传入
+`--instance <名称>` 可使用独立的开发实例。只需要单独运行应用时，可使用
+`tools/simulator.sh product --profile <板型> --installed <包 ID>`。
+`dev.sh` 默认只打包当前目标的 AOT，不附带 `.wasm` 回退文件（包括声明为 `artifact: "both"`
+的组件）；应用中明确声明为
+Wasm-only 的组件仍会保留。需要同时打包 Wasm 时，可直接使用 `tools/app.sh build`。
 
-Device mode independently builds an `esp32s3` package and replaces the App in
-the existing firmware without reflashing it. It starts `pxadb logcat` after
-each deployment and releases that USB Serial/JTAG connection before the next
-update:
+设备模式按 `--board` 选择芯片目标（默认 pai-touch / esp32s3），覆盖安装到现有固件，不会重新烧录固件；部署后默认会显示
+`pxadb logcat`，下一次更新前会自动暂时关闭它以释放 USB Serial/JTAG 连接：
 
 ```sh
 tools/dev.sh device my-app --port /dev/ttyACM0 --baud 2000000 --watch
 ```
 
-Combined build, deployment and runtime output is also written to
-`local/dev-logs/<mode>/<app-id>.log`. This is a fast WASM/AOT reload loop, not
-runtime hot reload, so each source update restarts the App process.
+所有构建、部署和运行器输出同时保存在 `local/dev-logs/<mode>/<app-id>.log`。这是重新加载
+WASM/AOT 应用的快速循环，而非运行时热重载，因此每次代码更新会重启运行环境。
 
 ## PXADB GUI
 
-`tools/pxadb-gui.sh` opens a desktop front end for the same `pxadb` client used
-by the CLI. It discovers USB devices and running product simulators, streams
-device screenshots into a live preview, injects taps, drags and keys, browses
-and transfers files, shows device logs and manages packages. The preview runs
-at roughly 3-4 FPS on USB firmware using device-encoded JPEG and 15-20 FPS on
-the product simulator; drags pause preview captures so input stays responsive.
+`tools/pxadb-gui.sh` 为 CLI 所用的同一个 `pxadb` 客户端提供桌面界面：发现 USB 设备与
+正在运行的产品模拟器，把设备截图流式显示为实时预览，注入点击、拖动和按键，浏览并传输
+文件，显示设备日志，管理 Package。预览在 USB 固件上通过设备端 JPEG 约 3~4 FPS，在产品
+模拟器上约 15~20 FPS；拖动时会暂停截图采集，保证操控响应。
 
 ```sh
 tools/pxadb-gui.sh
@@ -151,57 +145,43 @@ tools/pxadb-gui.sh --port /dev/ttyACM0
 tools/pxadb-gui.sh --simulator pai-touch
 ```
 
-Because PXADB owns the serial port exclusively, close the GUI before using
-`pxadb` or `tools/dev.sh device` on the same port. See
-[PXADB GUI](tools/pxadb-gui/README.md).
+PXADB 独占串口，请在打开 GUI 前关闭正在使用同一端口的 `pxadb` 命令或
+`tools/dev.sh device`。详见 [PXADB GUI](tools/pxadb-gui/README.md)。
 
-## Simulator
+## 模拟器
 
-`tools/simulator.sh` runs the imported SDL/LVGL standard UI simulator with the
-default `generic` profile. Select another workspace profile explicitly:
+`tools/simulator.sh` 启动引入的 SDL/LVGL 标准 UI 模拟器，未指定时使用默认的
+`generic` Profile。其他板子 Profile 显式通过参数选择：
 
 ```sh
 tools/simulator.sh --profile pai-touch
 ```
 
-Supply an external App manifest root with `--app-root <root>`. This UI mode is
-intentionally limited to UI, input and display-profile work; its launcher cards
-do not execute Guest bytecode. For package-level App work, build a desktop
-artifact and run its signed package directory with `product` mode:
+标准 UI 模式运行完整系统；已安装的桌面 Guest 应用可以从启动器打开。目录里只有 manifest 的卡片需要先构建和安装，不能当作应用已经运行的证据。
 
 ```sh
-tools/app.sh build pixel-dungeon --target simulator --source-root local/pxa-apps
-tools/simulator.sh product --profile pai-touch \
-  --package local/app-output/pai-touch/pxa-pixel-dungeon \
-  --publisher-key deps/pxa-system/apps/pxa/.dev-signing/publisher-public.der
+tools/dev.sh sim pixel-dungeon --source-root local/pxa-apps
+# 只运行已安装应用，不显示系统桌面：
+tools/simulator.sh product --profile pai-touch --installed pxa-pixel-dungeon
 ```
 
-Product mode verifies the signature, selects `linux-x86_64` WAMR AOT, and runs
-the Guest through the window, UI, clock, audio and permission host services.
-For persistent desktop installation, start `tools/simulator.sh service start
---profile pai-touch`, install with `pxadb package install <app>.pxa --simulator
-pai-touch`, then launch with `tools/simulator.sh product --installed <app-id>`.
-See [Simulator](simulator/README.md) for details.
+签名和目标选择与真机使用相同的包契约。模拟器用于布局、输入和 Guest 行为验证；硬件驱动、DMA、触控 IC、音频输出延迟与电源仍须在真机验证。详见[模拟器说明](simulator/README.md)。
 
-## Board Contract
+## 板级合约
 
-The board port provides display creation/profile data and optional controls for
-network, volume, brightness, status publication and diagnostics. It is control
-plane only. DMA submit, framebuffer ownership, pixel conversion and PCM frame
-transfer stay in the board component. The pai-touch direct scanout path is an
-example of this separation.
+board port 提供显示创建与显示 Profile，以及可选的网络、音量、亮度、状态发布和诊断
+控制。它只承载控制面：DMA 提交、framebuffer 所有权、像素转换和 PCM 帧传输仍留在
+板级 component 中。pai-touch 的 PXA 直出帧路径就是这种边界的示例。
 
-## Existing Firmware
+## 适配已有固件
 
-Do not move the old board implementation. Add an adapter adjacent to it that
-registers a `pxa_board_port_t`, then call `pxa_integration_start()` after the
-existing LVGL display has been initialized. The adapter owns all references to
-legacy `Board`, UI or product classes; neither `pxa-system` nor the generic
-integration component includes them.
+不要迁移旧的板级实现。在原板子旁增加一个 adapter，注册 `pxa_board_port_t`，并在
+既有 LVGL display 初始化完成后调用 `pxa_integration_start()`。adapter 独占对旧
+`Board`、UI 和产品类的引用；`pxa-system` 与通用 integration component 不会包含
+这些头文件。
 
-## Dependencies
+## 依赖
 
-`deps/pxa-system` is a standalone Git checkout pinned with its WAMR and
-page-manager submodules. The ESP host owns its small WAMR/ESP-IDF declaration
-shim directly. Source and CMake files contain
-no path to the original pai-touch demonstration firmware.
+`deps/pxa-system` 是独立 Git checkout，并固定 WAMR 和 page-manager 子模块。ESP
+host 直接持有很小的 WAMR/ESP-IDF 声明兼容层。host 与板级依赖
+均保存在本工程内，因此源码和 CMake 文件不包含原 pai-touch 演示固件的路径。

@@ -267,3 +267,9 @@ PXA 的 engine ABI 必须覆盖实际装载/调用契约，包括定制 WAMR、r
 - `simulator/desktop/CMakeLists.txt`、产品工作区 `tools/simulator.sh`、`firmware/components/pxadb/src_pxa_service.cc`、PXADB Python 工具。
 
 外部设计依据为 [SemVer](https://semver.org/spec/v2.0.0.html)、[WASI SDK 官方用法](https://github.com/WebAssembly/wasi-sdk/blob/main/README.md)、[WAMR AOT 兼容说明](https://github.com/wasm-micro-runtime/wasm-micro-runtime/blob/main/doc/build_wasm_app.md#aot-compiled-module-compatibility-among-wamr-versions)、[CMake 预构建包集成](https://cmake.org/cmake/help/latest/guide/using-dependencies/index.html)及 [GitHub 不可变发布](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)。本方案依据当前本地源码与既有验证记录，不把外部上游支持列表当作 PXA 实测认证。
+
+## 文档与 GitHub Release 语言
+
+仓库默认首页使用中文 `README.md`，通过页首的 `English` 链接切换 `README.en.md`，英文页链接回中文。GitHub Markdown 不执行 JavaScript，不能可靠地自动按浏览器语言切换；不为此引入外部重定向服务。旧 `README.zh-CN.md` 可保留指向中文首页的入口，避免维护两份重复的中文内容。
+
+所有 GitHub Release 正文使用同一份双语说明：`## 中文` 在前，`## English` 在后。两部分说明相同的安装方法、兼容性、验证与限制。模板见 [release-notes-template.md](release-notes-template.md)。编辑已发布说明只更新文字，不移动 tag、不覆盖发行资产，也不把之后的源码修复描述成原发行二进制已经包含的功能。
