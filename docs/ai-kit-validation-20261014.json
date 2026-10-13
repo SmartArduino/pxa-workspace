@@ -1,0 +1,303 @@
+{
+  "schema": "pxa-ai-kit-validation-1",
+  "date": "2026-10-14",
+  "ai_kit": "0.1.0",
+  "devkit": "0.3.0",
+  "core_major": 2,
+  "targeted_checks_passed": 11,
+  "existing_cli_checks_passed": 6,
+  "skill_format_checks_passed": 4,
+  "independent_development": {
+    "started_utc": "2026-10-13T19:39:00Z",
+    "completed_utc": "2026-10-13T19:47:14Z",
+    "elapsed_seconds": 494,
+    "initial_build_seconds": 12.68,
+    "first_debug_build_seconds": 15.11,
+    "initial_profile_wall_ms": 34189,
+    "interaction_profile_wall_ms": 45006,
+    "injected_taps": 25,
+    "original_interaction_screenshots": 30,
+    "initial_screenshots": 5,
+    "visual_passed_profiles": 5,
+    "remote_server_used": false,
+    "physical_device_used": false,
+    "further_agents_delegated": false
+  },
+  "final_helper_five_profiles": {
+    "schema": "pxa-debug-evidence-1",
+    "runtime_passed": true,
+    "visual_review_required": true,
+    "profiles": [
+      {
+        "name": "pai-touch",
+        "runtime_passed": true,
+        "selector": "pai-touch@pxa-ai-kit-smoke-76b7522e8693",
+        "info": "kind=simulator;package_installer=posix;protocol=2;debug_control=1",
+        "memory": {
+          "available": false,
+          "reason": "pxadb: error: unsupported_simulator_command\npxa: python3 failed (1)"
+        },
+        "verification_wall_ms": 11486
+      },
+      {
+        "name": "sensecap-watcher",
+        "runtime_passed": true,
+        "selector": "sensecap-watcher@pxa-ai-kit-smoke-76b7522e8693",
+        "info": "kind=simulator;package_installer=posix;protocol=2;debug_control=1",
+        "memory": {
+          "available": false,
+          "reason": "pxadb: error: unsupported_simulator_command\npxa: python3 failed (1)"
+        },
+        "verification_wall_ms": 3260
+      },
+      {
+        "name": "esp-mosaico",
+        "runtime_passed": true,
+        "selector": "esp-mosaico@pxa-ai-kit-smoke-76b7522e8693",
+        "info": "kind=simulator;package_installer=posix;protocol=2;debug_control=1",
+        "memory": {
+          "available": false,
+          "reason": "pxadb: error: unsupported_simulator_command\npxa: python3 failed (1)"
+        },
+        "verification_wall_ms": 3267
+      },
+      {
+        "name": "esp32s31-korvo-1",
+        "runtime_passed": true,
+        "selector": "esp32s31-korvo-1@pxa-ai-kit-smoke-76b7522e8693",
+        "info": "kind=simulator;package_installer=posix;protocol=2;debug_control=1",
+        "memory": {
+          "available": false,
+          "reason": "pxadb: error: unsupported_simulator_command\npxa: python3 failed (1)"
+        },
+        "verification_wall_ms": 3269
+      },
+      {
+        "name": "generic",
+        "runtime_passed": true,
+        "selector": "generic@pxa-ai-kit-smoke-76b7522e8693",
+        "info": "kind=simulator;package_installer=posix;protocol=2;debug_control=1",
+        "memory": {
+          "available": false,
+          "reason": "pxadb: error: unsupported_simulator_command\npxa: python3 failed (1)"
+        },
+        "verification_wall_ms": 3297
+      }
+    ],
+    "physical_device_tested": false,
+    "app_id": "pxa-ai-kit-smoke",
+    "headless": true,
+    "ipc_isolated": true,
+    "cli_version": "PXA 0.3.0\n"
+  },
+  "native_codex_agent": {
+    "cli_version": "0.162.1",
+    "custom_role": "pxa_tester",
+    "loaded": true,
+    "delegated": true,
+    "generic_worker_fallback": false,
+    "scope": "readonly role/configuration validation"
+  },
+  "device": {
+    "board": "pai-touch",
+    "port": "/dev/ttyACM2",
+    "baud": 2000000,
+    "visual_sequence": [
+      0,
+      1,
+      0
+    ],
+    "restarted": true,
+    "test_app_removed": true,
+    "firmware_changed": false,
+    "settings_changed": false,
+    "before": {
+      "budget": {
+        "allocation_failures": 0,
+        "denied": 0,
+        "external": 16632,
+        "fixed": 2224,
+        "internal": 27468,
+        "peak_external": 16632,
+        "peak_internal": 27468,
+        "temporary_peak_external": 0,
+        "temporary_peak_internal": 0
+      },
+      "heap": {
+        "psram_free": 6579296,
+        "psram_largest": 6160384,
+        "psram_min": 6138260,
+        "psram_total": 8358572,
+        "sram_free": 55447,
+        "sram_largest": 19456,
+        "sram_min": 17824,
+        "sram_total": 320491
+      },
+      "kinds": {
+        "audio": {
+          "external": 16392,
+          "internal": 0
+        },
+        "frame": {
+          "external": 0,
+          "internal": 0
+        },
+        "image": {
+          "external": 0,
+          "internal": 0
+        },
+        "metadata": {
+          "external": 240,
+          "internal": 27468
+        },
+        "raster": {
+          "external": 0,
+          "internal": 0
+        },
+        "temporary": {
+          "external": 0,
+          "internal": 0
+        }
+      },
+      "surface": {
+        "frame": 0,
+        "mailbox": 0,
+        "peak_total": 0,
+        "probe": 0,
+        "scratch": 0
+      }
+    },
+    "active": {
+      "budget": {
+        "allocation_failures": 0,
+        "denied": 0,
+        "external": 16630,
+        "fixed": 2224,
+        "internal": 27468,
+        "peak_external": 16632,
+        "peak_internal": 27468,
+        "temporary_peak_external": 0,
+        "temporary_peak_internal": 0
+      },
+      "heap": {
+        "psram_free": 6579696,
+        "psram_largest": 6160384,
+        "psram_min": 6073068,
+        "psram_total": 8358572,
+        "sram_free": 55447,
+        "sram_largest": 19456,
+        "sram_min": 17824,
+        "sram_total": 320491
+      },
+      "kinds": {
+        "audio": {
+          "external": 16392,
+          "internal": 0
+        },
+        "frame": {
+          "external": 0,
+          "internal": 0
+        },
+        "image": {
+          "external": 0,
+          "internal": 0
+        },
+        "metadata": {
+          "external": 238,
+          "internal": 27468
+        },
+        "raster": {
+          "external": 0,
+          "internal": 0
+        },
+        "temporary": {
+          "external": 0,
+          "internal": 0
+        }
+      },
+      "surface": {
+        "frame": 0,
+        "mailbox": 0,
+        "peak_total": 0,
+        "probe": 0,
+        "scratch": 0
+      }
+    },
+    "after": {
+      "budget": {
+        "allocation_failures": 0,
+        "denied": 0,
+        "external": 16630,
+        "fixed": 2224,
+        "internal": 27468,
+        "peak_external": 16632,
+        "peak_internal": 27468,
+        "temporary_peak_external": 0,
+        "temporary_peak_internal": 0
+      },
+      "heap": {
+        "psram_free": 6579680,
+        "psram_largest": 6160384,
+        "psram_min": 6073068,
+        "psram_total": 8358572,
+        "sram_free": 55447,
+        "sram_largest": 19456,
+        "sram_min": 17824,
+        "sram_total": 320491
+      },
+      "kinds": {
+        "audio": {
+          "external": 16392,
+          "internal": 0
+        },
+        "frame": {
+          "external": 0,
+          "internal": 0
+        },
+        "image": {
+          "external": 0,
+          "internal": 0
+        },
+        "metadata": {
+          "external": 238,
+          "internal": 27468
+        },
+        "raster": {
+          "external": 0,
+          "internal": 0
+        },
+        "temporary": {
+          "external": 0,
+          "internal": 0
+        }
+      },
+      "surface": {
+        "frame": 0,
+        "mailbox": 0,
+        "peak_total": 0,
+        "probe": 0,
+        "scratch": 0
+      }
+    },
+    "memory_scope": "whole-device snapshots and historical minima; not per-run true peaks",
+    "final_state": "system home with settings only, confirmed after cleanup reboot"
+  },
+  "source_theme": {
+    "profile_arguments_tested": true,
+    "released_native_with_source_profile_arguments_visually_tested": true,
+    "existing_devkit_0_3_0_assets_modified": false
+  },
+  "device_ai_runtime_added_bytes": 0,
+  "game_fps_or_physical_latency_measured": false,
+  "final_archive_local_verification": {
+    "reproducible_archive": true,
+    "trusted_signature_verified": true,
+    "checksums_verified": true,
+    "stdlib_isolated_install": true,
+    "idempotent_install": true,
+    "clean_remove": true,
+    "size": 19517,
+    "sha256": "6478e1b58d190a71569247b2a282a0f81ec648c9769aa1fa22e67bda4b3e5d21"
+  },
+  "final_archive_example_runtime_passed": true
+}

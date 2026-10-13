@@ -1,0 +1,32 @@
+{
+  "build": {
+    "linear_memory": {
+      "maximum_bytes": 1048576,
+      "pinned": false
+    },
+    "system": "cmake"
+  },
+  "components": [
+    {
+      "id": "main",
+      "kind": "ui",
+      "services": [
+        "clock",
+        "ui"
+      ],
+      "wasi": {
+        "features": [
+          "monotonic-clock",
+          "wall-clock"
+        ],
+        "libc": "wasi-libc",
+        "version": "preview1"
+      }
+    }
+  ],
+  "format": "pxa-package-source-0.1",
+  "id": "independent.chinese.counter",
+  "name": "中文计数器",
+  "release_sequence": 1,
+  "version": "0.1.0"
+}

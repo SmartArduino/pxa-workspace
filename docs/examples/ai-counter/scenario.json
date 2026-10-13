@@ -1,0 +1,387 @@
+{
+  "pai-touch": [
+    {
+      "name": "first-tap",
+      "action": "tap",
+      "x": 85,
+      "y": 160
+    },
+    {
+      "name": "first-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "first-count-1",
+      "action": "screenshot"
+    },
+    {
+      "name": "second-tap",
+      "action": "tap",
+      "x": 85,
+      "y": 160
+    },
+    {
+      "name": "second-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "second-count-2",
+      "action": "screenshot"
+    },
+    {
+      "name": "reset-tap",
+      "action": "tap",
+      "x": 211,
+      "y": 160
+    },
+    {
+      "name": "reset-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "reset-count-0",
+      "action": "screenshot"
+    },
+    {
+      "name": "zero-again-tap",
+      "action": "tap",
+      "x": 211,
+      "y": 160
+    },
+    {
+      "name": "zero-again-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "zero-again-count-0",
+      "action": "screenshot"
+    },
+    {
+      "name": "restart-tap",
+      "action": "tap",
+      "x": 85,
+      "y": 160
+    },
+    {
+      "name": "restart-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "restart-count-1",
+      "action": "screenshot"
+    }
+  ],
+  "sensecap-watcher": [
+    {
+      "name": "first-tap",
+      "action": "tap",
+      "x": 138,
+      "y": 276
+    },
+    {
+      "name": "first-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "first-count-1",
+      "action": "screenshot"
+    },
+    {
+      "name": "second-tap",
+      "action": "tap",
+      "x": 138,
+      "y": 276
+    },
+    {
+      "name": "second-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "second-count-2",
+      "action": "screenshot"
+    },
+    {
+      "name": "reset-tap",
+      "action": "tap",
+      "x": 275,
+      "y": 276
+    },
+    {
+      "name": "reset-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "reset-count-0",
+      "action": "screenshot"
+    },
+    {
+      "name": "zero-again-tap",
+      "action": "tap",
+      "x": 275,
+      "y": 276
+    },
+    {
+      "name": "zero-again-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "zero-again-count-0",
+      "action": "screenshot"
+    },
+    {
+      "name": "restart-tap",
+      "action": "tap",
+      "x": 138,
+      "y": 276
+    },
+    {
+      "name": "restart-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "restart-count-1",
+      "action": "screenshot"
+    }
+  ],
+  "esp-mosaico": [
+    {
+      "name": "first-tap",
+      "action": "tap",
+      "x": 132,
+      "y": 315
+    },
+    {
+      "name": "first-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "first-count-1",
+      "action": "screenshot"
+    },
+    {
+      "name": "second-tap",
+      "action": "tap",
+      "x": 132,
+      "y": 315
+    },
+    {
+      "name": "second-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "second-count-2",
+      "action": "screenshot"
+    },
+    {
+      "name": "reset-tap",
+      "action": "tap",
+      "x": 348,
+      "y": 315
+    },
+    {
+      "name": "reset-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "reset-count-0",
+      "action": "screenshot"
+    },
+    {
+      "name": "zero-again-tap",
+      "action": "tap",
+      "x": 348,
+      "y": 315
+    },
+    {
+      "name": "zero-again-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "zero-again-count-0",
+      "action": "screenshot"
+    },
+    {
+      "name": "restart-tap",
+      "action": "tap",
+      "x": 132,
+      "y": 315
+    },
+    {
+      "name": "restart-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "restart-count-1",
+      "action": "screenshot"
+    }
+  ],
+  "esp32s31-korvo-1": [
+    {
+      "name": "first-tap",
+      "action": "tap",
+      "x": 290,
+      "y": 292
+    },
+    {
+      "name": "first-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "first-count-1",
+      "action": "screenshot"
+    },
+    {
+      "name": "second-tap",
+      "action": "tap",
+      "x": 290,
+      "y": 292
+    },
+    {
+      "name": "second-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "second-count-2",
+      "action": "screenshot"
+    },
+    {
+      "name": "reset-tap",
+      "action": "tap",
+      "x": 510,
+      "y": 292
+    },
+    {
+      "name": "reset-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "reset-count-0",
+      "action": "screenshot"
+    },
+    {
+      "name": "zero-again-tap",
+      "action": "tap",
+      "x": 510,
+      "y": 292
+    },
+    {
+      "name": "zero-again-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "zero-again-count-0",
+      "action": "screenshot"
+    },
+    {
+      "name": "restart-tap",
+      "action": "tap",
+      "x": 290,
+      "y": 292
+    },
+    {
+      "name": "restart-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "restart-count-1",
+      "action": "screenshot"
+    }
+  ],
+  "generic": [
+    {
+      "name": "first-tap",
+      "action": "tap",
+      "x": 113,
+      "y": 462
+    },
+    {
+      "name": "first-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "first-count-1",
+      "action": "screenshot"
+    },
+    {
+      "name": "second-tap",
+      "action": "tap",
+      "x": 113,
+      "y": 462
+    },
+    {
+      "name": "second-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "second-count-2",
+      "action": "screenshot"
+    },
+    {
+      "name": "reset-tap",
+      "action": "tap",
+      "x": 277,
+      "y": 462
+    },
+    {
+      "name": "reset-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "reset-count-0",
+      "action": "screenshot"
+    },
+    {
+      "name": "zero-again-tap",
+      "action": "tap",
+      "x": 277,
+      "y": 462
+    },
+    {
+      "name": "zero-again-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "zero-again-count-0",
+      "action": "screenshot"
+    },
+    {
+      "name": "restart-tap",
+      "action": "tap",
+      "x": 113,
+      "y": 462
+    },
+    {
+      "name": "restart-settle",
+      "action": "wait",
+      "ms": 250
+    },
+    {
+      "name": "restart-count-1",
+      "action": "screenshot"
+    }
+  ]
+}
