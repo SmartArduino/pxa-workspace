@@ -110,7 +110,7 @@ tools/dev.sh sim my-app --watch
 # Or without a local catalog:
 tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
 tools/dev.sh sim --board sensecap-watcher pixel-dungeon
-tools/dev.sh sim --board esp-mosaico voxel-craft-cpp
+tools/dev.sh sim --board esp-mosaico voxel-craft
 ```
 
 Simulator mode selects the display profile matching `--board` by default;
