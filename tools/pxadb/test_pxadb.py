@@ -279,6 +279,41 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         self.assertIn("FSDATA 0 YWI=", writes[1])
         self.assertIn("FSDATA 2 Yw==", writes[2])
 
+    def test_corrupted_upload_restarts_with_smaller_chunks_and_same_digest(self) -> None:
+        payload = b"abcd"
+        client = fake_client([
+            encoded_frame(1, "READY", "4"),
+            encoded_frame(2, "ERR", "invalid_file_chunk"),
+            encoded_frame(3, "READY", "4"),
+            encoded_frame(4, "READY", "2"),
+            encoded_frame(5, "OK", ""),
+        ])
+        client.device_info = "max_chunk=4;fs_offset=1"
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "payload.bin"
+            source.write_bytes(payload)
+            pxadb.NormalFsClient(client).put(source, "pxa-state/inbox/payload.bin")
+        writes = [entry.decode("ascii").split(" ", 2)[2] for entry in client.serial.writes]
+        self.assertEqual(writes[0], writes[2])
+        self.assertIn(hashlib.sha256(payload).hexdigest(), writes[2])
+        self.assertEqual(writes[3:], ["FSDATA 0 YWI=\n", "FSDATA 2 Y2Q=\n"])
+
+    def test_upload_offset_rejections_resume_at_confirmed_position(self) -> None:
+        for reason in ("invalid_offset", "offset_mismatch"):
+            with self.subTest(reason=reason):
+                client = fake_client([
+                    encoded_frame(1, "READY", "3"),
+                    encoded_frame(2, "ERR", reason),
+                    encoded_frame(3, "READY", "1"),
+                    encoded_frame(4, "OK", ""),
+                ])
+                client.device_info = "max_chunk=2;fs_offset=1"
+                with tempfile.TemporaryDirectory() as directory:
+                    source = pathlib.Path(directory) / "payload.bin"
+                    source.write_bytes(b"abc")
+                    pxadb.NormalFsClient(client).put(source, "pxa-state/inbox/payload.bin")
+                self.assertIn(b"FSDATA 2 Yw==", client.serial.writes[-1])
+
     def test_upload_write_rejection_is_not_retried(self) -> None:
         client = fake_client([
             encoded_frame(1, "READY", "3"),

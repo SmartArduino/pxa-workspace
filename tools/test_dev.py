@@ -82,23 +82,23 @@ class SimulatorProfileTest(unittest.TestCase):
     def test_board_selects_matching_profile(self) -> None:
         for board in ("sensecap-watcher", "esp-mosaico"):
             with self.subTest(board=board), \
-                    mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon-cpp",
+                    mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon",
                                                      "--board", board]):
                 args = dev.parse_arguments()
                 self.assertEqual(args.profile, board)
 
     def test_explicit_profile_overrides_board(self) -> None:
-        with mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon-cpp",
+        with mock.patch.object(sys, "argv", ["dev.sh", "sim", "pixel-dungeon",
                                              "--board", "sensecap-watcher",
                                              "--profile", "pai-touch"]):
             args = dev.parse_arguments()
         self.assertEqual(args.profile, "pai-touch")
 
     def test_instance_is_only_supported_for_simulators(self) -> None:
-        with mock.patch.object(sys, "argv", ["dev.sh", "sim", "voxel-craft-cpp",
+        with mock.patch.object(sys, "argv", ["dev.sh", "sim", "voxel-craft",
                                              "--instance", "dpi-qa"]):
             self.assertEqual(dev.parse_arguments().instance, "dpi-qa")
-        with mock.patch.object(sys, "argv", ["dev.sh", "device", "voxel-craft-cpp",
+        with mock.patch.object(sys, "argv", ["dev.sh", "device", "voxel-craft",
                                              "--instance", "dpi-qa"]), \
                 mock.patch.object(sys, "stderr"), self.assertRaises(SystemExit):
             dev.parse_arguments()
@@ -107,7 +107,7 @@ class SimulatorProfileTest(unittest.TestCase):
 class SimulatorLaunchTest(unittest.TestCase):
     def setUp(self) -> None:
         self.args = SimpleNamespace(
-            mode="sim", app_id="voxel-craft-cpp", board="esp-mosaico",
+            mode="sim", app_id="voxel-craft", board="esp-mosaico",
             profile="esp-mosaico", instance=None,
         )
         self.developer = dev.Developer(self.args, mock.Mock(), pathlib.Path("."))

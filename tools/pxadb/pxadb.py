@@ -1132,11 +1132,22 @@ class NormalFsClient:
                         )
                     terminal = frames[-1]
                 except PxaDbError as error:
-                    if isinstance(error, PxaDbRejectedError) and str(error) != "invalid_offset":
+                    reason = str(error)
+                    if isinstance(error, PxaDbRejectedError) and reason not in {
+                        "invalid_offset", "offset_mismatch", "invalid_file_chunk"
+                    }:
                         raise
                     recoveries += 1
                     if recoveries >= 3:
                         raise
+                    if reason == "invalid_file_chunk" and not binary_transfer:
+                        # A corrupted/truncated base64 line aborts the device
+                        # upload. Restart with smaller UART bursts; the full
+                        # file digest still gates acceptance of every retry.
+                        chunk_size = max(1, chunk_size // 2)
+                    print(f"upload recovery {recoveries}/2: {reason}; "
+                          f"confirming offset, chunk={chunk_size}",
+                          file=sys.stderr, flush=True)
                     # The digest identifies an upload. A new device resumes at
                     # its confirmed offset; legacy firmware restarts safely.
                     terminal = begin_upload()

@@ -34,6 +34,12 @@ bridges. Unknown ports keep the conservative 64-byte default. Set
 configured for a non-default baud rate also require `--baud`, for example
 `--baud 2000000`.
 
+Interrupted offset uploads resume at the device-confirmed position. A malformed
+serial chunk restarts the digest-checked upload with smaller bursts, within the
+same bounded retry limit; storage failures and package validation failures are
+reported immediately. On a noisy high-speed UART, `PXADB_UART_UPLOAD_CHUNK=256`
+can also select smaller bursts from the start.
+
 Firmware with the `memory` capability provides an on-demand diagnostic
 snapshot: `pxadb memory --port /dev/ttyACM0` (add `--baud 2000000` for Korvo).
 The JSON separates ESP heap-capability totals/free/minimum free from PXA's

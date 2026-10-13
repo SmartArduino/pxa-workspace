@@ -53,8 +53,8 @@ def main():
     args = parser.parse_args()
     if args.warmup < 0 or not 0 < args.seconds <= 30 or args.repeat < 1 or args.minimum_warm_frames < 0:
         parser.error("warmup >= 0, 0 < seconds <= 30, repeat >= 1 required")
-    if args.pixel_search and (args.seconds < 4 or args.menu_tap or args.app not in
-                             ("pxa-pixel-dungeon", "pxa-pixel-dungeon-cpp")):
+    if args.pixel_search and (args.seconds < 4 or args.menu_tap or
+                             args.app not in ("pxa-pixel-dungeon", "pxa-pixel-dungeon-reference")):
         parser.error("--pixel-search requires a Pixel package and >= 4 seconds, without --menu-tap")
     if args.hold_pointer and (args.menu_tap or args.pixel_search):
         parser.error("--hold-pointer cannot be combined with --menu-tap or --pixel-search")
