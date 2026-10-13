@@ -28,12 +28,6 @@
 namespace {
 constexpr char kTag[] = "korvo_hw";
 constexpr int kTouchPollMs = 6;
-constexpr int64_t kTouchReleaseTimeoutUs = 150 * 1000;
-constexpr uint16_t kGt1151ReadXyRegister = 0x814E;
-constexpr uint8_t kGt1151StatusDataReady = 0x80;
-constexpr uint8_t kGt1151MaxHardwarePoints = 10;
-constexpr size_t kGt1151RecordBytes = 8;
-constexpr size_t kGt1151ReportOverheadBytes = 3;
 constexpr size_t kFrameBufferBytes =
     KORVO_DISPLAY_WIDTH * KORVO_DISPLAY_HEIGHT * sizeof(uint16_t);
 constexpr std::array<gpio_num_t, 16> kRgbDataPins = {
@@ -770,13 +764,13 @@ bool Esp32S31Korvo1Hardware::OnFrameBufferComplete(
 bool Esp32S31Korvo1Hardware::InitializeTouch() {
     const esp_lcd_panel_io_i2c_config_t io_config = {
         .dev_addr = ESP_LCD_TOUCH_IO_I2C_GT1151_ADDRESS,
-        .scl_speed_hz = 100000,
+        .scl_speed_hz = 400000,
         .control_phase_bytes = 1,
         .dc_bit_offset = 0,
         .lcd_cmd_bits = 16,
         .lcd_param_bits = 0,
         .flags = {.disable_control_phase = true},
-        .transaction_timeout_ms = 100,
+        .transaction_timeout_ms = 20,
     };
     if (esp_lcd_new_panel_io_i2c(i2c_bus_, &io_config, &touch_io_) != ESP_OK) return false;
     const esp_lcd_touch_config_t touch_config = {
@@ -826,6 +820,7 @@ void Esp32S31Korvo1Hardware::TouchReadCallback(lv_indev_t* indev,
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
+    data->timestamp = lv_tick_get();
 
     // All indevs share one controller report. The first callback in each
     // polling window refreshes that snapshot; the remaining callbacks merely
@@ -835,114 +830,84 @@ void Esp32S31Korvo1Hardware::TouchReadCallback(lv_indev_t* indev,
         hardware->PollTouchController();
     }
     portENTER_CRITICAL(&hardware->touch_lock_);
-    data->point = hardware->touch_slot_point_[slot];
-    data->state = hardware->touch_slot_pressed_[slot]
-                      ? LV_INDEV_STATE_PRESSED
-                      : LV_INDEV_STATE_RELEASED;
+    const auto& contact = hardware->touch_state_[slot];
+    data->point = {contact.x, contact.y};
+    data->state = contact.pressed ? LV_INDEV_STATE_PRESSED
+                                 : LV_INDEV_STATE_RELEASED;
     portEXIT_CRITICAL(&hardware->touch_lock_);
+#if PXA_KORVO_TOUCH_TRACE
+    if (data->state != lv_indev_get_state(indev)) {
+        ESP_LOGI(kTag, "physical touch slot=%d state=%s xy=%ld,%ld",
+                 slot, data->state == LV_INDEV_STATE_PRESSED ? "down" : "up",
+                 static_cast<long>(data->point.x), static_cast<long>(data->point.y));
+    }
+#endif
 }
 
 void Esp32S31Korvo1Hardware::PollTouchController() {
-    uint8_t status = 0;
     const int64_t now_us = esp_timer_get_time();
     touch_last_poll_us_ = now_us;
-    const auto expire_stale_contacts = [this, now_us] {
-        portENTER_CRITICAL(&touch_lock_);
-        if (touch_last_report_us_ != 0 &&
-            now_us - touch_last_report_us_ >= kTouchReleaseTimeoutUs) {
-            for (int slot = 0; slot < kTouchMaxPointers; ++slot) {
-                touch_slot_pressed_[slot] = false;
-            }
-        }
-        portEXIT_CRITICAL(&touch_lock_);
+    esp_lcd_touch_point_data_t points[kTouchMaxPointers] = {};
+    uint8_t count = 0;
+    uint8_t status = 0;
+    const auto report = ReadKorvoTouchReport(status,
+        [this](uint8_t& value) {
+            return touch_io_ != nullptr &&
+                esp_lcd_panel_io_rx_param(touch_io_, 0x814e, &value,
+                                           sizeof(value)) == ESP_OK;
+        },
+        [this, &points, &count, &status] {
+            return touch_ != nullptr && esp_lcd_touch_read_data(touch_) == ESP_OK &&
+                esp_lcd_touch_get_data(touch_, points, &count,
+                                       kTouchMaxPointers) == ESP_OK &&
+                count == std::min<unsigned>(status & 0x0f, kTouchMaxPointers);
+        });
+    portENTER_CRITICAL(&touch_lock_);
+    if (report == KorvoTouchReport::kReady) {
+        touch_state_.Update(std::span<const esp_lcd_touch_point_data_t>(points, count),
+                            now_us, KORVO_DISPLAY_WIDTH, KORVO_DISPLAY_HEIGHT);
+    } else if (report == KorvoTouchReport::kNone) {
+        touch_state_.NoReport(now_us);
+    } else {
+        touch_state_.ReadFailed(now_us);
+    }
+    portEXIT_CRITICAL(&touch_lock_);
+    // Start the next poll window after I2C completes, so a slow transfer does
+    // not make the next pointer consume a different controller snapshot.
+    touch_last_poll_us_ = esp_timer_get_time();
+#if PXA_KORVO_TOUCH_TRACE
+    struct Trace {
+        uint32_t polls = 0, ready = 0, idle = 0, errors = 0;
+        uint32_t total_us = 0, max_us = 0;
+        int64_t started_us = 0;
+        uint8_t contacts = 0;
     };
-    if (touch_io_ == nullptr ||
-        esp_lcd_panel_io_rx_param(touch_io_, kGt1151ReadXyRegister, &status,
-                                  sizeof(status)) != ESP_OK) {
-        expire_stale_contacts();
-        return;
+    static Trace trace;
+    const uint32_t duration_us = touch_last_poll_us_ - now_us;
+    ++trace.polls;
+    trace.ready += report == KorvoTouchReport::kReady;
+    trace.idle += report == KorvoTouchReport::kNone;
+    trace.errors += report == KorvoTouchReport::kError;
+    trace.total_us += duration_us;
+    trace.max_us = std::max(trace.max_us, duration_us);
+    if (report == KorvoTouchReport::kReady && count != trace.contacts) {
+        trace.contacts = count;
+        ESP_LOGI(kTag, "touch report status=%02x contacts=%u", status, count);
     }
-
-    const uint8_t reported_count = status & 0x0f;
-    uint8_t clear = 0;
-    // The GT1151 driver treats the low nibble as the contact count without
-    // requiring bit 7, so do not discard a nonzero count based on that bit.
-    // A zero count is not necessarily a release: after acknowledging a
-    // report the controller may have no newer data while a finger stays down.
-    if (reported_count == 0 &&
-        (status & kGt1151StatusDataReady) == 0) {
-        expire_stale_contacts();
-        return;
+    if (touch_last_poll_us_ - trace.started_us >= 1000000) {
+        ESP_LOGI(kTag, "touch polls=%lu ready=%lu idle=%lu errors=%lu read_us=%lu/%lu",
+                 static_cast<unsigned long>(trace.polls),
+                 static_cast<unsigned long>(trace.ready),
+                 static_cast<unsigned long>(trace.idle),
+                 static_cast<unsigned long>(trace.errors),
+                 static_cast<unsigned long>(trace.total_us / trace.polls),
+                 static_cast<unsigned long>(trace.max_us));
+        const auto contacts = trace.contacts;
+        trace = {};
+        trace.started_us = touch_last_poll_us_;
+        trace.contacts = contacts;
     }
-    if (reported_count == 0 || reported_count > kGt1151MaxHardwarePoints) {
-        (void)esp_lcd_panel_io_tx_param(touch_io_, kGt1151ReadXyRegister,
-                                        &clear, sizeof(clear));
-        portENTER_CRITICAL(&touch_lock_);
-        for (int slot = 0; slot < kTouchMaxPointers; ++slot) {
-            touch_slot_pressed_[slot] = false;
-        }
-        portEXIT_CRITICAL(&touch_lock_);
-        return;
-    }
-
-    {
-        constexpr size_t kMaxReportBytes =
-            kGt1151ReportOverheadBytes +
-            kGt1151RecordBytes * kGt1151MaxHardwarePoints;
-        uint8_t report[kMaxReportBytes] = {};
-        const size_t report_size = kGt1151ReportOverheadBytes +
-                                   kGt1151RecordBytes * reported_count;
-        if (esp_lcd_panel_io_rx_param(touch_io_, kGt1151ReadXyRegister,
-                                      report, report_size) != ESP_OK) {
-            expire_stale_contacts();
-            return;
-        }
-        (void)esp_lcd_panel_io_tx_param(touch_io_, kGt1151ReadXyRegister,
-                                        &clear, sizeof(clear));
-        uint8_t checksum = 0;
-        for (size_t i = 0; i < report_size; ++i) checksum += report[i];
-        if (checksum != 0) {
-            expire_stale_contacts();
-            return;
-        }
-
-        bool slot_seen[kTouchMaxPointers] = {};
-        portENTER_CRITICAL(&touch_lock_);
-        for (uint8_t point = 0; point < reported_count; ++point) {
-            const uint8_t* record = report + 1 + point * kGt1151RecordBytes;
-            const uint8_t track_id = record[0] & 0x0f;
-            int slot = -1;
-            for (int candidate = 0; candidate < kTouchMaxPointers;
-                 ++candidate) {
-                if (touch_slot_pressed_[candidate] &&
-                    !slot_seen[candidate] &&
-                    touch_slot_id_[candidate] == track_id) {
-                    slot = candidate;
-                    break;
-                }
-            }
-            for (int candidate = 0; slot < 0 && candidate < kTouchMaxPointers;
-                 ++candidate) {
-                if (!touch_slot_pressed_[candidate] && !slot_seen[candidate]) {
-                    slot = candidate;
-                    break;
-                }
-            }
-            if (slot < 0) continue;
-            slot_seen[slot] = true;
-            touch_slot_pressed_[slot] = true;
-            touch_slot_id_[slot] = track_id;
-            touch_slot_point_[slot].x =
-                static_cast<int32_t>(record[1] | (record[2] << 8));
-            touch_slot_point_[slot].y =
-                static_cast<int32_t>(record[3] | (record[4] << 8));
-        }
-        for (int slot = 0; slot < kTouchMaxPointers; ++slot) {
-            if (!slot_seen[slot]) touch_slot_pressed_[slot] = false;
-        }
-        touch_last_report_us_ = now_us;
-        portEXIT_CRITICAL(&touch_lock_);
-    }
+#endif
 }
 
 void Esp32S31Korvo1Hardware::ReadInjectedPointer(lv_indev_t* indev,

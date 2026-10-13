@@ -19,6 +19,7 @@
 #include <pxadb/pxadb_service.h>
 
 #include "esp32s31_korvo_1_audio.h"
+#include "esp32s31_korvo_1_touch_state.h"
 
 struct pxsys_standard_system;
 typedef struct pxsys_standard_system pxsys_standard_system_t;
@@ -96,10 +97,7 @@ private:
     std::atomic<uint16_t> injected_pointer_y_{0};
     std::atomic<bool> injected_pointer_pressed_{false};
     portMUX_TYPE touch_lock_ = portMUX_INITIALIZER_UNLOCKED;
-    bool touch_slot_pressed_[kTouchMaxPointers] = {};
-    uint8_t touch_slot_id_[kTouchMaxPointers] = {};
-    lv_point_t touch_slot_point_[kTouchMaxPointers] = {};
-    int64_t touch_last_report_us_ = 0;
+    KorvoTouchState<kTouchMaxPointers> touch_state_;
     int64_t touch_last_poll_us_ = 0;
     esp_lv_decoder_handle_t image_decoder_ = nullptr;
     lv_display_t* display_ = nullptr;

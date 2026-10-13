@@ -24,6 +24,7 @@ run_logged core-configure cmake -S "$pxa_root/libpxa" -B "$test_root/core" \
 run_logged core-build cmake --build "$test_root/core" -j "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
 run_logged core-test ctest --test-dir "$test_root/core" --output-on-failure
 run_logged esp-host-test env PXA_TEST_SANITIZERS=1 bash "$project_root/firmware/components/pxa/tests/test_host.sh"
+run_logged korvo-touch-test bash "$project_root/firmware/boards/esp32s31-korvo-1/tests/test_host.sh"
 run_logged pxadb-input-test bash "$project_root/tools/test-pxadb-input.sh"
 run_logged spec-test python3 "$pxa_root/spec/draft/tools/test.py"
 run_logged package-test bash "$pxa_root/tools/package/test_package_tool.sh"

@@ -32,6 +32,11 @@ idf_component_register(
         pxa_system_reference_ui
         pxa_system_standard)
 
+option(PXA_KORVO_TOUCH_TRACE "Log physical touch reports and edges for device verification" OFF)
+if(PXA_KORVO_TOUCH_TRACE)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_KORVO_TOUCH_TRACE=1)
+endif()
+
 # esp_lv_decoder includes LVGL's private PPA declarations when LV_USE_PPA is
 # enabled, so its standalone decoder target also needs the PPA include path.
 if(CONFIG_LV_USE_PPA AND TARGET lvgl_docoder_lib)

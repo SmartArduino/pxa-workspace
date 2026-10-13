@@ -6,10 +6,22 @@ the ES8389 speaker codec over I2S0. It enables VSYNC-synchronized direct
 double-buffer scanout, two LVGL software renderers, Wi-Fi and volume controls.
 GT1151 contacts are exposed as five independent LVGL pointer devices, so PXA
 apps and games receive stable `pointer_id` values for simultaneous touches.
-The poller follows the GT1151 driver's low-nibble contact count even when the
-status ready bit is clear. An empty status keeps the last contact briefly until
-a release report or the 150 ms stale-contact timeout; discarding nonzero counts
-solely on the ready bit can make physical touch appear unresponsive.
+The poller checks the GT1x data-ready bit before using the GT1151 driver for
+report reads, checksums and acknowledgements. An empty, unready mailbox keeps
+the previous contacts and is never acknowledged; a ready zero-contact report
+releases immediately. Only communication errors use the bounded 150 ms timeout,
+measured from the last healthy read, including polls without a new report.
+Touch I2C uses the official board profile's 400 kHz rate and a 20 ms transaction
+timeout. Pointer callbacks share a snapshot; the next poll window starts after
+the transfer finishes so a slow read does not immediately cause another read.
+Controller report reordering keeps existing pointer IDs stable; duplicate IDs
+are ignored. Out-of-bounds coordinates preserve a known contact's last valid
+position instead of generating a false release. The state uses fixed storage.
+Run `bash firmware/boards/esp32s31-korvo-1/tests/test_host.sh` for touch-state
+ASan/UBSan regression checks. To capture physical touch edges, build with
+`-DPXA_KORVO_TOUCH_TRACE=ON`; it records report counts, idle polls, errors, read
+timing and physical pointer edges. It is off by default and excludes injected
+input. See [`docs/korvo-touch-stability-20261013.zh-CN.md`](../../../docs/korvo-touch-stability-20261013.zh-CN.md).
 Build it with:
 
 ```sh
@@ -17,9 +29,15 @@ tools/firmware.sh esp32s31-korvo-1 build
 ```
 
 Use `/dev/ttyUSB0` to flash or monitor the connected board.
-Early boot logs use the IDF console baud rate (currently 115200); PXADB switches
-the same UART to 2000000 after it starts. Use the appropriate baud rate for the
-phase being diagnosed.
+PXADB uses 2000000 baud. Check the generated console configuration when
+diagnosing early boot: ESP-IDF's default UART choice forces 115200 baud even
+if the defaults request 2000000; PXADB switches the UART after initialization.
+To update firmware while preserving installed
+apps, fonts and data:
+
+```sh
+tools/firmware.sh esp32s31-korvo-1 app-flash --port /dev/ttyUSB0 --baud 2000000
+```
 
 Create the factory `pxa_data` image with the CJK system font included:
 
