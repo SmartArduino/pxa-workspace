@@ -1,9 +1,22 @@
 # ESP32-S31-Korvo-1
 
 This ESP-IDF 6.2 board profile targets the RISC-V `esp32s31`. It configures
-the Korvo-1 800x480 RGB565 double framebuffer, GT1151 touch over I2C0 and
+the Korvo-1 800x480 RGB565 triple framebuffer, GT1151 touch over I2C0 and
 the ES8389 speaker codec over I2S0. It enables VSYNC-synchronized direct
-double-buffer scanout, two LVGL software renderers, Wi-Fi and volume controls.
+triple-buffer scanout, two LVGL software renderers, Wi-Fi and volume controls.
+The measured active display area is 9.5 x 5.5 cm. Its diagonal pixel density
+is approximately 216 DPI; both the board and simulator publish this density
+to the system UI and PXA apps (1.35 pixels per 160-DPI reference unit).
+The DAC uses three 320-frame I2S DMA blocks at 16 kHz, paced by the device;
+the unused microphone channel is not allocated. Audio diagnostics report actual
+nonzero DMA completions and the first PCM-to-DMA-block completion interval.
+That interval excludes Guest dispatch and is not an acoustic latency measurement.
+Performance builds use O3 for the portable rasterizer. The measured 314-byte
+depth/texture span kernel is placed in IRAM through an IDF linker fragment;
+other boards default to mapped code. Set `-DPXA_RASTER_SPAN_IRAM=OFF` in
+`idf.py` to compare placement. The complete firmware, display/input telemetry,
+heap-local peaks and cross-board validation are recorded in
+[`docs/performance/esp32s31-korvo-1-20261013.zh-CN.md`](../../../docs/performance/esp32s31-korvo-1-20261013.zh-CN.md).
 GT1151 contacts are exposed as five independent LVGL pointer devices, so PXA
 apps and games receive stable `pointer_id` values for simultaneous touches.
 The poller checks the GT1x data-ready bit before using the GT1151 driver for

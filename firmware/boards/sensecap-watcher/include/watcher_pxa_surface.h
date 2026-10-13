@@ -24,6 +24,11 @@ bool Install(lv_display_t* display);
 // the LVGL task, after LVGL rendered the area and before the area is handed to
 // the panel, so the alpha plane and the Surface lease stay immutable for the
 // whole copy.
-void ComposeFlushArea(const lv_area_t* area, uint8_t* pixels);
+struct ComposedFrameInfo {
+    uint64_t frame_id = 0;
+    uint64_t input_timestamp_us = 0;
+    uint32_t raster_ready_tick_us = 0;
+};
+ComposedFrameInfo ComposeFlushArea(const lv_area_t* area, uint8_t* pixels);
 
 }  // namespace watcher_pxa_surface

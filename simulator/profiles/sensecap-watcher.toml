@@ -1,6 +1,7 @@
 [desktop]
 width = 412
 height = 412
+density_dpi = 284
 # Round 1.45" SenseCAP Watcher panel; the safe area is the inscribed square.
 round = true
 safe_insets = [60, 60, 60, 60]

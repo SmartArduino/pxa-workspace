@@ -15,6 +15,7 @@
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_surface_transform.h>
 #include <pxa_board_api.h>
+#include <pxa_board_common/display_completion.h>
 
 #include "esp32s31_korvo_1_config.h"
 
@@ -67,12 +68,12 @@ bool g_direct_has_displayed_buffer = false;
 bool g_direct_submission_pending = false;
 uint64_t g_direct_pending_input_timestamp_us = 0;
 uint64_t g_direct_pending_frame_id = 0;
+uint32_t g_direct_pending_raster_ready_tick_us = 0;
 bool g_direct_active = false;
 DirectScanoutTransitionCallback g_transition_callback = nullptr;
 void* g_transition_context = nullptr;
 uint64_t g_last_direct_frame_id = 0;
-/* The panel frame buffer the viewer currently sees, for capture. */
-const uint8_t* g_direct_displayed_buffer = nullptr;
+const std::atomic<uint32_t>* g_frame_done_us_low = nullptr;
 lv_area_t g_last_present_area = {};
 bool g_has_last_present_area = false;
 
@@ -389,12 +390,23 @@ void ClearUiArgbCache() {
 }
 
 bool PrepareUiArgb(const pxa_esp_surface_ui_alpha_plane_t& plane) {
-    if (g_ui_argb == nullptr || plane.revision == 0 ||
+    if (plane.revision == 0 ||
         plane.pixels == nullptr || plane.alpha == nullptr ||
         plane.pixel_stride_bytes % sizeof(uint16_t) != 0 ||
         plane.pixel_stride_bytes / sizeof(uint16_t) < plane.width ||
         plane.alpha_stride_bytes < plane.width)
         return false;
+    // Sparse HUDs use cached spans and never need a full ARGB panel. Allocate
+    // this optional PPA resource only for the first dense overlay, rather than
+    // charging every application 1.46 MiB at board initialization. Failure
+    // retains the existing CPU fallback; successful allocations are reused.
+    if (g_ui_argb == nullptr) {
+        g_ui_argb = static_cast<lv_color32_t*>(heap_caps_aligned_alloc(
+            64, kArgbFrameBytes,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
+        if (g_ui_argb == nullptr) return false;
+        std::memset(g_ui_argb, 0, kArgbFrameBytes);
+    }
     if (g_ui_argb_revision == plane.revision &&
         g_ui_argb_x == plane.x && g_ui_argb_y == plane.y &&
         g_ui_argb_width == plane.width &&
@@ -601,29 +613,37 @@ void SetRefreshPaused(bool paused) {
         lv_timer_resume(refresh_timer);
 }
 
-bool CompletePendingDirectSubmission(uint32_t* wait_us) {
+bool CompletePendingDirectSubmission(
+    uint32_t* wait_us,
+    TickType_t timeout_ticks = pdMS_TO_TICKS(kFrameDoneTimeoutMs)) {
     if (wait_us != nullptr) *wait_us = 0;
     if (!g_direct_submission_pending) return true;
     const int64_t started_us = esp_timer_get_time();
     const bool frame_done =
-        xSemaphoreTake(g_frame_done_semaphore,
-                       pdMS_TO_TICKS(kFrameDoneTimeoutMs)) == pdTRUE;
+        xSemaphoreTake(g_frame_done_semaphore, timeout_ticks) == pdTRUE;
     const int64_t finished_us = esp_timer_get_time();
     if (wait_us != nullptr) {
         *wait_us = static_cast<uint32_t>(finished_us - started_us);
     }
     if (!frame_done) {
-        ++g_direct_timeouts;
+        if (timeout_ticks != 0) ++g_direct_timeouts;
         return false;
     }
     g_direct_displayed_index = g_direct_pending_index;
     g_direct_has_displayed_buffer = true;
     g_direct_submission_pending = false;
-    pxa_esp_surface_note_frame_presented(
-        g_direct_pending_input_timestamp_us,
-        static_cast<uint64_t>(finished_us));
+    // The presenter may only collect this completion while building the next
+    // frame. Use the actual panel callback time, as the composed path does,
+    // rather than attributing that subsequent work to display latency.
+    const uint32_t completed_low =
+        g_frame_done_us_low->load(std::memory_order_acquire);
+    const uint64_t completed_us = pxa_board_common::DisplayCompletionTimestamp(
+        static_cast<uint64_t>(finished_us), completed_low);
+    pxa_esp_surface_note_display_latency(
+        g_direct_pending_frame_id, g_direct_pending_input_timestamp_us,
+        g_direct_pending_raster_ready_tick_us, completed_us);
     pxa_esp_surface_note_game_frame_presented(
-        g_direct_pending_frame_id, static_cast<uint64_t>(finished_us));
+        g_direct_pending_frame_id, completed_us);
     return true;
 }
 
@@ -663,9 +683,9 @@ bool PresentDirectFrame(const pxa_esp_surface_frame_t& frame) {
     g_direct_pending_index = g_direct_buffer_index;
     g_direct_pending_input_timestamp_us = frame.input_timestamp_us;
     g_direct_pending_frame_id = frame.frame_id;
+    g_direct_pending_raster_ready_tick_us = frame.raster_ready_tick_us;
     g_direct_submission_pending = true;
     g_direct_buffer_index = (g_direct_buffer_index + 1U) % 3U;
-    g_direct_displayed_buffer = static_cast<const uint8_t*>(target);
 
     const uint32_t compose_us =
         static_cast<uint32_t>(compose_finished_us - compose_started_us);
@@ -796,8 +816,21 @@ void FrameReady(void*) {
 
 void PresenterTask(void*) {
     for (;;) {
-        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        // A static menu may submit exactly one frame. Collect its completion
+        // even when no next frame arrives, so screenshots and latency cannot
+        // keep referring to the previous menu. Sleep indefinitely once done;
+        // this short poll only exists while a buffer switch is in flight.
+        const TickType_t wait_ticks = g_direct_submission_pending
+            ? pdMS_TO_TICKS(5) + 1 : portMAX_DELAY;
+        const uint32_t notified = ulTaskNotifyTake(pdTRUE, wait_ticks);
         if (g_display == nullptr) continue;
+        if (notified == 0) {
+            // A completion poll has no new frame or UI change to inspect.
+            // Rechecking composition/acquiring the old Surface here contends
+            // with the Guest's synchronous raster transaction on every poll.
+            (void)CompletePendingDirectSubmission(nullptr, 0);
+            continue;
+        }
 
         if (g_direct_active) {
             if (!DirectPathViable()) {
@@ -805,6 +838,7 @@ void PresenterTask(void*) {
                 InvalidatePresentArea();
                 continue;
             }
+            (void)CompletePendingDirectSubmission(nullptr, 0);
             pxa_esp_surface_frame_t frame;
             if (!pxa_esp_surface_acquire_latest_for_direct(&frame)) continue;
             const bool eligible = DirectFrameEligible(frame);
@@ -843,10 +877,12 @@ void PresenterTask(void*) {
 
 bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
              SemaphoreHandle_t frame_done_semaphore,
+             const std::atomic<uint32_t>* frame_done_us_low,
              DirectScanoutTransitionCallback transition_callback,
              void* transition_context) {
     if (display == nullptr || panel == nullptr ||
-        frame_done_semaphore == nullptr || g_display != nullptr)
+        frame_done_semaphore == nullptr || frame_done_us_low == nullptr ||
+        g_display != nullptr)
         return false;
     if (esp_lcd_rgb_panel_get_frame_buffer(
             panel, 3, &g_frame_buffers[0], &g_frame_buffers[1],
@@ -881,13 +917,6 @@ bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
         g_ppa_fill_client = nullptr;
         ESP_LOGW(kTag, "PPA raster background fill is unavailable");
     }
-    g_ui_argb = static_cast<lv_color32_t*>(heap_caps_aligned_alloc(
-        64, kArgbFrameBytes,
-        MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
-    if (g_ui_argb == nullptr)
-        ESP_LOGW(kTag, "PPA UI blend cache is unavailable");
-    else
-        std::memset(g_ui_argb, 0, kArgbFrameBytes);
     g_ui_spans = static_cast<pxa_surface_alpha_span_t*>(heap_caps_malloc(
         kMaxUiSpans * sizeof(pxa_surface_alpha_span_t),
         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -904,6 +933,7 @@ bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
     g_display = display;
     g_panel = panel;
     g_frame_done_semaphore = frame_done_semaphore;
+    g_frame_done_us_low = frame_done_us_low;
     g_transition_callback = transition_callback;
     g_transition_context = transition_context;
     // The presenter has dedicated 1x and 2x paths. Native is the board
@@ -1053,7 +1083,8 @@ ComposedFrameInfo ComposeFrame(uint8_t* pixels) {
             g_compose_ui_pixels = 0;
         }
     }
-    const ComposedFrameInfo result{frame.frame_id, frame.input_timestamp_us};
+    const ComposedFrameInfo result{frame.frame_id, frame.input_timestamp_us,
+                                   frame.raster_ready_tick_us};
     pxa_esp_surface_release_frame(frame.lease);
     return result;
 }

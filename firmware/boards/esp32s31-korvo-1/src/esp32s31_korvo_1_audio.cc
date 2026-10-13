@@ -4,6 +4,7 @@
 
 #include <esp_codec_dev_defaults.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <es8389_codec.h>
 
 namespace {
@@ -17,10 +18,14 @@ bool Esp32S31Korvo1Audio::Initialize(i2c_master_bus_handle_t i2c_bus) {
     i2s_chan_config_t channel_config = {};
     channel_config.id = KORVO_AUDIO_I2S_PORT;
     channel_config.role = I2S_ROLE_MASTER;
-    channel_config.dma_desc_num = 6;
-    channel_config.dma_frame_num = 240;
+    // Match a Host frame exactly. Partial 240-frame DMA blocks can expire
+    // before the next 320-sample write. Three blocks bound hardware lookahead
+    // to 60 ms, rather than enlarging the former 90-ms ring to 120 ms.
+    channel_config.dma_desc_num = 3;
+    channel_config.dma_frame_num = KORVO_AUDIO_SAMPLE_RATE / 50;
     channel_config.auto_clear = true;
-    if (i2s_new_channel(&channel_config, &tx_channel_, &rx_channel_) != ESP_OK) {
+    // Only the DAC is opened below; do not allocate an unused microphone ring.
+    if (i2s_new_channel(&channel_config, &tx_channel_, nullptr) != ESP_OK) {
         ESP_LOGE(kTag, "Cannot create I2S0 channels");
         return false;
     }
@@ -33,20 +38,19 @@ bool Esp32S31Korvo1Audio::Initialize(i2c_master_bus_handle_t i2c_bus) {
             .bclk = KORVO_AUDIO_BCLK,
             .ws = KORVO_AUDIO_WS,
             .dout = KORVO_AUDIO_DOUT,
-            .din = KORVO_AUDIO_DIN,
+            .din = GPIO_NUM_NC,
         },
     };
+    const i2s_event_callbacks_t callbacks = {.on_sent = OnDmaSent};
     if (i2s_channel_init_std_mode(tx_channel_, &std_config) != ESP_OK ||
-        i2s_channel_init_std_mode(rx_channel_, &std_config) != ESP_OK ||
-        i2s_channel_enable(tx_channel_) != ESP_OK ||
-        i2s_channel_enable(rx_channel_) != ESP_OK) {
+        i2s_channel_register_event_callback(tx_channel_, &callbacks, this) != ESP_OK ||
+        i2s_channel_enable(tx_channel_) != ESP_OK) {
         ESP_LOGE(kTag, "Cannot initialize I2S0");
         return false;
     }
 
     audio_codec_i2s_cfg_t i2s_config = {
         .port = KORVO_AUDIO_I2S_PORT,
-        .rx_handle = rx_channel_,
         .tx_handle = tx_channel_,
     };
     data_if_ = audio_codec_new_i2s_data(&i2s_config);
@@ -93,7 +97,7 @@ bool Esp32S31Korvo1Audio::Initialize(i2c_master_bus_handle_t i2c_bus) {
     SetVolume(volume());
     if (!output_.Initialize([](void* context, const int16_t* pcm, size_t samples) {
             return static_cast<Esp32S31Korvo1Audio*>(context)->Write(pcm, samples);
-        }, this)) return false;
+        }, this, true)) return false;
     ESP_LOGI(kTag, "ES8389 speaker ready at %d Hz stereo", KORVO_AUDIO_SAMPLE_RATE);
     return true;
 }
@@ -117,13 +121,56 @@ bool Esp32S31Korvo1Audio::Write(const int16_t* pcm, size_t samples) {
      * straight through makes the codec consume two samples per frame, which
      * plays the stream at double rate with a starved DMA (fast, chopped audio).
      * Duplicate each sample into the left and right slots instead. */
+    bool nonzero = false;
     for (size_t index = 0; index < samples; ++index) {
         stereo_[index * 2] = pcm[index];
         stereo_[index * 2 + 1] = pcm[index];
+        nonzero |= pcm[index] != 0;
     }
+    if (nonzero && first_pcm_us_.load(std::memory_order_relaxed) == 0)
+        first_pcm_us_.store(static_cast<uint32_t>(esp_timer_get_time()),
+                            std::memory_order_release);
     xSemaphoreTake(mutex_, portMAX_DELAY);
-    const esp_err_t result = esp_codec_dev_write(
-        speaker_, stereo_, samples * 2u * sizeof(*pcm));
+    // The codec wrapper discards bytes_written. Check the configured I2S
+    // channel directly so a short write cannot silently count as successful.
+    const size_t bytes = samples * 2u * sizeof(*pcm);
+    size_t written = 0;
+    const esp_err_t result = i2s_channel_write(tx_channel_, stereo_, bytes, &written, 100);
     xSemaphoreGive(mutex_);
-    return result == ESP_OK;
+    const bool complete = result == ESP_OK && written == bytes;
+    ++writes_;
+    if (!complete) {
+        ++write_errors_;
+        ESP_LOGW(kTag, "I2S write: %s bytes=%u/%u", esp_err_to_name(result),
+                 static_cast<unsigned>(written), static_cast<unsigned>(bytes));
+    }
+    if (writes_ % 100 == 0) {
+        const uint32_t first_dma = first_dma_us_.load(std::memory_order_acquire);
+        const uint32_t first_pcm = first_pcm_us_.load(std::memory_order_acquire);
+        ESP_LOGI(kTag, "DMA writes=%lu blocks=%lu nonzero=%lu errors=%lu first_pcm_to_dma_us=%lu",
+                 static_cast<unsigned long>(writes_),
+                 static_cast<unsigned long>(dma_blocks_.load(std::memory_order_relaxed)),
+                 static_cast<unsigned long>(dma_nonzero_blocks_.load(std::memory_order_relaxed)),
+                 static_cast<unsigned long>(write_errors_),
+                 static_cast<unsigned long>(first_dma && first_pcm ? first_dma - first_pcm : 0));
+    }
+    return complete;
+}
+
+bool IRAM_ATTR Esp32S31Korvo1Audio::OnDmaSent(
+    i2s_chan_handle_t, i2s_event_data_t* event, void* context) {
+    static_assert(std::atomic<uint32_t>::is_always_lock_free);
+    auto* self = static_cast<Esp32S31Korvo1Audio*>(context);
+    self->dma_blocks_.fetch_add(1, std::memory_order_relaxed);
+    // IDF calls this before auto-clear. Inspect consumed PCM, not queued PCM.
+    const auto* samples = static_cast<const int16_t*>(event->dma_buf);
+    for (size_t i = 0; i < event->size / sizeof(int16_t); ++i) {
+        if (samples[i] == 0) continue;
+        self->dma_nonzero_blocks_.fetch_add(1, std::memory_order_relaxed);
+        if (self->first_dma_us_.load(std::memory_order_relaxed) == 0)
+            self->first_dma_us_.store(static_cast<uint32_t>(esp_timer_get_time()),
+                                      std::memory_order_release);
+        break;
+    }
+    return false;
 }

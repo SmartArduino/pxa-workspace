@@ -3,6 +3,7 @@
 #include "esp32s31_korvo_1_config.h"
 #include "esp32s31_korvo_1_adc_calibration.h"
 #include "esp32s31_korvo_1_pxa_surface.h"
+#include <pxa_board_common/display_completion.h>
 
 #include <algorithm>
 #include <array>
@@ -381,6 +382,7 @@ bool Esp32S31Korvo1Hardware::InitializeDisplay() {
     lv_display_set_sync_cb(display_, SyncDisplay);
     lv_display_add_event_cb(display_, OnDisplayEvent, LV_EVENT_ALL, this);
     if (!korvo_pxa_surface::Install(display_, panel_, frame_done_sem_,
+                                    &frame_done_us_low_,
                                     OnDirectScanoutTransition, this)) {
         ESP_LOGW(kTag, "Continuing without PXA Surface presentation");
     }
@@ -652,6 +654,8 @@ void Esp32S31Korvo1Hardware::FlushDisplay(lv_display_t* display,
             hardware->pending_composed_frame_id_ = composed.frame_id;
             hardware->pending_composed_input_timestamp_us_ =
                 composed.input_timestamp_us;
+            hardware->pending_composed_raster_ready_tick_us_ =
+                composed.raster_ready_tick_us;
         }
         const int64_t flush_finished_us = esp_timer_get_time();
         hardware->RecordPresentTime(
@@ -697,10 +701,11 @@ bool Esp32S31Korvo1Hardware::WaitForPendingFrame() {
         frame_done_us_low_.load(std::memory_order_acquire);
     /* The wait is capped at 100 ms. Reconstruct the ISR timestamp across a
      * 32-bit microsecond wrap without a non-lock-free 64-bit ISR atomic. */
-    const uint64_t completed_us = observed_us - static_cast<uint32_t>(
-        static_cast<uint32_t>(observed_us) - completed_low);
-    pxa_esp_surface_note_frame_presented(
-        pending_composed_input_timestamp_us_, completed_us);
+    const uint64_t completed_us =
+        pxa_board_common::DisplayCompletionTimestamp(observed_us, completed_low);
+    pxa_esp_surface_note_display_latency(
+        pending_composed_frame_id_, pending_composed_input_timestamp_us_,
+        pending_composed_raster_ready_tick_us_, completed_us);
     pxa_esp_surface_note_game_frame_presented(
         pending_composed_frame_id_, completed_us);
     pending_composed_frame_id_ = 0;

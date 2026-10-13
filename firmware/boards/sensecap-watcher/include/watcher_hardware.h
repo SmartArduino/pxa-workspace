@@ -81,11 +81,22 @@ private:
         lv_display_t* display;
         lv_area_t area;
         uint8_t* pixels;
+        uint64_t frame_id;
+        uint64_t input_timestamp_us;
+        uint32_t raster_ready_tick_us;
+        bool last;
+        uint16_t snapshot_revision;
     };
+    // One pending flush carries metadata in the space formerly reserved for
+    // two pixel-only requests. LVGL already waits for each DMA completion.
+    static_assert(sizeof(FlushRequest) <= 2 * (sizeof(lv_area_t) + 2 * sizeof(void*)));
 
     static void FlushDisplay(lv_display_t* display, const lv_area_t* area,
                              uint8_t* pixels);
     static void FlushTaskEntry(void* arg);
+    static bool OnFlushComplete(esp_lcd_panel_io_handle_t io,
+                                esp_lcd_panel_io_event_data_t* event,
+                                void* context);
     void FlushTask();
     static void TouchReadCallback(lv_indev_t* indev, lv_indev_data_t* data);
     static void IRAM_ATTR TouchInterruptHandler(void* arg);
@@ -138,7 +149,8 @@ private:
     lv_display_t* display_ = nullptr;
     lv_indev_t* touch_indev_ = nullptr;
     lv_indev_t* injected_pointer_ = nullptr;
-    int64_t flush_error_us_ = 0;
+    uint32_t flush_error_ms_ = 0;
+    std::atomic<uint32_t> flush_done_us_low_{0};
     QueueHandle_t flush_queue_ = nullptr;
     TaskHandle_t flush_task_ = nullptr;
     bool touch_pressed_ = false;
@@ -180,7 +192,9 @@ private:
     // has no readable framebuffer, so PXADB screenshots are served from here.
     uint16_t* snapshot_ = nullptr;
     SemaphoreHandle_t snapshot_sem_ = nullptr;
-    std::atomic<bool> snapshot_pending_{false};
+    // A generation token prevents a late DMA from completing a newer capture.
+    // uint16_t reuses padding before snapshot_frame_id_; no larger queue/cache.
+    std::atomic<uint16_t> snapshot_pending_{0};
     std::atomic<bool> snapshot_ready_{false};
     std::atomic<uint32_t> snapshot_frame_id_{0};
     std::atomic<int64_t> snapshot_timestamp_us_{0};

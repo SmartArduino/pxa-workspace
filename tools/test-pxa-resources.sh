@@ -24,6 +24,7 @@ run_logged core-configure cmake -S "$pxa_root/libpxa" -B "$test_root/core" \
 run_logged core-build cmake --build "$test_root/core" -j "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
 run_logged core-test ctest --test-dir "$test_root/core" --output-on-failure
 run_logged esp-host-test env PXA_TEST_SANITIZERS=1 bash "$project_root/firmware/components/pxa/tests/test_host.sh"
+run_logged board-common-test bash "$project_root/firmware/components/pxa_board_common/tests/test_host.sh"
 run_logged korvo-touch-test bash "$project_root/firmware/boards/esp32s31-korvo-1/tests/test_host.sh"
 run_logged pxadb-input-test bash "$project_root/tools/test-pxadb-input.sh"
 run_logged spec-test python3 "$pxa_root/spec/draft/tools/test.py"
@@ -58,7 +59,7 @@ run_logged plane-package env PXA_APP_SOURCE_ROOT="$app_root" \
     bash "$pxa_root/tools/package/package_app.sh" plane-shooter simulator "$test_root/packages/pxa-plane-shooter"
 run_logged pixel-package env PXA_APP_SOURCE_ROOT="$app_root" \
     PXA_PACKAGE_OUTPUT_ROOT="$test_root/packages" \
-    bash "$pxa_root/tools/package/package_app.sh" pixel-dungeon-cpp simulator "$test_root/packages/pxa-pixel-dungeon-cpp"
+    bash "$pxa_root/tools/package/package_app.sh" pixel-dungeon simulator "$test_root/packages/pxa-pixel-dungeon"
 run_logged simulator-configure bash "$project_root/tools/simulator.sh" product configure --profile "$profile"
 run_logged simulator-build cmake --build "$project_root/build/simulator/$profile" \
     --target pxsys_resource_app_test pxsys_resource_budget_test pxsys_audio_test pxsys_audio_app_test pxsys_ui_images_test pxsys_store_images_test -j "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
@@ -106,7 +107,7 @@ run_logged store-exit env PXA_ASSET_READ_DELAY_US=100000 "$store_runner" \
 run_logged store-low env PXA_ASSET_EXTERNAL_BYTES=4096 "$store_runner" \
     "$store_package" "$key" "$test_root/store-low" low-budget
 run_logged pixel-audio-app "$project_root/build/simulator/$profile/pxsys_audio_app_test" \
-    "$test_root/packages/pxa-pixel-dungeon-cpp" "$key"
+    "$test_root/packages/pxa-pixel-dungeon" "$key"
 run_logged scenes-default "$runner" "$package" "$key"
 run_logged scenes-low-budget env PXA_RESOURCE_EXTERNAL_BYTES=300000 "$runner" "$package" "$key"
 run_logged storage-steady "$runner" "$package" "$key" storage-steady

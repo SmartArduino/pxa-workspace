@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 
 #include <esp_lcd_panel_ops.h>
 #include <freertos/FreeRTOS.h>
@@ -24,11 +25,13 @@ struct CompletedFrameInfo {
 
 bool Install(lv_display_t* display, esp_lcd_panel_handle_t panel,
              SemaphoreHandle_t frame_done_semaphore,
+             const std::atomic<uint32_t>* frame_done_us_low,
              DirectScanoutTransitionCallback transition_callback,
              void* transition_context);
 struct ComposedFrameInfo {
     uint64_t frame_id = 0;
     uint64_t input_timestamp_us = 0;
+    uint32_t raster_ready_tick_us = 0;
 };
 ComposedFrameInfo ComposeFrame(uint8_t* pixels);
 bool DirectScanoutActive();

@@ -16,6 +16,7 @@ namespace pxa_board_common {
 struct DisplayProfile {
     uint32_t width = 0;
     uint32_t height = 0;
+    uint16_t density_dpi = 160;
     pxsys_display_shape_t shape = PXSYS_DISPLAY_SHAPE_RECTANGLE;
     pxsys_corner_radii_t corner_radii = {};
     pxsys_insets_t safe_insets = {};

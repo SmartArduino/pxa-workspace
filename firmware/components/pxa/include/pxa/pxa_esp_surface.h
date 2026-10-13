@@ -224,6 +224,19 @@ void pxa_esp_surface_note_raster_frame_presented(uint64_t frame_id,
                                                  uint64_t input_timestamp_us,
                                                  uint64_t presented_us,
                                                  uint32_t elapsed_us);
+/* Match completion to the board's retained frame metadata, not to a Surface
+ * lease which may already belong to the next frame. The low-word subtraction
+ * is wrap-safe for the bounded display pipeline; no additional frame queue. */
+static inline void pxa_esp_surface_note_display_latency(
+    uint64_t frame_id, uint64_t input_timestamp_us,
+    uint32_t raster_ready_tick_us, uint64_t completed_us) {
+    if (raster_ready_tick_us != 0)
+        pxa_esp_surface_note_raster_frame_presented(
+            frame_id, input_timestamp_us, completed_us,
+            (uint32_t)completed_us - raster_ready_tick_us);
+    else
+        pxa_esp_surface_note_frame_presented(input_timestamp_us, completed_us);
+}
 void pxa_esp_surface_take_input_metrics(
     pxa_esp_surface_input_metrics_t *metrics);
 /* Presenter telemetry yields the counters to an active explicit PERF window.

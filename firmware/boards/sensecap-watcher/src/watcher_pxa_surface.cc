@@ -385,14 +385,15 @@ bool Install(lv_display_t* display) {
     return true;
 }
 
-void ComposeFlushArea(const lv_area_t* area, uint8_t* pixels) {
-    if (area == nullptr || pixels == nullptr) return;
+ComposedFrameInfo ComposeFlushArea(const lv_area_t* area, uint8_t* pixels) {
+    if (area == nullptr || pixels == nullptr) return {};
     pxa_esp_surface_frame_t frame;
-    if (!pxa_esp_surface_acquire_latest(&frame)) return;
+    if (!pxa_esp_surface_acquire_latest(&frame)) return {};
     ComposeFrame(frame, area, pixels);
-    pxa_esp_surface_note_frame_presented(
-        frame.input_timestamp_us, static_cast<uint64_t>(esp_timer_get_time()));
+    const ComposedFrameInfo composed{frame.frame_id, frame.input_timestamp_us,
+                                     frame.raster_ready_tick_us};
     pxa_esp_surface_release_frame(frame.lease);
+    return composed;
 }
 
 }  // namespace watcher_pxa_surface

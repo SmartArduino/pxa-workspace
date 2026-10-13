@@ -7,6 +7,8 @@
 // The RGB panel timing and framebuffers must remain at the LCD's native size.
 #define KORVO_PANEL_WIDTH 800
 #define KORVO_PANEL_HEIGHT 480
+// 9.5 x 5.5 cm active area: diagonal pixel density rounds to 216 DPI.
+#define KORVO_PANEL_DENSITY_DPI 216
 #define KORVO_DISPLAY_WIDTH KORVO_PANEL_WIDTH
 #define KORVO_DISPLAY_HEIGHT KORVO_PANEL_HEIGHT
 

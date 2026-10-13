@@ -1,0 +1,5 @@
+[factory]
+# System CJK font only. Normal firmware updates preserve the data partition;
+# use factory flashing solely when provisioning a new or empty device.
+include_system_font = true
+apps = []

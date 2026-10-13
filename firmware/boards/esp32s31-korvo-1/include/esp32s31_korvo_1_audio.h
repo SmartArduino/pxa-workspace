@@ -24,13 +24,16 @@ public:
 private:
     PxaAudioOutput output_;
     bool Write(const int16_t* pcm, size_t samples);
+    static bool OnDmaSent(i2s_chan_handle_t, i2s_event_data_t*, void* context);
 
     i2s_chan_handle_t tx_channel_ = nullptr;
-    i2s_chan_handle_t rx_channel_ = nullptr;
     const audio_codec_data_if_t* data_if_ = nullptr;
     esp_codec_dev_handle_t speaker_ = nullptr;
     SemaphoreHandle_t mutex_ = nullptr;
     /* Mono Host samples expanded to interleaved stereo for the codec. */
     int16_t stereo_[kMaxWriteSamples * 2] = {};
     std::atomic<uint8_t> volume_{70};
+    std::atomic<uint32_t> dma_blocks_{0}, dma_nonzero_blocks_{0};
+    std::atomic<uint32_t> first_pcm_us_{0}, first_dma_us_{0};
+    uint32_t writes_ = 0, write_errors_ = 0;
 };

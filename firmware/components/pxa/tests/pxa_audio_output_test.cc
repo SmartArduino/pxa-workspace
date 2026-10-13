@@ -87,12 +87,12 @@ static unsigned decoder_calls, decoder_closes, decoded_samples;
 static PxaAudioOutput* decoding_audio;
 static PxaAudioOutput* pending_output;
 static bool natural_drain;
-// Six I2S descriptors leave five writable buffers. The DMA consumes one
-// block every 20 ms, independently of the Host's timer and rendering work.
+// One descriptor is being consumed; the remaining buffers accept writes.
+// Exercise both six-descriptor and three-descriptor board configurations.
 static struct {
     bool active;
     uint64_t now_us, next_dma_us;
-    unsigned queued, writes, underruns, high_water;
+    unsigned queued, writes, underruns, high_water, capacity;
 } output_clock;
 static void advance_output_clock(uint64_t elapsed_us) {
     const uint64_t until = output_clock.now_us + elapsed_us;
@@ -217,7 +217,7 @@ static bool write_clocked_pcm(void*,const int16_t* pcm,size_t n) {
     if (output_clock.writes) for(size_t i=0;i<n;++i) assert(pcm[i]==1000);
     // Mixing is cheap, but occasionally the task is not scheduled for 35 ms.
     advance_output_clock(500 + (output_clock.writes % 17 == 16 ? 35000 : 0));
-    if (output_clock.queued == 5)
+    if (output_clock.queued == output_clock.capacity)
         advance_output_clock(output_clock.next_dma_us - output_clock.now_us);
     ++output_clock.queued;
     output_clock.high_water=std::max(output_clock.high_water,output_clock.queued);
@@ -313,15 +313,15 @@ int main(){
     // Exercise the actual continuous mixer against a virtual blocking DMA
     // sink. Timer pacing leaves gaps under jitter; device pacing fills the
     // existing ring and survives the identical stalls without changing PCM.
-    for (bool device_paced : {false,true}) {
+    for (unsigned capacity : {5u, 2u}) for (bool device_paced : {false,true}) {
         assert(a.PlaySoundTrack(&a,0,signed_sound,&track));
         a.device_paced_=device_paced;
         a.write_=write_clocked_pcm;
-        output_clock={true,0,20000,0,0,0,0};
+        output_clock={true,0,20000,0,0,0,0,capacity};
         tick(a);
         assert(output_clock.writes==320);
-        if (device_paced) assert(!output_clock.underruns && output_clock.high_water==5);
-        else assert(output_clock.underruns>0 && output_clock.high_water<5);
+        if (device_paced) assert(!output_clock.underruns && output_clock.high_water==capacity);
+        else assert(output_clock.underruns>0 && output_clock.high_water<=capacity);
         if (device_paced) assert(output_clock.now_us>=6300000 && output_clock.now_us<=6400000);
         printf("DMA clock fixture: device_paced=%u frames=%u gaps=%u buffered=%u elapsed_us=%llu\n",
             device_paced,output_clock.writes,output_clock.underruns,output_clock.high_water,

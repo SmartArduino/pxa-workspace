@@ -22,6 +22,8 @@ void DisplayProfile(void*, pxsys_display_profile_t* output) {
     static constexpr pxa_board_common::DisplayProfile kProfile = {
         .width = 412,
         .height = 412,
+        // Nominal 1.45-inch circular panel: 412 / 1.45 ~= 284 DPI.
+        .density_dpi = 284,
         .shape = PXSYS_DISPLAY_SHAPE_CIRCLE,
         .corner_radii = {206, 206, 206, 206},
         .safe_insets = {60, 60, 60, 60},

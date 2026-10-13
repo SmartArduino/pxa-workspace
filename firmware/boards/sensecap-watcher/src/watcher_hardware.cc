@@ -25,6 +25,7 @@
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
 #include <pxa_board_api.h>
+#include <pxa_board_common/display_completion.h>
 #include <pxsys/reference_lvgl.h>
 #include <pxsys/standard_system.h>
 #include <pxsys/system_status.h>
@@ -407,22 +408,36 @@ bool SensecapWatcherHardware::InitializeDisplay() {
     // Submitting a PSRAM frame costs the SPI driver a bounce copy per chunk.
     // A dedicated task does that work so the LVGL task can start the next
     // render immediately; LVGL still waits for the transfer completion.
-    flush_queue_ = xQueueCreate(2, sizeof(FlushRequest));
+    flush_queue_ = xQueueCreate(1, sizeof(FlushRequest));
     if (flush_queue_ == nullptr ||
         xTaskCreate(FlushTaskEntry, "watcher_flush", kFlushTaskStack, this,
                     kFlushTaskPriority, &flush_task_) != pdPASS) {
         ESP_LOGE(kTag, "Cannot start the display flush task");
         return false;
     }
+    // Replace the port's flush-ready callback: completion telemetry and
+    // screenshots must follow DMA, rather than the preceding composition.
+    const esp_lcd_panel_io_callbacks_t callbacks = {
+        .on_color_trans_done = OnFlushComplete,
+    };
     // The port's flush would leave LVGL spinning forever if the panel IO ever
     // fails to queue a transfer (LVGL waits on a completion callback that
     // only fires on success), so the board installs a flush that reports the
     // error and always releases the display.
-    if (lvgl_port_lock(100)) {
+    if (!lvgl_port_lock(1000)) return false;
+    // Drain a possible initial port flush while its original callback is
+    // still installed. A command-less parameter transaction only waits for
+    // queued SPI color transfers; it does not send a panel command.
+    const esp_err_t drained = esp_lcd_panel_io_tx_param(panel_io_, -1, nullptr, 0);
+    const esp_err_t registered = drained == ESP_OK
+        ? esp_lcd_panel_io_register_event_callbacks(panel_io_, &callbacks, this)
+        : drained;
+    if (registered == ESP_OK) {
         lv_display_set_user_data(display_, this);
         lv_display_set_flush_cb(display_, FlushDisplay);
-        lvgl_port_unlock();
     }
+    lvgl_port_unlock();
+    if (registered != ESP_OK) return false;
     if (!watcher_pxa_surface::Install(display_)) {
         ESP_LOGW(kTag, "Continuing without PXA Surface presentation");
     }
@@ -444,21 +459,12 @@ void SensecapWatcherHardware::FlushDisplay(lv_display_t* display,
     // Composite the latest PXA Surface under the trusted UI before the area
     // leaves the LVGL task; the queued pixels are then fully owned by the
     // flush task and the Surface lease can be released immediately.
-    watcher_pxa_surface::ComposeFlushArea(area, pixels);
-    if (self->snapshot_pending_.load(std::memory_order_acquire)) {
+    const auto composed = watcher_pxa_surface::ComposeFlushArea(area, pixels);
+    const bool last = lv_display_flush_is_last(display);
+    const uint16_t snapshot = self->snapshot_pending_.load(std::memory_order_acquire);
+    if (snapshot != 0) {
         self->SnapshotFlushArea(area, pixels);
-        if (lv_display_flush_is_last(display)) {
-            self->snapshot_frame_id_.fetch_add(1, std::memory_order_relaxed);
-            self->snapshot_timestamp_us_.store(esp_timer_get_time(),
-                                               std::memory_order_relaxed);
-            self->snapshot_ready_.store(true, std::memory_order_release);
-            self->snapshot_pending_.store(false, std::memory_order_release);
-            if (self->snapshot_sem_ != nullptr) {
-                xSemaphoreGive(self->snapshot_sem_);
-            }
-        }
     }
-    if (lv_display_flush_is_last(display)) pxa_board_performance_note_frame();
     pxa_board_performance_draw_rgb565(
         reinterpret_cast<uint16_t*>(pixels), WATCHER_DISPLAY_WIDTH,
         WATCHER_DISPLAY_HEIGHT, static_cast<uint32_t>(lv_area_get_width(area)),
@@ -468,6 +474,11 @@ void SensecapWatcherHardware::FlushDisplay(lv_display_t* display,
         .display = display,
         .area = *area,
         .pixels = pixels,
+        .frame_id = composed.frame_id,
+        .input_timestamp_us = composed.input_timestamp_us,
+        .raster_ready_tick_us = composed.raster_ready_tick_us,
+        .last = last,
+        .snapshot_revision = snapshot,
     };
     if (xQueueSend(self->flush_queue_, &request, 0) != pdTRUE) {
         // LVGL waits for the previous transfer before the next flush, so the
@@ -482,29 +493,60 @@ void SensecapWatcherHardware::FlushTaskEntry(void* arg) {
     static_cast<SensecapWatcherHardware*>(arg)->FlushTask();
 }
 
+bool SensecapWatcherHardware::OnFlushComplete(
+    esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*, void* context) {
+    auto* self = static_cast<SensecapWatcherHardware*>(context);
+    self->flush_done_us_low_.store(static_cast<uint32_t>(esp_timer_get_time()),
+                                   std::memory_order_release);
+    BaseType_t woken = pdFALSE;
+    vTaskNotifyGiveFromISR(self->flush_task_, &woken);
+    return woken == pdTRUE;
+}
+
 void SensecapWatcherHardware::FlushTask() {
     FlushRequest request = {};
     for (;;) {
         if (xQueueReceive(flush_queue_, &request, portMAX_DELAY) != pdTRUE) {
             continue;
         }
+        (void)ulTaskNotifyTake(pdTRUE, 0);
         const esp_err_t err = esp_lcd_panel_draw_bitmap(
             panel_, request.area.x1, request.area.y1, request.area.x2 + 1,
             request.area.y2 + 1, request.pixels);
         if (err != ESP_OK) {
-            const int64_t now_us = esp_timer_get_time();
-            if (now_us - flush_error_us_ > 1000 * 1000) {
-                flush_error_us_ = now_us;
+            const uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+            if (static_cast<uint32_t>(now_ms - flush_error_ms_) > 1000) {
+                flush_error_ms_ = now_ms;
                 ESP_LOGE(kTag, "flush failed (%s): %dx%d at %d,%d",
                          esp_err_to_name(err),
                          (int)(request.area.x2 - request.area.x1 + 1),
                          (int)(request.area.y2 - request.area.y1 + 1),
                          (int)request.area.x1, (int)request.area.y1);
             }
-            // Nothing will complete this transfer, so do not leave LVGL
-            // waiting; the success path is released by the panel IO callback.
-            lv_display_flush_ready(request.display);
+        } else {
+            // Keep the draw buffer immutable until the actual transfer ends.
+            // The ISR only publishes a timestamp and wakes this existing task;
+            // Host counters are deliberately updated outside interrupt context.
+            (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            const auto completed_us = pxa_board_common::DisplayCompletionTimestamp(
+                static_cast<uint64_t>(esp_timer_get_time()),
+                flush_done_us_low_.load(std::memory_order_acquire));
+            if (request.last) {
+                pxa_board_performance_note_frame();
+                pxa_esp_surface_note_display_latency(
+                    request.frame_id, request.input_timestamp_us,
+                    request.raster_ready_tick_us, completed_us);
+                pxa_esp_surface_note_game_frame_presented(request.frame_id, completed_us);
+                uint16_t expected = request.snapshot_revision;
+                if (expected != 0 && snapshot_pending_.compare_exchange_strong(
+                        expected, 0, std::memory_order_acq_rel)) {
+                    snapshot_timestamp_us_.store(completed_us, std::memory_order_relaxed);
+                    snapshot_ready_.store(true, std::memory_order_release);
+                    if (snapshot_sem_ != nullptr) xSemaphoreGive(snapshot_sem_);
+                }
+            }
         }
+        lv_display_flush_ready(request.display);
     }
 }
 
@@ -1219,13 +1261,14 @@ void SensecapWatcherHardware::SnapshotFlushArea(const lv_area_t* area,
     if (width <= 0 || height <= 0) return;
     // The panel runs LV_COLOR_FORMAT_RGB565_SWAPPED, so the draw buffer holds
     // byte-swapped pixels; the capture reports plain little-endian RGB565.
-    // Rows in the full-screen draw buffer are one display width apart.
+    // LVGL partial mode packs this area, even with a full-screen allocation.
+    // Using the panel width as the source stride corrupts narrow captures.
     const auto* source = reinterpret_cast<const uint16_t*>(pixels);
     for (int row = 0; row < height; ++row) {
         const int y = area->y1 + row;
         if (y < 0 || y >= WATCHER_DISPLAY_HEIGHT) continue;
         const uint16_t* src =
-            source + static_cast<size_t>(row) * WATCHER_DISPLAY_WIDTH;
+            source + static_cast<size_t>(row) * width;
         uint16_t* dst =
             snapshot_ + static_cast<size_t>(y) * WATCHER_DISPLAY_WIDTH;
         for (int column = 0; column < width; ++column) {
@@ -1245,9 +1288,22 @@ bool SensecapWatcherHardware::CaptureRgb565(
         static_cast<size_t>(WATCHER_DISPLAY_WIDTH) * WATCHER_DISPLAY_HEIGHT;
     if (pixel_count < needed) return false;
     if (after_present || !snapshot_ready_.load(std::memory_order_acquire)) {
-        snapshot_pending_.store(true, std::memory_order_release);
-        if (snapshot_sem_ == nullptr ||
-            xSemaphoreTake(snapshot_sem_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        if (snapshot_sem_ == nullptr || !lvgl_port_lock(1000)) return false;
+        (void)xSemaphoreTake(snapshot_sem_, 0);
+        uint32_t revision = snapshot_frame_id_.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (static_cast<uint16_t>(revision) == 0)
+            revision = snapshot_frame_id_.fetch_add(1, std::memory_order_relaxed) + 1;
+        snapshot_ready_.store(false, std::memory_order_release);
+        snapshot_pending_.store(static_cast<uint16_t>(revision), std::memory_order_release);
+        // A fresh full redraw supplies every pixel without copying every
+        // ordinary flush. Install the token under LVGL's lock so no partial
+        // refresh can be mistaken for this requested frame.
+        lv_obj_invalidate(lv_display_get_screen_active(display_));
+        lvgl_port_unlock();
+        if (xSemaphoreTake(snapshot_sem_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            uint16_t expected = static_cast<uint16_t>(revision);
+            (void)snapshot_pending_.compare_exchange_strong(expected, 0,
+                                                           std::memory_order_acq_rel);
             return false;
         }
     }

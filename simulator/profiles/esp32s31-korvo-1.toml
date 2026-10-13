@@ -1,6 +1,8 @@
 [desktop]
 width = 800
 height = 480
+# 9.5 x 5.5 cm active area, matching the firmware display profile.
+density_dpi = 216
 locale = "zh-CN"
 theme = "dark"
 gestures = true

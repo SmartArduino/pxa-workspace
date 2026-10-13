@@ -6,6 +6,7 @@ void ApplyDisplayProfile(const DisplayProfile& profile,
                          pxsys_display_profile_t* output) {
     if (output == nullptr) return;
     pxsys_display_profile_init(output, profile.width, profile.height);
+    output->density_dpi = profile.density_dpi;
     output->shape = profile.shape;
     output->corner_radii = profile.corner_radii;
     output->safe_insets = profile.safe_insets;

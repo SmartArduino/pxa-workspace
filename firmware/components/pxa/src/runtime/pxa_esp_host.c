@@ -37,6 +37,7 @@
 #include "pxa/activation.h"
 #include "pxa/audio.h"
 #include "pxa/clock.h"
+#include "pxa/posix/pxa_posix_clock.h"
 #include "pxa/fs.h"
 #include "pxa/surface.h"
 #include "pxa/ipc.h"
@@ -2479,6 +2480,8 @@ static pxa_status_t host_clock_control(void *context, pxa_runtime_t *runtime,
     uint16_t period_ms;
     uint64_t now_us;
     (void)context;
+    if (message->opcode == PXA_CLOCK_WALL_TIME)
+        return pxa_posix_clock_control(runtime, component, message, host_now_us(NULL));
     if (message->opcode == PXA_CLOCK_NOW) {
         pxa_status_t status;
         if (message->request_token == 0 || message->payload.size != 0) {
@@ -2691,8 +2694,8 @@ static pxa_status_t reset_runtime(uint16_t max_components) {
     memset(&operations, 0, sizeof(operations));
     operations.struct_size = sizeof(operations);
     operations.service_id = PXA_CLOCK_SERVICE_ID;
-    operations.major = PXA_CORE_SERVICE_MAJOR;
-    operations.minor = PXA_CORE_SERVICE_MINOR;
+    operations.major = PXA_CLOCK_SERVICE_MAJOR;
+    operations.minor = PXA_CLOCK_SERVICE_MINOR;
     operations.control = host_clock_control;
     status = pxa_service_register(g_host.activation.runtime, &operations);
     if (status != PXA_STATUS_OK) goto failed;
@@ -3181,8 +3184,7 @@ static int start_verified(const char *identity) {
             HOST_SERVICE_VERSION(CORE),
             HOST_SERVICE_VERSION(WINDOW),
             HOST_SERVICE_VERSION(UI),
-            { PXA_CLOCK_SERVICE_ID,
-              { PXA_CORE_SERVICE_MAJOR, PXA_CORE_SERVICE_MINOR }, 0 },
+            HOST_SERVICE_VERSION(CLOCK),
             HOST_SERVICE_VERSION(FS),
             HOST_SERVICE_VERSION(STORAGE),
             HOST_SERVICE_VERSION(IPC),

@@ -871,8 +871,10 @@ int main(void) {
         pxa_esp_surface_release_frame(frame.lease);
         // Pai-touch releases after rotation, before the actual LCD callback.
         // Keep that completion latency even with no live Surface acquisition.
-        pxa_esp_surface_note_raster_frame_presented(1, 0, 1000, 19000);
-        pxa_esp_surface_note_raster_frame_presented(1, 0, 1100, 20000);
+        const uint64_t complete_us = (UINT64_C(1) << 32) + 1000;
+        const uint32_t ready_tick = (uint32_t)(complete_us - 19000);
+        pxa_esp_surface_note_display_latency(1, 0, ready_tick, complete_us);
+        pxa_esp_surface_note_display_latency(1, 0, ready_tick, complete_us + 1000);
         assert(game_backend.query(game_backend.context, surface, &telemetry) ==
                PXA_STATUS_OK && telemetry.present_us == 19000);
         assert(pxa_esp_surface_acquire_current_for_preview(&frame));

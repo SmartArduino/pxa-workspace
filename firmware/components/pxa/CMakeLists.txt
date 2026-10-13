@@ -59,6 +59,7 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/esp/pxa_esp_mbedtls.c"
     "${PXA_C_CORE_ROOT}/adapters/esp/pxa_esp_posix_shim.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_fs.c"
+    "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_clock.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_scheduler_store.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_storage.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_installer.c"
@@ -86,6 +87,18 @@ idf_build_get_property(PXA_TARGET IDF_TARGET)
 if(PXA_TARGET STREQUAL "esp32s3" OR PXA_TARGET STREQUAL "esp32s31")
     list(APPEND PXA_REQUIRES wamr)
 endif()
+set(PXA_RASTER_SPAN_IRAM_DEFAULT OFF)
+if(PXA_BOARD STREQUAL "esp32s31-korvo-1")
+    # Measured with the complete board firmware, including audio and menus.
+    # Other boards retain their mapped-code policy until device validation.
+    set(PXA_RASTER_SPAN_IRAM_DEFAULT ON)
+endif()
+option(PXA_RASTER_SPAN_IRAM "Place the depth-texture pixel loop in IRAM"
+       ${PXA_RASTER_SPAN_IRAM_DEFAULT})
+set(PXA_LINKER_FRAGMENTS)
+if(PXA_RASTER_SPAN_IRAM AND CONFIG_COMPILER_OPTIMIZATION_PERF AND CONFIG_IDF_TARGET_ESP32S31)
+    list(APPEND PXA_LINKER_FRAGMENTS "raster_span.lf")
+endif()
 
 idf_component_register(
     SRCS ${PXA_SRCS}
@@ -98,7 +111,16 @@ idf_component_register(
                       "${PXA_C_CORE_ROOT}/adapters/include"
     REQUIRES ${PXA_REQUIRES}
     PRIV_REQUIRES ${PXA_PRIV_REQUIRES}
+    LDFRAGMENTS ${PXA_LINKER_FRAGMENTS}
 )
+# The extracted depth/texture span kernel wins on ESP32-S31 with O3; the same
+# kernel at O2 regressed the fixed-world device benchmark. Keep this local to
+# the rasterizer and the performance build, without changing Guest/debug policy.
+if(CONFIG_COMPILER_OPTIMIZATION_PERF AND CONFIG_IDF_TARGET_ESP32S31)
+    set_source_files_properties(
+        "${PXA_C_CORE_ROOT}/src/services/surface/raster.c"
+        PROPERTIES COMPILE_OPTIONS "-O3")
+endif()
 if(CONFIG_WAMR_ENABLE_LIBC_WASI)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_WAMR_LIBC_WASI=1)
 endif()

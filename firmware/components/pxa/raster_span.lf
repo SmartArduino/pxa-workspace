@@ -1,0 +1,6 @@
+# Keep only the tiny pixel loop in internal instruction memory; all polygon
+# setup remains mapped. The portable raster implementation needs no ESP header.
+[mapping:pxa_raster_span]
+archive: libpxa.a
+entries:
+    raster:painter_span_depth_textured (noflash)

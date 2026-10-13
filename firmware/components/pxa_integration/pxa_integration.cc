@@ -1117,10 +1117,10 @@ void PublishDisplayProfile(void*, const pxsys_display_profile_t* display) {
     if (pxsys_reference_layout_compute(display, &layout) == PXSYS_STATUS_OK) {
         bars.top = layout.status_bar.y + layout.status_bar.height;
 #if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
-#if CONFIG_PXSYS_REFERENCE_UI_GESTURE_HANDLE
+        // The input strip remains present when its visual handle is hidden.
+        // Fullscreen apps need this exclusion to keep bottom controls usable.
         bars.bottom =
             pxsys_reference_layout_gesture_strip_height(layout.size_class);
-#endif
         bars.left = pxsys_reference_layout_back_gesture_width();
 #else
         bars.bottom = display->height - layout.navigation_bar.y;

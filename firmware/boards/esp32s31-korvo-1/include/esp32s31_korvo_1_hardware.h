@@ -111,6 +111,7 @@ private:
     bool frame_switch_pending_ = false;
     uint64_t pending_composed_frame_id_ = 0;
     uint64_t pending_composed_input_timestamp_us_ = 0;
+    uint32_t pending_composed_raster_ready_tick_us_ = 0;
     std::atomic<uint32_t> frame_done_us_low_{0};
     int64_t render_started_us_ = 0;
     int64_t perf_report_started_us_ = 0;
