@@ -4,6 +4,8 @@
 
 入口：[官网教程](https://pxa.doit.am/docs/ai-development/)、[签名发行包](https://github.com/SmartArduino/pxa-system/releases/tag/ai-kit-v0.1.0)、[技能源码](https://github.com/SmartArduino/pxa-system/tree/main/ai)。AI 套件使用独立版本号，不替换已发布的 DevKit 0.3.0 附件或签名清单；后续完整 DevKit 的打包流程会携带 `ai/`。
 
+已发布 `ai-kit-v0.1.0`，四个公开附件下载后与本地字节一致，签名和摘要再次通过。归档 19,517 byte，SHA-256 为 `6478e1b58d190a71569247b2a282a0f81ec648c9769aa1fa22e67bda4b3e5d21`。说明中文在前、英文在后；原 DevKit 标签及附件不变，Latest 仍为 v0.3.0。官网已原子部署提交 `2b203be`，24 个静态页面及 21 项搜索条目检查通过。
+
 ## 用户得到的能力
 
 | 能力 | 采用原因与收益 | 开销与验证 |

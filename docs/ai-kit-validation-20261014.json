@@ -299,5 +299,46 @@
     "size": 19517,
     "sha256": "6478e1b58d190a71569247b2a282a0f81ec648c9769aa1fa22e67bda4b3e5d21"
   },
-  "final_archive_example_runtime_passed": true
+  "final_archive_example_runtime_passed": true,
+  "published_release": {
+    "url": "https://github.com/SmartArduino/pxa-system/releases/tag/ai-kit-v0.1.0",
+    "tag": "ai-kit-v0.1.0",
+    "bilingual_chinese_first": true,
+    "previous_release_tag_assets_unchanged": true,
+    "latest_devkit": "v0.3.0",
+    "assets": [
+      {
+        "name": "ai-kit-0.1.0.json",
+        "size": 419,
+        "digest": "sha256:fd9b299f2a3b3616e105a78577ee53a408d3778f5084db4605c390412ed9c3b8",
+        "browser_download_url": "https://github.com/SmartArduino/pxa-system/releases/download/ai-kit-v0.1.0/ai-kit-0.1.0.json"
+      },
+      {
+        "name": "ai-kit-0.1.0.json.sig",
+        "size": 70,
+        "digest": "sha256:8a94f456b6787a499e1e1955c832efebae3926355c67720b5c99fd37d03792a4",
+        "browser_download_url": "https://github.com/SmartArduino/pxa-system/releases/download/ai-kit-v0.1.0/ai-kit-0.1.0.json.sig"
+      },
+      {
+        "name": "pxa-ai-kit-0.1.0.SHA256SUMS",
+        "size": 262,
+        "digest": "sha256:095a23a5595ee8ffae57489c9854e252fc129d8418a90d93435c3b57bc6d435f",
+        "browser_download_url": "https://github.com/SmartArduino/pxa-system/releases/download/ai-kit-v0.1.0/pxa-ai-kit-0.1.0.SHA256SUMS"
+      },
+      {
+        "name": "pxa-ai-kit-0.1.0.tar.gz",
+        "size": 19517,
+        "digest": "sha256:6478e1b58d190a71569247b2a282a0f81ec648c9769aa1fa22e67bda4b3e5d21",
+        "browser_download_url": "https://github.com/SmartArduino/pxa-system/releases/download/ai-kit-v0.1.0/pxa-ai-kit-0.1.0.tar.gz"
+      }
+    ],
+    "download_readback_verified": true
+  },
+  "website": {
+    "url": "https://pxa.doit.am/docs/ai-development/",
+    "repository": "2b203be98049d25386aa9c5376f8a0aeafebd336",
+    "guides": 21,
+    "static_pages_checked": 24,
+    "atomic_deployment_verified": true
+  }
 }
