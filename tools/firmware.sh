@@ -59,6 +59,15 @@ done
 # Honor an explicitly configured wrapper, including for custom registries.
 export IDF_COMPONENT_WRAPPER="${IDF_COMPONENT_WRAPPER:-$script_dir/idf_component_registry.py}"
 
+# Board build trees are independent, but ESP-IDF's managed_components directory
+# is shared. Serialize configuration/build actions so one board cannot replace
+# another board's dependencies while its compiler is reading them.
+if [[ "$action" != monitor ]]; then
+  mkdir -p "$project_root/.pxa"
+  exec 9>"$project_root/.pxa/firmware-build.lock"
+  flock 9
+fi
+
 # Mosaico's external UART supports 2 Mbaud. Explicit --baud still wins, and
 # ESPBAUD remains available for users whose adapter needs a slower rate.
 if [[ "$board" == esp-mosaico && "$action" == flash ]]; then

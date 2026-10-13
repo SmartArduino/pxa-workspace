@@ -1287,7 +1287,11 @@ bool SensecapWatcherHardware::CaptureRgb565(
     const size_t needed =
         static_cast<size_t>(WATCHER_DISPLAY_WIDTH) * WATCHER_DISPLAY_HEIGHT;
     if (pixel_count < needed) return false;
-    if (after_present || !snapshot_ready_.load(std::memory_order_acquire)) {
+    // This mirror is populated on demand, rather than during every flush.
+    // A ready mirror belongs to the previous request and can be arbitrarily
+    // old. Both capture modes must acquire a fresh completed frame.
+    (void)after_present;
+    {
         if (snapshot_sem_ == nullptr || !lvgl_port_lock(1000)) return false;
         (void)xSemaphoreTake(snapshot_sem_, 0);
         uint32_t revision = snapshot_frame_id_.fetch_add(1, std::memory_order_relaxed) + 1;

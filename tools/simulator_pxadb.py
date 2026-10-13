@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import os
 import pathlib
+import re
 import secrets
 import shutil
 import signal
@@ -45,9 +46,7 @@ def decode_path(value: str) -> str:
 
 
 def safe_identity(identity: str) -> bool:
-    return (identity.startswith("pxa-") and len(identity) <= 64 and
-            all(character.isascii() and (character.islower() or character.isdigit()
-                or character in ".-_") for character in identity))
+    return bool(re.fullmatch(r'(?:[0-9a-f]{64}:)?[a-z][a-z0-9._-]{0,63}', identity))
 
 
 def parse_tcp_address(value: str) -> tuple[str, int]:
@@ -133,6 +132,8 @@ class SimulatorPxaDb:
                 if len(data) != size:
                     raise ServiceError("simulator_screenshot_invalid")
                 return bytes(data)
+            if header.startswith(b"OK "):
+                return header[3:] + remainder
             if header != b"OK":
                 raise ServiceError("simulator_control_response_invalid")
             return bytes(remainder)
@@ -244,9 +245,15 @@ class SimulatorPxaDb:
                 if entry.name.startswith(".") or not (root / "manifest.pxm").is_file():
                     continue
                 enabled = int(not (entry / ".disabled").exists())
+                active = 0
+                if self.control_socket is not None and self.control_socket.exists():
+                    try:
+                        active = int(self.control(f"PACKAGE active {entry.name}") == b"1")
+                    except ServiceError:
+                        pass  # Older native runners do not expose this query.
                 self.send(connection, sequence, "PKG",
                           f"{entry.name}\t{entry.name}\tunknown\t"
-                          f"builtin=0;installed=1;staged=0;enabled={enabled};active=0")
+                          f"builtin=0;installed=1;staged=0;enabled={enabled};active={active}")
         self.send(connection, sequence, "OK")
 
     def begin_upload(self, connection: "BinaryHandler", sequence: int,
@@ -415,6 +422,10 @@ class SimulatorPxaDb:
                        action: str, identity: str) -> None:
         if not safe_identity(identity):
             raise ServiceError("invalid_identity")
+        if action in {"run", "stop"}:
+            self.control(f"PACKAGE {action} {identity}")
+            self.send(connection, sequence, "OK", "accepted")
+            return
         # The UI owner stops live Guests and mutates the same store as Settings.
         # Never bypass it on an application error or a busy store.
         with self.lock:
@@ -479,7 +490,7 @@ class SimulatorPxaDb:
             self.file_remove_tree(connection, sequence, arguments)
         elif command == "PACKAGE" and len(arguments) == 2 and arguments[0] == "deploy":
             self.deploy(connection, sequence, arguments[1])
-        elif command == "PACKAGE" and len(arguments) == 2 and arguments[0] in {"enable", "disable", "clear-data", "uninstall"}:
+        elif command == "PACKAGE" and len(arguments) == 2 and arguments[0] in {"enable", "disable", "clear-data", "uninstall", "run", "stop"}:
             self.package_action(connection, sequence, arguments[0], arguments[1])
         else:
             raise ServiceError("unsupported_simulator_command")

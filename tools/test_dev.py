@@ -22,6 +22,17 @@ class DeviceLaunchTest(unittest.TestCase):
         self.developer = dev.Developer(args, mock.Mock(), pathlib.Path("."))
         self.developer.package_id = "pxa-game-render-bench"
 
+    def test_failed_build_keeps_running_application_and_logs(self) -> None:
+        runner, logcat = mock.Mock(), mock.Mock()
+        self.developer.runner, self.developer.logcat = runner, logcat
+        with mock.patch.object(self.developer, "build", side_effect=dev.DevError("compile failed")), \
+                mock.patch.object(dev, "stop_process") as stop:
+            with self.assertRaisesRegex(dev.DevError, "compile failed"):
+                self.developer.deploy()
+        stop.assert_not_called()
+        self.assertIs(self.developer.runner, runner)
+        self.assertIs(self.developer.logcat, logcat)
+
     def test_reads_identity_from_signed_package(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -172,9 +183,9 @@ elif sys.argv[2] == 'stay':
                                        start_new_session=True)
             try:
                 deadline = time.monotonic() + 3
-                while not ready.exists() and time.monotonic() < deadline:
+                while (not ready.exists() or not ready.stat().st_size) and time.monotonic() < deadline:
                     time.sleep(0.01)
-                self.assertTrue(ready.exists())
+                self.assertTrue(ready.exists() and ready.stat().st_size)
                 runner_pid = int(ready.read_text())
                 if shell_exited:
                     process.wait(timeout=3)

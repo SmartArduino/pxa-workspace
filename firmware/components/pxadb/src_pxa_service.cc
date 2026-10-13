@@ -53,6 +53,8 @@
 #if CONFIG_PXA_ENABLED
 #include "pxa/pxa_host.h"
 #include "pxa/pxa_esp_surface.h"
+#include "pxa/version.h"
+#include "pxa/wire.h"
 #endif
 
 namespace pxadb {
@@ -1179,6 +1181,12 @@ void SendInfo(unsigned long sequence) {
 #endif
     );
 #if CONFIG_PXA_ENABLED
+    const size_t capability_offset = strlen(payload);
+    snprintf(payload + capability_offset, sizeof(payload) - capability_offset,
+             ";board=%s;pxa_version=%s;pxa_core=%u.%u",
+             PXA_FIRMWARE_BOARD, PXA_VERSION_STRING,
+             static_cast<unsigned>(PXA_CORE_VERSION_MAJOR),
+             static_cast<unsigned>(PXA_CORE_VERSION_MINOR));
     size_t storage_total=0,storage_used=0;
     if(esp_littlefs_info(CONFIG_PXA_STORAGE_PARTITION_LABEL,&storage_total,&storage_used)==ESP_OK){
         const size_t used=strlen(payload);

@@ -1466,17 +1466,22 @@ def command_package_install(arguments: argparse.Namespace) -> int:
 
 def command_package_run(arguments: argparse.Namespace) -> int:
     port = resolve_pxadb_port(arguments.port, arguments.timeout)
-    if not port.startswith("unix:"):
-        with open_client(port, arguments.timeout, arguments.logcat) as client:
-            client.request(f"PACKAGE run {arguments.identity}")
-        print(f"run: {arguments.identity}")
-        return 0
+    simulator_script = pathlib.Path(__file__).resolve().parents[1] / "simulator.sh"
+    live_simulator = port.startswith("unix:") and pathlib.Path(port.removeprefix("unix:")).exists()
+    if not port.startswith("unix:") or live_simulator or not simulator_script.is_file():
+        try:
+            with open_client(port, arguments.timeout, arguments.logcat) as client:
+                client.request(f"PACKAGE run {arguments.identity}")
+            print(f"run: {arguments.identity}")
+            return 0
+        except PxaDbError as error:
+            if not port.startswith("unix:") or str(error) != "unsupported_simulator_command":
+                raise
     socket_path = pathlib.Path(port.removeprefix("unix:"))
     selector = socket_path.stem
     if simulator_socket(selector) != port:
         raise PxaDbError("package run requires a simulator socket selected with --simulator")
     profile, separator, instance = selector.partition("@")
-    simulator_script = pathlib.Path(__file__).resolve().parents[1] / "simulator.sh"
     if not simulator_script.is_file():
         raise PxaDbError(f"simulator launcher is unavailable: {simulator_script}")
     command = [str(simulator_script), "product", "run", "--profile", profile]

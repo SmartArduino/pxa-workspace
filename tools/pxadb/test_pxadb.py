@@ -488,6 +488,7 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         ])
         completed = mock.MagicMock(returncode=0)
         with mock.patch.object(pxadb, "resolve_pxadb_port", return_value=arguments.port), \
+                mock.patch.object(pxadb, "open_client", side_effect=pxadb.PxaDbRejectedError("unsupported_simulator_command")), \
                 mock.patch.object(pxadb.subprocess, "run", return_value=completed) as run:
             self.assertEqual(pxadb.command_package_run(arguments), 0)
         self.assertEqual(run.call_args.args[0][-4:],
@@ -499,6 +500,7 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         ])
         completed = mock.MagicMock(returncode=0)
         with mock.patch.object(pxadb, "resolve_pxadb_port", return_value=arguments.port), \
+                mock.patch.object(pxadb, "open_client", side_effect=pxadb.PxaDbRejectedError("unsupported_simulator_command")), \
                 mock.patch.object(pxadb.subprocess, "run", return_value=completed) as run:
             self.assertEqual(pxadb.command_package_run(arguments), 0)
         self.assertEqual(run.call_args.args[0][-6:], [
@@ -515,6 +517,17 @@ class PxaDbLogStreamingTest(unittest.TestCase):
             self.assertEqual(pxadb.command_package_run(arguments), 0)
         client.__enter__().request.assert_called_once_with(
             "PACKAGE run pxa-voxel-craft")
+
+    def test_package_run_live_simulator_requests_owner_without_source_launcher(self) -> None:
+        arguments = pxadb.build_parser().parse_args([
+            "package", "run", "hello", "--simulator", "pai-touch@external"])
+        client = mock.MagicMock()
+        with mock.patch.object(pathlib.Path, "exists", return_value=True), \
+                mock.patch.object(pxadb, "open_client", return_value=client), \
+                mock.patch.object(pxadb.subprocess, "run") as launcher:
+            self.assertEqual(pxadb.command_package_run(arguments), 0)
+        client.__enter__().request.assert_called_once_with("PACKAGE run hello")
+        launcher.assert_not_called()
 
     def test_package_stop_on_device_requests_a_stop(self) -> None:
         arguments = pxadb.build_parser().parse_args([

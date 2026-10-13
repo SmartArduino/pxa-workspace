@@ -19,6 +19,10 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_REQUIRES ${PXADB_PRIV_REQUIRES})
 
+idf_build_get_property(PXADB_BOARD_ID PXA_BOARD_ID)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    PXA_FIRMWARE_BOARD="${PXADB_BOARD_ID}")
+
 if(CONFIG_PXADB_TRANSPORT_USB_CDC)
     target_link_libraries(${COMPONENT_LIB} PRIVATE idf::espressif__esp_tinyusb)
 endif()

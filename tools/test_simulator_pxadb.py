@@ -174,6 +174,14 @@ class SimulatorPackageCommandTest(unittest.TestCase):
     setUp = SimulatorFileCommandTest.setUp
     tearDown = SimulatorFileCommandTest.tearDown
     storage = SimulatorFileCommandTest.storage
+    def test_lifecycle_uses_live_owner_with_unprefixed_and_canonical_ids(self) -> None:
+        with patch.object(self.service, "control") as owner, patch("simulator_pxadb.subprocess.run") as installer:
+            self.service.dispatch(self.connection, 1, "PACKAGE", ["run", "hello"])
+            self.service.dispatch(self.connection, 2, "PACKAGE", ["stop", 'a' * 64 + ':hello'])
+            self.assertEqual([call.args[0] for call in owner.call_args_list], [
+                'PACKAGE run hello', 'PACKAGE stop ' + 'a' * 64 + ':hello'])
+            installer.assert_not_called()
+
     def test_management_uses_live_ui_owner(self) -> None:
         control = self.storage("control.sock"); control.touch()
         self.service.control_socket = control

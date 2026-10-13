@@ -143,7 +143,8 @@ else
   fi
   targets=("$board_target")
 fi
-if [[ -n "$board_target" && ${#targets[@]} -gt 1 && "${targets[0]}" != "$board_target" ]]; then
+if [[ -n "$board_target" && ${#targets[@]} -gt 1 &&
+      " ${targets[*]} " == *" $board_target "* && "${targets[0]}" != "$board_target" ]]; then
   reordered=()
   for candidate in "${targets[@]}"; do
     [[ "$candidate" == "$board_target" ]] || reordered+=("$candidate")

@@ -248,19 +248,27 @@ class Developer:
                 )
 
     def deploy(self) -> None:
-        stop_process(self.runner, "simulator", self.log)
-        self.runner = None
-        stop_process(self.logcat, "logcat", self.log)
-        self.logcat = None
         self.log.write(f"\n[dev] building {self.app_id} for {self.args.mode}\n")
         self.build()
         if not self.package_path.is_file():
             raise DevError(f"package build did not produce {self.package_path}")
         try:
-            self.package_id = package_manifest_identity(self.package_path)
+            candidate_id = package_manifest_identity(self.package_path)
         except (OSError, PxaDbError) as error:
             raise DevError(f"cannot read built package identity: {error}") from error
-        self.install()
+        previous_id = self.package_id
+        stop_process(self.runner, "simulator", self.log)
+        self.runner = None
+        stop_process(self.logcat, "logcat", self.log)
+        self.logcat = None
+        try:
+            self.install()
+        except DevError:
+            if previous_id is not None:
+                self.package_id = previous_id
+                self.start_app()
+            raise
+        self.package_id = candidate_id
         self.start_app()
         self.log.write(f"[dev] running {self.package_id}\n")
 

@@ -40,7 +40,9 @@ set(SDKCONFIG_DEFAULTS
 # Keep the generated Kconfig state per board. The shared firmware/sdkconfig
 # would otherwise leak flash size, partition table and feature choices from a
 # previously built board into the next one.
-set(SDKCONFIG "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.${PXA_BOARD}")
+if(NOT SDKCONFIG)
+    set(SDKCONFIG "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.${PXA_BOARD}")
+endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # Each board can resolve a different managed-component graph. Keep its exact
@@ -50,6 +52,7 @@ idf_build_set_property(DEPENDENCIES_LOCK "dependencies.lock.${PXA_BOARD}")
 # the selected board component through an ESP-IDF build property instead of
 # relying on the top-level PXA_BOARD cache variable in that process.
 idf_build_set_property(PXA_BOARD_COMPONENT "${PXA_BOARD_COMPONENT}")
+idf_build_set_property(PXA_BOARD_ID "${PXA_BOARD}")
 idf_build_set_property(MINIMAL_BUILD ON)
 # The generic ESP PXA host has no app_pages dependency. Legacy products can
 # provide their own compatibility component without changing this project.
