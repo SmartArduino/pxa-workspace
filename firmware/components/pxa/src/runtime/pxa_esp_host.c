@@ -3836,8 +3836,12 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
         pxa_esp_ui_shell_dismiss_store_result(prompt_id);
         pxa_esp_surface_runtime_modal_leave();
         memset(&g_store_result, 0, sizeof(g_store_result));
-        if (granted && identity[0] != '\0')
-            (void)pxa_esp_host_launch(identity);
+        /* The system task manager must create the app page and foreground
+         * instance before activating its runtime, just like a launcher tap. */
+        if (granted && identity[0] != '\0' &&
+            !pxa_host_request_launch(identity))
+            ESP_LOGW(PXA_ESP_HOST_TAG,
+                     "Unable to open installed Package: %s", identity);
         return;
     }
     if (g_store_install != NULL && g_store_install->prompt_id == prompt_id) {
