@@ -19,3 +19,6 @@
 /tools/pxadb-gui/__pycache__/
 /tools/pxadb-gui/pxadb_gui/__pycache__/
 /tools/pxadb-gui/*.egg-info/
+
+# Workspace locks and local tool state
+/.pxa/

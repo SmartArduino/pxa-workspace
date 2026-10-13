@@ -1,4 +1,5 @@
 #include "pxadb/pxadb_service.h"
+#include "pxadb_fs_policy.h"
 
 #include <algorithm>
 #include <atomic>
@@ -478,8 +479,7 @@ bool IsWritableFsPath(const char* relative) {
     // the two managed subtrees stay in place even while unlocked.
     return IsSystemWriteUnlocked() &&
            strncmp(relative, "system/", 7) == 0 &&
-           strcmp(relative, "system/fonts") != 0 &&
-           strcmp(relative, "system/pxa") != 0;
+           !pxadb::protected_system_directory(relative);
 }
 
 bool IsPxaInboxPath(const char* relative) {
@@ -921,7 +921,8 @@ void MakeFsDirectory(unsigned long sequence, const char* encoded_path) {
     char relative[kFsPathLength] = {};
     char path[kFsAbsolutePathLength] = {};
     if (!DecodeFsPath(encoded_path, relative, sizeof(relative), path, sizeof(path)) ||
-        !IsWritableFsPath(relative)) {
+        !pxadb::may_create_directory(relative, IsWritableFsPath(relative),
+                                     IsSystemWriteUnlocked())) {
         SendFrame(sequence, "ERR", "invalid_path");
         return;
     }

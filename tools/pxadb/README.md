@@ -220,3 +220,5 @@ TCP token 认证不加密流量。仅 UI 的桌面模拟器仍没有 PXADB 端�
 
 基于同一客户端的桌面 GUI 位于 `tools/pxadb-gui.sh`，支持实时预览、远程操纵、
 文件传输和 Package 管理，详见 [PXADB GUI](../pxadb-gui/README.md)。
+
+Protected system directories can be created only after explicit `fs unlock`; this includes missing `system/pxa` and `system/fonts` parents for initial factory provisioning. Upload/replacement/removal still use the stricter policy. Finish provisioning with `fs lock`. A normally installed store cannot obtain installer authority merely by using the `pxa-store` ID; the product must provision the trusted factory package.
