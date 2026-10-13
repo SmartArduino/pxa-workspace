@@ -25,6 +25,8 @@ C++26 and O3 are the defaults; `pxa.lock` pins the SDK and toolchain. The publis
 
 The optional [PXA AI kit](https://pxa.doit.am/docs/ai-development/) adds development/debug/device/release skills, project-scoped agents and repeatable verification scripts. It works with the existing DevKit and adds no device runtime overhead. [Validation report (Chinese)](docs/ai-kit-validation-20261014.zh-CN.md)
 
+Windows/macOS users can use [the cross-platform companion](tools/portable/README.en.md): build and run headless in a container, then use host-native PXADB for USB serial without forwarding devices.
+
 The remaining commands are for system and board development, from this workspace root:
 
 ```sh

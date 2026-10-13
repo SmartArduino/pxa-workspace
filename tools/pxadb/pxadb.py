@@ -601,10 +601,8 @@ def discover_devices(timeout: float) -> list[Device]:
 
 
 def discover_simulators(timeout: float) -> list[Device]:
-    socket_root = pathlib.Path(os.environ.get(
-        "PXA_SIMULATOR_SOCKET_ROOT", f"/tmp/pxa-simulator-{os.getuid()}"
-    ))
-    if not socket_root.is_dir():
+    socket_root = simulator_socket_root()
+    if socket_root is None or not socket_root.is_dir():
         return []
     devices: list[Device] = []
     for path in sorted(socket_root.glob("*.sock")):
@@ -659,6 +657,14 @@ def resolve_pxadb_port(port: str | None, timeout: float) -> str:
     raise PxaDbError(f"multiple PXADB devices found; use --port:\n{choices}")
 
 
+def simulator_socket_root() -> pathlib.Path | None:
+    override = os.environ.get("PXA_SIMULATOR_SOCKET_ROOT")
+    if override:
+        return pathlib.Path(override)
+    getuid = getattr(os, "getuid", None)
+    return pathlib.Path(f"/tmp/pxa-simulator-{getuid()}") if callable(getuid) else None
+
+
 def simulator_socket(profile: str) -> str:
     profile_name, separator, instance_name = profile.partition("@")
     if (not profile_name or len(profile) > 96 or profile.count("@") > 1 or
@@ -670,9 +676,9 @@ def simulator_socket(profile: str) -> str:
         raise argparse.ArgumentTypeError(
             "simulator selector must be PROFILE or PROFILE@INSTANCE; names use lowercase letters, digits or hyphens"
         )
-    socket_root = pathlib.Path(os.environ.get(
-        "PXA_SIMULATOR_SOCKET_ROOT", f"/tmp/pxa-simulator-{os.getuid()}"
-    ))
+    socket_root = simulator_socket_root()
+    if socket_root is None:
+        raise argparse.ArgumentTypeError("Local simulator discovery is unavailable on this host; use --port for serial or --connect with --token for a TCP service")
     return f"unix:{socket_root / (profile + '.sock')}"
 
 

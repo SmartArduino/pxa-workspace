@@ -102,6 +102,22 @@ class FakeBufferedSerial:
         self.closed = True
 
 
+class NativeHostDiscoveryTest(unittest.TestCase):
+    def test_windows_without_getuid_keeps_serial_discovery(self):
+        with mock.patch.object(pxadb.os, 'getuid', None, create=True), \
+             mock.patch.dict(pxadb.os.environ, {}, clear=True):
+            self.assertIsNone(pxadb.simulator_socket_root())
+            self.assertEqual(pxadb.discover_simulators(.1), [])
+            self.assertEqual(pxadb.resolve_pxadb_port('COM7', .1), 'COM7')
+            with self.assertRaises(pxadb.argparse.ArgumentTypeError):
+                pxadb.simulator_socket('pai-touch')
+
+    def test_explicit_socket_root_does_not_evaluate_getuid(self):
+        with mock.patch.object(pxadb.os, 'getuid', None, create=True), \
+             mock.patch.dict(pxadb.os.environ, {'PXA_SIMULATOR_SOCKET_ROOT': '/custom'}):
+            self.assertEqual(pxadb.simulator_socket('pai-touch'), 'unix:/custom/pai-touch.sock')
+
+
 class SerialLineReaderTest(unittest.TestCase):
     def test_reassembles_lines_without_byte_reads(self) -> None:
         port = FakeBufferedSerial([

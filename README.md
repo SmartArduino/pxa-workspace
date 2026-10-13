@@ -24,6 +24,8 @@ pxa run hello
 
 可选的 [PXA AI 套件](https://pxa.doit.am/docs/ai-development/) 提供开发、调试、真机验收与发布 skills，以及项目内 agent 配置和自动验证脚本。配合现有 DevKit 使用，不增加设备运行开销。[实际验证报告](docs/ai-kit-validation-20261014.zh-CN.md)
 
+Windows/macOS 可使用 [跨平台工具](tools/portable/README.md)：容器负责构建和无界面模拟器，宿主机 PXADB 直接连接 USB 串口；无需 USB 转发。
+
 以下命令面向修改系统或板级驱动的开发者，在本仓库根目录运行：
 
 ```sh
