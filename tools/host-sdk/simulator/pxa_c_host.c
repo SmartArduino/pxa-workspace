@@ -45,6 +45,7 @@
 #include "pxa/package.h"
 #include "pxa/permission.h"
 #include "pxa/posix/pxa_posix_fs.h"
+#include "pxa/posix/pxa_posix_clock.h"
 #include "pxa/posix/pxa_posix_installer.h"
 #include "pxa/posix/pxa_posix_scheduler_store.h"
 #include "pxa/posix/pxa_posix_storage.h"
@@ -363,7 +364,7 @@ typedef struct {
         uint8_t active;
         uint32_t prompt_id;
         pxa_component_t component;
-        uint32_t request_id;
+        pxa_request_token_t request_token;
         uint16_t permission_index;
     } permission_prompt;
     uint32_t next_permission_prompt_id;
@@ -3102,25 +3103,41 @@ static pxa_status_t c_host_sync_execute(
 static pxa_status_t c_host_clock_control(void *context, pxa_runtime_t *runtime,
                                          pxa_component_t component,
                                          const pxa_message_view_t *message) {
-    uint8_t response[24];
+    uint8_t response[PXA_ENVELOPE_SIZE + 12];
     uint8_t payload[12];
     pxa_writer_t writer;
     uint64_t frequency;
     uint64_t timestamp_us;
     (void)context;
+    if (message->opcode == PXA_CLOCK_WALL_TIME)
+        return pxa_posix_clock_control(runtime, component, message, host_now_us(NULL));
     if (message->opcode == PXA_CLOCK_NOW) {
-        if (message->request_id == 0 || message->payload.size != 0) {
+        if (message->request_token == 0 || message->payload.size != 0) {
             return PXA_STATUS_INVALID_ARGUMENT;
         }
         frequency = (uint64_t)SDL_GetPerformanceFrequency();
         timestamp_us = frequency == 0 ? 0 :
             (uint64_t)SDL_GetPerformanceCounter() * UINT64_C(1000000) /
             frequency;
+        uint16_t profile;
+        pxa_status_t status = pxa_component_wire_profile(runtime, component, &profile);
+        if (status != PXA_STATUS_OK) return status;
+        if (profile == 1) {
+            status = pxa_request_begin_reserved(runtime, component,
+                message->request_token, PXA_CLOCK_SERVICE_ID, PXA_CLOCK_NOW,
+                0, sizeof(timestamp_us));
+            if (status != PXA_STATUS_OK) return status;
+            status = pxa_request_commit(runtime, component, message->request_token);
+            if (status != PXA_STATUS_OK) return status;
+            pxa_write_u64(payload, timestamp_us);
+            return pxa_request_complete(runtime, component, message->request_token,
+                PXA_STATUS_OK, payload, sizeof(timestamp_us));
+        }
         pxa_write_u32(payload, PXA_STATUS_OK);
         pxa_write_u64(payload + 4, timestamp_us);
         pxa_writer_init(&writer, response, sizeof(response));
         if (pxa_writer_message(&writer, PXA_CLOCK_SERVICE_ID,
-                               PXA_CLOCK_NOW_RESULT, message->request_id,
+                               PXA_CLOCK_NOW_RESULT, message->request_token,
                                payload, sizeof(payload)) != PXA_STATUS_OK) {
             return PXA_STATUS_INTERNAL;
         }
@@ -3128,9 +3145,9 @@ static pxa_status_t c_host_clock_control(void *context, pxa_runtime_t *runtime,
             runtime, component, response, writer.size, 0,
             ((uint64_t)PXA_CLOCK_SERVICE_ID << 48) |
                 ((uint64_t)PXA_CLOCK_NOW_RESULT << 32) |
-                message->request_id);
+                message->request_token);
     }
-    if (message->opcode != PXA_CLOCK_SET_PERIOD || message->request_id != 0 ||
+    if (message->opcode != PXA_CLOCK_SET_PERIOD || message->request_token != 0 ||
         message->payload.size != 2) {
         return PXA_STATUS_INVALID_ARGUMENT;
     }
@@ -4032,7 +4049,7 @@ static int c_host_register_services(void) {
 /* --- maintenance ---------------------------------------------------------- */
 
 static void c_host_post_clock_tick(void) {
-    uint8_t message[12 + 8];
+    uint8_t message[PXA_ENVELOPE_SIZE + 8];
     pxa_writer_t writer;
     uint8_t payload[8];
     pxa_status_t status;
@@ -4283,14 +4300,14 @@ static void c_host_dismiss_permission_prompt(void) {
 }
 
 static pxa_status_t c_host_request_runtime_permission_prompt(
-    void *context, pxa_component_t component, uint32_t request_id,
+    void *context, pxa_component_t component, pxa_request_token_t request_token,
     pxa_bytes_t app_identity, pxa_bytes_t name, pxa_bytes_t scope) {
     app_pages_runtime_permission_prompt_t prompt;
     c_host_app_permission_t *permission;
     uint32_t prompt_id;
     (void)context;
     (void)app_identity;
-    if (g_host.active_app == NULL || request_id == 0 ||
+    if (g_host.active_app == NULL || request_token == 0 ||
         (g_host.active_component != PXA_COMPONENT_INVALID &&
          component != g_host.active_component) ||
         g_host.permission_prompt.active) {
@@ -4313,7 +4330,7 @@ static pxa_status_t c_host_request_runtime_permission_prompt(
     g_host.permission_prompt.active = 1;
     g_host.permission_prompt.prompt_id = prompt_id;
     g_host.permission_prompt.component = component;
-    g_host.permission_prompt.request_id = request_id;
+    g_host.permission_prompt.request_token = request_token;
     g_host.permission_prompt.permission_index =
         (uint16_t)(permission - g_host.active_app->permissions);
     if (!app_pages_post_runtime_permission_prompt(&prompt)) {
@@ -4328,7 +4345,7 @@ static bool c_host_runtime_permission_response(uint32_t prompt_id,
                                                void *user_data) {
     pxa_status_t status;
     pxa_component_t component;
-    uint32_t request_id;
+    pxa_request_token_t request_token;
     (void)user_data;
     if (!g_host.permission_prompt.active ||
         g_host.permission_prompt.prompt_id != prompt_id ||
@@ -4336,9 +4353,9 @@ static bool c_host_runtime_permission_response(uint32_t prompt_id,
         return false;
     }
     component = g_host.permission_prompt.component;
-    request_id = g_host.permission_prompt.request_id;
+    request_token = g_host.permission_prompt.request_token;
     status = pxa_permission_prompt_complete(
-        g_host.permission_service, component, request_id,
+        g_host.permission_service, component, request_token,
         granted ? PXA_PERMISSION_ALLOW : PXA_PERMISSION_DENY);
     if (status != PXA_STATUS_OK) return false;
     memset(&g_host.permission_prompt, 0, sizeof(g_host.permission_prompt));
@@ -4537,7 +4554,7 @@ static int c_host_dispatch_back_request(uint8_t *close_requested) {
         memset(&event, 0, sizeof(event));
         event.service = result.service;
         event.opcode = result.opcode;
-        event.request_id = result.request_id;
+        event.request_token = result.request_token;
         event.payload.size = result.payload_size;
         return pxa_window_resolve_event_result(&event, result.guest_result,
                                                close_requested) == PXA_STATUS_OK
@@ -5761,7 +5778,7 @@ bool simulator_pxa_ipc_self_test(void) {
         goto done;
     }
     passed = message.service == PXA_IPC_SERVICE_ID && message.opcode == PXA_IPC_REPLY_EVENT &&
-             message.request_id != 0 && message.payload.size >= 4 &&
+             message.request_token != 0 && message.payload.size >= 4 &&
              (pxa_status_t)pxa_read_u32(message.payload.data) == PXA_STATUS_OK;
 
 done:
