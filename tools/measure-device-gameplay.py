@@ -3,8 +3,8 @@
 
 Uses device timestamps and distinct panel-completion intervals, not submission
 FPS or UART round trips. The input association is Host telemetry, not proof of
-physical touch-to-photon latency. Install a fresh test game before using this
-tool; --start is the title-page tap, in logical display pixels.
+physical touch-to-photon latency. The supplied manifest must match the installed
+game; --start is the title-page tap, in logical display pixels.
 """
 from __future__ import annotations
 
@@ -35,30 +35,52 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True)
     parser.add_argument("--app", required=True)
-    parser.add_argument("--package", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--package", type=Path)
+    source.add_argument("--installed-manifest", type=Path,
+                        help="snapshot of the installed manifest when its original package is unavailable")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repeat", type=int, default=3)
     parser.add_argument("--seconds", type=float, default=4)
     parser.add_argument("--warmup", type=float, default=6)
+    parser.add_argument("--charge-seconds", type=float, default=.45,
+                        help="requested hold duration; UART/sync time also affects actual device hold")
     parser.add_argument("--start", type=int, nargs=2)
+    parser.add_argument("--prepare-tap", type=int, nargs=2, action="append", default=[],
+                        help="tap a menu before --start; repeat to load the same saved world")
+    parser.add_argument("--expected-serial", help="abort before input if HELLO identity differs")
     parser.add_argument("--size", type=int, nargs=2, default=[800, 480])
     parser.add_argument("--scenes", nargs="+", choices=["idle", "turn", "walk", "charge"],
                         default=["idle", "turn"])
     args = parser.parse_args()
     if args.repeat < 1 or not 1 <= args.seconds <= 4 or args.warmup < 0:
         parser.error("repeat >= 1, 1 <= seconds <= 4, warmup >= 0 required")
+    if not 0 < args.charge_seconds <= args.seconds:
+        parser.error("0 < charge-seconds <= seconds required")
     args.output.mkdir(parents=True, exist_ok=True)
-    report = {"app": args.app, "package_sha256": hashlib.sha256(args.package.read_bytes()).hexdigest(),
-              "seconds": args.seconds, "size": args.size, "start": args.start,
-              "runs": [], "passed": False,
+    manifest = pxadb.read_package_manifest(args.package) if args.package else args.installed_manifest.read_bytes()
+    manifest_sha256 = hashlib.sha256(manifest).hexdigest()
+    report = {"app": args.app,
+              "package_sha256": hashlib.sha256(args.package.read_bytes()).hexdigest() if args.package else None,
+              "manifest_sha256": manifest_sha256,
+              "seconds": args.seconds, "warmup": args.warmup,
+              "charge_seconds": args.charge_seconds,
+              "size": args.size, "start": args.start, "prepare_taps": args.prepare_tap,
+              "runs": [], "passed": False, "display_errors": [],
               "latency_scope": "injected device sample to Host Guest dispatch, associated submission and panel buffer completion; excludes physical controller and optical response"}
     epoch = time.monotonic()
-    running = recording = monitoring = False
+    running = recording = monitoring = verified = False
     with (args.output / "serial.jsonl").open("w", buffering=1) as log, \
             pxadb.PxaDbClient(args.port, 15) as client:
         def record(kind, payload):
-            log.write(json.dumps({"seconds": time.monotonic() - epoch,
-                                  "kind": kind, "payload": payload}) + "\n")
+            event = {"seconds": time.monotonic() - epoch,
+                     "kind": kind, "payload": payload}
+            log.write(json.dumps(event) + "\n")
+            if kind in ("LOG", "RAW") and any(message in payload for message in (
+                    "send color failed", "flush failed (", "DMA TX underflow",
+                    "Failed to allocate priv TX buffer", "Task watchdog got triggered",
+                    "Guru Meditation", "assert failed")):
+                report["display_errors"].append(event)
 
         client.log_callback = lambda frame: record(frame.kind, frame.payload)
         client.raw_callback = lambda data: record("RAW", data.decode("utf-8", "replace"))
@@ -119,21 +141,41 @@ def main():
 
         try:
             report["hello"] = client.hello()
+            if args.expected_serial and pxadb.info_properties(report["hello"]).get("serial") != args.expected_serial:
+                raise RuntimeError("unexpected device identity; no input or app commands sent")
             if "heap-local" not in report["hello"]:
                 raise RuntimeError("firmware must expose local heap minima")
-            for frame in request("PACKAGES"):
+            packages = request("PACKAGES")
+            installed = [frame.payload.split("\t")[0] for frame in packages
+                         if frame.kind == "PKG" and "installed=1" in frame.payload
+                         and frame.payload.split("\t")[0].split(":", 1)[-1] == args.app]
+            if len(installed) != 1:
+                raise RuntimeError("expected exactly one installed test application")
+            manifest_path = "pxa-state/packages/" + installed[0].replace(":", "~", 1) + "/manifest.pxm"
+            installed_digest = properties("FSSHA " + pxadb.client_encode_path(manifest_path))
+            if installed_digest.get("sha256") != manifest_sha256:
+                raise RuntimeError("installed package differs from the supplied manifest; no input or app commands sent")
+            for frame in packages:
                 if frame.kind == "PKG" and "active=1" in frame.payload:
-                    if args.app not in frame.payload:
+                    if frame.payload.split("\t", 1)[0] != installed[0]:
                         raise RuntimeError("stop the other active application before benchmarking")
                     request(f"PACKAGE stop {args.app}")
                     pump(.5)
+            verified = True
             client.subscribe_logs()
             w, h = args.size
             # The lock screen deliberately suspends presentation. An upward
             # swipe also refreshes activity without changing saved settings.
-            pointer("DOWN", w * .5, h * .92)
-            pointer("MOVE", w * .5, h * .2)
-            pointer("UP", w * .5, h * .2)
+            # Wake first and pace samples: the router ACK does not guarantee
+            # LVGL has polled the last position before the next arrives.
+            request("INPUT KEY HOME")
+            pump(.3)
+            pointer("DOWN", w * .5, h * .77)
+            pump(.12)
+            for factor in (.68, .58, .48, .38, .28, .22):
+                pointer("MOVE", w * .5, h * factor)
+                pump(.12)
+            pointer("UP", w * .5, h * .22)
             pump(.4)
             for repeat in range(args.repeat):
                 # Restart for every scene: turn/walk cannot change the next
@@ -147,6 +189,11 @@ def main():
                     request(f"PACKAGE run {args.app}")
                     running = True
                     pump(args.warmup)
+                    for location in args.prepare_tap:
+                        pointer("DOWN", *location)
+                        pump(.15)
+                        pointer("UP", *location)
+                        pump(.6)
                     if args.start:
                         pointer("DOWN", *args.start)
                         pump(.15)
@@ -159,10 +206,10 @@ def main():
                     pump(.4)
                     request("MEMORY START")
                     monitoring = True
-                    request("PERF START")
-                    recording = True
                     properties("PERF INPUT")
                     before = memory()
+                    request("PERF START")
+                    recording = True
                     begin = time.monotonic()
                     if scene in ("turn", "walk"):
                         x, y = (w * .69, h * .45) if scene == "turn" else (w * .25, h * .6)
@@ -175,15 +222,19 @@ def main():
                         pointer("UP", x + dx, y + dy)
                     elif scene == "charge":
                         pointer("DOWN", w * .5, h * .65)
-                        pump(.45)
+                        pump(args.charge_seconds)
                         pointer("UP", w * .5, h * .65)
                     pump(begin + args.seconds - time.monotonic())
                     metrics = {k: int(v) for k, v in properties("PERF INPUT").items()}
                     perf = {k: int(v) for k, v in properties("PERF STOP").items()}
                     recording = False
+                    # Bound the actual recording window. MEMORY STOP and its
+                    # heap walk can take much longer under load; including that
+                    # unrecorded time understated whole-window display FPS.
+                    recording_seconds = time.monotonic() - begin
                     steady = memory("MEMORY STOP")
                     monitoring = False
-                    row = {"repeat": repeat, "scene": scene, "elapsed_seconds": time.monotonic() - begin,
+                    row = {"repeat": repeat, "scene": scene, "elapsed_seconds": recording_seconds,
                            "launch_before": launch_before, "startup": startup, "before": before,
                            "memory": steady, "input": metrics, "perf": perf,
                            "screenshot_before": before_shot}
@@ -206,6 +257,11 @@ def main():
                     if not row["present"]["count"]:
                         raise RuntimeError("no completed game frames; measurement is invalid")
                     row["display_fps"] = 1e6 / row["present"]["mean_us"] if row["present"]["count"] else None
+                    # A result screen can stop drawing before the window ends.
+                    # Keep the active-frame interval rate and the whole-window
+                    # rate distinct instead of attributing idle time to raster.
+                    row["window_display_fps"] = row["present"]["count"] / row["elapsed_seconds"]
+                    row["active_present_seconds"] = sum(row["present_us"]) / 1e6
                     row["screenshot_after"] = screenshot(f"{repeat}-{scene}-after")
                     request("PERF CLEAR")
                     request(f"PACKAGE stop {args.app}")
@@ -214,16 +270,20 @@ def main():
                     row["stopped"] = memory()
                     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
                     print(json.dumps({k: row[k] for k in ("repeat", "scene", "display_fps", "raster", "input")}), flush=True)
+            if report["display_errors"]:
+                raise RuntimeError("device/display errors occurred; see serial.jsonl")
             report["passed"] = True
         except Exception as error:
             report["error"] = str(error)
             raise
         finally:
-            cleanup = (["PERF CLEAR"] if recording else [])
+            # STOP freezes samples but keeps the probe allocated for READ.
+            # Release it even if reading/capturing fails after STOP.
+            cleanup = ["PERF CLEAR"] if verified else []
             cleanup += ["MEMORY STOP"] if monitoring else []
-            cleanup += ["INPUT CANCEL"]
+            cleanup += ["INPUT CANCEL"] if verified else []
             cleanup += [f"PACKAGE stop {args.app}"] if running else []
-            cleanup += ["INPUT KEY HOME"]
+            cleanup += ["INPUT KEY HOME"] if verified else []
             for command in cleanup:
                 try:
                     request(command)
