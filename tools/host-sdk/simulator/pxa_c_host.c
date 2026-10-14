@@ -39,6 +39,7 @@
 #include "pxa/surface.h"
 #include "pxa/ipc.h"
 #include "pxa/lease.h"
+#include "pxa/log.h"
 #include "pxa/lvgl/pxa_lvgl_ui.h"
 #include "pxa/net.h"
 #include "pxa/openssl/pxa_openssl.h"
@@ -332,6 +333,8 @@ typedef struct {
     pxa_work_result_t work_result[PXA_C_HOST_MAX_JOBS];
     int16_t activating_job_slot;
     pxa_c_host_app_t *active_app;
+    pxa_log_service_t *log_service;
+    void *log_workspace;
     pxa_package_manifest_t *active_manifest;
     pxa_c_host_ui_asset_t *ui_assets;
     size_t ui_asset_bytes;
@@ -4012,18 +4015,39 @@ static int c_host_install_all(void) {
 
 /* --- service registration ------------------------------------------------- */
 
+static pxa_status_t c_host_log_write(void *context, pxa_component_t component,
+    pxa_bytes_t app_id, pxa_log_level_t level, pxa_bytes_t message) {
+    (void)context;
+    if (g_host.active_app) app_id = (pxa_bytes_t){
+        (const uint8_t *)g_host.active_app->id, strlen(g_host.active_app->id)};
+    fprintf(stderr, "PXA app=%.*s component=%u level=%u: %.*s\n",
+        (int)app_id.size, (const char *)app_id.data, (unsigned)component,
+        (unsigned)level, (int)message.size, (const char *)message.data);
+    return PXA_STATUS_OK;
+}
+
 static int c_host_register_services(void) {
     pxa_service_ops_t operations;
     memset(&operations, 0, sizeof(operations));
     operations.struct_size = sizeof(operations);
     operations.service_id = PXA_CLOCK_SERVICE_ID;
-    operations.major = PXA_CORE_SERVICE_MAJOR;
-    operations.minor = PXA_CORE_SERVICE_MINOR;
+    operations.major = PXA_CLOCK_SERVICE_MAJOR;
+    operations.minor = PXA_CLOCK_SERVICE_MINOR;
     operations.context = NULL;
     operations.control = c_host_clock_control;
     if (pxa_service_register(g_host.runtime, &operations) != PXA_STATUS_OK) {
         return 0;
     }
+    pxa_log_config_t log = {0};
+    log.struct_size = sizeof(log);
+    log.write = c_host_log_write;
+    log.app_id = (pxa_bytes_t){(const uint8_t *)"simulator", 9};
+    log.max_message_bytes = PXA_LOG_MAX_MESSAGE_BYTES;
+    size_t log_size = pxa_log_service_workspace_size(&log);
+    g_host.log_workspace = malloc(log_size);
+    if (!g_host.log_workspace || pxa_log_service_init(g_host.log_workspace,
+            log_size, g_host.runtime, &log, &g_host.log_service) != PXA_STATUS_OK ||
+        pxa_log_service_register(g_host.log_service) != PXA_STATUS_OK) return 0;
     if (pxa_storage_service_register(g_host.storage_service) !=
             PXA_STATUS_OK ||
         pxa_fs_service_register(g_host.fs_service) != PXA_STATUS_OK ||
@@ -5504,6 +5528,7 @@ static const pxa_package_service_capability_t c_host_service_capabilities[] = {
 #define HOST_SERVICE(id, name, feature_bits) \
     {id, {name##_SERVICE_MAJOR, name##_SERVICE_MINOR}, feature_bits}
     HOST_SERVICE(PXA_SERVICE_CORE, PXA_CORE, 0),
+    HOST_SERVICE(PXA_LOG_SERVICE_ID, PXA_LOG, 0),
     HOST_SERVICE(PXA_WINDOW_SERVICE_ID, PXA_WINDOW, 0),
     HOST_SERVICE(PXA_UI_SERVICE_ID, PXA_UI,
         PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
@@ -7008,6 +7033,7 @@ void simulator_pxa_shutdown(void) {
     free(g_host.fs_service_workspace);
     free(g_host.storage_service_workspace);
     free(g_host.storage_workspace);
+    free(g_host.log_workspace);
     free(g_host.runtime_workspace);
     memset(&g_host, 0, sizeof(g_host));
     g_host.active_component = PXA_COMPONENT_INVALID;
