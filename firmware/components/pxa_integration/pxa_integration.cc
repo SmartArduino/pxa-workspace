@@ -42,6 +42,11 @@
 namespace {
 constexpr char kTag[] = "pxa_integration";
 constexpr char kPreferencesNamespace[] = "pxa_user";
+#if CONFIG_PXSYS_REFERENCE_UI
+constexpr bool kUseReferenceUi = true;
+#else
+constexpr bool kUseReferenceUi = false;
+#endif
 
 struct UserPreferences {
     bool has_scheme = false;
@@ -1114,16 +1119,23 @@ void PublishDisplayProfile(void*, const pxsys_display_profile_t* display) {
     safe.right = display->safe_insets.right;
     safe.bottom = display->safe_insets.bottom;
     safe.left = display->safe_insets.left;
-    if (pxsys_reference_layout_compute(display, &layout) == PXSYS_STATUS_OK) {
+    if (kUseReferenceUi &&
+        pxsys_reference_layout_compute(display, &layout) == PXSYS_STATUS_OK) {
+#if CONFIG_PXSYS_REFERENCE_UI_STATUS_BAR
         bars.top = layout.status_bar.y + layout.status_bar.height;
+#endif
+#if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_BAR
 #if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
         // The input strip remains present when its visual handle is hidden.
         // Fullscreen apps need this exclusion to keep bottom controls usable.
         bars.bottom =
             pxsys_reference_layout_gesture_strip_height(layout.size_class);
-        bars.left = pxsys_reference_layout_back_gesture_width();
 #else
         bars.bottom = display->height - layout.navigation_bar.y;
+#endif
+#endif
+#if CONFIG_PXSYS_REFERENCE_UI_BACK_GESTURE
+        bars.left = pxsys_reference_layout_back_gesture_width();
 #endif
     }
     (void)pxa_host_set_window_insets(&safe, &bars);
@@ -1215,120 +1227,122 @@ bool CreateSystem(const pxa_board_port_t* board,
         return false;
     }
 
-    pxsys_reference_lvgl_config_t ui_config;
-    pxsys_reference_lvgl_config_init(&ui_config);
-    ui_config.system = g_system;
-    ui_config.parent = CreateReferenceUiViewport(
-        display, system_config.initial_display.width,
-        system_config.initial_display.height);
-    if (ui_config.parent == nullptr) return false;
-    if (ui_config.parent != lv_display_get_layer_top(display))
-        g_reference_ui_viewport = ui_config.parent;
-    for (size_t i = 0; i < PXSYS_TYPOGRAPHY_ROLE_COUNT; ++i) {
-        const uint16_t size = system_config.initial_theme.typography_px[i];
-        const lv_font_t* fallback = kTypographySymbolFallbacks[i];
+    if constexpr (kUseReferenceUi) {
+        pxsys_reference_lvgl_config_t ui_config;
+        pxsys_reference_lvgl_config_init(&ui_config);
+        ui_config.system = g_system;
+        ui_config.parent = CreateReferenceUiViewport(
+            display, system_config.initial_display.width,
+            system_config.initial_display.height);
+        if (ui_config.parent == nullptr) return false;
+        if (ui_config.parent != lv_display_get_layer_top(display))
+            g_reference_ui_viewport = ui_config.parent;
+        for (size_t i = 0; i < PXSYS_TYPOGRAPHY_ROLE_COUNT; ++i) {
+            const uint16_t size = system_config.initial_theme.typography_px[i];
+            const lv_font_t* fallback = kTypographySymbolFallbacks[i];
 #if CONFIG_LV_FONT_MONTSERRAT_18
-        if (size >= 18) fallback = &lv_font_montserrat_18;
+            if (size >= 18) fallback = &lv_font_montserrat_18;
 #endif
-        if (size >= 20) fallback = &lv_font_montserrat_20;
+            if (size >= 20) fallback = &lv_font_montserrat_20;
 #if CONFIG_LV_FONT_MONTSERRAT_24
-        if (size >= 24) fallback = &lv_font_montserrat_24;
+            if (size >= 24) fallback = &lv_font_montserrat_24;
 #endif
-        ui_config.fonts[i] = LoadFont(profile->font_path, size,
-                                      &g_typography_fonts[i], fallback);
-    }
-    ui_config.text_font = ui_config.fonts[PXSYS_TYPOGRAPHY_BODY];
-    ui_config.title_font = ui_config.fonts[PXSYS_TYPOGRAPHY_HEADLINE];
-    ui_config.features = PXSYS_REFERENCE_UI_HOME | PXSYS_REFERENCE_UI_SETTINGS;
+            ui_config.fonts[i] = LoadFont(profile->font_path, size,
+                                          &g_typography_fonts[i], fallback);
+        }
+        ui_config.text_font = ui_config.fonts[PXSYS_TYPOGRAPHY_BODY];
+        ui_config.title_font = ui_config.fonts[PXSYS_TYPOGRAPHY_HEADLINE];
+        ui_config.features = PXSYS_REFERENCE_UI_HOME | PXSYS_REFERENCE_UI_SETTINGS;
 #if CONFIG_PXSYS_REFERENCE_UI_STATUS_BAR
-    ui_config.features |= PXSYS_REFERENCE_UI_STATUS_BAR;
+        ui_config.features |= PXSYS_REFERENCE_UI_STATUS_BAR;
 #endif
 #if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_BAR
-    ui_config.features |= PXSYS_REFERENCE_UI_NAVIGATION_BAR;
+        ui_config.features |= PXSYS_REFERENCE_UI_NAVIGATION_BAR;
 #endif
 #if CONFIG_PXSYS_REFERENCE_UI_NOTIFICATION_SHADE
-    ui_config.features |= PXSYS_REFERENCE_UI_NOTIFICATION_SHADE;
+        ui_config.features |= PXSYS_REFERENCE_UI_NOTIFICATION_SHADE;
 #endif
 #if CONFIG_PXSYS_REFERENCE_UI_WALLPAPER
-    ui_config.features |= PXSYS_REFERENCE_UI_WALLPAPER;
+        ui_config.features |= PXSYS_REFERENCE_UI_WALLPAPER;
 #endif
 #if CONFIG_PXSYS_REFERENCE_UI_BUILTIN_SETTINGS
-    ui_config.features |= PXSYS_REFERENCE_UI_SOUND_SETTINGS |
-                          PXSYS_REFERENCE_UI_DEVICE_INFO |
-                          PXSYS_REFERENCE_UI_APP_MANAGER |
-                          PXSYS_REFERENCE_UI_FILE_MANAGER;
-    ui_config.device_info = FillDeviceInfo;
-    ui_config.app_list = ListManagedApps;
-    ui_config.input_method_list = ListInputMethods;
-    ui_config.input_method_preferences = [](void*,pxsys_reference_input_method_preferences_t* value,bool save) {
-        pxa_ime_preferences_t preferences{value->layout,value->language};
-        const bool success=pxa_host_input_method_preferences(&preferences,save);
-        if (success) *value={preferences.layout,preferences.language};
-        return success;
-    };
-    ui_config.input_method_select = [](void*,const char* identity) { return pxa_host_select_input_method(identity); };
-    ui_config.input_method_focus = [](void*,void* textarea) {
-        return pxa_host_focus_input_method(textarea);
-    };
-    ui_config.input_method_managed = [](void*,void* textarea) { return pxa_host_input_method_managed(textarea); };
-    ui_config.app_action = ManageApp;
-    ui_config.launcher_order_load = LoadLauncherOrder;
-    ui_config.launcher_order_save = SaveLauncherOrder;
-    ui_config.app_permission_context = nullptr;
-    ui_config.app_permission_list = ListAppPermissions;
-    ui_config.app_permission_set = SetAppPermission;
-    ui_config.file_list = ListFiles;
-    ui_config.file_action = ManageFile;
-    ui_config.file_size = FileSize;
+        ui_config.features |= PXSYS_REFERENCE_UI_SOUND_SETTINGS |
+                              PXSYS_REFERENCE_UI_DEVICE_INFO |
+                              PXSYS_REFERENCE_UI_APP_MANAGER |
+                              PXSYS_REFERENCE_UI_FILE_MANAGER;
+        ui_config.device_info = FillDeviceInfo;
+        ui_config.app_list = ListManagedApps;
+        ui_config.input_method_list = ListInputMethods;
+        ui_config.input_method_preferences = [](void*,pxsys_reference_input_method_preferences_t* value,bool save) {
+            pxa_ime_preferences_t preferences{value->layout,value->language};
+            const bool success=pxa_host_input_method_preferences(&preferences,save);
+            if (success) *value={preferences.layout,preferences.language};
+            return success;
+        };
+        ui_config.input_method_select = [](void*,const char* identity) { return pxa_host_select_input_method(identity); };
+        ui_config.input_method_focus = [](void*,void* textarea) {
+            return pxa_host_focus_input_method(textarea);
+        };
+        ui_config.input_method_managed = [](void*,void* textarea) { return pxa_host_input_method_managed(textarea); };
+        ui_config.app_action = ManageApp;
+        ui_config.launcher_order_load = LoadLauncherOrder;
+        ui_config.launcher_order_save = SaveLauncherOrder;
+        ui_config.app_permission_context = nullptr;
+        ui_config.app_permission_list = ListAppPermissions;
+        ui_config.app_permission_set = SetAppPermission;
+        ui_config.file_list = ListFiles;
+        ui_config.file_action = ManageFile;
+        ui_config.file_size = FileSize;
 #endif
 #if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
-    ui_config.navigation_mode = PXSYS_NAVIGATION_GESTURES;
+        ui_config.navigation_mode = PXSYS_NAVIGATION_GESTURES;
 #else
-    ui_config.navigation_mode = PXSYS_NAVIGATION_BUTTONS;
+        ui_config.navigation_mode = PXSYS_NAVIGATION_BUTTONS;
 #endif
-    ui_config.allocator = allocator;
-    std::memset(ui_config.publisher_root, 0x52, sizeof(ui_config.publisher_root));
-    ui_config.app_metadata_context = g_bridge;
-    ui_config.resolve_app_metadata = ResolveAppMetadata;
-    ui_config.app_icon_context = g_bridge;
-    ui_config.resolve_app_icon = ResolveAppIcon;
-    ui_config.memory_info = ReadMemoryInfo;
-    ui_config.preview_overlay = OverlaySurfacePreview;
-    ui_config.capture_application = CaptureApplicationSurface;
-    ui_config.application_presentation_changed = [](void*, bool visible) {
-        pxa_esp_surface_set_presentation_visible(visible);
-    };
-    ui_config.system_overlay_changed = [](void*, bool visible) {
-        if (visible)
-            pxa_esp_surface_runtime_modal_enter();
-        else
-            pxa_esp_surface_runtime_modal_leave();
-    };
-    ui_config.system_overlay_objects_changed =
-        [](void*, lv_obj_t* const* objects, size_t count) {
-            pxa_esp_system_overlay_set_reference_objects(objects, count);
+        ui_config.allocator = allocator;
+        std::memset(ui_config.publisher_root, 0x52, sizeof(ui_config.publisher_root));
+        ui_config.app_metadata_context = g_bridge;
+        ui_config.resolve_app_metadata = ResolveAppMetadata;
+        ui_config.app_icon_context = g_bridge;
+        ui_config.resolve_app_icon = ResolveAppIcon;
+        ui_config.memory_info = ReadMemoryInfo;
+        ui_config.preview_overlay = OverlaySurfacePreview;
+        ui_config.capture_application = CaptureApplicationSurface;
+        ui_config.application_presentation_changed = [](void*, bool visible) {
+            pxa_esp_surface_set_presentation_visible(visible);
         };
-    ui_config.performance_context = const_cast<pxa_board_port_t*>(board);
-    ui_config.performance_get = DeveloperGet;
-    ui_config.performance_set = DeveloperSet;
-    ui_config.wifi_scan = ScanWifi;
-    ui_config.wifi_scan_start = StartWifiScan;
-    ui_config.wifi_connect = ConnectWifi;
-    ui_config.wifi_current = CurrentWifi;
-    ui_config.wifi_saved_list = ListSavedWifi;
-    ui_config.wifi_forget = ForgetSavedWifi;
-    ui_config.idle_policy = g_preferences.idle_policy;
-    ui_config.idle_context = const_cast<pxa_board_port_t*>(board);
-    ui_config.idle_save = SaveIdlePolicy;
-    ui_config.idle_dim = board->set_idle_dim != nullptr ? ApplyIdleDim : nullptr;
-    ui_config.idle_lock = board->idle_screen_off != nullptr
-                              ? IdleScreenOff : nullptr;
-    status = pxsys_reference_lvgl_create(&ui_config, &g_reference_ui);
-    if (status == PXSYS_STATUS_OK)
-        status = pxsys_reference_lvgl_start(g_reference_ui);
-    if (status != PXSYS_STATUS_OK) {
-        ESP_LOGE(kTag, "Reference UI failed: %s", pxsys_status_name(status));
-        return false;
+        ui_config.system_overlay_changed = [](void*, bool visible) {
+            if (visible)
+                pxa_esp_surface_runtime_modal_enter();
+            else
+                pxa_esp_surface_runtime_modal_leave();
+        };
+        ui_config.system_overlay_objects_changed =
+            [](void*, lv_obj_t* const* objects, size_t count) {
+                pxa_esp_system_overlay_set_reference_objects(objects, count);
+            };
+        ui_config.performance_context = const_cast<pxa_board_port_t*>(board);
+        ui_config.performance_get = DeveloperGet;
+        ui_config.performance_set = DeveloperSet;
+        ui_config.wifi_scan = ScanWifi;
+        ui_config.wifi_scan_start = StartWifiScan;
+        ui_config.wifi_connect = ConnectWifi;
+        ui_config.wifi_current = CurrentWifi;
+        ui_config.wifi_saved_list = ListSavedWifi;
+        ui_config.wifi_forget = ForgetSavedWifi;
+        ui_config.idle_policy = g_preferences.idle_policy;
+        ui_config.idle_context = const_cast<pxa_board_port_t*>(board);
+        ui_config.idle_save = SaveIdlePolicy;
+        ui_config.idle_dim = board->set_idle_dim != nullptr ? ApplyIdleDim : nullptr;
+        ui_config.idle_lock = board->idle_screen_off != nullptr
+                                  ? IdleScreenOff : nullptr;
+        status = pxsys_reference_lvgl_create(&ui_config, &g_reference_ui);
+        if (status == PXSYS_STATUS_OK)
+            status = pxsys_reference_lvgl_start(g_reference_ui);
+        if (status != PXSYS_STATUS_OK) {
+            ESP_LOGE(kTag, "Reference UI failed: %s", pxsys_status_name(status));
+            return false;
+        }
     }
 
     status = pxsys_display_service_subscribe(

@@ -35,6 +35,7 @@ typedef struct {
     bool (*performance_set)(void* context,
                             pxsys_reference_performance_option_t option,
                             bool enabled);
+    /* reference_ui is NULL when the product disables CONFIG_PXSYS_REFERENCE_UI. */
     void (*system_ready)(void* context, pxsys_standard_system_t* system,
                          pxsys_reference_lvgl_t* reference_ui);
     void (*show_initial_frame)(void* context);

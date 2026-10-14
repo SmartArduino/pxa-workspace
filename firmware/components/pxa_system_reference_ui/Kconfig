@@ -1,14 +1,13 @@
 menu "PXA System UI selection"
 
     config PXSYS_REFERENCE_UI
-        bool "Use reference UI instead of product legacy UI"
-        default n
+        bool "Enable reference system UI"
+        default y
         help
-            Selects the standard PXA System Home, Settings, status bar and
-            navigation implementations. The ESP product defaults to its legacy
-            app_pages UI while retaining the PXA System services, renderer and
-            runtime beneath it. Enable this only to evaluate or migrate to the
-            reference presentation.
+            Starts the standard PXA System Home, Settings, status bar and
+            navigation implementations. Disable this when the product supplies
+            its own UI. System services, application rendering and the PXA
+            runtime remain available; no legacy UI is started automatically.
 
     config PXSYS_REFERENCE_UI_STATUS_BAR
         bool "Standard status bar"
