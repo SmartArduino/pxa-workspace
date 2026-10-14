@@ -11,8 +11,6 @@ set(PXA_SRCS
     "src/services/pxa_esp_audio.c"
     "src/services/pxa_esp_assets.c"
     "src/services/pxa_esp_resource_memory.c"
-    "src/services/pxa_audio_output.cc"
-    "src/services/pxa_codec_memory.cc"
     "src/services/pxa_esp_net.c"
     "src/services/pxa_esp_services.c"
     "src/services/pxa_esp_surface.c"
@@ -26,6 +24,18 @@ set(PXA_SRCS
     "src/ui/pxa_esp_ui_assets.c"
     "src/ui/pxa_esp_system_overlay.c"
     "src/ui/pxa_esp_store_result.c")
+
+# Native products can supply the existing audio sinks without linking the
+# standalone mixer or its global codec allocation hooks.
+idf_build_get_property(PXA_BUILTIN_AUDIO_OUTPUT PXA_BUILTIN_AUDIO_OUTPUT)
+if("${PXA_BUILTIN_AUDIO_OUTPUT}" STREQUAL "")
+    set(PXA_BUILTIN_AUDIO_OUTPUT ON)
+endif()
+if(PXA_BUILTIN_AUDIO_OUTPUT)
+    list(APPEND PXA_SRCS
+        "src/services/pxa_audio_output.cc"
+        "src/services/pxa_codec_memory.cc")
+endif()
 
 # Product builds retain the legacy app_pages shell unless they explicitly opt
 # into the standalone PXA System shell before ESP-IDF component discovery.
@@ -134,5 +144,12 @@ endif()
 
 if(CONFIG_IDF_TARGET_ESP32S3 OR CONFIG_IDF_TARGET_ESP32S31)
     include("${PXSYS_ROOT}/platforms/esp-idf/cmake/pxsys_wamr.cmake")
+    if(DEFINED PXA_HOST_SDK_ROOT)
+        # Archives have verified provenance, but deliberately contain no .git.
+        set(PXSYS_WAMR_OVERLAY_TOOL
+            "${PXA_HOST_SDK_ROOT}/tools/host-sdk/prepare_wamr_overlay.py")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+            "${PXSYS_WAMR_OVERLAY_TOOL}")
+    endif()
     pxsys_configure_wamr_esp_idf(__idf_wamr)
 endif()
