@@ -9,6 +9,7 @@
 - [板级显示历史记录](display-performance-optimization.md)：硬件参数与更早的 UI 优化。
 - `voxel-craft/docs/performance/game-render-20261015.zh-CN.md`：后续扫描线优化；固定世界的 Voxel 约 9.9 → 10.1～10.3 DMA FPS，Jump 基本持平。记录原版回测、真实内存窗口和像素一致性，不能与上面的流水线收益重复相加。
 - `voxel-craft/docs/performance/game-render-occlusion-20261015.zh-CN.md`：进一步用已有 R16 深度保守拒绝整行，省去不可见行的透视计算；无需新缓存。记录独立回测与未采用候选。
+- `voxel-craft/docs/performance/game-render-quotient-20261015.zh-CN.md`：复用相同行宽的精确浮点倒数，收窄已受限的区块计算；同条件短测约 1% 收益。记录被撤回候选、不同移动路线及首次初始化峰值，避免扩大结论。
 
 ## 已验证的整体收益
 
