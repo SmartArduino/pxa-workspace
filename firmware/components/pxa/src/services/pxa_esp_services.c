@@ -18,6 +18,7 @@
 
 #include "pxa_esp_audio.h"
 #include "pxa_esp_assets.h"
+#include "pxa_esp_resource_memory.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "pxa/pxa_esp_surface.h"
