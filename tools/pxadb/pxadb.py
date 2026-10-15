@@ -298,6 +298,12 @@ class PxaDbClient:
                 self.unsubscribe_logs()
             except Exception:
                 pass
+        if getattr(self, "_hello_completed", False):
+            self._hello_completed = False
+            try:
+                self.request("BYE", timeout=min(self.timeout, 0.5))
+            except Exception:
+                pass
         if getattr(self, "binary_transport", None) is not None:
             self.binary_transport.close()
             return
@@ -498,7 +504,9 @@ class PxaDbClient:
                     self.request("AUTH " + self.tcp_token, timeout=attempt_timeout)
                     self.tcp_token = ""
                 frames = self.request("HELLO", timeout=attempt_timeout)
-                return frames[-1].payload
+                self.device_info = frames[-1].payload
+                self._hello_completed = True
+                return self.device_info
             except PxaDbError as caught:
                 error = caught
                 if attempt + 1 < attempts:
@@ -1305,7 +1313,7 @@ def package_storage_required(source: pathlib.Path) -> tuple[int, int]:
     return upload, install
 
 
-def check_package_storage(client: NormalFsClient, source: pathlib.Path) -> None:
+def check_package_storage(client: NormalFsClient, source: pathlib.Path) -> dict[str, str]:
     frames = client.client.request("INFO")
     properties = {}
     for frame in frames:
@@ -1313,7 +1321,7 @@ def check_package_storage(client: NormalFsClient, source: pathlib.Path) -> None:
             properties.update(info_properties(frame.payload))
     # Older firmware and desktop simulators do not expose LittleFS metrics.
     if "storage_free" not in properties:
-        return
+        return properties
     try:
         free = int(properties["storage_free"])
         if free < 0:
@@ -1321,6 +1329,11 @@ def check_package_storage(client: NormalFsClient, source: pathlib.Path) -> None:
     except ValueError as error:
         raise PxaDbError("invalid device storage information") from error
     upload, install = package_storage_required(source)
+    if source.is_dir() and properties.get("package_directory_adopt") == "1":
+        # Firmware adopts an inbox directory by rename. Its decoded payload
+        # is already included in upload; only commit/compaction headroom is
+        # needed afterwards. Legacy firmware still requires the second copy.
+        install = 128 * 1024
     required = upload + install
     if required > free:
         mib = 1024 * 1024
@@ -1332,18 +1345,51 @@ def check_package_storage(client: NormalFsClient, source: pathlib.Path) -> None:
             f"Free at least {(required - free) / mib:.2f} MiB by uninstalling "
             "apps you no longer need, then retry. Upload has not started."
         )
+    return properties
 
 
 def stage_package_files(client: "NormalFsClient", source: pathlib.Path,
-                        identity: str, timeout: float) -> None:
+                        identity: str, timeout: float, *, publish: bool = True) -> None:
+    """Receive into an invisible candidate on capable hosts.
+
+    Explicit staging publishes a fully verified offline package. Installers can
+    defer publication until PACKAGE deploy on this same connection, so losing
+    the connection also discards a complete but uncommitted upload.
+    """
+    properties = check_package_storage(client, source)
+    receiving = properties.get("package_receive") == "1"
+    try:
+        _stage_package_files(client, source, identity, timeout, receiving)
+        if receiving and publish:
+            client.client.request(f"PACKAGE publish {identity}", timeout=max(timeout, 60.0))
+    except BaseException:
+        # Also handles Ctrl-C. A disconnected capable host removes its reserved
+        # candidates on session timeout/cold start; cleanup here is best-effort.
+        try:
+            client.client.request("FSABORT", timeout=5.0)
+        except Exception:
+            pass
+        root = f"pxa-state/inbox/{'.receiving-' if receiving else ''}{identity}"
+        try:
+            fs_remove_tree(client, root, timeout)
+        except Exception:
+            pass
+        try:
+            fs_remove(client, root + ".pxa", timeout)
+        except Exception:
+            pass
+        raise
+
+
+def _stage_package_files(client: "NormalFsClient", source: pathlib.Path,
+                         identity: str, timeout: float, receiving: bool) -> None:
     """Stage one package through an already open file client.
 
     The GUI owns the only connection to a device, so package installation
     stages through the client it already holds instead of opening a second one.
     """
-    check_package_storage(client, source)
     inbox = "pxa-state/inbox"
-    root = f"{inbox}/{identity}"
+    root = f"{inbox}/{'.receiving-' if receiving else ''}{identity}"
     for directory in ("pxa-state", inbox):
         try:
             fs_mkdir(client, directory)
@@ -1375,9 +1421,11 @@ def stage_package_files(client: "NormalFsClient", source: pathlib.Path,
             fs_mkdir(client, current)
         except Exception:
             pass
-    directories = sorted({path.parent for path in iter_package_files(source) if path.parent != source})
+    directories = sorted({parent for path in iter_package_files(source)
+                          for parent in path.relative_to(source).parents
+                          if parent != pathlib.Path(".")})
     for directory in directories:
-        relative = directory.relative_to(source).as_posix()
+        relative = directory.as_posix()
         try:
             fs_mkdir(client, f"{root}/{relative}")
         except Exception:
@@ -1412,12 +1460,15 @@ def clear_staged_source(client: PxaDbClient, identity: str) -> None:
     the inbox makes every later install and boot progressively slower.
     """
     fs = NormalFsClient(client)
-    for remote in (f"pxa-state/inbox/{identity}.pxa",):
+    for name in (identity, ".receiving-" + identity):
         try:
-            fs_remove(fs, remote, 10.0)
+            fs_remove(fs, f"pxa-state/inbox/{name}.pxa", 10.0)
         except Exception:
             pass
-    fs_remove_tree(fs, f"pxa-state/inbox/{identity}", 10.0)
+        try:
+            fs_remove_tree(fs, f"pxa-state/inbox/{name}", 10.0)
+        except Exception:
+            pass
 
 
 def command_package_install(arguments: argparse.Namespace) -> int:
@@ -1445,19 +1496,17 @@ def command_package_install(arguments: argparse.Namespace) -> int:
     source = pathlib.Path(arguments.package)
     if source.is_dir() or source.is_file():
         local_package, identity = package_source(arguments.package, arguments.identity)
-        print(f"staging: {identity}", file=sys.stderr, flush=True)
-        stage_package(local_package, identity, arguments.port,
-                      arguments.timeout, arguments.logcat)
-        print(f"verifying and installing: {identity}", file=sys.stderr,
-              flush=True)
-        # The deploy phase includes signature verification and the post-upload
-        # inbox scan, so the connection needs more headroom than a plain
-        # command even when the caller passes the small default timeout.
         deploy_timeout = max(arguments.timeout, 60.0)
         with open_client(resolve_pxadb_port(arguments.port, deploy_timeout),
                          deploy_timeout, arguments.logcat) as client:
-            deploy(client, identity)
-            clear_staged_source(client, identity)
+            try:
+                print(f"staging: {identity}", file=sys.stderr, flush=True)
+                stage_package_files(NormalFsClient(client), local_package, identity,
+                                    arguments.timeout, publish=False)
+                print(f"verifying and installing: {identity}", file=sys.stderr, flush=True)
+                deploy(client, identity)
+            finally:
+                clear_staged_source(client, identity)
         print(f"installed: {identity}")
         return 0
 

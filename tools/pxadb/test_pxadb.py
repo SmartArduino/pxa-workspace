@@ -974,6 +974,101 @@ class PackageStorageTest(unittest.TestCase):
             with self.assertRaisesRegex(pxadb.PxaDbError, "invalid file size"):
                 pxadb.package_storage_required(source)
 
+    def test_adoption_budget_only_applies_to_directory_on_capable_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            container = self.container(root)
+            package = root / "package"
+            package.mkdir()
+            (package / "manifest.pxm").write_bytes(pxadb.read_package_manifest(container))
+            (package / "signature.pxs").write_bytes(bytes(108))
+            (package / "asset").write_bytes(bytes(100000))
+            upload, install = pxadb.package_storage_required(package)
+            peer = mock.Mock()
+            fs = pxadb.NormalFsClient(peer)
+            peer.request.return_value = [pxadb.Frame(1, "OK",
+                f"storage_free={upload + 128 * 1024};package_directory_adopt=1")]
+            pxadb.check_package_storage(fs, package)
+            peer.request.return_value = [pxadb.Frame(1, "OK",
+                f"storage_free={upload + 128 * 1024}")]
+            with self.assertRaises(pxadb.PxaDbError):
+                pxadb.check_package_storage(fs, package)
+            peer.request.return_value = [pxadb.Frame(1, "OK",
+                "storage_free=200000;package_directory_adopt=1")]
+            with self.assertRaises(pxadb.PxaDbError):
+                pxadb.check_package_storage(fs, container)
+
+
+class PackageReceiveTest(unittest.TestCase):
+    def package(self, root):
+        package = root / "package"
+        (package / "assets/ui/deep").mkdir(parents=True)
+        (package / "assets/ui/deep/image.bin").write_bytes(b"image")
+        source = PackageStorageTest.container(root)
+        (package / "manifest.pxm").write_bytes(pxadb.read_package_manifest(source))
+        (package / "signature.pxs").write_bytes(bytes(108))
+        return package
+
+    def client(self):
+        peer = mock.Mock()
+        def request(command, **kwargs):
+            return [pxadb.Frame(1, "OK", "storage_free=10000000;package_receive=1;package_directory_adopt=1"
+                                if command == "INFO" else "")]
+        peer.request.side_effect = request
+        return mock.Mock(client=peer)
+
+    def test_receive_is_invisible_and_builds_all_parent_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fs = self.client()
+            pxadb.stage_package_files(fs, self.package(pathlib.Path(directory)),
+                                      "pxa-storage-test", 10, publish=False)
+            paths = [call.args[1] for call in fs.put.call_args_list]
+            self.assertTrue(all(path.startswith("pxa-state/inbox/.receiving-pxa-storage-test/")
+                                for path in paths))
+            dirs = [call.args[0] for call in fs.mkdir.call_args_list]
+            prefix = "pxa-state/inbox/.receiving-pxa-storage-test/"
+            self.assertLess(dirs.index(prefix + "assets"), dirs.index(prefix + "assets/ui"))
+            self.assertLess(dirs.index(prefix + "assets/ui"), dirs.index(prefix + "assets/ui/deep"))
+            self.assertFalse(any(call.args[0].startswith("PACKAGE publish")
+                                 for call in fs.client.request.call_args_list))
+
+    def test_explicit_stage_publishes_once_and_failure_aborts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = self.package(pathlib.Path(directory))
+            fs = self.client()
+            pxadb.stage_package_files(fs, source, "pxa-storage-test", 10)
+            fs.client.request.assert_any_call("PACKAGE publish pxa-storage-test", timeout=60.0)
+            fs = self.client()
+            fs.put.side_effect = pxadb.PxaDbError("transfer interrupted")
+            with self.assertRaisesRegex(pxadb.PxaDbError, "transfer interrupted"):
+                pxadb.stage_package_files(fs, source, "pxa-storage-test", 10)
+            fs.client.request.assert_any_call("FSABORT", timeout=5.0)
+            commands = [call.args[0] for call in fs.client.request.call_args_list]
+            self.assertTrue(any(command.startswith("FSRMTREE ") for command in commands))
+            self.assertNotIn("PACKAGE publish pxa-storage-test", commands)
+
+    def test_successful_handshake_closes_the_device_session(self):
+        client = fake_client([encoded_frame(1, "OK", "protocol=1"),
+                              encoded_frame(2, "OK", "disconnected")])
+        self.assertEqual(client.hello(), "protocol=1")
+        client.close()
+        self.assertTrue(any(b" BYE\n" in command for command in client.serial.writes))
+        self.assertTrue(client.serial.closed)
+
+    def test_cleanup_connection_loss_does_not_mask_upload_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fs = self.client()
+            fs.put.side_effect = pxadb.PxaDbError("original upload failure")
+            normal_request = fs.client.request.side_effect
+            def disconnected_after_upload(command, **kwargs):
+                if fs.put.called:
+                    raise OSError("connection lost")
+                return normal_request(command, **kwargs)
+            fs.client.request.side_effect = disconnected_after_upload
+            with self.assertRaisesRegex(pxadb.PxaDbError, "original upload failure"):
+                pxadb.stage_package_files(fs, self.package(pathlib.Path(directory)),
+                                          "pxa-storage-test", 10)
+
 
 class PxaDbFileTransferTest(unittest.TestCase):
     class ScriptedClient:

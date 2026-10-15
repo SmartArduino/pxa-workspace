@@ -27,6 +27,16 @@ The deployment ID comes from the signed package manifest, so a renamed `.pxa`
 file still installs under the correct App ID. An explicit `--identity` must
 match that manifest ID; a mismatch is rejected before upload.
 
+New firmware advertises `package_receive=1` and `package_directory_adopt=1`
+in `INFO`. CLI/GUI installation uploads into an invisible receiving candidate,
+then verifies and deploys on the same connection. Directory packages are moved
+into the recoverable installation transaction without copying every file again.
+Successful and failed installs remove their staging source. Cancellation and
+graceful disconnect remove partial uploads; abrupt disconnects are cleaned on
+reconnection, the 30-second idle timeout, or reboot. Explicit `package stage`
+retains a fully verified source until installed or removed. See
+[receive lifetime and storage](../../docs/pxadb2.md#firmware-receive-lifetime-and-storage).
+
 Serial uploads select a chunk size from the detected USB device: 256 bytes for
 Espressif USB Serial/JTAG, or 512 bytes with paced writes for USB-to-UART
 bridges. Unknown ports keep the conservative 64-byte default. Set

@@ -79,6 +79,44 @@ mutation and reports the estimated deficit. Older peers without storage metrics
 retain the existing behavior. This check is an estimate, not a reservation;
 device signature verification and installation checks remain authoritative.
 
+### Firmware receive lifetime and storage
+
+Firmware `INFO` can additionally advertise `package_receive=1` and
+`package_directory_adopt=1`. These are optional host capabilities; a simulator
+or older firmware without them keeps its existing staging behavior.
+
+On a capable host the CLI/GUI sends files into
+`pxa-state/inbox/.receiving-<app-id>` (or `.receiving-<app-id>.pxa`). This reserved
+candidate is invisible to the app catalog. Installation keeps one connection
+and finishes with `PACKAGE deploy <app-id>`: the host authenticates the complete
+candidate, checks its actual App ID, publishes it, and installs it in the same
+command. An explicit `pxadb package stage` instead uses `PACKAGE publish
+<app-id>` to retain a verified offline source for later installation.
+
+Directory installation adopts the authenticated inbox tree into the existing
+slot transaction by rename. It avoids a second copy of the decoded payload;
+the transaction still verifies every incoming file before replacing current.
+The admission estimate therefore reserves commit headroom rather than another
+full directory payload. Container installation still needs the compressed
+source alongside decoded incoming files: Container 0.1 authenticates the entire
+encoded stream before decompression. This is not HTTP streaming decompression.
+
+`FSABORT`, graceful `BYE`, a new `HELLO`, the firmware's 30-second inactive
+control-session timeout, and cold startup discard unpublished receive sources.
+The single in-flight file uses `/.pxadb-upload`, which is removed at those same
+boundaries and after file checksum/write/commit errors. An abruptly disconnected
+device can retain a partial file until timeout, reconnection, or reboot; it is
+never visible as an installable app. CLI/GUI error and cancellation cleanup is
+best-effort; host cleanup handles a lost connection.
+
+Failed deployment removes its staging copy and recovers its slot transaction.
+Cold startup recovers interrupted transactions before scanning apps, then
+removes obsolete previous/session copies and legacy incomplete inbox uploads.
+An unrecoverable transaction is retained and reported to preserve the last
+recoverable application. Installed apps and private data are not temporary
+files. Successfully published explicit staging sources survive disconnect and
+reboot until consumed or explicitly removed.
+
 ## Simulator Debug Commands
 
 Simulator application management uses `PACKAGE enable <app-id>`,
