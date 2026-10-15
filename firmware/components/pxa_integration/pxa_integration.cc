@@ -1135,7 +1135,10 @@ void PublishDisplayProfile(void*, const pxsys_display_profile_t* display) {
 #endif
 #endif
 #if CONFIG_PXSYS_REFERENCE_UI_BACK_GESTURE
-        bars.left = pxsys_reference_layout_back_gesture_width();
+        // The actual input strip covers the safe margin as well as the edge
+        // width (reference_lvgl.c). Publish its absolute panel inset.
+        bars.left = static_cast<uint32_t>(layout.safe_area.x) +
+                    pxsys_reference_layout_back_gesture_width();
 #endif
     }
     (void)pxa_host_set_window_insets(&safe, &bars);

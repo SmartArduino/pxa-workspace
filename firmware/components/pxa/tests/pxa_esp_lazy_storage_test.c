@@ -14,6 +14,17 @@ static const char *test_state_root;
 #define CONFIG_PXA_STATE_ROOT test_state_root
 #include "../src/services/pxa_esp_services.c"
 
+const pxa_image_backend_t *pxa_esp_rom_image_backend(void) {
+    assert(!"unexpected decoder backend request");return NULL;
+}
+
+const pxa_memory_allocator_t *pxa_esp_resource_allocator(unsigned cls, unsigned kind) {
+    (void)cls; (void)kind;
+    /* This fixture declares no Assets service and must never ask for a decoder. */
+    assert(!"unexpected image allocator request");
+    return NULL;
+}
+
 pxa_status_t pxa_esp_assets_begin(const pxa_esp_assets_config_t *config, pxa_assets_backend_t *backend) {
     (void)config; (void)backend; return PXA_STATUS_UNSUPPORTED;
 }

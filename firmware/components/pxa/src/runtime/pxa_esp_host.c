@@ -35,6 +35,7 @@
 #include "lvgl.h"
 
 #include "pxa/activation.h"
+#include "pxa/assets.h"
 #include "pxa/audio.h"
 #include "pxa/clock.h"
 #include "pxa/posix/pxa_posix_clock.h"
@@ -54,6 +55,7 @@
 #include "pxa/wamr/pxa_wamr_engine.h"
 #include "pxa/wasi.h"
 #include "pxa/window.h"
+#include "pxa_host_window_metrics.h"
 #include "pxa/wire.h"
 #include "pxa_esp_package_store.h"
 #include "pxa_esp_store_download.h"
@@ -1531,6 +1533,20 @@ bool pxa_esp_host_respond_unresponsive(uint32_t prompt_id, bool wait) {
 /* --- event delivery ---------------------------------------------------- */
 
 static void stop_active(pxa_stop_reason_t reason);
+static void begin_graceful_stop(pxa_stop_reason_t reason,
+                                uint8_t after_back, uint32_t timeout_ms);
+
+static int close_after_window_event(pxa_component_t component,
+                                    const pxa_wamr_event_result_t *result) {
+    if (component != g_host.activation.active_component ||
+        result->service != PXA_WINDOW_SERVICE_ID ||
+        result->opcode != PXA_WINDOW_BACK_REQUESTED ||
+        result->request_token != 0 || result->payload_size != 0 ||
+        result->guest_result != 0)
+        return 0;
+    begin_graceful_stop(PXA_STOP_NORMAL, 1, 1200);
+    return 1;
+}
 
 static void fault_active_component(pxa_component_t component,
                                    pxa_status_t status) {
@@ -1556,6 +1572,7 @@ static int drain_events(pxa_component_t component) {
         g_host.engine, g_host.activation.runtime, component, &result);
     if (status == PXA_STATUS_OK) {
         (void)pxa_ipc_flush(g_host.activation.services.ipc);
+        if (close_after_window_event(component, &result)) return 0;
         return 1;
     }
     if (!event_delivery_deferred(status, &result)) {
@@ -2063,6 +2080,8 @@ static int drain_active_events(void) {
             if (status == PXA_STATUS_OK) {
                 delivered = 1;
                 (void)pxa_ipc_flush(g_host.activation.services.ipc);
+                if (close_after_window_event(g_host.activation.active_components[index], &result))
+                    return 0;
             }
             else if (!event_delivery_deferred(status, &result)) {
                 fault_active_component(g_host.activation.active_components[index], status);
@@ -2074,6 +2093,14 @@ static int drain_active_events(void) {
          * lifecycle work are serviced between blocks. Fast drains keep their
          * established three-round batch. */
         if (!delivered || host_now_us(NULL) - started_us >= 8000) break;
+    }
+    /* Guest callbacks can start/cancel decoding even on the final drain round.
+     * A ready file needs another owner turn; a blocked stream waits for its
+     * native I/O wake. No Guest timer or image-specific worker is required. */
+    if (g_host.activation.services.assets &&
+        pxa_assets_service_poll(g_host.activation.services.assets)) {
+        __atomic_store_n(&g_assets_completion_ready, 1u, __ATOMIC_RELEASE);
+        wake_runtime_thread();
     }
     pxa_esp_ime_drain();
     refresh_volume_key_capture_state();
@@ -2087,19 +2114,19 @@ static void on_assets_completion_ready(void *context) {
 }
 
 static void mark_net_completion_ready(void) {
+    int wake;
     portENTER_CRITICAL(&g_net_completion_lock);
+    wake = !g_net_completion_ready;
     g_net_completion_ready = 1;
     portEXIT_CRITICAL(&g_net_completion_lock);
-    wake_runtime_thread();
+    if (wake) wake_runtime_thread();
 }
 
 static void on_net_completion_ready(void *context) {
     (void)context;
+    /* The owner loop drains this flag before its command queue. A second
+     * maintenance command per body chunk only repeats that work. */
     mark_net_completion_ready();
-    if (!post_maintenance(PXA_ESP_HOST_CMD_NET_MAINTENANCE)) {
-        ESP_LOGW(PXA_ESP_HOST_TAG,
-                 "Network completion maintenance queue is full");
-    }
 }
 
 static int take_net_completion_ready(void) {
@@ -2118,6 +2145,13 @@ static void drain_net_completions(void) {
     if (g_host.activation.services.net == NULL) return;
     status = pxa_net_poll(g_host.activation.services.net, affected,
                           PXA_ESP_NET_MAX_PENDING, &count);
+    if (g_host.activation.services.lease != NULL) {
+        pxa_component_t waiting[PXA_ESP_NET_MAX_PENDING];
+        size_t waiting_count = 0;
+        (void)pxa_lease_revoke_expired(g_host.activation.services.lease,
+            waiting, PXA_ESP_NET_MAX_PENDING, &waiting_count);
+        if (waiting_count != 0) drain_active_events();
+    }
     if (status != PXA_STATUS_OK) {
         ESP_LOGW(PXA_ESP_HOST_TAG,
                  "Network completion poll failed: status=%d", (int)status);
@@ -2125,8 +2159,9 @@ static void drain_net_completions(void) {
         ESP_LOGI(PXA_ESP_HOST_TAG,
                  "Network completion delivered: components=%u",
                  (unsigned)count);
-        drain_active_events();
     }
+    /* Assets may be the direct stream consumer, with no Net wait request. */
+    drain_active_events();
 }
 
 /* --- synchronous LVGL executor ----------------------------------------- */
@@ -2300,6 +2335,9 @@ static void on_ui_event(uint32_t surface, uint32_t node,
 
 /* --- window backend ----------------------------------------------------- */
 
+static void update_window_snapshot(
+    pxa_component_t component, const pxa_window_configuration_t *configuration);
+
 static pxa_status_t host_window_apply(
     void *context, const pxa_window_configuration_t *configuration) {
     pxa_host_window_changed_fn callback;
@@ -2312,6 +2350,9 @@ static pxa_status_t host_window_apply(
     portEXIT_CRITICAL(&g_window_changed_lock);
     if (callback != NULL)
         callback(callback_context, g_host.activation.active_identity, configuration);
+    /* configure() commits its candidate after this callback returns. Publish
+     * that candidate now; periodic refreshes below read the committed value. */
+    update_window_snapshot(g_host.activation.active_component, configuration);
     return PXA_STATUS_OK;
 }
 
@@ -2370,13 +2411,21 @@ static int host_window_snapshot(pxa_window_snapshot_t *snapshot) {
     return 1;
 }
 
-static void update_window_snapshot(pxa_component_t component) {
+static void update_window_snapshot(
+    pxa_component_t component, const pxa_window_configuration_t *configuration) {
     pxa_window_snapshot_t snapshot;
+    pxa_window_configuration_t current;
     pxa_status_t status;
     if (g_host.activation.services.window == NULL || component == PXA_COMPONENT_INVALID ||
         !host_window_snapshot(&snapshot)) {
         return;
     }
+    if (configuration == NULL &&
+        pxa_window_get_configuration(g_host.activation.services.window, component, &current) ==
+            PXA_STATUS_OK)
+        configuration = &current;
+    if (configuration != NULL)
+        pxa_host_window_apply_bar_mode(&snapshot, configuration);
     status = pxa_window_update_snapshot(g_host.activation.services.window, component, &snapshot);
     if (status != PXA_STATUS_OK && status != PXA_STATUS_NOT_FOUND) {
         ESP_LOGW(PXA_ESP_HOST_TAG,
@@ -3221,6 +3270,8 @@ static int start_verified(const char *identity) {
                     PXA_WASI_FEATURE_CLOCKS | PXA_WASI_FEATURE_RANDOM;
             }
 #endif
+            if (service_capabilities[index].service == PXA_ASSETS_SERVICE_ID)
+                service_capabilities[index].features = PXA_ASSETS_FEATURE_IMAGE_DECODE | PXA_ASSETS_FEATURE_IMAGE_FRAMES;
             if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
                 service_capabilities[index].features = PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS;
             if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {
@@ -3230,7 +3281,7 @@ static int start_verified(const char *identity) {
                     PXA_UI_FEATURE_RGB565_BITMAP |
                     PXA_UI_FEATURE_CONTROLLER_INPUT |
                     PXA_UI_FEATURE_CANVAS_STREAM_IO |
-                    PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT;
+                    PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT | PXA_UI_FEATURE_PASSWORD_INPUT;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
                 service_capabilities[index].features |= PXA_UI_FEATURE_SIZED_TEXT;
 #endif
@@ -3325,7 +3376,7 @@ static int start_verified(const char *identity) {
     /* Startup is suspended until System foregrounds this instance. There is
      * no background transition to report before its first foreground. */
     g_host.lifecycle_delivered = PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND;
-    update_window_snapshot(g_host.activation.active_component);
+    update_window_snapshot(g_host.activation.active_component, NULL);
     (void)pxa_ipc_flush(g_host.activation.services.ipc);
     if (!drain_active_events()) {
         PXA_ESP_START_FAIL("drain-startup-events", PXA_STATUS_INTERNAL);
@@ -4438,7 +4489,7 @@ static void run(void) {
             }
             case PXA_ESP_HOST_CMD_WINDOW_MAINTENANCE:
                 if (g_host.activation.active_component != PXA_COMPONENT_INVALID) {
-                    update_window_snapshot(g_host.activation.active_component);
+                    update_window_snapshot(g_host.activation.active_component, NULL);
                     update_ui_resource_pressure();
                     drain_active_events();
                 }
@@ -4889,7 +4940,7 @@ bool pxa_esp_host_initialize(void) {
         PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
         PXA_UI_FEATURE_GRID | PXA_UI_FEATURE_RGB565_BITMAP |
         PXA_UI_FEATURE_CONTROLLER_INPUT | PXA_UI_FEATURE_TEXT_INPUT_CONTROL |
-        PXA_UI_FEATURE_DYNAMIC_TEXT;
+        PXA_UI_FEATURE_DYNAMIC_TEXT | PXA_UI_FEATURE_PASSWORD_INPUT;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
     ui_config.primary_environment.features |= PXA_UI_FEATURE_SIZED_TEXT;
 #endif

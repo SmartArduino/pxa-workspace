@@ -54,6 +54,7 @@ typedef struct {
 } esp_http_client_config_t;
 
 enum { ESP_OK, ESP_FAIL, ESP_ERR_NO_MEM, ESP_ERR_TIMEOUT };
+#define ESP_ERR_HTTP_EAGAIN 0x7007
 enum { HTTP_METHOD_GET, HTTP_METHOD_HEAD, HTTP_METHOD_POST, HTTP_METHOD_PUT,
        HTTP_METHOD_PATCH, HTTP_METHOD_DELETE };
 enum { HTTP_EVENT_ON_HEADER, HTTP_EVENT_ON_DATA };
@@ -106,4 +107,10 @@ esp_err_t esp_http_client_set_post_field(esp_http_client_handle_t, const char *,
 esp_err_t esp_http_client_perform(esp_http_client_handle_t);
 int esp_http_client_get_status_code(esp_http_client_handle_t);
 void esp_http_client_cleanup(esp_http_client_handle_t);
+esp_err_t esp_http_client_open(esp_http_client_handle_t, int);
+esp_err_t esp_http_client_set_timeout_ms(esp_http_client_handle_t, int);
+int esp_http_client_write(esp_http_client_handle_t, const char *, int);
+int64_t esp_http_client_fetch_headers(esp_http_client_handle_t);
+int esp_http_client_read(esp_http_client_handle_t, char *, int);
+bool esp_http_client_is_complete_data_received(esp_http_client_handle_t);
 #endif

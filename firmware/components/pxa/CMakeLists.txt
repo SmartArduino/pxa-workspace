@@ -76,7 +76,14 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_ime.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ime.c"
     "${PXA_C_CORE_ROOT}/adapters/wamr/pxa_wamr_engine.c"
-    "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ui.c")
+    "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ui.c"
+    "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_image.c"
+    "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_gif.c"
+    "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_gif_native.c"
+    "${PXA_C_CORE_ROOT}/adapters/esp/pxa_esp_rom_image.c"
+    "${PXA_C_CORE_ROOT}/adapters/image/pxa_stream_png.c"
+    "${PXA_C_CORE_ROOT}/adapters/image/vendor/pngle.c"
+    "${PXA_C_CORE_ROOT}/adapters/image/vendor/miniz.c")
 set(PXA_PRIV_REQUIRES
     mbedtls
     espressif__esp_audio_codec

@@ -1,3 +1,4 @@
+#include "pxa/image/codecs.h"
 #include "pxa_esp_services.h"
 
 #if defined(ESP_PLATFORM)
@@ -724,9 +725,17 @@ static pxa_status_t initialize_assets(
     config.struct_size = sizeof(config);
     config.max_pending = config.max_pending_per_component = 16;
     config.max_resources = config.max_resources_per_component = 32;
-    status = pxa_esp_assets_begin(&worker, &config.backend);
-    if (status != PXA_STATUS_OK) return fail(result, "initialize-asset-worker", status, PXA_ESP_SERVICES_ISSUE_NONE);
-    services->assets_backend_active = 1;
+    config.image_backend = pxa_esp_rom_image_backend();
+    config.image_allocator = pxa_esp_resource_allocator(PXA_MEMORY_EXTERNAL,PXA_MEMORY_IMAGE);
+    config.image_temporary_allocator = pxa_esp_resource_allocator(PXA_MEMORY_EXTERNAL,PXA_MEMORY_TEMPORARY);
+    /* Runtime-only images need no installed catalog, resident asset cache or
+     * package I/O worker. Keep those costs out of a reader's baseline. */
+    pxa_bytes_t catalog_path = {(const uint8_t *)PXA_ASSET_INDEX_PATH,sizeof(PXA_ASSET_INDEX_PATH)-1};
+    if(music || pxa_package_file_find(host->manifest,catalog_path)) {
+        status = pxa_esp_assets_begin(&worker, &config.backend);
+        if (status != PXA_STATUS_OK) return fail(result, "initialize-asset-worker", status, PXA_ESP_SERVICES_ISSUE_NONE);
+        services->assets_backend_active = 1;
+    }
     if (!guest_assets) return PXA_STATUS_OK;
     bytes = pxa_assets_service_workspace_size(&config);
     status = allocate_workspace(host, bytes, &services->assets_workspace, result, "allocate-assets-service");
@@ -921,7 +930,7 @@ static pxa_status_t initialize_window_ui(
                       PXA_UI_FEATURE_RGB565_BITMAP |
                       PXA_UI_FEATURE_CONTROLLER_INPUT |
                       PXA_UI_FEATURE_CANVAS_STREAM_IO |
-                      PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT;
+                      PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT | PXA_UI_FEATURE_PASSWORD_INPUT;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
     config.features |= PXA_UI_FEATURE_SIZED_TEXT;
 #endif

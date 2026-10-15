@@ -865,9 +865,13 @@ bool PaiTouchHardware::RouteInjectedKey(pxadb::TestControlKey key) {
             NavigateHome();
             return true;
         case pxadb::TestControlKey::kVolumeUp:
+            if (pxa_host_captures_volume_keys() && pxa_host_post_key(PXA_HOST_KEY_VOLUME_UP))
+                return pxa_host_post_key(PXA_HOST_KEY_VOLUME_UP_RELEASED);
             SetVolume(std::min<int>(100, volume() + 10));
             return true;
         case pxadb::TestControlKey::kVolumeDown:
+            if (pxa_host_captures_volume_keys() && pxa_host_post_key(PXA_HOST_KEY_VOLUME_DOWN))
+                return pxa_host_post_key(PXA_HOST_KEY_VOLUME_DOWN_RELEASED);
             SetVolume(volume() > 10 ? volume() - 10 : 0);
             return true;
     }

@@ -149,19 +149,6 @@ static int header_name_equal(const char *header, pxa_bytes_t wanted) {
            strncasecmp(header, (const char *)wanted.data, wanted.size) == 0;
 }
 
-static int response_header_already_captured(const pxa_esp_net_slot_t *slot,
-                                            pxa_bytes_t name) {
-    uint16_t index;
-    for (index = 0; index < slot->response_header_count; ++index) {
-        if (slot->response_headers[index].name.size == name.size &&
-            memcmp(slot->response_headers[index].name.data, name.data,
-                   name.size) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 static int capture_response_header(pxa_esp_net_slot_t *slot,
                                    const char *name, const char *value) {
     uint16_t index;
@@ -169,8 +156,7 @@ static int capture_response_header(pxa_esp_net_slot_t *slot,
         pxa_bytes_t wanted = slot->wanted_headers[index];
         size_t length = 0;
         char *destination;
-        if (!header_name_equal(name, wanted) ||
-            response_header_already_captured(slot, wanted)) {
+        if (!header_name_equal(name, wanted)) {
             continue;
         }
         while (value[length] != '\0' &&
@@ -278,6 +264,8 @@ static esp_http_client_method_t esp_method(uint16_t method) {
     }
 }
 
+#include "pxa_esp_http.inc"
+
 static void net_worker(void *context) {
     pxa_esp_net_state_t *net = (pxa_esp_net_state_t *)context;
     uint8_t index;
@@ -309,6 +297,12 @@ static void net_worker(void *context) {
         portENTER_CRITICAL(&g_net_lock);
         if (slot->state != PXA_ESP_NET_SLOT_QUEUED) {
             portEXIT_CRITICAL(&g_net_lock);
+            continue;
+        }
+        if (slot->abi_minor >= 2) {
+            slot->state = PXA_ESP_NET_SLOT_RUNNING;
+            portEXIT_CRITICAL(&g_net_lock);
+            stream_step(net,slot);
             continue;
         }
         if (slot->cancelled) {
@@ -526,8 +520,8 @@ static pxa_status_t start_request(void *context,
         request->method > PXA_NET_METHOD_DELETE ||
         request->url.data == NULL || request->url.size == 0 ||
         request->url.size >= PXA_ESP_NET_URL_CAPACITY ||
-        request->max_response_bytes == 0 ||
-        request->max_response_bytes > PXA_ESP_NET_MAX_RESPONSE_BYTES ||
+        (request->abi_minor < 2 && (request->max_response_bytes == 0 ||
+                                  request->max_response_bytes > PXA_ESP_NET_MAX_RESPONSE_BYTES)) ||
         request->timeout_ms < 100 || request->timeout_ms > 60000 ||
         request->header_count > PXA_ESP_NET_MAX_HEADERS ||
         request->wanted_response_header_count > PXA_ESP_NET_MAX_HEADERS ||
@@ -543,7 +537,7 @@ static pxa_status_t start_request(void *context,
         const pxa_net_header_t *header = &request->headers[header_index];
         size_t needed = header->name.size + header->value.size + 2u;
         if (!pxa_net_header_name_valid(header->name, 1) ||
-            !pxa_net_header_value_valid(header->value) ||
+            (request->abi_minor < 2 && !pxa_net_header_value_valid(header->value)) ||
             needed > PXA_ESP_NET_REQUEST_HEADER_BYTES -
                          request_header_used) {
             return PXA_STATUS_INVALID_ARGUMENT;
@@ -585,7 +579,18 @@ static pxa_status_t start_request(void *context,
     }
     portEXIT_CRITICAL(&g_net_lock);
 
-    storage_bytes = request->max_response_bytes + request->body.size +
+    if (request->abi_minor >= 2 &&
+        (!pxa_http_stream_storage_size(request->buffer_bytes,request->response_header_bytes) ||
+         request->body.size > request->buffer_bytes / 2u || request->upload_bytes > INT32_MAX)) {
+        portENTER_CRITICAL(&g_net_lock);
+        reset_slot_metadata(slot);
+        portEXIT_CRITICAL(&g_net_lock);
+        return PXA_STATUS_INVALID_ARGUMENT;
+    }
+    storage_bytes = request->abi_minor >= 2
+        ? sizeof(pxa_esp_http_t) + request->buffer_bytes + request->response_header_bytes +
+          request_header_used + wanted_header_used
+        : request->max_response_bytes + request->body.size +
                     request_header_used + wanted_header_used +
                     (request->wanted_response_header_count == 0 ? 0 :
                      PXA_ESP_NET_RESPONSE_HEADER_BYTES);
@@ -597,8 +602,19 @@ static pxa_status_t start_request(void *context,
         portEXIT_CRITICAL(&g_net_lock);
         return PXA_STATUS_RESOURCE_LIMIT;
     }
-    slot->request_body = slot->body + request->max_response_bytes;
-    slot->request_header_data = (char *)slot->request_body + request->body.size;
+    if (request->abi_minor >= 2) {
+        pxa_esp_http_t *h=http_stream(slot);
+        memset(h,0,sizeof(*h));
+        h->declared_length=UINT64_MAX;
+        pxa_http_stream_init(&h->stream,h+1,request->buffer_bytes,
+            request->response_header_bytes,request->max_body_bytes,request->upload_bytes,request->method);
+        slot->request_body=h->stream.send.data;
+        slot->request_header_data=(char *)(h+1)+request->buffer_bytes+request->response_header_bytes;
+        slot->deadline_us=(uint64_t)esp_timer_get_time()+(uint64_t)request->timeout_ms*1000u;
+    } else {
+        slot->request_body = slot->body + request->max_response_bytes;
+        slot->request_header_data = (char *)slot->request_body + request->body.size;
+    }
     slot->wanted_header_data = slot->request_header_data + request_header_used;
     slot->response_header_data = slot->wanted_header_data + wanted_header_used;
     portENTER_CRITICAL(&g_net_lock);
@@ -616,6 +632,12 @@ static pxa_status_t start_request(void *context,
     slot->url[request->url.size] = '\0';
     if (request->body.size != 0) {
         memcpy(slot->request_body, request->body.data, request->body.size);
+        if(request->abi_minor>=2) {
+            pxa_http_stream_t *s=&http_stream(slot)->stream;
+            pxa_http_ring_advance(&s->send,request->body.size,1);
+            s->accepted_bytes=request->body.size;
+            __atomic_fetch_or(&s->state,PXA_HTTP_STREAM_UPLOAD_DONE,__ATOMIC_RELEASE);
+        }
     }
     request_header_used = 0;
     for (header_index = 0; header_index < request->header_count;
@@ -803,6 +825,47 @@ static void close_body(void *context, void *body_stream) {
     free(storage);
 }
 
+static pxa_status_t stream_open(void *context, const pxa_net_request_t *request,
+                                 void **exchange) {
+    uint64_t operation=0;
+    pxa_status_t status=start_request(context,request,&operation);
+    *exchange=NULL;
+    if(status!=PXA_STATUS_OK) return status;
+    portENTER_CRITICAL(&g_net_lock);
+    *exchange=find_slot(g_net,operation);
+    portEXIT_CRITICAL(&g_net_lock);
+    return *exchange?PXA_STATUS_OK:PXA_STATUS_INTERNAL;
+}
+static int32_t stream_io(void *context, void *exchange, uint32_t operation,
+                          uint8_t *data, size_t size) {
+    pxa_esp_net_slot_t *slot=exchange;
+    pxa_http_stream_t *stream=&http_stream(slot)->stream;
+    int wake = (operation == PXA_IO_READ && !pxa_http_ring_writable(&stream->receive)) ||
+               (operation == PXA_IO_WRITE && !pxa_http_ring_readable(&stream->send));
+    int32_t result;
+    (void)context;
+    result = pxa_http_stream_io(stream,operation,data,size);
+    if ((wake && result > 0) ||
+        (operation == PXA_HTTP_IO_FINISH_UPLOAD && result == 0))
+        xTaskNotifyGive(g_net->task);
+    return result;
+}
+static void stream_close(void *context, void *exchange) {
+    pxa_esp_net_slot_t *slot=exchange;
+    uint8_t index=(uint8_t)(slot-g_net->slots);
+    int queue=0;
+    (void)context;
+    portENTER_CRITICAL(&g_net_lock);
+    __atomic_fetch_or(&http_stream(slot)->stream.state,PXA_HTTP_STREAM_CLOSED,__ATOMIC_RELEASE);
+    if(slot->state==PXA_ESP_NET_SLOT_COMPLETE) {
+        slot->state=PXA_ESP_NET_SLOT_QUEUED;
+        queue=1;
+    }
+    portEXIT_CRITICAL(&g_net_lock);
+    if(queue) (void)xQueueSendToBack(g_net->queue,&index,0);
+    xTaskNotifyGive(g_net->task);
+}
+
 int pxa_esp_net_backend(pxa_net_backend_t *output,
                         pxa_esp_net_notify_fn notify, void *notify_context) {
     if (output == NULL || notify == NULL) return 0;
@@ -816,17 +879,28 @@ int pxa_esp_net_backend(pxa_net_backend_t *output,
     output->cancel = cancel_request;
     output->read_body = read_body;
     output->close_body = close_body;
+    output->open_exchange = stream_open;
+    output->exchange_io = stream_io;
+    output->close_exchange = stream_close;
     return 1;
 }
 
 void pxa_esp_net_reset_requests(void) {
     uint16_t index;
     void *storage[PXA_ESP_NET_MAX_PENDING] = {0};
+    uint8_t requeue[PXA_ESP_NET_MAX_PENDING];
+    unsigned requeue_count = 0;
     if (g_net == NULL) return;
     portENTER_CRITICAL(&g_net_lock);
     for (index = 0; index < PXA_ESP_NET_MAX_PENDING; ++index) {
         pxa_esp_net_slot_t *slot = &g_net->slots[index];
-        if (slot->state == PXA_ESP_NET_SLOT_QUEUED ||
+        if(slot->abi_minor>=2 && slot->state!=PXA_ESP_NET_SLOT_FREE) {
+            __atomic_fetch_or(&http_stream(slot)->stream.state,PXA_HTTP_STREAM_CLOSED,__ATOMIC_RELEASE);
+            if(slot->state==PXA_ESP_NET_SLOT_COMPLETE) {
+                slot->state=PXA_ESP_NET_SLOT_QUEUED;
+                requeue[requeue_count++] = (uint8_t)index;
+            }
+        } else if (slot->state == PXA_ESP_NET_SLOT_QUEUED ||
             slot->state == PXA_ESP_NET_SLOT_RUNNING) {
             if (!slot->cancelled) slot->cancelled = 1;
         } else if (slot->state != PXA_ESP_NET_SLOT_FREE) {
@@ -835,6 +909,8 @@ void pxa_esp_net_reset_requests(void) {
         }
     }
     portEXIT_CRITICAL(&g_net_lock);
+    for (index = 0; index < requeue_count; ++index)
+        (void)xQueueSendToBack(g_net->queue, &requeue[index], 0);
     for (index = 0; index < PXA_ESP_NET_MAX_PENDING; ++index) free(storage[index]);
 }
 
