@@ -61,7 +61,7 @@ private:
     void UpdateInteractivity();
     void ProcessControls();
     bool RequestPowerAction(pxsys_reference_power_action_t action);
-    [[noreturn]] void PerformPowerAction();
+    void PerformPowerAction();
     void PollBattery(uint32_t now_ms);
     bool ApplyBrightness();
     bool WaitForTransfer(TickType_t timeout);

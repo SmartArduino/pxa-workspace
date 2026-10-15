@@ -22,6 +22,7 @@ public:
         EspMosaicoTouchEvent event;
         int64_t timestamp_us;
         bool motion;
+        bool cancelled = false;
     };
 
     void Update(const EspMosaicoTouchEvent& event, int64_t timestamp_us) {
@@ -49,7 +50,7 @@ public:
             head_ = count_ = 0;
             auto release = consumed_.event;
             release.pressed = false;
-            Append({release, timestamp_us, false});
+            Append({release, timestamp_us, false, true});
         }
         Append({event, timestamp_us, motion && !overflow});
     }
@@ -60,22 +61,19 @@ public:
             head_ = (head_ + 1) % kCapacity;
             --count_;
         }
-        return consumed_;
+        const auto sample = consumed_;
+        consumed_.cancelled = false; // Deliver each cancellation exactly once.
+        return sample;
     }
 
     bool pending() const { return count_ != 0; }
     EspMosaicoTouchEvent current() const { return producer_; }
-    void Cancel(int64_t timestamp_us) {
-        auto release = producer_;
-        release.pressed = false;
-        Update(release, timestamp_us);
-    }
     void ResetWithRelease(int64_t timestamp_us) {
         head_ = count_ = 0;
         auto release = consumed_.event;
         release.pressed = false;
         producer_ = release;
-        Append({release, timestamp_us, false});
+        Append({release, timestamp_us, false, true});
     }
 
 private:

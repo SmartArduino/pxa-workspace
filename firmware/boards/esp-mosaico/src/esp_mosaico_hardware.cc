@@ -821,6 +821,10 @@ void EspMosaicoHardware::PollTouch(void* context) {
         if (callback != nullptr) callback(callback_context);
         if (pressed) self->touch_reports_.fetch_add(1);
         self->PollBattery(static_cast<uint32_t>(timestamp_us / 1000));
+        // A bus timeout or cancelled shutdown can miss many poll intervals.
+        // Rebase instead of replaying them in a priority-6 catch-up burst.
+        const TickType_t now = xTaskGetTickCount();
+        if (now - next > pdMS_TO_TICKS(10)) next = now;
         xTaskDelayUntil(&next, pdMS_TO_TICKS(10));
     }
 }
@@ -855,11 +859,10 @@ void EspMosaicoHardware::ReadTouch(lv_indev_t* input, lv_indev_data_t* data) {
     }
     portENTER_CRITICAL(&self->touch_lock_);
     const bool queued = self->input_.pending(context->slot);
-    const bool cancelled = self->input_.TakeCancelled(context->slot);
     const auto sample = self->input_.Read(context->slot);
     data->continue_reading = self->input_.pending(context->slot);
     portEXIT_CRITICAL(&self->touch_lock_);
-    if (cancelled) lv_indev_wait_release(input);
+    if (sample.cancelled) lv_indev_wait_release(input);
     data->state = sample.event.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
     data->point.x = sample.event.point.x;
     data->point.y = sample.event.point.y;
@@ -1043,7 +1046,18 @@ void EspMosaicoHardware::PerformPowerAction() {
     pxa_esp_surface_set_display_unlocked(false);
     (void)pxa_host_set_display_interactive(false);
     const bool saved = pxa_host_prepare_shutdown(1200);
-    if (!saved) ESP_LOGW(kTag, "Guest shutdown did not finish within 1200 ms");
+    if (!saved) {
+        // A queued stop can still complete later. Do not cut power while its
+        // save/detach work is outstanding; resume the UI and allow a retry.
+        ESP_LOGE(kTag, "Power action cancelled: Guest shutdown was not acknowledged");
+        // Clear the gate before notifying the other core's UI timer; its wake
+        // callback must see that interaction can resume.
+        power_action_ = -1;
+        power_menu_pending_ = true;
+        wake_pending_ = true;
+        return;
+    }
+    audio_.StopForShutdown();
     vTaskDelay(pdMS_TO_TICKS(120));
     if (power_action_.load() == PXSYS_REFERENCE_POWER_ACTION_RESTART) {
         esp_restart();

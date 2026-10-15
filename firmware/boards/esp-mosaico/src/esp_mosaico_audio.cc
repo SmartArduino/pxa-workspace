@@ -137,6 +137,14 @@ bool EspMosaicoAudio::Initialize(i2c_master_bus_handle_t bus) {
     init_stage_ = "ready";
     ESP_LOGI("mosaico_audio", "ES8311 ready at %lu Hz",
              static_cast<unsigned long>(mosaico_board::kAudioSampleRate));
+    // Register reads are useful once for bring-up, outside the UI lock. Never
+    // repeat 100-ms codec I2C transactions from periodic LVGL diagnostics.
+    int mute_reg = -1, volume_reg = -1, reference_reg = -1;
+    int result = esp_codec_dev_read_reg(speaker_, 0x31, &mute_reg);
+    if (result == ESP_OK) result = esp_codec_dev_read_reg(speaker_, 0x32, &volume_reg);
+    if (result == ESP_OK) result = esp_codec_dev_read_reg(speaker_, 0x44, &reference_reg);
+    ESP_LOGI("mosaico_audio", "codec_boot reg31=0x%x reg32=0x%x reg44=0x%x read_status=%d",
+        mute_reg, volume_reg, reference_reg, result);
     return true;
 }
 
@@ -158,7 +166,19 @@ bool EspMosaicoAudio::Write(const int16_t* pcm, size_t samples) {
     if (speaker_ == nullptr || mutex_ == nullptr || pcm == nullptr ||
         samples == 0 || samples > kMaxWriteSamples)
         return false;
+    const auto discard_stopped_frame = [samples]() {
+        // device_paced output must still sleep after its physical DMA stops.
+        vTaskDelay(std::max<TickType_t>(1, pdMS_TO_TICKS(
+            (samples * 1000 + mosaico_board::kAudioSampleRate - 1) /
+                mosaico_board::kAudioSampleRate)));
+        return true;
+    };
+    if (stopped_.load()) return discard_stopped_frame();
     xSemaphoreTake(mutex_, portMAX_DELAY);
+    if (stopped_.load()) {
+        xSemaphoreGive(mutex_);
+        return discard_stopped_frame();
+    }
     uint32_t peak = 0;
     for (size_t index = 0; index < samples; ++index) {
         stereo_[index * 2] = pcm[index];
@@ -197,6 +217,17 @@ bool EspMosaicoAudio::Write(const int16_t* pcm, size_t samples) {
     return written;
 }
 
+void EspMosaicoAudio::StopForShutdown() {
+    stopped_ = true;
+    if (mutex_ == nullptr) return;
+    // Drain any write/recovery already in progress before disabling the PA.
+    // Future writes remain paced but cannot restart DMA or enable the PA.
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    (void)gpio_set_level(static_cast<gpio_num_t>(mosaico_board::kAudioAmplifierEnable), 0);
+    if (tx_channel_ != nullptr) (void)i2s_channel_disable(tx_channel_);
+    xSemaphoreGive(mutex_);
+}
+
 bool IRAM_ATTR EspMosaicoAudio::OnDmaSent(i2s_chan_handle_t, i2s_event_data_t* event, void* context) {
     static_assert(std::atomic<uint32_t>::is_always_lock_free, "ISR counters must be lock-free");
     auto* self = static_cast<EspMosaicoAudio*>(context);
@@ -213,6 +244,7 @@ bool IRAM_ATTR EspMosaicoAudio::OnDmaSent(i2s_chan_handle_t, i2s_event_data_t* e
 }
 
 bool EspMosaicoAudio::RestartOutput() {
+    if (stopped_.load()) return false;
     const auto pa = static_cast<gpio_num_t>(mosaico_board::kAudioAmplifierEnable);
     (void)gpio_set_level(pa, 0);
     esp_err_t result = i2s_channel_disable(tx_channel_);
@@ -237,20 +269,12 @@ void EspMosaicoAudio::PublishDiagnostics() {
         ESP_LOGW("mosaico_audio", "audio ready=0 stage=%s code=%d", init_stage_, init_error_);
         return;
     }
-    int codec_volume = -1, mute_reg = -1, volume_reg = -1, reference_reg = -1;
-    // Codec I2C transactions can take 100 ms on failure. They must never hold
-    // the PCM write lock while the I2S DMA ring continues draining.
-    if (xSemaphoreTake(control_mutex_, pdMS_TO_TICKS(2)) != pdTRUE) return;
-    (void)esp_codec_dev_get_out_vol(speaker_, &codec_volume);
-    int result = esp_codec_dev_read_reg(speaker_, 0x31, &mute_reg);
-    if (result == ESP_OK) result = esp_codec_dev_read_reg(speaker_, 0x32, &volume_reg);
-    if (result == ESP_OK) result = esp_codec_dev_read_reg(speaker_, 0x44, &reference_reg);
-    xSemaphoreGive(control_mutex_);
-    ESP_LOGI("mosaico_audio", "audio ready=1 volume=%u codec_volume=%d pa=%d writes=%lu nonzero=%lu peak=%lu errors=%lu reg31=0x%x reg32=0x%x reg44=0x%x read_status=%d",
-        volume(), codec_volume, gpio_get_level(static_cast<gpio_num_t>(mosaico_board::kAudioAmplifierEnable)),
+    // Snapshot-only: no codec I2C, waiting for its control lock or heap allocation.
+    ESP_LOGI("mosaico_audio", "audio ready=1 stopped=%d volume=%u pa=%d writes=%lu nonzero=%lu peak=%lu errors=%lu",
+        stopped_.load(), volume(), gpio_get_level(static_cast<gpio_num_t>(mosaico_board::kAudioAmplifierEnable)),
         static_cast<unsigned long>(writes_.load()), static_cast<unsigned long>(nonzero_frames_.load()),
-        static_cast<unsigned long>(peak_.exchange(0)), static_cast<unsigned long>(write_errors_.load()),
-        mute_reg, volume_reg, reference_reg, result);
+        static_cast<unsigned long>(peak_.exchange(0)),
+        static_cast<unsigned long>(write_errors_.load()));
     PxaAudioOutput::MusicStats stats;
     ESP_LOGI("mosaico_audio", "dma blocks=%lu nonzero=%lu recoveries=%lu",
         static_cast<unsigned long>(dma_blocks_.load()),

@@ -13,6 +13,8 @@ public:
     // Returns true when a real touch takes ownership back from PXADB.
     bool UpdatePhysical(const EspMosaicoTouchPoint* points, size_t count,
                         int64_t timestamp_us, bool valid_report) {
+        if (count != 0 && points == nullptr) return false;
+        count = std::min(count, kPointers);
         slots_.Update(points, count);
         const bool takeover = injected_ && valid_report && count != 0;
         if (takeover) {
@@ -28,6 +30,10 @@ public:
     bool Inject(uint8_t id, uint16_t x, uint16_t y, bool pressed, int64_t timestamp_us) {
         if (id >= kPointers || x >= mosaico_board::kWidth || y >= mosaico_board::kHeight)
             return false;
+        // A late remote command cannot undo a physical takeover. Ignore its
+        // release and reject presses until all physical contacts have lifted.
+        if (!injected_ && (slots_.Get(0).pressed || slots_.Get(1).pressed))
+            return !pressed;
         if (!injected_) {
             ReleaseAll(timestamp_us);
             injected_ = true;
@@ -42,7 +48,6 @@ public:
         if (id >= kPointers) return false;
         if (injected_) {
             queues_[id].ResetWithRelease(timestamp_us);
-            cancelled_ |= 1u << id;
             pressed_ &= ~(1u << id);
         }
         return true;
@@ -56,12 +61,6 @@ public:
     }
 
     bool pending(size_t slot) const { return queues_[slot].pending(); }
-    bool TakeCancelled(size_t slot) {
-        const uint8_t bit = 1u << slot;
-        const bool cancelled = (cancelled_ & bit) != 0;
-        cancelled_ &= ~bit;
-        return cancelled;
-    }
 
     size_t Points(EspMosaicoTouchPoint (&points)[kPointers]) const {
         size_t count = 0;
@@ -76,11 +75,9 @@ private:
     void ReleaseAll(int64_t timestamp_us) {
         for (auto& queue : queues_) queue.ResetWithRelease(timestamp_us);
         pressed_ = 0;
-        cancelled_ = (1u << kPointers) - 1;
     }
     EspMosaicoTouchSlots slots_;
     EspMosaicoTouchQueue queues_[kPointers];
     uint8_t pressed_ = 0;
-    uint8_t cancelled_ = 0;
     bool injected_ = false;
 };

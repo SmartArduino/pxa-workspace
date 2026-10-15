@@ -332,7 +332,7 @@ void PxaAudioOutput::MusicTask(void* context) {
 
 bool PxaAudioOutput::GetMusicStats(MusicStats* output) {
     if (!output || !music_mutex_) return false;
-    xSemaphoreTake(music_mutex_,portMAX_DELAY);
+    if (xSemaphoreTake(music_mutex_, 0) != pdTRUE) return false;
     *output=music_stats_;
     xSemaphoreGive(music_mutex_);
     return true;

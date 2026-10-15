@@ -469,8 +469,8 @@ void TestInputOwnership() {
     assert(input.Inject(0, 40, 50, true, 100));
     assert(input.Inject(1, 300, 310, true, 110));
     for (size_t slot = 0; slot < 2; ++slot) {
-        assert(input.TakeCancelled(slot));
-        assert(!input.Read(slot).event.pressed); // Cancel old UI ownership first.
+        const auto cancel = input.Read(slot);
+        assert(cancel.cancelled && !cancel.event.pressed); // Cancel old UI ownership first.
         const auto down = input.Read(slot);
         assert(down.event.pressed && down.event.point.id == slot);
     }
@@ -480,8 +480,9 @@ void TestInputOwnership() {
     assert(!input.UpdatePhysical(nullptr, 0, 120, true));
     assert(input.Points(points) == 2); // Empty physical reports cannot cancel PXADB.
     assert(input.Cancel(0, 130));
-    assert(input.TakeCancelled(0));
-    assert(!input.Read(0).event.pressed);
+    const auto cancel = input.Read(0);
+    assert(cancel.cancelled && !cancel.event.pressed);
+    assert(!input.Read(0).cancelled);
     assert(input.Read(1).event.pressed); // Cancelling one pointer preserves the other.
     assert(input.Inject(1, 320, 330, false, 140));
     const auto up = input.Read(1);
@@ -496,6 +497,11 @@ void TestInputOwnership() {
     const EspMosaicoTouchPoint physical[] = {{200, 210, 7}, {250, 260, 8}};
     assert(!input.UpdatePhysical(physical, 2, 170, true));
     assert(input.Read(0).event.point.id == 7 && input.Read(1).event.point.id == 8);
+    assert(!input.Inject(0, 60, 70, true, 171));
+    assert(input.Inject(0, 60, 70, false, 172));
+    assert(input.Read(0).event.pressed && input.Read(1).event.pressed);
+    assert(!input.UpdatePhysical(nullptr, 0, 175, true));
+    assert(!input.Read(0).event.pressed && !input.Read(1).event.pressed);
     assert(input.Inject(0, 60, 70, true, 180));
     (void)input.Read(0);
     assert(input.Read(0).event.pressed);
@@ -504,8 +510,8 @@ void TestInputOwnership() {
     // A real touch discards queued remote motion and cancels the consumed
     // remote press before delivering physical input through those same IDs.
     for (size_t slot = 0; slot < 2; ++slot) {
-        assert(input.TakeCancelled(slot));
-        assert(!input.Read(slot).event.pressed);
+        const auto release = input.Read(slot);
+        assert(release.cancelled && !release.event.pressed);
         const auto real = input.Read(slot);
         assert(real.event.pressed && real.event.point.id == physical[slot].id);
     }
@@ -843,7 +849,8 @@ void TestDelayedTouchReads() {
     // one. A later release cannot leave the UI permanently pressed.
     for (int i = 0; i < 40; ++i)
         queue.Update({{100, 100, 7}, i % 2 != 0}, 204000 + i * 1000);
-    assert(!queue.Read().event.pressed);
+    sample = queue.Read();
+    assert(sample.cancelled && !sample.event.pressed);
     while (queue.pending()) (void)queue.Read();
     queue.Update({{100, 100, 7}, false}, 250000);
     assert(!queue.Read().event.pressed);

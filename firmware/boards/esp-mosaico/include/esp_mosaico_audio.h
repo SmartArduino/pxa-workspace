@@ -16,6 +16,7 @@ class EspMosaicoAudio {
 public:
     bool Initialize(i2c_master_bus_handle_t bus);
     bool SetVolume(uint8_t percent);
+    void StopForShutdown();
     uint8_t volume() const { return volume_.load(); }
     void PublishDiagnostics();
 
@@ -36,6 +37,7 @@ private:
     const char* init_stage_ = "not_started";
     int init_error_ = 0;
     bool ready_ = false;
+    std::atomic<bool> stopped_{false};
     std::atomic<uint32_t> writes_{0};
     std::atomic<uint32_t> nonzero_frames_{0};
     std::atomic<uint32_t> write_errors_{0};

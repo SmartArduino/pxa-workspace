@@ -112,8 +112,8 @@ void TestLvglInputTakeover() {
         lv_indev_set_user_data(pointers[slot], &contexts[slot]);
         lv_indev_set_read_cb(pointers[slot], [](lv_indev_t* input, lv_indev_data_t* data) {
             auto* context = static_cast<Context*>(lv_indev_get_user_data(input));
-            if (context->router->TakeCancelled(context->slot)) lv_indev_wait_release(input);
             const auto sample = context->router->Read(context->slot);
+            if (sample.cancelled) lv_indev_wait_release(input);
             data->state = sample.event.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
             data->point = {sample.event.point.x, sample.event.point.y};
             data->continue_reading = context->router->pending(context->slot);
@@ -137,11 +137,29 @@ void TestLvglInputTakeover() {
     assert(clicks[0] == 1); // Cancellation is not a click.
     assert(router.Inject(0, 80, 160, true, 140));
     pump();
-    const EspMosaicoTouchPoint physical[] = {{320, 160, 7}};
-    assert(router.UpdatePhysical(physical, 1, 150, true));
+    // Flood a busy UI while its old press is on button 0. The retained
+    // cancellation must not click that button; all new taps are outside it.
+    for (int i = 0; i < 9; ++i) {
+        assert(router.Inject(0, 200, 400, false, 141 + i * 2));
+        assert(router.Inject(0, 200, 400, true, 142 + i * 2));
+    }
     pump();
     assert(clicks[0] == 1);
-    assert(!router.UpdatePhysical(nullptr, 0, 160, true));
+    assert(router.Cancel(0, 170));
+    pump();
+    assert(router.Inject(0, 80, 160, true, 180));
+    pump();
+    const EspMosaicoTouchPoint physical[] = {{320, 160, 7}};
+    assert(router.UpdatePhysical(physical, 1, 190, true));
+    pump();
+    assert(clicks[0] == 1);
+    // A command already in flight when physical input takes over must not
+    // steal ownership back, or release the real finger.
+    assert(!router.Inject(0, 80, 160, true, 195));
+    assert(router.Inject(0, 80, 160, false, 196));
+    pump();
+    assert(clicks[0] == 1 && clicks[1] == 1);
+    assert(!router.UpdatePhysical(nullptr, 0, 200, true));
     pump();
     assert(clicks[1] == 2); // Physical input resumes, without clicking the remote target.
     for (auto* pointer : pointers) lv_indev_delete(pointer);

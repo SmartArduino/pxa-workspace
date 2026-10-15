@@ -80,14 +80,17 @@ GPIOs are driven. No eFuse is written by this firmware.
   writes (about 440 ms, beyond the six-block preroll) also restarts the channel;
   idle silence and normal short effects do not trigger this check.
   Microphone capture is not exposed.
-  Five-second `mosaico_audio` diagnostics show initialization status, UI/codec
-  volume, PA pin readback, successful writes, nonzero PCM blocks, interval peak,
-  write errors, and codec registers 0x31 (mute), 0x32 (volume), 0x44 (reference).
-  A separate music line reports cumulative underruns and decode/read latency.
-  Increasing `nonzero`/`writes` with `pa=1` and unmuted register 0x31 locates a
-  silent-speaker problem after Host mixing; stalled counts or growing underruns
-  point to the producer/output pipeline. Initialization failures retain their
-  failing stage/code for later logs, after USB CDC becomes available.
+  Five-second `mosaico_audio` diagnostics show initialization/stopped status,
+  logical volume, PA pin readback, successful writes, nonzero PCM blocks,
+  interval peak and write errors, without codec I2C reads. A separate music
+  line reports cumulative underruns and decode/read latency; a busy mixer skips
+  that snapshot instead of blocking the UI. Codec registers 0x31 (mute),
+  0x32 (volume) and 0x44 (reference) are read once during initialization and
+  logged as `codec_boot`; these values describe startup, not live codec state.
+  Increasing DMA `nonzero` with `pa=1` locates a silent-speaker problem after
+  Host mixing; stalled counts or growing underruns point to the producer/output
+  pipeline. Initialization failures retain their failing stage/code for later
+  logs, after USB CDC becomes available.
 - BQ27220: address `0x55`, read-only battery percentage and charging state.
   Status/UI read a cached snapshot, without I2C on the LVGL thread. Failed or
   invalid samples expire after ten seconds; missing hardware is not advertised.
@@ -96,8 +99,12 @@ GPIOs are driven. No eFuse is written by this firmware.
   open-drain shutdown request to SAM8108, released during normal operation.
   Confirmed shutdown stops Guest activity, waits for save/detach acknowledgement,
   turns off the screen/amplifier and holds GPIO57 low. Restart uses the same
-  asynchronous Guest shutdown path. Both reuse the existing input worker;
-  no extra task or stack is allocated. PXADB advertises board power-off support.
+  asynchronous Guest shutdown path. Missing acknowledgement cancels the
+  physical power action and restores input/the power menu for retry. Audio
+  shutdown waits for any current write/recovery before disabling DMA and PA;
+  later callbacks discard audio while preserving the output cadence. Both
+  actions reuse the existing input worker; no extra task or stack is allocated.
+  PXADB advertises board power-off support.
 - GPIO7: single click wakes an idle display or returns home; double click opens
   the system power menu (restart/shutdown); holding for
   1.2 seconds starts Wi-Fi AP provisioning with the `ESP-Mosaico` SSID prefix.
@@ -118,7 +125,10 @@ transfers are not returned as valid screenshots.
 Remote input uses the same two LVGL pointer devices as physical input, rather
 than creating another pointer. Queues retain short press/release endpoints;
 cancelling injection suppresses clicks. A real touch takes ownership back and
-notifies PXADB, so a continuing remote gesture cannot compete with it.
+notifies PXADB, so a continuing remote gesture cannot compete with it. Late
+remote presses are rejected while physical contacts remain down; late remote
+releases do not release those contacts. Queue overflow cancels the old gesture
+explicitly, preventing a synthetic release from clicking its old target.
 Logical pointers and battery polling remain available if CST92xx fails to probe.
 
 ```sh
@@ -308,6 +318,8 @@ The 16 MiB NOR flash layout reserves 4 MiB for the factory firmware and
 IMU, magnetometer, status LED, haptic motor and light sleep
 are not exposed by this port. See the [PXA integration audit](docs/pxa-integration-audit.zh-CN.md)
 for connected interfaces, remaining hardware-specific work and validation limits.
+Follow-up input, audio and power fixes are documented in the
+[reliability and UI latency report](docs/reliability-and-ui-latency.zh-CN.md).
 
 ## Build and use
 

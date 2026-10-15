@@ -31,7 +31,8 @@ public:
         uint32_t read_max_bytes = 0;
         uint64_t decode_calls = 0, decode_us = 0, decode_max_us = 0;
     };
-    // Device-cumulative counters. Short serialized snapshot; no I/O/allocation.
+    // Best-effort device-cumulative snapshot, without I/O, allocation or waiting.
+    // A busy mixer returns false and leaves output unchanged.
     bool GetMusicStats(MusicStats* output);
 
 

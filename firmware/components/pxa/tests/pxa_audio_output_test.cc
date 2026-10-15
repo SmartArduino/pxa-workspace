@@ -124,7 +124,10 @@ int xQueueReceive(QueueHandle_t h,void* data,uint32_t wait) {
 void xQueueReset(QueueHandle_t h) {static_cast<Queue*>(h)->items.clear();}
 void vQueueDelete(QueueHandle_t h) {assert(live_queues); --live_queues; static_cast<Queue*>(h)->~Queue();}
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* s) {++live_mutexes; s->locked=false; return &s->locked;}
-int xSemaphoreTake(SemaphoreHandle_t h,uint32_t) {assert(!*static_cast<bool*>(h));*static_cast<bool*>(h)=true;++music_lock_depth;return 1;}
+int xSemaphoreTake(SemaphoreHandle_t h,uint32_t wait) {
+    if (*static_cast<bool*>(h)) { assert(wait == 0); return 0; }
+    *static_cast<bool*>(h)=true;++music_lock_depth;return 1;
+}
 void xSemaphoreGive(SemaphoreHandle_t h) {assert(*static_cast<bool*>(h));*static_cast<bool*>(h)=false;--music_lock_depth;}
 void vSemaphoreDelete(SemaphoreHandle_t h) {assert(h && live_mutexes && !music_lock_depth);--live_mutexes;}
 TaskHandle_t xTaskCreateStatic(void(*)(void*),const char*,uint32_t bytes,void* ctx,unsigned,
@@ -459,6 +462,14 @@ int main(){
     int16_t buffered_samples[4096];
     for (auto& sample : buffered_samples) sample=1000;
     PxaAudioOutput::MusicStats before_buffer, after_buffer;
+    // A UI diagnostics read cannot wait on a decoder/mixer-owned mutex or
+    // copy a partial snapshot. The caller retains its previous sample.
+    PxaAudioOutput::MusicStats busy_snapshot = {};
+    busy_snapshot.read_calls = 123;
+    assert(xSemaphoreTake(a.music_mutex_, portMAX_DELAY));
+    assert(!a.GetMusicStats(&busy_snapshot) && busy_snapshot.read_calls == 123);
+    assert(music_lock_depth == 1);
+    xSemaphoreGive(a.music_mutex_);
     assert(a.GetMusicStats(&before_buffer));
     assert(!a.PlayMusic(&a,0,91,ogg,false,0,false,&ids[0]));
     assert(a.QueueMusic(buffered_samples,1024,a.music_token_.load()));
