@@ -21,6 +21,7 @@
 #include <esp_lv_decoder.h>
 #include <esp_lv_adapter.h>
 #include <esp_log.h>
+#include <esp_rom_sys.h>
 #include <esp_netif_sntp.h>
 #include <esp_timer.h>
 #include <button_gpio.h>
@@ -71,6 +72,11 @@ bool EspMosaicoHardware::Initialize() {
         return false;
     ShowBootFrame();
     if (!InitializeTouch()) ESP_LOGW(kTag, "Continuing without CST92xx touch");
+    // The same worker owns touch and low-rate battery I/O, even if the touch
+    // controller is absent. Never poll hardware from the LVGL status callback.
+    if (xTaskCreate(PollTouch, "mosaico_input", 4096, this, 6,
+                    &touch_task_) != pdPASS)
+        ESP_LOGW(kTag, "Touch/battery polling task unavailable");
     if (!InitializeButton()) ESP_LOGW(kTag, "Function button unavailable");
     audio_initialized_ = audio_.Initialize(i2c_bus_);
     if (!audio_initialized_) ESP_LOGW(kTag, "Continuing without ES8311 audio");
@@ -148,9 +154,7 @@ bool EspMosaicoHardware::InitializePower() {
         ledc_channel_config(&channel) != ESP_OK)
         return false;
     const esp_err_t installed = ledc_fade_func_install(0);
-    if (installed != ESP_OK && installed != ESP_ERR_INVALID_STATE) {
-        vSemaphoreDelete(te_ready_); te_ready_ = nullptr; return false;
-    }
+    if (installed != ESP_OK && installed != ESP_ERR_INVALID_STATE) return false;
     esp_err_t result = ledc_set_fade_with_time(
         LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0, 50);
     if (result == ESP_OK)
@@ -326,6 +330,7 @@ bool EspMosaicoHardware::InitializeDisplay() {
     }, LV_EVENT_ALL, this);
     lv_timer_create([](lv_timer_t* timer) {
         auto* self = static_cast<EspMosaicoHardware*>(lv_timer_get_user_data(timer));
+        self->ProcessControls();
         if (self->redraw_pending_.exchange(false))
             lv_obj_invalidate(lv_display_get_screen_active(self->display_));
     }, 16, this);
@@ -631,8 +636,8 @@ bool EspMosaicoHardware::PresentDirectFrame() {
 }
 
 bool EspMosaicoHardware::PrepareDirectFrame(FlushRequest* request) {
-    if (!panel_on_.load() || reference_ui_ == nullptr ||
-        pxsys_reference_lvgl_is_locked(reference_ui_)) return false;
+    if (!panel_on_.load() || (reference_ui_ != nullptr &&
+        pxsys_reference_lvgl_is_locked(reference_ui_))) return false;
     pxa_esp_surface_frame_t frame;
     if (!pxa_esp_surface_acquire_prepared_with_alpha(&frame)) return false;
     direct_raster_us_ = mosaico_pxa_surface::RasterTimeUs();
@@ -735,23 +740,7 @@ bool EspMosaicoHardware::WaitForTransfer(TickType_t timeout) {
 }
 
 bool EspMosaicoHardware::InitializeTouch() {
-    esp_lcd_panel_io_i2c_config_t io_config = {};
-    io_config.dev_addr = ESP_LCD_TOUCH_IO_I2C_CST92XX_ADDRESS;
-    io_config.scl_speed_hz = 400000;
-    io_config.control_phase_bytes = 1;
-    io_config.lcd_cmd_bits = 8;
-    io_config.lcd_param_bits = 8;
-    io_config.flags.disable_control_phase = true;
-    io_config.transaction_timeout_ms = 20;
-    if (esp_lcd_new_panel_io_i2c(i2c_bus_, &io_config, &touch_io_) != ESP_OK)
-        return false;
-    esp_lcd_touch_config_t config = {};
-    config.x_max = mosaico_board::kWidth - 1;
-    config.y_max = mosaico_board::kHeight - 1;
-    config.rst_gpio_num = GPIO_NUM_NC;
-    config.int_gpio_num = static_cast<gpio_num_t>(mosaico_board::kTouchInterrupt);
-    if (esp_lcd_touch_new_i2c_cst92xx(touch_io_, &config, &touch_) != ESP_OK)
-        return false;
+    // Logical pointers also serve PXADB when physical touch is unavailable.
     if (esp_lv_adapter_lock(1000) != ESP_OK) return false;
     lv_indev_t** inputs[] = {&touch_input_, &secondary_touch_input_};
     for (size_t slot = 0; slot < EspMosaicoTouchState::kMaxPoints; ++slot) {
@@ -774,32 +763,42 @@ bool EspMosaicoHardware::InitializeTouch() {
         }
         return false;
     }
-    if (xTaskCreate(PollTouch, "mosaico_touch", 4096, this, 6,
-                    &touch_task_) != pdPASS) {
-        if (esp_lv_adapter_lock(1000) == ESP_OK) {
-            lv_indev_delete(touch_input_);
-            lv_indev_delete(secondary_touch_input_);
-            touch_input_ = secondary_touch_input_ = nullptr;
-            esp_lv_adapter_unlock();
-        }
+    esp_lcd_panel_io_i2c_config_t io_config = {};
+    io_config.dev_addr = ESP_LCD_TOUCH_IO_I2C_CST92XX_ADDRESS;
+    io_config.scl_speed_hz = 400000;
+    io_config.control_phase_bytes = 1;
+    io_config.lcd_cmd_bits = 8;
+    io_config.lcd_param_bits = 8;
+    io_config.flags.disable_control_phase = true;
+    io_config.transaction_timeout_ms = 20;
+    if (esp_lcd_new_panel_io_i2c(i2c_bus_, &io_config, &touch_io_) != ESP_OK)
         return false;
-    }
+    esp_lcd_touch_config_t config = {};
+    config.x_max = mosaico_board::kWidth - 1;
+    config.y_max = mosaico_board::kHeight - 1;
+    config.rst_gpio_num = GPIO_NUM_NC;
+    config.int_gpio_num = static_cast<gpio_num_t>(mosaico_board::kTouchInterrupt);
+    if (esp_lcd_touch_new_i2c_cst92xx(touch_io_, &config, &touch_) != ESP_OK)
+        return false;
     ESP_LOGI(kTag, "CST92xx two-contact polling ready on GPIO%d", mosaico_board::kTouchInterrupt);
     return true;
 }
 
 void EspMosaicoHardware::PollTouch(void* context) {
     auto* self = static_cast<EspMosaicoHardware*>(context);
+    TickType_t next = xTaskGetTickCount();
     for (;;) {
+        if (self->power_action_.load() >= 0) self->PerformPowerAction();
         esp_lcd_touch_point_data_t raw[EspMosaicoTouchState::kMaxPoints] = {};
         uint8_t count = 0;
-        esp_err_t status = esp_lcd_touch_read_data(self->touch_);
+        esp_err_t status = self->touch_ != nullptr
+            ? esp_lcd_touch_read_data(self->touch_) : ESP_ERR_INVALID_STATE;
         if (status == ESP_OK)
             status = esp_lcd_touch_get_data(
                 self->touch_, raw, &count, EspMosaicoTouchState::kMaxPoints);
-        self->touch_reads_.fetch_add(1);
+        if (self->touch_ != nullptr) self->touch_reads_.fetch_add(1);
         self->touch_last_status_.store(status);
-        if (status != ESP_OK) self->touch_errors_.fetch_add(1);
+        if (self->touch_ != nullptr && status != ESP_OK) self->touch_errors_.fetch_add(1);
         EspMosaicoTouchPoint points[EspMosaicoTouchState::kMaxPoints] = {};
         count = std::min<uint8_t>(count, EspMosaicoTouchState::kMaxPoints);
         for (uint8_t index = 0; index < count; ++index) {
@@ -812,13 +811,17 @@ void EspMosaicoHardware::PollTouch(void* context) {
         self->touch_state_.Update(status == ESP_OK, points, count, timestamp_us);
         const size_t active = self->touch_state_.Snapshot(timestamp_us, points,
             EspMosaicoTouchState::kMaxPoints);
-        self->touch_slots_.Update(points, active);
-        for (size_t slot = 0; slot < EspMosaicoTouchState::kMaxPoints; ++slot)
-            self->touch_queue_[slot].Update(self->touch_slots_.Get(slot), timestamp_us);
+        const bool takeover = self->input_.UpdatePhysical(points, active,
+            timestamp_us, status == ESP_OK);
+        const auto callback = takeover ? self->input_takeover_ : nullptr;
+        void* callback_context = self->input_takeover_context_;
         const bool pressed = status == ESP_OK && active > 0;
         portEXIT_CRITICAL(&self->touch_lock_);
+        // PXADB may cancel injected pointers here. It must run outside the lock.
+        if (callback != nullptr) callback(callback_context);
         if (pressed) self->touch_reports_.fetch_add(1);
-        vTaskDelay(pdMS_TO_TICKS(10));
+        self->PollBattery(static_cast<uint32_t>(timestamp_us / 1000));
+        xTaskDelayUntil(&next, pdMS_TO_TICKS(10));
     }
 }
 
@@ -830,10 +833,8 @@ void EspMosaicoHardware::ReadTouch(lv_indev_t* input, lv_indev_data_t* data) {
     // also preserves hit testing, trusted overlays and logical coordinates.
     if (context->slot == 0 && self->panel_on_ && !self->wake_touch_.active()) {
         EspMosaicoTouchPoint points[EspMosaicoTouchState::kMaxPoints] = {};
-        const int64_t timestamp_us = esp_timer_get_time();
         portENTER_CRITICAL(&self->touch_lock_);
-        const size_t count = self->touch_state_.Snapshot(
-            timestamp_us, points, EspMosaicoTouchState::kMaxPoints);
+        const size_t count = self->input_.Points(points);
         portEXIT_CRITICAL(&self->touch_lock_);
         EspMosaicoTouchEvent events[EspMosaicoTouchEvents::kMaxEvents] = {};
         const size_t event_count = self->touch_events_.Update(points, count, events);
@@ -853,10 +854,12 @@ void EspMosaicoHardware::ReadTouch(lv_indev_t* input, lv_indev_data_t* data) {
 #endif
     }
     portENTER_CRITICAL(&self->touch_lock_);
-    const bool queued = self->touch_queue_[context->slot].pending();
-    const auto sample = self->touch_queue_[context->slot].Read();
-    data->continue_reading = self->touch_queue_[context->slot].pending();
+    const bool queued = self->input_.pending(context->slot);
+    const bool cancelled = self->input_.TakeCancelled(context->slot);
+    const auto sample = self->input_.Read(context->slot);
+    data->continue_reading = self->input_.pending(context->slot);
     portEXIT_CRITICAL(&self->touch_lock_);
+    if (cancelled) lv_indev_wait_release(input);
     data->state = sample.event.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
     data->point.x = sample.event.point.x;
     data->point.y = sample.event.point.y;
@@ -886,6 +889,11 @@ bool EspMosaicoHardware::InitializeButton() {
     if (iot_button_register_cb(button_, BUTTON_SINGLE_CLICK, nullptr,
         [](void*, void* context) {
             static_cast<EspMosaicoHardware*>(context)->home_pending_.store(true);
+        }, this) != ESP_OK)
+        return false;
+    if (iot_button_register_cb(button_, BUTTON_DOUBLE_CLICK, nullptr,
+        [](void*, void* context) {
+            static_cast<EspMosaicoHardware*>(context)->power_menu_pending_.store(true);
         }, this) != ESP_OK)
         return false;
     return iot_button_register_cb(button_, BUTTON_LONG_PRESS_START, nullptr,
@@ -934,47 +942,66 @@ void EspMosaicoHardware::AttachSystem(
         boot_screen_ = nullptr;
     }
     lv_display_trigger_activity(display_);
-    if (reference_ui_ != nullptr)
+    if (reference_ui_ != nullptr) {
         (void)pxsys_reference_lvgl_set_lock_changed_callback(
             reference_ui_, this, [](void* context, bool locked) {
                 auto* self = static_cast<EspMosaicoHardware*>(context);
-                pxa_esp_surface_set_display_unlocked(!locked);
-                (void)pxa_host_set_display_interactive(!locked);
+                self->UpdateInteractivity();
                 if (!locked) {
                     // Defer redraw until the lock callback and input event
                     // have finished, so composition sees the unlocked state.
                     self->wake_pending_ = true;
                 }
             });
+        (void)pxsys_reference_lvgl_set_power_action_callback(
+            reference_ui_, this, [](void* context, pxsys_reference_power_action_t action) {
+                (void)static_cast<EspMosaicoHardware*>(context)->RequestPowerAction(action);
+            });
+        (void)pxsys_reference_lvgl_set_power_menu_changed_callback(
+            reference_ui_, nullptr, [](void*, bool visible) {
+                pxa_esp_surface_set_power_overlay_visible(visible);
+            });
+    }
+    // The initial lock screen predates the callback. Publish it explicitly.
+    UpdateInteractivity();
     (void)lv_timer_create([](lv_timer_t* timer) {
         auto* self = static_cast<EspMosaicoHardware*>(lv_timer_get_user_data(timer));
-        if (self->home_pending_.exchange(false)) {
-            lv_display_trigger_activity(self->display_);
-            if (!self->panel_on_ || (self->reference_ui_ != nullptr &&
-                pxsys_reference_lvgl_is_locked(self->reference_ui_))) {
-                self->wake_pending_ = true;
-            } else if (self->reference_ui_ != nullptr) {
-                (void)pxsys_reference_lvgl_home(self->reference_ui_);
-            }
-        }
-        if (self->provisioning_pending_.exchange(false) && self->wifi_initialized_) {
-            self->wifi_enabled_ = true;
-            WifiManager::GetInstance().StartConfigAp();
-        }
-        if (self->back_pending_.exchange(false) && self->system_ != nullptr) {
-            const bool dismissed = self->reference_ui_ != nullptr &&
-                pxsys_reference_lvgl_dismiss_overlay(self->reference_ui_);
-            if (!dismissed) {
-                pxsys_back_result_t result;
-                (void)pxsys_task_manager_back(
-                    pxsys_standard_system_tasks(self->system_), &result);
-            }
-        }
-        if (self->wake_pending_.exchange(false)) self->WakePanel();
         self->PublishStatus();
         self->PublishDiagnostics();
     }, 100, this);
     PublishStatus();
+}
+
+void EspMosaicoHardware::ProcessControls() {
+    // Reuse the existing 16-ms display timer. Status/network polling remains
+    // on its 100-ms timer; Home, Back and wake no longer wait for that timer.
+    if (system_ == nullptr || power_action_.load() >= 0) return;
+    if (home_pending_.exchange(false)) {
+        lv_display_trigger_activity(display_);
+        if (!panel_on_ || (reference_ui_ != nullptr &&
+            pxsys_reference_lvgl_is_locked(reference_ui_))) {
+            wake_pending_ = true;
+        } else if (reference_ui_ != nullptr) {
+            (void)pxsys_reference_lvgl_home(reference_ui_);
+        }
+    }
+    if (provisioning_pending_.exchange(false) && wifi_initialized_) {
+        wifi_enabled_ = true;
+        WifiManager::GetInstance().StartConfigAp();
+    }
+    if (power_menu_pending_.exchange(false) && reference_ui_ != nullptr) {
+        if (!panel_on_.load()) wake_pending_ = true;
+        (void)pxsys_reference_lvgl_show_power_menu(reference_ui_);
+    }
+    if (back_pending_.exchange(false)) {
+        const bool dismissed = reference_ui_ != nullptr &&
+            pxsys_reference_lvgl_dismiss_overlay(reference_ui_);
+        if (!dismissed) {
+            pxsys_back_result_t result;
+            (void)pxsys_task_manager_back(pxsys_standard_system_tasks(system_), &result);
+        }
+    }
+    if (wake_pending_.exchange(false)) WakePanel();
 }
 
 bool EspMosaicoHardware::SetWifiEnabled(bool enabled) {
@@ -988,6 +1015,74 @@ bool EspMosaicoHardware::SetWifiEnabled(bool enabled) {
         wifi.StopStation();
     }
     return true;
+}
+
+void EspMosaicoHardware::UpdateInteractivity() {
+    const bool interactive = panel_on_.load() && power_action_.load() < 0 &&
+        (reference_ui_ == nullptr || !pxsys_reference_lvgl_is_locked(reference_ui_));
+    pxa_esp_surface_set_display_unlocked(interactive);
+    (void)pxa_host_set_display_interactive(interactive);
+}
+
+bool EspMosaicoHardware::RequestPowerAction(pxsys_reference_power_action_t action) {
+    if (action != PXSYS_REFERENCE_POWER_ACTION_RESTART &&
+        action != PXSYS_REFERENCE_POWER_ACTION_SHUTDOWN) return false;
+    if (touch_task_ == nullptr) {
+        ESP_LOGE(kTag, "System power action requires the input worker");
+        return false;
+    }
+    int8_t expected = -1;
+    if (!power_action_.compare_exchange_strong(expected, static_cast<int8_t>(action)))
+        return expected == static_cast<int8_t>(action);
+    // The existing input worker executes this within its next 10-ms poll.
+    // No extra task/stack allocation and no UI-thread save/detach deadlock.
+    return true;
+}
+
+void EspMosaicoHardware::PerformPowerAction() {
+    pxa_esp_surface_set_display_unlocked(false);
+    (void)pxa_host_set_display_interactive(false);
+    const bool saved = pxa_host_prepare_shutdown(1200);
+    if (!saved) ESP_LOGW(kTag, "Guest shutdown did not finish within 1200 ms");
+    vTaskDelay(pdMS_TO_TICKS(120));
+    if (power_action_.load() == PXSYS_REFERENCE_POWER_ACTION_RESTART) {
+        esp_restart();
+    }
+    if (esp_lv_adapter_lock(2000) == ESP_OK) {
+        lv_lock();
+        IdleScreenOff();
+        lv_unlock();
+        esp_lv_adapter_unlock();
+    }
+    // Match the board's SAM8108 shutdown latch: GPIO57 is open drain, active
+    // low. Keep the saved volume/brightness and all storage partitions intact.
+    (void)gpio_set_level(static_cast<gpio_num_t>(mosaico_board::kAudioAmplifierEnable), 0);
+    ESP_LOGI(kTag, "Requesting SAM8108 power-off on GPIO%d", mosaico_board::kPowerSwitch);
+    for (;;) {
+        (void)ConfigureOutput(mosaico_board::kPowerSwitch, 0, GPIO_MODE_OUTPUT_OD);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void EspMosaicoHardware::PollBattery(uint32_t now_ms) {
+    battery_.Poll(now_ms, [this](uint8_t reg, uint8_t* bytes, size_t size) {
+        if (battery_device_ == nullptr) {
+            if (i2c_master_probe(i2c_bus_, 0x55, 2) != ESP_OK) return false;
+            esp_rom_delay_us(80);
+            i2c_device_config_t config = {};
+            config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+            config.device_address = 0x55;
+            config.scl_speed_hz = 400000;
+            if (i2c_master_bus_add_device(i2c_bus_, &config, &battery_device_) != ESP_OK)
+                return false;
+        }
+        const esp_err_t result = i2c_master_transmit_receive(
+            battery_device_, &reg, 1, bytes, size, 2);
+        // TI SLUUBD4A section 5.3 requires at least 66 us between packets
+        // addressed to the gauge at 400 kHz. No other task accesses this device.
+        esp_rom_delay_us(80);
+        return result == ESP_OK;
+    });
 }
 
 bool EspMosaicoHardware::SetVolume(uint8_t percent) {
@@ -1027,11 +1122,14 @@ void EspMosaicoHardware::SetIdleDim(bool enabled, uint8_t percent) {
 
 void EspMosaicoHardware::IdleScreenOff() {
     wake_pending_ = false;
+    pxa_esp_surface_set_display_unlocked(false);
+    (void)pxa_host_set_display_interactive(false);
     WaitForFlush();
     xSemaphoreTake(panel_mutex_, portMAX_DELAY);
     if (panel_on_ && esp_lcd_panel_disp_on_off(panel_, false) == ESP_OK)
         panel_on_ = false;
     xSemaphoreGive(panel_mutex_);
+    UpdateInteractivity();
 }
 
 void EspMosaicoHardware::ShowBootFrame() {
@@ -1077,6 +1175,7 @@ void EspMosaicoHardware::ShowInitialFrame() {
     if (displayed_frame_valid_)
         panel_on_ = esp_lcd_panel_disp_on_off(panel_, true) == ESP_OK;
     xSemaphoreGive(panel_mutex_);
+    UpdateInteractivity();
     lv_unlock();
     esp_lv_adapter_unlock();
 }
@@ -1111,6 +1210,10 @@ void EspMosaicoHardware::PublishStatus() {
         status.day = local.tm_mday;
         status.weekday = local.tm_wday;
     }
+    const auto battery = battery_.Get();
+    status.battery_valid = battery.valid;
+    status.battery_percent = battery.percent;
+    status.charging = battery.charging;
     auto& wifi = WifiManager::GetInstance();
     const bool connected = wifi_initialized_ && wifi_enabled_.load() && wifi.IsConnected();
     status.network_connected = connected;
@@ -1152,7 +1255,7 @@ void EspMosaicoHardware::PublishDiagnostics() {
              static_cast<unsigned>(fps_tenths % 10),
              static_cast<unsigned long>(direct_frames_),
              static_cast<unsigned long>(transfer_errors_),
-             touch_task_ != nullptr,
+             touch_ != nullptr && touch_task_ != nullptr,
              static_cast<unsigned long>(touch_reads_.load()),
              static_cast<unsigned long>(touch_reports_.load()),
              static_cast<unsigned long>(touch_errors_.load()),

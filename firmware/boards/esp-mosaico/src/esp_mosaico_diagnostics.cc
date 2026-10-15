@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstring>
 #include <esp_lv_adapter.h>
+#include <esp_timer.h>
 #include <pxa/pxa_host.h>
 
 bool EspMosaicoHardware::RouteInjectedPointerDown() {
@@ -19,22 +20,19 @@ bool EspMosaicoHardware::RouteInjectedPointerDown() {
     return !consume;
 }
 
-void EspMosaicoHardware::ReadInjectedPointer(lv_indev_t* input, lv_indev_data_t* data) {
-    auto* self = static_cast<EspMosaicoHardware*>(lv_indev_get_user_data(input));
-    data->timestamp = lv_tick_get();
-    data->state = self->injected_pointer_pressed_.load(std::memory_order_acquire)
-        ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-    data->point.x = self->injected_pointer_x_.load(std::memory_order_relaxed);
-    data->point.y = self->injected_pointer_y_.load(std::memory_order_relaxed);
+bool EspMosaicoHardware::InjectPointer(uint8_t id, uint16_t x, uint16_t y, bool pressed) {
+    if (touch_input_ == nullptr || secondary_touch_input_ == nullptr) return false;
+    portENTER_CRITICAL(&touch_lock_);
+    const bool result = input_.Inject(id, x, y, pressed, esp_timer_get_time());
+    portEXIT_CRITICAL(&touch_lock_);
+    return result;
 }
 
-bool EspMosaicoHardware::InjectPointer(uint16_t x, uint16_t y, bool pressed) {
-    if (injected_pointer_ == nullptr || x >= mosaico_board::kWidth ||
-        y >= mosaico_board::kHeight) return false;
-    injected_pointer_x_.store(x, std::memory_order_relaxed);
-    injected_pointer_y_.store(y, std::memory_order_relaxed);
-    injected_pointer_pressed_.store(pressed, std::memory_order_release);
-    return true;
+bool EspMosaicoHardware::CancelInjectedPointer(uint8_t id) {
+    portENTER_CRITICAL(&touch_lock_);
+    const bool result = input_.Cancel(id, esp_timer_get_time());
+    portEXIT_CRITICAL(&touch_lock_);
+    return result;
 }
 
 bool EspMosaicoHardware::RouteInjectedKey(pxadb::TestControlKey key) {
@@ -95,36 +93,37 @@ bool EspMosaicoHardware::CaptureRgb565(
 }
 
 bool EspMosaicoHardware::ConfigurePxadbControls() {
-    if (display_ == nullptr || esp_lv_adapter_lock(1000) != ESP_OK) return false;
-    lv_lock();
-    if (injected_pointer_ == nullptr) {
-        injected_pointer_ = lv_indev_create();
-        if (injected_pointer_ != nullptr) {
-            lv_indev_set_type(injected_pointer_, LV_INDEV_TYPE_POINTER);
-            lv_indev_set_disp(injected_pointer_, display_);
-            lv_indev_set_user_data(injected_pointer_, this);
-            lv_indev_set_read_cb(injected_pointer_, ReadInjectedPointer);
-            lv_timer_set_period(lv_indev_get_read_timer(injected_pointer_), 6);
-        }
-    }
-    lv_unlock();
-    esp_lv_adapter_unlock();
-    if (injected_pointer_ == nullptr) return false;
+    pxadb::PowerControlAdapter power;
+    power.context = this;
+    power.power_off = [](void* context) {
+        return static_cast<EspMosaicoHardware*>(context)->RequestPowerAction(
+            PXSYS_REFERENCE_POWER_ACTION_SHUTDOWN);
+    };
+    const esp_err_t power_result = pxadb::ConfigurePowerControl(&power);
+    if (power_result != ESP_OK && power_result != ESP_ERR_NOT_SUPPORTED) return false;
+    if (display_ == nullptr || touch_input_ == nullptr || secondary_touch_input_ == nullptr)
+        return false;
     pxadb::TestControlAdapter adapter;
     adapter.context = this;
     adapter.width = mosaico_board::kWidth;
     adapter.height = mosaico_board::kHeight;
+    adapter.max_pointers = EspMosaicoInput::kPointers;
     adapter.route_pointer_down = [](void* context) {
         return static_cast<EspMosaicoHardware*>(context)->RouteInjectedPointerDown();
     };
     adapter.inject_pointer = [](void* context, uint8_t id, uint16_t x, uint16_t y, bool pressed) {
-        return id == 0 && static_cast<EspMosaicoHardware*>(context)->InjectPointer(x, y, pressed);
+        return static_cast<EspMosaicoHardware*>(context)->InjectPointer(id, x, y, pressed);
     };
     adapter.cancel_pointer = [](void* context, uint8_t id) {
-        if (id != 0) return false;
+        return static_cast<EspMosaicoHardware*>(context)->CancelInjectedPointer(id);
+    };
+    adapter.set_input_takeover_callback = [](void* context,
+        pxadb::TestControlTakeoverCallback callback, void* callback_context) {
         auto* self = static_cast<EspMosaicoHardware*>(context);
-        self->injected_pointer_pressed_.store(false, std::memory_order_release);
-        return self->injected_pointer_ != nullptr;
+        portENTER_CRITICAL(&self->touch_lock_);
+        self->input_takeover_ = callback;
+        self->input_takeover_context_ = callback_context;
+        portEXIT_CRITICAL(&self->touch_lock_);
     };
     adapter.route_key = [](void* context, pxadb::TestControlKey key) {
         return static_cast<EspMosaicoHardware*>(context)->RouteInjectedKey(key);

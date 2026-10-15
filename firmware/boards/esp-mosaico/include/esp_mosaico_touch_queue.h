@@ -64,6 +64,19 @@ public:
     }
 
     bool pending() const { return count_ != 0; }
+    EspMosaicoTouchEvent current() const { return producer_; }
+    void Cancel(int64_t timestamp_us) {
+        auto release = producer_;
+        release.pressed = false;
+        Update(release, timestamp_us);
+    }
+    void ResetWithRelease(int64_t timestamp_us) {
+        head_ = count_ = 0;
+        auto release = consumed_.event;
+        release.pressed = false;
+        producer_ = release;
+        Append({release, timestamp_us, false});
+    }
 
 private:
     static constexpr size_t kCapacity = 16;

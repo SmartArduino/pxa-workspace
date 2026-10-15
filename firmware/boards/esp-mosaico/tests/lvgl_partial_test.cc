@@ -4,6 +4,7 @@
 
 #include <lvgl.h>
 #include "esp_mosaico_transfer.h"
+#include "esp_mosaico_input.h"
 
 namespace {
 class Display {
@@ -86,6 +87,66 @@ private:
     lv_obj_t* overlay_ = nullptr;
     unsigned flushes_ = 0, refreshes_ = 0;
 };
+
+void TestLvglInputTakeover() {
+    Display output(mosaico_board::kDrawBufferRows);
+    auto* display = lv_display_get_default();
+    auto* screen = lv_display_get_screen_active(display);
+    unsigned clicks[2] = {};
+    for (int slot = 0; slot < 2; ++slot) {
+        auto* button = lv_button_create(screen);
+        lv_obj_set_pos(button, 40 + slot * 240, 120);
+        lv_obj_set_size(button, 120, 120);
+        lv_obj_add_event_cb(button, [](lv_event_t* event) {
+            ++*static_cast<unsigned*>(lv_event_get_user_data(event));
+        }, LV_EVENT_CLICKED, &clicks[slot]);
+    }
+    lv_obj_update_layout(screen);
+    EspMosaicoInput router;
+    struct Context { EspMosaicoInput* router; size_t slot; } contexts[] = {{&router, 0}, {&router, 1}};
+    lv_indev_t* pointers[2];
+    for (size_t slot = 0; slot < 2; ++slot) {
+        pointers[slot] = lv_indev_create();
+        lv_indev_set_type(pointers[slot], LV_INDEV_TYPE_POINTER);
+        lv_indev_set_disp(pointers[slot], display);
+        lv_indev_set_user_data(pointers[slot], &contexts[slot]);
+        lv_indev_set_read_cb(pointers[slot], [](lv_indev_t* input, lv_indev_data_t* data) {
+            auto* context = static_cast<Context*>(lv_indev_get_user_data(input));
+            if (context->router->TakeCancelled(context->slot)) lv_indev_wait_release(input);
+            const auto sample = context->router->Read(context->slot);
+            data->state = sample.event.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+            data->point = {sample.event.point.x, sample.event.point.y};
+            data->continue_reading = context->router->pending(context->slot);
+        });
+    }
+    auto pump = [&]() {
+        lv_tick_inc(10);
+        for (auto* pointer : pointers) lv_indev_read(pointer);
+    };
+    // Complete taps between reads retain both endpoints, for both pointer IDs.
+    for (uint8_t id = 0; id < 2; ++id) {
+        assert(router.Inject(id, 80 + id * 240, 160, true, 100));
+        assert(router.Inject(id, 80 + id * 240, 160, false, 110));
+    }
+    pump();
+    assert(clicks[0] == 1 && clicks[1] == 1);
+    assert(router.Inject(0, 80, 160, true, 120));
+    pump();
+    assert(router.Cancel(0, 130));
+    pump();
+    assert(clicks[0] == 1); // Cancellation is not a click.
+    assert(router.Inject(0, 80, 160, true, 140));
+    pump();
+    const EspMosaicoTouchPoint physical[] = {{320, 160, 7}};
+    assert(router.UpdatePhysical(physical, 1, 150, true));
+    pump();
+    assert(clicks[0] == 1);
+    assert(!router.UpdatePhysical(nullptr, 0, 160, true));
+    pump();
+    assert(clicks[1] == 2); // Physical input resumes, without clicking the remote target.
+    for (auto* pointer : pointers) lv_indev_delete(pointer);
+    std::puts("Real LVGL: dual remote taps, cancellation and physical takeover passed.");
+}
 }
 
 int main() {
@@ -103,5 +164,6 @@ int main() {
                     "full-height flushes=%u, half-height flushes=%u.\n",
                     full.flushes(), half.flushes());
     }
+    TestLvglInputTakeover();
     lv_deinit();
 }

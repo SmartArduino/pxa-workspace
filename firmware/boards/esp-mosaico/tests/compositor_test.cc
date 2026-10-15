@@ -4,6 +4,8 @@
 
 #include "esp_mosaico_config.h"
 #include "esp_mosaico_transfer.h"
+#include "esp_mosaico_input.h"
+#include "esp_mosaico_battery.h"
 #include "esp_mosaico_audio_transfer.h"
 #include "esp_mosaico_wake_touch.h"
 #include "esp_mosaico_touch_events.h"
@@ -456,6 +458,123 @@ void TestAudioWriteRecovery() {
         assert(restarts == (failure != 0));
         assert(writes == (failure == 0 || failure == 4 ? 1 : 2));
     }
+}
+
+void TestInputOwnership() {
+    EspMosaicoInput input;
+    assert(!input.Inject(2, 0, 0, true, 1));
+    assert(!input.Inject(0, 480, 0, true, 1));
+    assert(!input.Inject(1, 0, 480, true, 1));
+    assert(!input.Cancel(2, 1));
+    assert(input.Inject(0, 40, 50, true, 100));
+    assert(input.Inject(1, 300, 310, true, 110));
+    for (size_t slot = 0; slot < 2; ++slot) {
+        assert(input.TakeCancelled(slot));
+        assert(!input.Read(slot).event.pressed); // Cancel old UI ownership first.
+        const auto down = input.Read(slot);
+        assert(down.event.pressed && down.event.point.id == slot);
+    }
+    EspMosaicoTouchPoint points[2];
+    assert(input.Points(points) == 2);
+    assert(points[0].x == 40 && points[1].x == 300);
+    assert(!input.UpdatePhysical(nullptr, 0, 120, true));
+    assert(input.Points(points) == 2); // Empty physical reports cannot cancel PXADB.
+    assert(input.Cancel(0, 130));
+    assert(input.TakeCancelled(0));
+    assert(!input.Read(0).event.pressed);
+    assert(input.Read(1).event.pressed); // Cancelling one pointer preserves the other.
+    assert(input.Inject(1, 320, 330, false, 140));
+    const auto up = input.Read(1);
+    assert(!up.event.pressed && up.event.point.x == 320 && up.timestamp_us == 140);
+    // Endpoints survive a complete remote tap between two LVGL reads.
+    assert(input.Inject(1, 8, 9, true, 150));
+    assert(input.Inject(1, 10, 11, false, 160));
+    assert(!input.Read(1).event.pressed);
+    assert(input.Read(1).event.pressed);
+    assert(!input.Read(1).event.pressed);
+    while (input.pending(0)) (void)input.Read(0);
+    const EspMosaicoTouchPoint physical[] = {{200, 210, 7}, {250, 260, 8}};
+    assert(!input.UpdatePhysical(physical, 2, 170, true));
+    assert(input.Read(0).event.point.id == 7 && input.Read(1).event.point.id == 8);
+    assert(input.Inject(0, 60, 70, true, 180));
+    (void)input.Read(0);
+    assert(input.Read(0).event.pressed);
+    assert(!input.UpdatePhysical(physical, 2, 185, false));
+    assert(input.UpdatePhysical(physical, 2, 190, true));
+    // A real touch discards queued remote motion and cancels the consumed
+    // remote press before delivering physical input through those same IDs.
+    for (size_t slot = 0; slot < 2; ++slot) {
+        assert(input.TakeCancelled(slot));
+        assert(!input.Read(slot).event.pressed);
+        const auto real = input.Read(slot);
+        assert(real.event.pressed && real.event.point.id == physical[slot].id);
+    }
+    assert(input.Cancel(0, 200)); // PXADB's later cancellation cannot release a real finger.
+    assert(input.Read(0).event.pressed);
+    assert(!input.UpdatePhysical(nullptr, 0, 210, true));
+    assert(!input.Read(0).event.pressed && !input.Read(1).event.pressed);
+}
+
+void TestBatteryMonitor() {
+    EspMosaicoBattery battery;
+    uint16_t voltage = 3900, status = 1u << 3, percent = 67;
+    int16_t current = 80;
+    unsigned reads = 0;
+    bool fail = false;
+    auto read = [&](uint8_t reg, uint8_t* output, size_t size) {
+        ++reads;
+        if (fail) return false;
+        auto word = [&](size_t offset, uint16_t value) {
+            output[offset] = value & 255;
+            output[offset + 1] = value >> 8;
+        };
+        if (reg == 0x08) {
+            assert(size == 6);
+            word(0, voltage); word(2, status); word(4, static_cast<uint16_t>(current));
+        } else {
+            assert(reg == 0x2c && size == 2);
+            word(0, percent);
+        }
+        return true;
+    };
+    assert(!battery.Get().valid);
+    battery.Poll(0, read);
+    assert(reads == 2 && battery.Get().valid && battery.Get().percent == 67 && battery.Get().charging);
+    battery.Poll(1999, read);
+    assert(reads == 2);
+    current = -80;
+    battery.Poll(2000, read);
+    assert(battery.Get().valid && !battery.Get().charging);
+    current = 0;
+    battery.Poll(4000, read);
+    assert(!battery.Get().charging);
+    current = 80; status = (1u << 9) | (1u << 3); percent = 100;
+    battery.Poll(6000, read);
+    assert(battery.Get().percent == 100 && !battery.Get().charging);
+    percent = 101; // Reject corrupt data rather than silently clamping it.
+    battery.Poll(8000, read);
+    assert(battery.Get().valid && battery.Get().percent == 100);
+    voltage = UINT16_MAX;
+    battery.Poll(10000, read);
+    fail = true;
+    battery.Poll(14000, read);
+    assert(battery.Get().valid);
+    battery.Poll(16000, read);
+    assert(!battery.Get().valid);
+    fail = false; voltage = 3750; percent = 0; status = 1u << 3; current = -10;
+    battery.Poll(18000, read);
+    assert(battery.Get().valid && battery.Get().percent == 0);
+    // Device ticks wrap at about 49.7 days; cadence and stale expiry survive.
+    EspMosaicoBattery wrapped;
+    wrapped.Poll(UINT32_MAX - 999, read);
+    const auto previous = reads;
+    wrapped.Poll(999, read);
+    assert(reads == previous);
+    wrapped.Poll(1000, read);
+    assert(reads == previous + 2 && wrapped.Get().valid);
+    status = 0;
+    wrapped.Poll(3000, read);
+    assert(!wrapped.Get().valid); // A gauge without a cell is not a battery.
 }
 
 void TestPartialRefreshAndWidenedScanout() {
@@ -1070,6 +1189,8 @@ int main() {
     TestCompactTransferTiming();
     TestExchangedFramesAndUiTransition();
     TestAudioWriteRecovery();
+    TestInputOwnership();
+    TestBatteryMonitor();
     TestWakeGestureIsolation();
     TestScanFollowTiming();
     TestTouchRecovery();

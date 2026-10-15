@@ -19,7 +19,9 @@
 #include <pxadb/pxadb_service.h>
 
 #include "esp_mosaico_audio.h"
+#include "esp_mosaico_battery.h"
 #include "esp_mosaico_config.h"
+#include "esp_mosaico_input.h"
 #include "esp_mosaico_touch_events.h"
 #include "esp_mosaico_touch_state.h"
 #include "esp_mosaico_touch_slots.h"
@@ -56,6 +58,11 @@ private:
     bool InitializeTouch();
     bool InitializeButton();
     bool InitializeWifi();
+    void UpdateInteractivity();
+    void ProcessControls();
+    bool RequestPowerAction(pxsys_reference_power_action_t action);
+    [[noreturn]] void PerformPowerAction();
+    void PollBattery(uint32_t now_ms);
     bool ApplyBrightness();
     bool WaitForTransfer(TickType_t timeout);
     void WaitForFlush();
@@ -67,11 +74,11 @@ private:
                        uint32_t stride_bytes, bool last, uint64_t input_timestamp,
                        const char* source, uint64_t frame_id);
     bool RouteInjectedPointerDown();
-    bool InjectPointer(uint16_t x, uint16_t y, bool pressed);
+    bool InjectPointer(uint8_t id, uint16_t x, uint16_t y, bool pressed);
+    bool CancelInjectedPointer(uint8_t id);
     bool RouteInjectedKey(pxadb::TestControlKey key);
     bool CaptureRgb565(uint16_t* pixels, size_t pixel_count, bool after_present,
                         pxadb::TestControlCaptureInfo* info);
-    static void ReadInjectedPointer(lv_indev_t* input, lv_indev_data_t* data);
     void PublishStatus();
     void PublishDiagnostics();
     static void PollTouch(void* context);
@@ -85,6 +92,8 @@ private:
 
     std::optional<mosaico_board::HardwareConfig> hardware_;
     i2c_master_bus_handle_t i2c_bus_ = nullptr;
+    i2c_master_dev_handle_t battery_device_ = nullptr;
+    EspMosaicoBattery battery_;
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
     esp_lcd_panel_io_handle_t touch_io_ = nullptr;
@@ -96,16 +105,13 @@ private:
     };
     TouchInputContext touch_contexts_[2] = {{this, 0}, {this, 1}};
     lv_indev_t* secondary_touch_input_ = nullptr;
-    lv_indev_t* injected_pointer_ = nullptr;
-    std::atomic<uint16_t> injected_pointer_x_{0};
-    std::atomic<uint16_t> injected_pointer_y_{0};
-    std::atomic<bool> injected_pointer_pressed_{false};
+    pxadb::TestControlTakeoverCallback input_takeover_ = nullptr;
+    void* input_takeover_context_ = nullptr;
     TaskHandle_t touch_task_ = nullptr;
     portMUX_TYPE touch_lock_ = portMUX_INITIALIZER_UNLOCKED;
     EspMosaicoTouchState touch_state_;
     EspMosaicoTouchEvents touch_events_;
-    EspMosaicoTouchSlots touch_slots_;
-    EspMosaicoTouchQueue touch_queue_[2];
+    EspMosaicoInput input_;
     std::atomic<uint32_t> touch_reads_{0};
     std::atomic<uint32_t> touch_reports_{0};
     std::atomic<uint32_t> touch_errors_{0};
@@ -188,5 +194,7 @@ private:
     std::atomic<bool> home_pending_{false};
     std::atomic<bool> back_pending_{false};
     std::atomic<bool> provisioning_pending_{false};
+    std::atomic<bool> power_menu_pending_{false};
+    std::atomic<int8_t> power_action_{-1};
     EspMosaicoAudio audio_;
 };

@@ -46,8 +46,9 @@ GPIOs are driven. No eFuse is written by this firmware.
   idle screen-off still uses the panel's display-off command. Logs show both
   logical and panel brightness. Existing saved brightness values need no migration.
 - CST92xx: shared I2C, address `0x5a`, interrupt GPIO6, native touch coordinates.
-  A dedicated priority-6 task polls and acknowledges reports every 10 ms,
-  independent of interrupt edges. LVGL drains a bounded queue for each contact,
+  A dedicated priority-6 task polls and acknowledges reports on a 10 ms cadence,
+  independent of interrupt edges. The same worker polls battery status every
+  two seconds with bounded I2C timeouts. LVGL drains a bounded queue for each contact,
   never I2C directly. Press/release positions survive delayed reads; consecutive
   motion samples coalesce. I2C transaction timeouts are bounded at 20 ms.
   Sample age is converted from ESP monotonic time into LVGL's tick domain.
@@ -87,9 +88,18 @@ GPIOs are driven. No eFuse is written by this firmware.
   silent-speaker problem after Host mixing; stalled counts or growing underruns
   point to the producer/output pipeline. Initialization failures retain their
   failing stage/code for later logs, after USB CDC becomes available.
-- Peripheral power: GPIO60 is active low with a 50 ms soft ramp. GPIO57 remains
-  released as an open-drain output; software does not trigger physical shutdown.
-- GPIO7: single click wakes an idle display or returns home; holding for
+- BQ27220: address `0x55`, read-only battery percentage and charging state.
+  Status/UI read a cached snapshot, without I2C on the LVGL thread. Failed or
+  invalid samples expire after ten seconds; missing hardware is not advertised.
+  The driver does not change the fuel-gauge profile, unseal it or write data flash.
+- Peripheral power: GPIO60 is active low with a 50 ms soft ramp. GPIO57 is an
+  open-drain shutdown request to SAM8108, released during normal operation.
+  Confirmed shutdown stops Guest activity, waits for save/detach acknowledgement,
+  turns off the screen/amplifier and holds GPIO57 low. Restart uses the same
+  asynchronous Guest shutdown path. Both reuse the existing input worker;
+  no extra task or stack is allocated. PXADB advertises board power-off support.
+- GPIO7: single click wakes an idle display or returns home; double click opens
+  the system power menu (restart/shutdown); holding for
   1.2 seconds starts Wi-Fi AP provisioning with the `ESP-Mosaico` SSID prefix.
 - Native USB OTG: TinyUSB CDC ACM interface 0 carries console logs and PXADB.
   UART and USB Serial/JTAG transports on existing boards are unchanged.
@@ -99,12 +109,17 @@ GPIOs are driven. No eFuse is written by this firmware.
 
 ## Diagnostics and GameRender
 
-PXADB advertises `input-v2`, `screenshot-rgb565` and `screenshot-jpeg` when
+PXADB advertises `input-v2` with two pointers, `screenshot-rgb565` and `screenshot-jpeg` when
 development controls are enabled. Captures include guest surfaces, trusted
 UI, alpha overlays and the performance overlay, and copy only a completed
 panel frame. Metadata records its frame ID, completion time and source.
 `--after-present` redraws a static screen before capturing; failed or incomplete
 transfers are not returned as valid screenshots.
+Remote input uses the same two LVGL pointer devices as physical input, rather
+than creating another pointer. Queues retain short press/release endpoints;
+cancelling injection suppresses clicks. A real touch takes ownership back and
+notifies PXADB, so a continuing remote gesture cannot compete with it.
+Logical pointers and battery polling remain available if CST92xx fails to probe.
 
 ```sh
 python3 tools/pxadb/pxadb.py screenshot screen.png --port /dev/ttyACM0
@@ -152,6 +167,11 @@ producer restore and snapshot copies for Back indicators, status bars and
 volume controls. No extra framebuffer is allocated. Lock/Home/Recents visibility
 and fresh-frame resume barriers also apply to this path. `surface_stats`
 reports `alpha_frames` to identify accelerated overlay compositions.
+The initial lock state, screen-off and wake state are published to both the
+Host and Surface visibility gate. The power menu has its own overlay gate,
+so direct games cannot draw over it. Pending Home/Back/wake controls use the
+existing 16-ms display timer; network/status sampling retains its 100-ms timer.
+Fullscreen direct presentation also works with the optional reference UI disabled.
 Home/Recents gestures capture one current Surface RGB565 frame into an LVGL
 image before scaling/translation. While that image or Recents owns output,
 Surface raster/presenter notifications are suspended without changing the
@@ -284,9 +304,10 @@ long effects use a 1.5 MiB PSRAM asset-cache ceiling inside the shared 2 MiB
 resource budget, rather than allocating that capacity at startup.
 
 The 16 MiB NOR flash layout reserves 4 MiB for the factory firmware and
-`0xBF0000` bytes for the `pxa_data` LittleFS partition. SPI NAND, fuel gauge,
+`0xBF0000` bytes for the `pxa_data` LittleFS partition. SPI NAND,
 IMU, magnetometer, status LED, haptic motor and light sleep
-are not exposed by this initial port. The board does not advertise battery data.
+are not exposed by this port. See the [PXA integration audit](docs/pxa-integration-audit.zh-CN.md)
+for connected interfaces, remaining hardware-specific work and validation limits.
 
 ## Build and use
 
