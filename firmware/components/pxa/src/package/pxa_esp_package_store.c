@@ -240,35 +240,25 @@ static int bind_store_result_buffers(pxa_posix_installer_result_t *result) {
     return 1;
 }
 
-static int ensure_source_manifest_capacity(const char *source,
-                                           size_t *manifest_size_out) {
-    size_t required = 0;
-    if (manifest_size_out != NULL) *manifest_size_out = 0;
-    if (source == NULL ||
-        pxa_posix_installer_source_manifest_size(g_store->installer, source,
-                                                 &required) != PXA_STATUS_OK ||
-        !ensure_encoded_capacity(required)) {
-        return 0;
-    }
-    if (manifest_size_out != NULL) *manifest_size_out = required;
-    return 1;
-}
-
-static pxa_status_t verify_source_into_store(
-    const char *source, pxa_posix_installer_result_t *result) {
+static pxa_status_t read_source_into_store(
+    const char *source, pxa_posix_installer_result_t *result, int manifest_only) {
     pxa_package_limits_t actual_limits;
     size_t manifest_size;
     size_t manifest_workspace_size;
     pxa_status_t status;
-    if (result == NULL || !ensure_source_manifest_capacity(source,
-                                                            &manifest_size) ||
+    if (result == NULL) return PXA_STATUS_INVALID_ARGUMENT;
+    status = pxa_posix_installer_source_manifest_size(
+        g_store->installer, source, &manifest_size);
+    if (status != PXA_STATUS_OK) return status;
+    if (!ensure_encoded_capacity(manifest_size) ||
         !ensure_manifest_workspace_capacity(1)) {
         return PXA_STATUS_RESOURCE_LIMIT;
     }
     if (!bind_store_result_buffers(result)) {
         return PXA_STATUS_RESOURCE_LIMIT;
     }
-    status = pxa_posix_installer_verify_source(g_store->installer, source,
+    status = (manifest_only ? pxa_posix_installer_read_signed_manifest :
+                              pxa_posix_installer_verify_source)(g_store->installer, source,
                                                result);
     if (status != PXA_STATUS_RESOURCE_LIMIT ||
         !manifest_workspace_for_encoded(g_store->encoded, manifest_size,
@@ -280,8 +270,14 @@ static pxa_status_t verify_source_into_store(
     if (!bind_store_result_buffers(result)) {
         return PXA_STATUS_RESOURCE_LIMIT;
     }
-    return pxa_posix_installer_verify_source(g_store->installer, source,
+    return (manifest_only ? pxa_posix_installer_read_signed_manifest :
+                              pxa_posix_installer_verify_source)(g_store->installer, source,
                                              result);
+}
+
+static pxa_status_t verify_source_into_store(
+    const char *source, pxa_posix_installer_result_t *result) {
+    return read_source_into_store(source, result, 0);
 }
 
 static void release_store(void) {
@@ -321,6 +317,18 @@ static int has_suffix(const char *value, const char *suffix) {
     suffix_size = strlen(suffix);
     return suffix_size <= value_size &&
            memcmp(value + value_size - suffix_size, suffix, suffix_size) == 0;
+}
+
+/* Staging contains both directory packages and single-file containers. The
+ * POSIX filesystem remove_tree API accepts directories only. */
+static pxa_status_t remove_staging_source(const char *source) {
+    struct stat metadata;
+    /* LittleFS has no symlinks. */
+    if (stat(source, &metadata) != 0)
+        return errno == ENOENT ? PXA_STATUS_OK : PXA_STATUS_IO_ERROR;
+    if (S_ISDIR(metadata.st_mode)) return pxa_posix_fs_remove_tree(source);
+    return unlink(source) == 0 || errno == ENOENT
+        ? PXA_STATUS_OK : PXA_STATUS_IO_ERROR;
 }
 
 static int ensure_directory_tree(const char *relative) {
@@ -874,34 +882,27 @@ done:
     return success;
 }
 
-static int stage_inbox_entry(const char *source) {
-    pxa_package_manifest_t *manifest = NULL;
+static int stage_inbox_entry(const char *source, pxa_package_manifest_t *verified,
+                              pxa_status_t *validation) {
+    pxa_package_manifest_t *manifest = verified;
     pxa_esp_package_entry_t *entry;
-    char manifest_path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];
     char app_id[PXA_ESP_PACKAGE_MAX_ID];
     char verified_root[PXA_ESP_PACKAGE_MAX_PATH];
     uint8_t publisher_root[PXA_PACKAGE_DIGEST_BYTES];
     pxa_posix_installer_result_t result;
     int source_is_file;
-    int path_size;
     if (source == NULL) return 0;
     source_is_file = is_regular_file(source);
-    if (source_is_file) {
+    if (validation != NULL) *validation = PXA_STATUS_OK;
+    if (manifest == NULL) {
         memset(&result, 0, sizeof(result));
         result.struct_size = sizeof(result);
         result.manifest = &manifest;
         result.root = verified_root;
         result.root_capacity = sizeof(verified_root);
-        if (verify_source_into_store(source, &result) != PXA_STATUS_OK) {
-            return 0;
-        }
-    } else {
-        path_size = snprintf(manifest_path, sizeof(manifest_path),
-                             "%s/manifest.pxm", source);
-        if (path_size < 0 || (size_t)path_size >= sizeof(manifest_path) ||
-            !parse_manifest_file(manifest_path, &manifest)) {
-            return 0;
-        }
+        pxa_status_t status = verify_source_into_store(source, &result);
+        if (validation != NULL) *validation = status;
+        if (status != PXA_STATUS_OK) return 0;
     }
     if (manifest == NULL || manifest->app_id.size == 0 ||
         manifest->app_id.size >= sizeof(app_id)) {
@@ -935,7 +936,7 @@ static void remove_entry_at(size_t index) {
     --g_store->entry_count;
 }
 
-static int scan_inbox(void) {
+static int scan_inbox(int cleanup_incomplete) {
     DIR *directory;
     struct dirent *source_entry;
     size_t index;
@@ -964,7 +965,9 @@ static int scan_inbox(void) {
             int path_size;
             if (strcmp(source_entry->d_name, ".") == 0 ||
                 strcmp(source_entry->d_name, "..") == 0 ||
-                has_suffix(source_entry->d_name, ".pxadb-part")) {
+                strncmp(source_entry->d_name, PXA_POSIX_INSTALLER_RECEIVING_PREFIX,
+                        sizeof(PXA_POSIX_INSTALLER_RECEIVING_PREFIX) - 1) == 0 ||
+                (!cleanup_incomplete && has_suffix(source_entry->d_name, ".pxadb-part"))) {
                 continue;
             }
             path_size = snprintf(source, sizeof(source), "%s/%s",
@@ -973,10 +976,28 @@ static int scan_inbox(void) {
                 (!is_directory(source) && !is_regular_file(source))) {
                 continue;
             }
-            if (!stage_inbox_entry(source)) {
+            if (cleanup_incomplete && has_suffix(source_entry->d_name, ".pxadb-part")) {
+                if (remove_staging_source(source) == PXA_STATUS_OK) {
+                    closedir(directory);
+                    directory = opendir(g_store->inbox_root);
+                    if (directory == NULL) return 0;
+                }
+                continue;
+            }
+            pxa_status_t validation = PXA_STATUS_OK;
+            if (!stage_inbox_entry(source, NULL, &validation)) {
                 ESP_LOGW(PXA_ESP_PACKAGE_TAG,
                          "Ignoring invalid or duplicate Inbox Package: %s",
                          source_entry->d_name);
+                if (cleanup_incomplete &&
+                    (has_suffix(source_entry->d_name, ".pxadb-part") ||
+                     validation == PXA_STATUS_NOT_FOUND || validation == PXA_STATUS_DENIED ||
+                     validation == PXA_STATUS_INVALID_ARGUMENT || validation == PXA_STATUS_PROTOCOL_ERROR) &&
+                    remove_staging_source(source) == PXA_STATUS_OK) {
+                    closedir(directory);
+                    directory = opendir(g_store->inbox_root);
+                    if (directory == NULL) return 0;
+                }
             }
         }
         if (closedir(directory) != 0) {
@@ -1056,22 +1077,22 @@ bool pxa_esp_package_store_stage_file(const char *source_path) {
     }
 
     if (path_is_within(source_path, g_store->inbox_root)) {
-        success = scan_inbox() && inbox_source_is_staged(source_path);
+        success = scan_inbox(0) && inbox_source_is_staged(source_path);
         goto done;
     }
     /* Verify before moving the user-visible source into the private Inbox. */
-    if (!stage_inbox_entry(source_path) ||
+    if (!stage_inbox_entry(source_path, NULL, NULL) ||
         !inbox_source_is_staged(source_path) ||
         !reserve_inbox_destination(name, destination, sizeof(destination))) {
-        (void)scan_inbox();
+        (void)scan_inbox(0);
         goto done;
     }
     if (rename(source_path, destination) != 0) {
         unlink(destination);
-        (void)scan_inbox();
+        (void)scan_inbox(0);
         goto done;
     }
-    success = scan_inbox() && inbox_source_is_staged(destination);
+    success = scan_inbox(0) && inbox_source_is_staged(destination);
 
 done:
     release_lock(g_store->metadata_lock);
@@ -1432,8 +1453,13 @@ bool pxa_esp_package_store_initialize(void) {
         ESP_LOGE(PXA_ESP_PACKAGE_TAG, "Package store lock allocation failed");
         return initialization_failed("allocate-locks");
     }
+    installer_status = pxa_posix_installer_recover_pending(g_store->installer);
+    if (installer_status != PXA_STATUS_OK)
+        ESP_LOGW(PXA_ESP_PACKAGE_TAG, "Some pending transactions need recovery: %d", (int)installer_status);
+    (void)pxa_posix_installer_discard_transfers(g_store->installer);
+    (void)unlink(CONFIG_PXA_MOUNT_POINT "/.pxadb-upload");
     scan_installed();
-    (void)scan_inbox();
+    (void)scan_inbox(1);
     g_store->initialized = 1;
     ESP_LOGI(PXA_ESP_PACKAGE_TAG, "Package store ready (%d installed)",
              (int)g_store->entry_count);
@@ -1655,78 +1681,14 @@ done:
 }
 
 bool pxa_esp_package_store_install(const char *identity) {
-    char app_id[PXA_ESP_PACKAGE_MAX_ID];
-    char source[PXA_ESP_PACKAGE_MAX_PATH];
-    char installed_root[PXA_ESP_PACKAGE_MAX_PATH];
-    uint8_t expected_publisher_root[PXA_PACKAGE_DIGEST_BYTES];
-    pxa_posix_installer_identity_t expected_identity;
-    pxa_posix_installer_result_t result;
-    pxa_package_manifest_t *manifest = NULL;
-    pxa_posix_install_disposition_t disposition;
-    pxa_status_t status;
-    int source_size;
-    int success = 0;
-    if (!store_is_initialized() || identity == NULL) {
-        return false;
-    }
-    if (!take_lock(g_store->transaction_lock)) return false;
-    if (!take_lock(g_store->metadata_lock)) {
-        release_lock(g_store->transaction_lock);
-        return false;
-    }
-    {
-        pxa_esp_package_entry_t *entry = find_entry(identity);
-        if (entry != NULL && entry->installed && entry->built_in) {
-            success = 1;
-            goto done;
-        }
-        (void)scan_inbox();
-        entry = find_entry(identity);
-        if (entry == NULL || !entry->staged ||
-            (source_size = snprintf(source, sizeof(source), "%s",
-                                    entry->inbox_root)) < 0 ||
-            (size_t)source_size >= sizeof(source) ||
-            (!is_directory(source) && !is_regular_file(source))) {
-            goto done;
-        }
-        snprintf(app_id, sizeof(app_id), "%s", entry->id);
-        if (!entry->has_publisher_key_id) goto done;
-        memcpy(expected_publisher_root, entry->publisher_key_id,
-               sizeof(expected_publisher_root));
-    }
-    memset(&result, 0, sizeof(result));
-    result.struct_size = sizeof(result);
-    result.manifest = &manifest;
-    result.root = installed_root;
-    result.root_capacity = sizeof(installed_root);
-    if (verify_source_into_store(source, &result) != PXA_STATUS_OK) goto done;
-    manifest = NULL;
-    expected_identity.publisher_key_id = (pxa_bytes_t){
-        expected_publisher_root, sizeof(expected_publisher_root)};
-    expected_identity.app_id = (pxa_bytes_t){
-        (const uint8_t *)app_id, strlen(app_id)};
-    status = pxa_posix_installer_install_for_identity(
-        g_store->installer, source, &expected_identity, &result,
-        &disposition);
-    if (status == PXA_STATUS_OK && manifest_matches_app_id(manifest, app_id)) {
-        uint8_t installed_publisher_root[PXA_PACKAGE_DIGEST_BYTES];
-        if (manifest_publisher_root(manifest, installed_publisher_root) &&
-            memcmp(installed_publisher_root, expected_publisher_root,
-                   sizeof(expected_publisher_root)) == 0) {
-            success = refresh_entry_from_manifest(app_id, installed_root, 0,
-                                                  manifest);
-        }
-    }
-    if (success && is_regular_file(source) && unlink(source) != 0) {
-        ESP_LOGW(PXA_ESP_PACKAGE_TAG,
-                 "Installed Package but could not remove Inbox container: %s",
-                 source);
-    }
-    if (success) (void)scan_inbox();
-done:
+    if (!store_is_initialized() || identity == NULL ||
+        !take_lock(g_store->metadata_lock)) return false;
+    const pxa_esp_package_entry_t *entry = find_entry(identity);
+    bool already_builtin = entry != NULL && entry->installed && entry->built_in;
     release_lock(g_store->metadata_lock);
-    release_lock(g_store->transaction_lock);
-    return success;
+    /* Shell installation and PXADB deployment share one transaction and one
+     * source lifetime. A provisioned built-in retains its existing behavior. */
+    return already_builtin || pxa_esp_package_store_deploy(identity);
 }
 
 bool pxa_esp_package_store_install_file(const char *source_path) {
@@ -1757,9 +1719,10 @@ bool pxa_esp_package_store_install_file(const char *source_path) {
     result.manifest = &manifest;
     result.root = installed_root;
     result.root_capacity = sizeof(installed_root);
-    /* Verify once to obtain the identity, then install verifies again as part
-     * of the atomic installer transaction. */
-    if (verify_source_into_store(source_path, &result) != PXA_STATUS_OK ||
+    /* Inspect authenticated identity metadata without rereading the payload.
+     * The transaction below still authenticates the entire container before
+     * decoding, and is bound to this identity before any destination mutation. */
+    if (read_source_into_store(source_path, &result, 1) != PXA_STATUS_OK ||
         manifest == NULL || manifest->app_id.size == 0 ||
         manifest->app_id.size >= sizeof(app_id)) {
         goto done;
@@ -1777,8 +1740,15 @@ bool pxa_esp_package_store_install_file(const char *source_path) {
         if (entry != NULL && entry->installed && entry->built_in) goto done;
     }
     manifest = NULL;
-    status = pxa_posix_installer_install(g_store->installer, source_path,
-                                         &result, &disposition);
+    {
+        pxa_posix_installer_identity_t expected = {
+            {publisher_root, sizeof(publisher_root)},
+            {(const uint8_t *)app_id, strlen(app_id)}};
+        status = pxa_posix_installer_install_for_identity(
+            g_store->installer, source_path, &expected, &result, &disposition);
+        if (status != PXA_STATUS_OK)
+            (void)pxa_posix_installer_recover(g_store->installer, &expected);
+    }
     if (status == PXA_STATUS_OK && manifest_matches_app_id(manifest, app_id))
         success = refresh_entry_from_manifest(app_id, installed_root, 0,
                                               manifest);
@@ -1786,6 +1756,64 @@ done:
     release_lock(g_store->metadata_lock);
     release_lock(g_store->transaction_lock);
     return success;
+}
+
+static bool publish_transfer_locked(const char *app_id) {
+    char source[PXA_ESP_PACKAGE_MAX_PATH] = {0};
+    char published[PXA_ESP_PACKAGE_MAX_PATH];
+    pxa_posix_installer_result_t result = {0};
+    pxa_package_manifest_t *manifest = NULL;
+    bool success = false;
+    int size = snprintf(source, sizeof(source), "%s/%s%s", g_store->inbox_root,
+                        PXA_POSIX_INSTALLER_RECEIVING_PREFIX, app_id);
+    if (size < 0 || (size_t)size + 4u >= sizeof(source)) { source[0] = '\0'; goto done; }
+    if (!is_directory(source)) strcat(source, ".pxa");
+    result.struct_size = sizeof(result);
+    result.manifest = &manifest;
+    result.root = published;
+    result.root_capacity = sizeof(published);
+    /* Size the result workspace using signed metadata, then authenticate the
+     * complete source exactly once at publication. */
+    if (read_source_into_store(source, &result, 1) != PXA_STATUS_OK) goto done;
+    if (pxa_posix_installer_publish_transfer(g_store->installer, app_id, &result) == PXA_STATUS_OK) {
+        /* Publication can replace the previous staged source or switch it
+         * between a directory and a container. Retire stale staging metadata
+         * while preserving every installed identity and its private data. */
+        for (size_t index = 0; index < g_store->entry_count; ++index) {
+            pxa_esp_package_entry_t *entry = &g_store->entries[index];
+            if (entry->staged &&
+                (strcmp(entry->inbox_root, published) == 0 ||
+                 (!is_directory(entry->inbox_root) && !is_regular_file(entry->inbox_root)))) {
+                entry->staged = 0;
+                entry->staged_assets_available = 0;
+                entry->inbox_root[0] = '\0';
+            }
+        }
+        success = stage_inbox_entry(published, manifest, NULL) != 0;
+        if (!success) (void)remove_staging_source(published);
+    }
+ done:
+    if (!success && source[0] != '\0') (void)remove_staging_source(source);
+    return success;
+}
+
+bool pxa_esp_package_store_publish_transfer(const char *app_id) {
+    if (!store_is_initialized() || !safe_app_id(app_id) ||
+        !take_lock(g_store->transaction_lock)) return false;
+    if (!take_lock(g_store->metadata_lock)) {
+        release_lock(g_store->transaction_lock);
+        return false;
+    }
+    bool success = publish_transfer_locked(app_id);
+    release_lock(g_store->metadata_lock);
+    release_lock(g_store->transaction_lock);
+    return success;
+}
+
+void pxa_esp_package_store_discard_transfers(void) {
+    if (!store_is_initialized() || !take_lock(g_store->transaction_lock)) return;
+    (void)pxa_posix_installer_discard_transfers(g_store->installer);
+    release_lock(g_store->transaction_lock);
 }
 
 bool pxa_esp_package_store_preview_file(const char *source_path,
@@ -1860,7 +1888,7 @@ done:
 bool pxa_esp_package_store_deploy_detailed(
     const char *identity, pxa_esp_package_store_deploy_result_t *result_out) {
     char app_id[PXA_ESP_PACKAGE_MAX_ID];
-    char source[PXA_ESP_PACKAGE_MAX_PATH];
+    char source[PXA_ESP_PACKAGE_MAX_PATH] = {0};
     char installed_root[PXA_ESP_PACKAGE_MAX_PATH];
     uint8_t expected_publisher_root[PXA_PACKAGE_DIGEST_BYTES];
     pxa_posix_installer_identity_t expected_identity;
@@ -1872,6 +1900,7 @@ bool pxa_esp_package_store_deploy_detailed(
     const char *result_stage = "not_started";
     int source_size;
     int success = 0;
+    int source_selected = 0;
     int transaction_lock_held = 0;
     int metadata_lock_held = 0;
     if (result_out != NULL) {
@@ -1896,10 +1925,22 @@ bool pxa_esp_package_store_deploy_detailed(
         result_stage = "metadata_lock";
         goto done;
     }
+    if (safe_app_id(identity)) {
+        int size = snprintf(source, sizeof(source), "%s/%s%s", g_store->inbox_root,
+                            PXA_POSIX_INSTALLER_RECEIVING_PREFIX, identity);
+        if (size < 0 || (size_t)size + 4u >= sizeof(source)) goto done;
+        bool pending = is_directory(source);
+        if (!pending) { strcat(source, ".pxa"); pending = is_regular_file(source); }
+        if (pending && !publish_transfer_locked(identity)) {
+            result_status = PXA_STATUS_DENIED;
+            result_stage = "publish_transfer";
+            goto done;
+        }
+    }
     {
         pxa_esp_package_entry_t *entry = find_entry(identity);
         if (entry == NULL || !entry->staged) {
-            (void)scan_inbox();
+            (void)scan_inbox(0);
             entry = find_entry(identity);
         }
         if (entry == NULL || !entry->staged ||
@@ -1911,6 +1952,7 @@ bool pxa_esp_package_store_deploy_detailed(
             result_stage = "staged_source";
             goto done;
         }
+        source_selected = 1;
         snprintf(app_id, sizeof(app_id), "%s", entry->id);
         if (!entry->has_publisher_key_id) {
             result_status = PXA_STATUS_DENIED;
@@ -1935,10 +1977,17 @@ bool pxa_esp_package_store_deploy_detailed(
         expected_publisher_root, sizeof(expected_publisher_root)};
     expected_identity.app_id = (pxa_bytes_t){
         (const uint8_t *)app_id, strlen(app_id)};
-    status = pxa_posix_installer_install_for_identity(
-        g_store->installer, source, &expected_identity, &result,
-        &disposition);
+    /* PXADB owns the inbox directory until deploy returns. Adopt its files
+     * into the normal recoverable transaction instead of duplicating them. */
+    status = is_directory(source)
+        ? pxa_posix_installer_adopt_staged_directory(
+              g_store->installer, path_basename(source), &expected_identity,
+              &result, &disposition)
+        : pxa_posix_installer_install_for_identity(
+              g_store->installer, source, &expected_identity, &result,
+              &disposition);
     if (status != PXA_STATUS_OK) {
+        (void)pxa_posix_installer_recover(g_store->installer, &expected_identity);
         result_status = status;
         result_stage = "install";
         goto done;
@@ -1962,12 +2011,13 @@ bool pxa_esp_package_store_deploy_detailed(
         result_stage = "installed_identity";
         goto done;
     }
-    /* The installed package is self-contained. Drop the staged inbox copy so
-     * the next inbox scan (after each upload) and boot do not verify its
-     * signature again. */
-    (void)pxa_posix_fs_remove_tree(source);
-    (void)scan_inbox();
 done:
+    /* A deployment attempt consumes its selected transport source, including
+     * admission or commit failures. Current and private data are separate. */
+    if (source_selected) {
+        (void)remove_staging_source(source);
+        (void)scan_inbox(0);
+    }
     if (metadata_lock_held) {
         release_lock(g_store->metadata_lock);
     }
@@ -2123,7 +2173,7 @@ static bool uninstall_package(const char *identity, bool keep_data) {
             break;
         }
     }
-    (void)scan_inbox();
+    (void)scan_inbox(0);
     release_lock(g_store->metadata_lock);
     release_lock(g_store->transaction_lock);
     return cleanup_ok;
@@ -2478,7 +2528,7 @@ bool pxa_esp_package_store_refresh_inbox(void) {
         release_lock(g_store->transaction_lock);
         return false;
     }
-    success = scan_inbox();
+    success = scan_inbox(0);
     release_lock(g_store->metadata_lock);
     release_lock(g_store->transaction_lock);
     return success != 0;

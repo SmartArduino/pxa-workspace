@@ -83,6 +83,7 @@ constexpr size_t kFsPathLength = 240;
 #ifndef CONFIG_PXA_STATE_ROOT
 #define CONFIG_PXA_STATE_ROOT "pxa-state"
 #endif
+constexpr char kFsUploadTemporary[] = CONFIG_PXA_MOUNT_POINT "/.pxadb-upload";
 constexpr char kPxaMountPoint[] = CONFIG_PXA_MOUNT_POINT;
 constexpr char kPxaStateRoot[] = CONFIG_PXA_STATE_ROOT;
 constexpr char kPxaInboxRoot[] = CONFIG_PXA_STATE_ROOT "/inbox";
@@ -417,6 +418,14 @@ void AbortFileUpload() {
     s_file_upload = {};
 }
 
+void AbortTransfers() {
+    AbortFileUpload();
+    (void)unlink(kFsUploadTemporary);
+#if CONFIG_PXA_ENABLED
+    pxa_host_discard_package_transfers();
+#endif
+}
+
 bool DecodeFsPath(const char* encoded, char* relative, size_t relative_capacity,
                   char* absolute, size_t absolute_capacity) {
     if (encoded == nullptr || relative == nullptr || absolute == nullptr ||
@@ -469,6 +478,7 @@ bool IsSystemWriteUnlocked() {
 
 bool IsWritableFsPath(const char* relative) {
     if (relative == nullptr) return false;
+    if (strcmp(relative, ".pxadb-upload") == 0) return false;
     if (strcmp(relative, kPxaStateRoot) == 0 ||
         (strncmp(relative, kPxaInboxRoot, sizeof(kPxaInboxRoot) - 1) == 0 &&
          (relative[sizeof(kPxaInboxRoot) - 1] == '\0' ||
@@ -491,6 +501,9 @@ bool IsPxaInboxPath(const char* relative) {
 
 bool ShouldRefreshPxaInboxAfterUpload(const char* relative) {
     if (!IsPxaInboxPath(relative)) return false;
+    if (relative[sizeof(kPxaInboxRoot) - 1] == '\0') return false;
+    const char* leaf = relative + sizeof(kPxaInboxRoot);
+    if (strncmp(leaf, ".receiving-", sizeof(".receiving-") - 1) == 0) return false;
     const char* filename = strrchr(relative, '/');
     filename = filename == nullptr ? relative : filename + 1;
     const size_t length = strlen(filename);
@@ -798,7 +811,7 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
     }
     AbortFileUpload();
     const int temporary_length = snprintf(s_file_upload.temporary,
-                                          sizeof(s_file_upload.temporary), "%s.pxadb-part", path);
+                                          sizeof(s_file_upload.temporary), "%s", kFsUploadTemporary);
     if (temporary_length < 0 ||
         static_cast<size_t>(temporary_length) >= sizeof(s_file_upload.temporary)) {
         AbortFileUpload();
@@ -1184,7 +1197,7 @@ void SendInfo(unsigned long sequence) {
 #if CONFIG_PXA_ENABLED
     const size_t capability_offset = strlen(payload);
     snprintf(payload + capability_offset, sizeof(payload) - capability_offset,
-             ";board=%s;pxa_version=%s;pxa_core=%u.%u",
+             ";package_directory_adopt=1;package_receive=1;board=%s;pxa_version=%s;pxa_core=%u.%u",
              PXA_FIRMWARE_BOARD, PXA_VERSION_STRING,
              static_cast<unsigned>(PXA_CORE_VERSION_MAJOR),
              static_cast<unsigned>(PXA_CORE_VERSION_MINOR));
@@ -1966,11 +1979,13 @@ void HandleCommand(char* line) {
         static_cast<uint64_t>(esp_timer_get_time()), std::memory_order_relaxed);
 
     if (strcmp(command, "HELLO") == 0) {
+        AbortTransfers();
         SendHello(sequence);
         if (!s_control_session_active.exchange(true)) {
             ESP_LOGI(kTag, "PXADB control session connected");
         }
     } else if (strcmp(command, "BYE") == 0) {
+        AbortTransfers();
 #if CONFIG_PXADB_TEST_CONTROL
         QueueSessionCancel();
 #endif
@@ -2079,6 +2094,9 @@ void HandleCommand(char* line) {
         SendFsRead(sequence, argument, second_argument);
     } else if (strcmp(command, "FSSHA") == 0 && argument != nullptr) {
         SendFsDigest(sequence, argument);
+    } else if (strcmp(command, "FSABORT") == 0) {
+        AbortTransfers();
+        SendFrame(sequence, "OK", "aborted");
     } else if (strcmp(command, "FSPUT") == 0 && argument != nullptr && second_argument != nullptr) {
         StartFsUpload(sequence, argument, second_argument, third_argument);
     } else if (strcmp(command, "FSDATA") == 0 && argument != nullptr) {
@@ -2093,6 +2111,15 @@ void HandleCommand(char* line) {
         HandleFsUnlock(sequence, argument);
     } else if (strcmp(command, "FSLOCK") == 0) {
         HandleFsLock(sequence);
+    } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
+               strcmp(argument, "publish") == 0 && second_argument != nullptr) {
+#if CONFIG_PXA_ENABLED
+        const bool success = IsSafeIdentity(second_argument) &&
+                             pxa_host_publish_package_transfer(second_argument);
+        SendFrame(sequence, success ? "OK" : "ERR", success ? "published" : "package_publish_failed");
+#else
+        SendFrame(sequence, "ERR", "pxa_disabled");
+#endif
     } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
                strcmp(argument, "deploy") == 0 && second_argument != nullptr) {
         HandlePackageDeploy(sequence, second_argument);
@@ -2291,6 +2318,7 @@ void PxadbInputTask(void*) {
 #endif
 
 void PxadbTask(void*) {
+    AbortTransfers();
     char command[kMaxCommandLength] = {};
     size_t command_length = 0;
     bool discarding_command = false;
@@ -2306,6 +2334,7 @@ void PxadbTask(void*) {
                 now_us - last_us >=
                     static_cast<uint64_t>(kSessionIdleTimeoutMs) * 1000u) {
                 s_control_session_active.store(false);
+                AbortTransfers();
 #if CONFIG_PXADB_TEST_CONTROL
                 QueueSessionCancel();
 #endif
@@ -2413,7 +2442,7 @@ void CleanupService(bool cancel_autostart) {
     s_accepted_pointer.Reset();
     portEXIT_CRITICAL(&s_input_lock);
 #endif
-    AbortFileUpload();
+    AbortTransfers();
 }
 
 }  // namespace

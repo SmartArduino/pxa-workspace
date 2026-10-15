@@ -182,6 +182,9 @@ bool pxa_host_scan_packages(void);
 bool pxa_host_refresh_inbox(void);
 bool pxa_host_stage_package_file(const char *source_path);
 bool pxa_host_install_package_file(const char *source_path);
+/* PXADB's reserved receiving directories are invisible until publication. */
+bool pxa_host_publish_package_transfer(const char *app_id);
+void pxa_host_discard_package_transfers(void);
 size_t pxa_host_package_count(void);
 size_t pxa_host_list_packages(pxa_host_package_info_t *packages,
                               size_t capacity);

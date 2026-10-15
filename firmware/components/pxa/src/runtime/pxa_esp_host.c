@@ -355,6 +355,7 @@ static bool store_registry_save(void) {
 
 static void store_registry_load(void) {
     const char *path = CONFIG_PXA_MOUNT_POINT "/" CONFIG_PXA_STATE_ROOT "/.store-index";
+    (void)unlink(CONFIG_PXA_MOUNT_POINT "/" CONFIG_PXA_STATE_ROOT "/.store-index.tmp");
     FILE *file = fopen(path, "rb");
     char magic[6];
     memset(g_store_downloads, 0, sizeof(g_store_downloads));
@@ -2903,6 +2904,9 @@ static void stop_active(pxa_stop_reason_t reason) {
     public_state_snapshot(&public_state);
     snprintf(stopped_identity, sizeof(stopped_identity), "%s",
              g_host.activation.active_identity);
+    if (g_store_install != NULL &&
+        g_store_install->instance_id == g_host.activation.active_instance_id)
+        __atomic_store_n(&g_store_install->cancelled, 1u, __ATOMIC_RELEASE);
     if (g_store_install != NULL && g_store_install->prompt_id != 0) {
         pxa_esp_ui_shell_dismiss_permission_prompt(g_store_install->prompt_id);
         pxa_esp_surface_runtime_modal_leave();
@@ -4055,6 +4059,13 @@ static void handle_store_install_event(pxa_esp_store_job_t *job,
         pxa_esp_surface_runtime_modal_leave();
     }
     g_store_install = NULL;
+    if (job->separate == 2u && !job->keep_file) {
+        for (size_t index = 0; index < PXA_ESP_STORE_DOWNLOAD_SLOTS; ++index) {
+            if (strcmp(g_store_downloads[index].filename, job->filename) == 0)
+                memset(&g_store_downloads[index], 0, sizeof(g_store_downloads[index]));
+        }
+        (void)store_registry_save();
+    }
     if (g_host.activation.runtime != NULL &&
         job->instance_id == g_host.activation.active_instance_id &&
         pxa_request_is_active(g_host.activation.runtime, job->component,

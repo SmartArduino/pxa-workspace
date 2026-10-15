@@ -41,6 +41,7 @@ typedef struct pxa_esp_store_job {
     uint8_t ready;
     uint8_t keep_file;
     uint8_t reported_percent;
+    uint8_t cancelled;
     int32_t status;
     void (*notify)(struct pxa_esp_store_job *job, uint8_t phase);
 } pxa_esp_store_job_t;

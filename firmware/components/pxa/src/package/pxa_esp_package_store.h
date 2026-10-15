@@ -114,6 +114,8 @@ bool pxa_esp_package_store_install(const char *identity);
 /* Installs a signed .pxa directly from a user-visible source file. The source
  * remains in place; it is not staged in or removed from the private Inbox. */
 bool pxa_esp_package_store_install_file(const char *source_path);
+bool pxa_esp_package_store_publish_transfer(const char *app_id);
+void pxa_esp_package_store_discard_transfers(void);
 bool pxa_esp_package_store_preview_file(const char *source_path,
                                         pxa_esp_package_preview_t *preview);
 /* Development deployment bypasses Inbox duplicate filtering but still runs

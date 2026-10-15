@@ -56,7 +56,13 @@ void pxa_esp_store_cleanup_interrupted(int (*keep)(const char *filename, void *c
                 (int)sizeof(path) || stat(path, &metadata) != 0 ||
             !S_ISREG(metadata.st_mode)) continue;
         if (keep != NULL && keep(name, context)) continue;
-        (void)unlink(path);
+        if (unlink(path) == 0) {
+            /* LittleFS can shift its directory cursor after unlink. Restart
+             * so several interrupted downloads are all reclaimed this boot. */
+            closedir(directory);
+            directory = opendir(root);
+            if (directory == NULL) return;
+        }
     }
     closedir(directory);
 }
@@ -111,6 +117,13 @@ int pxa_esp_store_job_decode(pxa_esp_store_job_t *job,
 static esp_err_t download_event(esp_http_client_event_t *event) {
     download_sink_t *sink = (download_sink_t *)event->user_data;
     size_t length;
+    /* Stop writes immediately. ESP-IDF may keep draining the response even
+     * when an event returns failure; the worker owns close/unlink after perform
+     * returns (or its network timeout), never another task racing this FILE. */
+    if (sink->job != NULL && __atomic_load_n(&sink->job->cancelled, __ATOMIC_ACQUIRE)) {
+        sink->failed = 1;
+        return ESP_FAIL;
+    }
     if (event->event_id != HTTP_EVENT_ON_DATA || event->data_len <= 0)
         return ESP_OK;
     length = (size_t)event->data_len;
@@ -157,6 +170,17 @@ void pxa_esp_store_worker(void *context) {
                      CONFIG_PXA_STATE_ROOT, job->filename) >= (int)sizeof(path)) goto done;
         job->keep_file = 1;
     } else {
+        size_t total = 0, used = 0;
+        /* Reject before writing a partial container when even the encoded
+         * body cannot fit. Keep flash metadata/compaction headroom; decoded
+         * admission remains the authenticated installer's responsibility. */
+        if (esp_littlefs_info(CONFIG_PXA_STORAGE_PARTITION_LABEL, &total, &used) != ESP_OK)
+            goto done;
+        if (used > total || job->size > total - used ||
+            total - used - job->size < UINT64_C(128) * 1024) {
+            job->status = PXA_STATUS_QUOTA_EXCEEDED;
+            goto done;
+        }
         if (snprintf(path, sizeof(path), "%s/%s/.store-%08lx.pxa",
                      CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT,
                      (unsigned long)esp_random()) >= (int)sizeof(path)) goto done;
@@ -202,6 +226,11 @@ void pxa_esp_store_worker(void *context) {
         strcmp(job->preview.app_id, job->app_id) != 0) {
         ESP_LOGW("PxaStore", "Package preview rejected: app=%s", job->app_id);
         job->status = PXA_STATUS_DENIED;
+        job->keep_file = 0;
+        goto cleanup;
+    }
+    if (__atomic_load_n(&job->cancelled, __ATOMIC_ACQUIRE)) {
+        job->status = PXA_STATUS_CANCELLED;
         goto cleanup;
     }
     downloaded = 1;
@@ -214,12 +243,15 @@ void pxa_esp_store_worker(void *context) {
         job->notify(job, 1u);
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     }
-    if (!job->approved) {
+    if (!job->approved || __atomic_load_n(&job->cancelled, __ATOMIC_ACQUIRE)) {
         job->status = PXA_STATUS_DENIED;
         goto cleanup;
     }
     job->status = pxa_host_install_package_file(path)
                       ? PXA_STATUS_OK : PXA_STATUS_INTERNAL;
+    /* An attempted cached install consumes its transport copy too. Declining
+     * the confirmation above preserves an explicitly downloaded offline pack. */
+    job->keep_file = 0;
     if (job->status != PXA_STATUS_OK) {
         size_t total = 0;
         size_t used = 0;

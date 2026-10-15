@@ -209,6 +209,17 @@ bool pxa_host_install_package_file(const char *source_path) {
     return success;
 }
 
+bool pxa_host_publish_package_transfer(const char *app_id) {
+    if (!g_host_ready || app_id == NULL) return false;
+    bool success = pxa_esp_package_store_publish_transfer(app_id);
+    if (success) notify_catalog_changed();
+    return success;
+}
+
+void pxa_host_discard_package_transfers(void) {
+    if (g_host_ready) pxa_esp_package_store_discard_transfers();
+}
+
 size_t pxa_host_package_count(void) {
     if (!g_host_ready) return 0;
     return pxa_esp_host_package_count();

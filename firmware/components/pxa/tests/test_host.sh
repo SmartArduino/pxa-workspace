@@ -64,6 +64,9 @@ build_and_run install_space \
   -I"$pxa_system_dir/libpxa/include" \
   -I"$pxa_system_dir/libpxa/adapters/include" \
   "$tests_dir/pxa_install_space_test.c"
+build_and_run store_download -DESP_PLATFORM=1 \
+  "-DCONFIG_PXA_MOUNT_POINT=\"$build_dir/store-download\"" \
+  "${adapter_includes[@]}" "$tests_dir/pxa_esp_store_download_test.c" -lmbedcrypto
 build_and_run surface_transform \
   -I"$component_dir/include" \
   "$tests_dir/pxa_surface_transform_test.c"
