@@ -1310,6 +1310,12 @@ void HandlePerf(unsigned long sequence, char* const* arguments,
                   "recording");
         return;
     }
+    if (argument_count == 2 && strcmp(arguments[0], "START") == 0 &&
+        strcmp(arguments[1], "display") == 0) {
+        SendFrame(sequence, pxa_esp_surface_perf_start_display() ? "OK" : "ERR",
+                  "recording_display");
+        return;
+    }
     if (argument_count == 1 && strcmp(arguments[0], "STOP") == 0) {
         pxa_esp_surface_perf_info_t info = {};
         if (!pxa_esp_surface_perf_stop(&info)) {
@@ -1320,7 +1326,8 @@ void HandlePerf(unsigned long sequence, char* const* arguments,
         snprintf(payload, sizeof(payload),
                  "capacity=%u;raster=%u;present=%u;raster_overflow=%u;"
                  "present_overflow=%u;list_min=%u;list_max=%u;"
-                 "pixels_min=%u;pixels_max=%u;surface_changed=%u",
+                 "pixels_min=%u;pixels_max=%u;surface_changed=%u;"
+                 "completed=%u;window_us=%u;display=%u",
                  PXA_ESP_SURFACE_PERF_CAPACITY,
                  static_cast<unsigned>(info.raster_count),
                  static_cast<unsigned>(info.present_interval_count),
@@ -1330,7 +1337,10 @@ void HandlePerf(unsigned long sequence, char* const* arguments,
                  static_cast<unsigned>(info.list_max_bytes),
                  static_cast<unsigned>(info.covered_min_pixels),
                  static_cast<unsigned>(info.covered_max_pixels),
-                 static_cast<unsigned>(info.surface_changed));
+                 static_cast<unsigned>(info.surface_changed),
+                 static_cast<unsigned>(info.completed_frames),
+                 static_cast<unsigned>(info.window_us),
+                 static_cast<unsigned>(info.display_mode));
         SendFrame(sequence, "OK", payload);
         return;
     }

@@ -1187,6 +1187,7 @@ private:
                     context->completed_sequence.fetch_add(
                         1, std::memory_order_release);
 #if CONFIG_PXA_ENABLED
+                    pxa_esp_surface_note_display_frame_presented(completed_us);
                     if (context->output_source[buffer_index] ==
                             kFrameSourceSurface ||
                         context->output_source[buffer_index] ==

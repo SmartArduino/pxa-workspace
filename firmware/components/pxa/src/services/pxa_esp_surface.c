@@ -180,7 +180,10 @@ typedef struct {
     uint32_t present_interval_us[PXA_ESP_SURFACE_PERF_CAPACITY];
     pxa_esp_surface_t *surface;
     uint64_t last_present_us;
-    uint64_t last_present_frame_id;
+    union {
+        uint64_t last_present_frame_id;
+        uint64_t window_started_us;
+    } clock;
     pxa_esp_surface_perf_info_t info;
     uint8_t active;
 } pxa_esp_surface_perf_buffer_t;
@@ -214,14 +217,15 @@ static bool render_raster_draw(pxa_esp_surface_t *borrowed_surface,
     const uint8_t *borrowed_bytes, size_t borrowed_size, pxa_status_t *result);
 
 static bool perf_surface_matches_locked(pxa_esp_surface_t *surface) {
-    if (g_perf == NULL || !g_perf->active || surface == NULL) return false;
+    if (g_perf == NULL || !g_perf->active || g_perf->info.display_mode ||
+        surface == NULL) return false;
     if (g_perf->surface == NULL) g_perf->surface = surface;
     if (g_perf->surface == surface) return true;
     g_perf->info.surface_changed = 1;
     return false;
 }
 
-bool pxa_esp_surface_perf_start(void) {
+static bool perf_start(bool display_mode) {
     pxa_esp_surface_perf_buffer_t *fresh = heap_caps_calloc(
         1, sizeof(*fresh), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     pxa_esp_surface_perf_buffer_t *old;
@@ -230,6 +234,9 @@ bool pxa_esp_surface_perf_start(void) {
     fresh->active = 1;
     fresh->info.list_min_bytes = UINT32_MAX;
     fresh->info.covered_min_pixels = UINT32_MAX;
+    fresh->info.display_mode = display_mode;
+    if (display_mode)
+        fresh->clock.window_started_us = (uint64_t)esp_timer_get_time();
     taskENTER_CRITICAL(&g_surface_lock);
     fresh->surface = g_surface;
     old = g_perf;
@@ -239,6 +246,9 @@ bool pxa_esp_surface_perf_start(void) {
     return true;
 }
 
+bool pxa_esp_surface_perf_start(void) { return perf_start(false); }
+bool pxa_esp_surface_perf_start_display(void) { return perf_start(true); }
+
 bool pxa_esp_surface_perf_stop(pxa_esp_surface_perf_info_t *info) {
     if (info == NULL) return false;
     taskENTER_CRITICAL(&g_surface_lock);
@@ -247,6 +257,9 @@ bool pxa_esp_surface_perf_stop(pxa_esp_surface_perf_info_t *info) {
         return false;
     }
     g_perf->active = 0;
+    if (g_perf->info.display_mode)
+        g_perf->info.window_us = latency_us(g_perf->clock.window_started_us,
+                                           (uint64_t)esp_timer_get_time());
     *info = g_perf->info;
     if (info->raster_count == 0) {
         info->list_min_bytes = 0;
@@ -1804,27 +1817,38 @@ void pxa_esp_surface_note_frame_presented(uint64_t timestamp_us,
     taskEXIT_CRITICAL(&g_surface_lock);
 }
 
+static void perf_note_present_locked(uint64_t presented_us) {
+    if (g_perf->last_present_us != 0 &&
+        presented_us <= g_perf->last_present_us) return;
+    ++g_perf->info.completed_frames;
+    if (g_perf->last_present_us != 0) {
+        if (g_perf->info.present_interval_count < PXA_ESP_SURFACE_PERF_CAPACITY)
+            g_perf->present_interval_us[g_perf->info.present_interval_count++] =
+                latency_us(g_perf->last_present_us, presented_us);
+        else
+            ++g_perf->info.present_interval_overflow;
+    }
+    g_perf->last_present_us = presented_us;
+}
+
+void pxa_esp_surface_note_display_frame_presented(uint64_t presented_us) {
+    if (presented_us == 0) return;
+    taskENTER_CRITICAL(&g_surface_lock);
+    if (g_perf != NULL && g_perf->active && g_perf->info.display_mode)
+        perf_note_present_locked(presented_us);
+    taskEXIT_CRITICAL(&g_surface_lock);
+}
+
 void pxa_esp_surface_note_game_frame_presented(uint64_t frame_id,
                                                 uint64_t presented_us) {
     if (frame_id == 0 || presented_us == 0) return;
     taskENTER_CRITICAL(&g_surface_lock);
-    if (g_perf != NULL && g_perf->active) {
+    if (g_perf != NULL && g_perf->active && !g_perf->info.display_mode) {
         if (g_perf->surface != g_surface) {
             g_perf->info.surface_changed = 1;
-        } else if (frame_id != g_perf->last_present_frame_id) {
-            if (g_perf->last_present_us != 0 &&
-                presented_us > g_perf->last_present_us) {
-                if (g_perf->info.present_interval_count <
-                    PXA_ESP_SURFACE_PERF_CAPACITY) {
-                    g_perf->present_interval_us[
-                        g_perf->info.present_interval_count++] =
-                            latency_us(g_perf->last_present_us, presented_us);
-                } else {
-                    ++g_perf->info.present_interval_overflow;
-                }
-            }
-            g_perf->last_present_us = presented_us;
-            g_perf->last_present_frame_id = frame_id;
+        } else if (frame_id != g_perf->clock.last_present_frame_id) {
+            perf_note_present_locked(presented_us);
+            g_perf->clock.last_present_frame_id = frame_id;
         }
     }
     taskEXIT_CRITICAL(&g_surface_lock);
@@ -2562,6 +2586,10 @@ void pxa_esp_surface_memory_snapshot(pxa_esp_surface_memory_info_t *info) {
     if (info != NULL) *info = (pxa_esp_surface_memory_info_t){0};
 }
 bool pxa_esp_surface_perf_start(void) { return false; }
+bool pxa_esp_surface_perf_start_display(void) { return false; }
+void pxa_esp_surface_note_display_frame_presented(uint64_t presented_us) {
+    (void)presented_us;
+}
 bool pxa_esp_surface_perf_stop(pxa_esp_surface_perf_info_t *info) {
     (void)info;
     return false;

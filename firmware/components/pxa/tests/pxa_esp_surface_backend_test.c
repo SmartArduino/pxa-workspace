@@ -774,6 +774,37 @@ int main(void) {
     assert(input_metrics.sample_to_guest_count == 1 &&
            input_metrics.sample_to_guest_total_us == 600);
     pxa_esp_surface_perf_clear();
+    {
+        pxa_esp_surface_perf_info_t info;
+        uint32_t values[4], count;
+        test_now_us = 1000;
+        assert(pxa_esp_surface_perf_start_display());
+        pxa_esp_surface_note_game_frame_presented(1, 1100);
+        pxa_esp_surface_note_display_frame_presented(0);
+        pxa_esp_surface_note_display_frame_presented(1200);
+        pxa_esp_surface_note_display_frame_presented(1200);
+        pxa_esp_surface_note_display_frame_presented(1199);
+        pxa_esp_surface_note_display_frame_presented(2200);
+        test_now_us = 3000;
+        assert(pxa_esp_surface_perf_stop(&info));
+        assert(info.display_mode && info.window_us == 2000 &&
+               info.completed_frames == 2 && info.present_interval_count == 1 &&
+               info.raster_count == 0 && !info.surface_changed);
+        pxa_esp_surface_note_display_frame_presented(3200);
+        assert(pxa_esp_surface_perf_read(PXA_ESP_SURFACE_PERF_PRESENT_INTERVAL,
+                                       0, values, 4, &count));
+        assert(count == 1 && values[0] == 1000);
+        assert(pxa_esp_surface_perf_start_display());
+        for (unsigned n = 0; n < PXA_ESP_SURFACE_PERF_CAPACITY + 3; ++n)
+            pxa_esp_surface_note_display_frame_presented(4000 + n * 1000);
+        assert(pxa_esp_surface_perf_stop(&info));
+        assert(info.present_interval_count == PXA_ESP_SURFACE_PERF_CAPACITY &&
+               info.present_interval_overflow == 2 &&
+               info.completed_frames == PXA_ESP_SURFACE_PERF_CAPACITY + 3);
+        pxa_esp_surface_perf_clear();
+        pxa_esp_surface_memory_snapshot(&memory_info);
+        assert(memory_info.probe_bytes == 0);
+    }
     pxa_esp_surface_release_frame(frame.lease);
     assert(release_notifications == 4);
     assert(backend.peek_release(backend.context, surface, &released) ==

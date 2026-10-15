@@ -125,7 +125,9 @@ typedef struct {
 /* Opt-in, bounded diagnostic samples. The probe allocates about 2.1 KiB of PSRAM
  * only between start and clear. A full buffer reports overflow instead of
  * silently overwriting earlier frames. Raster time excludes panel transfer;
- * present interval measures time between completed new GameRender frames. */
+ * present interval measures time between completed new GameRender frames.
+ * Display mode instead counts all completed panel transfers, including LVGL
+ * Canvas UI. Neither mode measures the panel's optical refresh rate. */
 #define PXA_ESP_SURFACE_PERF_CAPACITY 256u
 typedef enum {
     PXA_ESP_SURFACE_PERF_RASTER = 0,
@@ -140,7 +142,10 @@ typedef struct {
     uint32_t list_max_bytes;
     uint32_t covered_min_pixels;
     uint32_t covered_max_pixels;
+    uint32_t completed_frames;
+    uint32_t window_us;
     uint8_t surface_changed;
+    uint8_t display_mode;
 } pxa_esp_surface_perf_info_t;
 
 /* ESP heap blocks owned directly by the Surface backend. These bytes are
@@ -157,6 +162,9 @@ typedef struct {
 void pxa_esp_surface_memory_snapshot(pxa_esp_surface_memory_info_t *info);
 
 bool pxa_esp_surface_perf_start(void);
+bool pxa_esp_surface_perf_start_display(void);
+/* Call once after a successful LCD transfer, including UI-only frames. */
+void pxa_esp_surface_note_display_frame_presented(uint64_t presented_us);
 bool pxa_esp_surface_perf_stop(pxa_esp_surface_perf_info_t *info);
 bool pxa_esp_surface_perf_read(pxa_esp_surface_perf_kind_t kind,
                                uint32_t offset, uint32_t *values,
