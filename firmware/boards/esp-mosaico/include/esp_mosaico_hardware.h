@@ -51,7 +51,7 @@ private:
     void ShowBootFrame();
     void WakePanel();
     bool InitializeTe();
-    void WaitForTe(const lv_area_t& area);
+    void WaitForTe(lv_area_t* area);
     static void OnTe(void* context);
     bool InitializeTouch();
     bool InitializeButton();
@@ -154,7 +154,7 @@ private:
     uint8_t* present_pixels_ = nullptr;
     uint8_t* scanout_pixels_ = nullptr; // Immutable while the worker owns it.
     bool present_pixels_current_ = true; // Restore once on direct -> LVGL.
-    mosaico_board::RefreshRows pending_rows_; // Only with the display lock held.
+    mosaico_board::RefreshRegion pending_region_; // Only with the display lock held.
     bool compose_failed_ = false;
     int64_t refresh_started_us_ = 0;
     uint32_t refresh_wait_us_ = 0; // Only with the display lock held.
@@ -171,6 +171,8 @@ private:
     std::atomic<uint32_t> transfer_duration_us_{0};
     std::atomic<uint32_t> transfer_max_us_{0};
     std::atomic<uint32_t> scan_overruns_{0};
+    std::atomic<uint32_t> compact_transfers_{0};
+    std::atomic<bool> compact_te_enabled_{true};
     bool displayed_frame_valid_ = false;
     std::atomic<bool> panel_on_{false};
     std::atomic<bool> wake_pending_{false};

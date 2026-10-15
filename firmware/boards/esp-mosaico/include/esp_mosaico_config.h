@@ -30,6 +30,10 @@ constexpr std::optional<HardwareConfig> DecodeHardwareConfig(uint16_t version) {
 
 inline constexpr uint16_t kWidth = 480;
 inline constexpr uint16_t kHeight = 480;
+// Two half-height buffers retain parallel render/flush without reserving two
+// full-screen LVGL scratch frames. Persistent compositor frames are separate.
+inline constexpr uint16_t kDrawBufferRows = (kHeight / 2) & ~7u;
+inline constexpr uint32_t kUiRefreshPeriodMs = 16;
 // Two 16-row buffers retain the original 32-row total SRAM footprint.
 inline constexpr uint16_t kTransferRows = 16;
 // 480 MHz BBPLL / 10 is exact on ESP32-S31 and below CO5300's 50 MHz limit.

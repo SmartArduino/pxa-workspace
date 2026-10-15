@@ -292,7 +292,7 @@ bool EspMosaicoHardware::InitializeDisplay() {
     display_config.profile.interface = ESP_LV_ADAPTER_PANEL_IF_OTHER;
     display_config.profile.hor_res = mosaico_board::kWidth;
     display_config.profile.ver_res = mosaico_board::kHeight;
-    display_config.profile.buffer_height = mosaico_board::kHeight;
+    display_config.profile.buffer_height = mosaico_board::kDrawBufferRows;
     display_config.profile.use_psram = true;
     display_config.profile.require_double_buffer = true;
     display_config.tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE;
@@ -309,7 +309,7 @@ bool EspMosaicoHardware::InitializeDisplay() {
     // Return draw buffers after copying; the panel reads an owned PSRAM
     // snapshot while LVGL renders the next refresh. Limit only this display.
     lv_display_set_flush_wait_cb(display_, nullptr);
-    lv_timer_set_period(lv_display_get_refr_timer(display_), 33);
+    lv_timer_set_period(lv_display_get_refr_timer(display_), mosaico_board::kUiRefreshPeriodMs);
     lv_display_add_event_cb(display_, [](lv_event_t* event) {
         auto* self = static_cast<EspMosaicoHardware*>(lv_event_get_user_data(event));
         if (lv_event_get_code(event) == LV_EVENT_RENDER_START) {
@@ -397,7 +397,12 @@ void EspMosaicoHardware::OnTe(void* context) {
     if (awakened) portYIELD_FROM_ISR();
 }
 
-void EspMosaicoHardware::WaitForTe(const lv_area_t& area) {
+void EspMosaicoHardware::WaitForTe(lv_area_t* area) {
+    const lv_area_t dirty = *area;
+    // The retained scanout is a complete image, so it is safe to widen a
+    // copied dirty rectangle when the TE signal cannot admit a narrow window.
+    area->x1 = 0;
+    area->x2 = mosaico_board::kWidth - 1;
     scan_deadline_us_ = 0;
     // Panel-off initialization has no TE pulses. Retry a missing signal once
     // a second, rather than delaying every frame by the timeout indefinitely.
@@ -415,24 +420,28 @@ void EspMosaicoHardware::WaitForTe(const lv_area_t& area) {
                              te_timestamp_us_.load();
         if (age <= 2000) {
             const uint32_t measured = te_period_us_.load();
-            const uint32_t period = measured != 0 ? measured : 16667;
             const uint32_t blank = te_blank_us_.load();
-            const uint32_t active = period > blank ? period - blank : period;
+            const auto plan = mosaico_board::PlanTransfer(dirty, measured, blank,
+                                                          compact_te_enabled_.load());
             const int64_t edge = esp_timer_get_time() - age;
-            const int64_t start = edge +
-                mosaico_board::ScanFollowDelayUs(area.y1, active);
-            scan_deadline_us_ = edge + period +
-                static_cast<uint64_t>(area.y2) * active / mosaico_board::kHeight - 250;
+            const int64_t start = edge + plan.start_us;
             for (;;) {
                 const int64_t remaining_us = start - esp_timer_get_time();
                 if (remaining_us <= 0) break;
                 vTaskDelay(std::max<TickType_t>(1,
                     pdMS_TO_TICKS((remaining_us + 999) / 1000)));
             }
+            // A delayed worker must not enter an already expired compact
+            // window. Try the next edge instead, retaining the same snapshot.
+            if (plan.compact && esp_timer_get_time() + plan.budget_us > edge + plan.deadline_us)
+                continue;
+            *area = plan.area;
+            scan_deadline_us_ = edge + plan.deadline_us;
             return;
         }
     }
     const uint32_t timeouts = ++te_timeouts_;
+    scan_deadline_us_ = 0;
     te_retry_us_ = esp_timer_get_time() + 1000000;
     if (timeouts == 1 || timeouts % 30 == 0)
         ESP_LOGW(kTag, "TE wait timed out; refresh continues (timeouts=%lu)",
@@ -479,7 +488,7 @@ void EspMosaicoHardware::FlushDisplay(lv_display_t* display,
     if (self->flush_direct_ready_) {
         if (lv_display_flush_is_last(display)) {
             lv_area_t unused;
-            (void)self->pending_rows_.Take(&unused);
+            (void)self->pending_region_.Take(&unused);
             self->compose_failed_ = false;
             const auto& request = self->flush_direct_request_;
             (void)self->QueuePresent(request.area, request.timestamp,
@@ -501,39 +510,41 @@ void EspMosaicoHardware::FlushDisplay(lv_display_t* display,
         // image once before merging UI patches into the producer again.
         const lv_area_t full = {0, 0, mosaico_board::kWidth - 1, mosaico_board::kHeight - 1};
         self->WaitForFlush();
-        mosaico_board::CopyRefreshRows(full, self->scanout_pixels_, self->present_pixels_);
+        mosaico_board::CopyRefreshArea(full, self->scanout_pixels_, self->present_pixels_);
         self->present_pixels_current_ = true;
     }
-    if (!self->pending_rows_.Merge(*area, pixels, source_stride,
+    if (!self->pending_region_.Merge(*area, pixels, source_stride,
                                    self->present_pixels_)) {
         self->compose_failed_ = true;
         self->redraw_pending_ = true;
     }
     if (last) {
-        lv_area_t rows;
-        if (self->pending_rows_.Take(&rows) && !self->compose_failed_)
-            (void)self->QueuePresent(rows, timestamp);
+        lv_area_t dirty;
+        if (self->pending_region_.Take(&dirty) && !self->compose_failed_)
+            (void)self->QueuePresent(dirty, timestamp);
         self->compose_failed_ = false;
     }
     lv_display_flush_ready(display);
 }
 
 bool EspMosaicoHardware::TransferArea(
-    const lv_area_t& area, const uint8_t* pixels, uint32_t source_stride,
+    const lv_area_t& dirty, const uint8_t* frame, uint32_t source_stride,
     bool last, uint64_t timestamp, const char* source_name, uint64_t frame_id) {
-    if (pixels == nullptr || !mosaico_board::ValidDisplayArea(area) ||
-        source_stride < static_cast<uint32_t>(lv_area_get_width(&area) * 2) ||
+    if (frame == nullptr || !mosaico_board::ValidDisplayArea(dirty) ||
+        source_stride < mosaico_board::kWidth * sizeof(uint16_t) ||
         source_stride % 2 != 0 || !WaitForTransfer(pdMS_TO_TICKS(10))) {
         displayed_frame_valid_ = false;
         displayed_frame_initialized_ = false;
         refresh_failed_ = true;
         return false;
     }
+    lv_area_t area = dirty;
     const int64_t te_wait_started = esp_timer_get_time();
-    WaitForTe(area);
+    WaitForTe(&area);
     te_wait_us_ = esp_timer_get_time() - te_wait_started;
+    const uint8_t* pixels = frame + area.y1 * source_stride + area.x1 * sizeof(uint16_t);
     const int64_t transfer_started_us = esp_timer_get_time();
-    // Set the full refresh window once. RAMWRC continues at the next pixel;
+    // Set the selected refresh window once. RAMWRC continues at the next pixel;
     // per-band CASET/RASET would drain SPI and add four polling transactions.
     const uint8_t columns[] = {static_cast<uint8_t>(area.x1 >> 8),
         static_cast<uint8_t>(area.x1), static_cast<uint8_t>(area.x2 >> 8),
@@ -577,8 +588,13 @@ bool EspMosaicoHardware::TransferArea(
     transfer_duration_us_ = transfer_us;
     transfer_max_us_ = std::max(transfer_max_us_.load(), transfer_us);
     if (completed && scan_deadline_us_ != 0 &&
-        esp_timer_get_time() >= scan_deadline_us_)
+        esp_timer_get_time() >= scan_deadline_us_) {
         ++scan_overruns_;
+        // If device scheduling exceeds the conservative quiet-window budget,
+        // retain dirty snapshot copies but use full-row transfers until reboot.
+        if (area.x1 != 0 || area.x2 != mosaico_board::kWidth - 1)
+            compact_te_enabled_ = false;
+    }
     if (!completed) {
         displayed_frame_valid_ = false;
         displayed_frame_initialized_ = false;
@@ -587,6 +603,9 @@ bool EspMosaicoHardware::TransferArea(
                area.x2 == mosaico_board::kWidth - 1 &&
                area.y2 == mosaico_board::kHeight - 1) {
         displayed_frame_initialized_ = true;
+    }
+    if (completed) {
+        if (area.x1 != 0 || area.x2 != mosaico_board::kWidth - 1) ++compact_transfers_;
     }
     if (last) {
         if (completed && !refresh_failed_ && displayed_frame_initialized_) {
@@ -664,7 +683,7 @@ bool EspMosaicoHardware::QueuePresent(const lv_area_t& area, uint64_t timestamp,
     const bool was_current = present_pixels_current_;
     const bool snapshotted = exchanged
         ? mosaico_board::ExchangeRefreshFrame(area, present_pixels_, scanout_pixels_)
-        : mosaico_board::CopyRefreshRows(area, present_pixels_, scanout_pixels_);
+        : mosaico_board::CopyRefreshArea(area, present_pixels_, scanout_pixels_);
     if (!snapshotted) {
         xSemaphoreGive(present_available_);
         redraw_pending_ = true;
@@ -690,9 +709,7 @@ void EspMosaicoHardware::FlushTask(void* context) {
         if (xQueueReceive(self->flush_queue_, &request, portMAX_DELAY) != pdTRUE)
             continue;
         xSemaphoreTake(self->panel_mutex_, portMAX_DELAY);
-        const uint8_t* pixels = self->scanout_pixels_ +
-            request.area.y1 * mosaico_board::kWidth * sizeof(uint16_t);
-        const bool completed = self->TransferArea(request.area, pixels,
+        const bool completed = self->TransferArea(request.area, self->scanout_pixels_,
             mosaico_board::kWidth * sizeof(uint16_t), true,
             request.timestamp, request.frame_id ? "surface-direct" : "lvgl-composited",
             request.frame_id);
@@ -1152,9 +1169,10 @@ void EspMosaicoHardware::PublishDiagnostics() {
              static_cast<unsigned long>(scan_overruns_.load()),
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
     // Keep this separate so every field fits PXADB's 320-byte log payload.
-    ESP_LOGI(kTag, "frame_stats target_fps=30 pipeline=async fps=%u.%u "
+    ESP_LOGI(kTag, "frame_stats ui_period_ms=%u pipeline=async fps=%u.%u "
              "render_us=%lu render_max_us=%lu present_wait_us=%lu te_wait_us=%lu "
              "tx_us=%lu tx_max_us=%lu scan_overruns=%lu time_valid=%d sram=%u",
+             static_cast<unsigned>(mosaico_board::kUiRefreshPeriodMs),
              static_cast<unsigned>(fps_tenths / 10),
              static_cast<unsigned>(fps_tenths % 10),
              static_cast<unsigned long>(render_duration_us_.load()),
@@ -1166,6 +1184,10 @@ void EspMosaicoHardware::PublishDiagnostics() {
              static_cast<unsigned long>(scan_overruns_.load()),
              std::time(nullptr) >= 1577836800,
              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
+    ESP_LOGI(kTag, "ui_transfer compact_total=%lu compact_enabled=%d draw_rows=%u",
+             static_cast<unsigned long>(compact_transfers_.load()),
+             compact_te_enabled_.load(),
+             static_cast<unsigned>(mosaico_board::kDrawBufferRows));
     ESP_LOGI(kTag, "power idle_ms=%lu locked=%d panel_on=%d dim=%d touch_clock=lvgl",
              static_cast<unsigned long>(lv_display_get_inactive_time(display_)),
              reference_ui_ != nullptr && pxsys_reference_lvgl_is_locked(reference_ui_),

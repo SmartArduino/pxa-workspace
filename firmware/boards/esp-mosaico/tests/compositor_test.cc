@@ -340,7 +340,7 @@ void TestTransferPipeline() {
 }
 
 void TestRefreshBatch() {
-    mosaico_board::RefreshRows rows;
+    mosaico_board::RefreshRegion rows;
     std::vector<uint8_t> frame(480 * 480 * 2, 0x39);
     const lv_area_t areas[] = {{28, 40, 31, 41}, {400, 200, 407, 203},
                                {30, 41, 33, 42}};
@@ -353,7 +353,7 @@ void TestRefreshBatch() {
     }
     lv_area_t area;
     assert(rows.Take(&area));
-    assert(area.x1 == 0 && area.x2 == 479 && area.y1 == 40 && area.y2 == 203);
+    assert(area.x1 == 28 && area.x2 == 407 && area.y1 == 40 && area.y2 == 203);
     assert(!rows.Take(&area));
     for (int y = 0; y < 480; ++y) {
         for (int x = 0; x < 480; ++x) {
@@ -378,13 +378,13 @@ void TestPipelinedSnapshot() {
     constexpr size_t row_bytes = mosaico_board::kWidth * sizeof(uint16_t);
     std::vector<uint8_t> frame(row_bytes * mosaico_board::kHeight, 0x39);
     std::vector<uint8_t> snapshot(frame.size(), 0xaa);
-    mosaico_board::RefreshRows dirty;
+    mosaico_board::RefreshRegion dirty;
     const lv_area_t patch = {28, 40, 31, 99};
     std::vector<uint8_t> pixels(8 * 60, 0x70);
     assert(dirty.Merge(patch, pixels.data(), 8, frame.data()));
     lv_area_t rows;
     assert(dirty.Take(&rows));
-    assert(mosaico_board::CopyRefreshRows(rows, frame.data(), snapshot.data()));
+    assert(mosaico_board::CopyRefreshArea(rows, frame.data(), snapshot.data()));
     const auto submitted = snapshot;
     std::vector<uint8_t> storage[2] = {
         std::vector<uint8_t>(row_bytes * mosaico_board::kTransferRows),
@@ -395,11 +395,12 @@ void TestPipelinedSnapshot() {
     // frame into both previously dirty and previously untouched rows.
     const lv_area_t next_patch = {28, 90, 31, 149};
     const bool completed = mosaico_board::TransferBands(rows,
-        snapshot.data() + rows.y1 * row_bytes, row_bytes, buffers,
+        snapshot.data() + rows.y1 * row_bytes + rows.x1 * 2, row_bytes, buffers,
         [&]() { assert(snapshot == submitted); return true; },
         [&](int32_t y, int32_t count, const uint8_t* band) {
-            assert(std::memcmp(band, submitted.data() + y * row_bytes,
-                                count * row_bytes) == 0);
+            for (int row = 0; row < count; ++row)
+                assert(std::memcmp(band + row * 8,
+                    submitted.data() + (y + row) * row_bytes + rows.x1 * 2, 8) == 0);
             ++submissions;
             return true;
         },
@@ -410,16 +411,18 @@ void TestPipelinedSnapshot() {
     assert(completed && submissions == 4 && snapshot == submitted);
     assert(dirty.Take(&rows));
     assert(rows.y1 == 90 && rows.y2 == 149);
-    assert(mosaico_board::CopyRefreshRows(rows, frame.data(), snapshot.data()));
+    assert(mosaico_board::CopyRefreshArea(rows, frame.data(), snapshot.data()));
     // Preserve earlier patches outside the new dirty rows; copy the newly
     // touched pixels, including ones beyond the previous transfer's bounds.
     assert(snapshot[40 * row_bytes + 28 * 2] == 0x70);
     assert(snapshot[90 * row_bytes + 28 * 2] == 0x80);
     assert(snapshot[149 * row_bytes + 28 * 2] == 0x80);
-    assert(snapshot[149 * row_bytes] == 0x39);
+    assert(snapshot[149 * row_bytes] == 0xaa);
     assert(snapshot[150 * row_bytes] == 0xaa);
-    assert(!mosaico_board::CopyRefreshRows(patch, frame.data(), snapshot.data()));
-    assert(!mosaico_board::CopyRefreshRows(rows, nullptr, snapshot.data()));
+    assert(mosaico_board::CopyRefreshArea(patch, frame.data(), snapshot.data()));
+    const lv_area_t invalid = {-1, 0, 3, 1};
+    assert(!mosaico_board::CopyRefreshArea(invalid, frame.data(), snapshot.data()));
+    assert(!mosaico_board::CopyRefreshArea(rows, nullptr, snapshot.data()));
 }
 
 void TestAudioWriteRecovery() {
@@ -453,6 +456,121 @@ void TestAudioWriteRecovery() {
         assert(restarts == (failure != 0));
         assert(writes == (failure == 0 || failure == 4 ? 1 : 2));
     }
+}
+
+void TestPartialRefreshAndWidenedScanout() {
+    constexpr size_t stride = mosaico_board::kWidth * sizeof(uint16_t);
+    std::vector<uint8_t> frame(stride * mosaico_board::kHeight);
+    std::vector<uint8_t> scanout(frame.size(), 0);
+    std::vector<uint8_t> expected(frame.size());
+    for (size_t i = 0; i < expected.size(); ++i) expected[i] = i * 37 + i / stride;
+    mosaico_board::RefreshRegion dirty;
+    // The smaller draw buffers split a fullscreen render. Queue exactly one
+    // complete refresh, never a half-rendered screenshot or panel frame.
+    for (int y = 0; y < mosaico_board::kHeight; y += mosaico_board::kDrawBufferRows) {
+        const lv_area_t tile = {0, y, 479, y + mosaico_board::kDrawBufferRows - 1};
+        assert(dirty.Merge(tile, expected.data() + y * stride, stride, frame.data()));
+    }
+    lv_area_t area;
+    assert(dirty.Take(&area));
+    assert(area.x1 == 0 && area.y1 == 0 && area.x2 == 479 && area.y2 == 479);
+    assert(mosaico_board::CopyRefreshArea(area, frame.data(), scanout.data()));
+    assert(scanout == expected && frame == expected);
+    // Many overlapping/disjoint, unaligned, padded patches. Snapshot copy
+    // preserves the entire image even when TE widens the panel window later.
+    for (int i = 0; i < 100; ++i) {
+        const int width = i % 2 == 0 ? 13 : 456;
+        const int x = (i * 47) % (481 - width), y = (i * 29) % 461;
+        const lv_area_t patch = {x, y, x + width - 1, y + 18};
+        const uint32_t patch_stride = width * 2 + 6;
+        std::vector<uint8_t> pixels(patch_stride * 19, 0xee);
+        for (int row = 0; row < 19; ++row) {
+            for (int byte = 0; byte < width * 2; ++byte)
+                pixels[row * patch_stride + byte] = i + byte + row * 7;
+            std::memcpy(expected.data() + (y + row) * stride + x * 2,
+                        pixels.data() + row * patch_stride, width * 2);
+        }
+        assert(dirty.Merge(patch, pixels.data(), patch_stride, frame.data()));
+        assert(dirty.Take(&area));
+        assert(mosaico_board::CopyRefreshArea(area, frame.data(), scanout.data()));
+        assert(scanout == expected && frame == expected);
+        for (uint32_t period : {0u, 16931u}) {
+            const auto plan = mosaico_board::PlanTransfer(area, period, 800);
+            std::vector<uint8_t> storage[2] = {
+                std::vector<uint8_t>(stride * mosaico_board::kTransferRows),
+                std::vector<uint8_t>(stride * mosaico_board::kTransferRows)};
+            uint8_t* buffers[] = {storage[0].data(), storage[1].data()};
+            const size_t bytes = (plan.area.x2 - plan.area.x1 + 1) * 2;
+            assert(mosaico_board::TransferBands(plan.area,
+                scanout.data() + plan.area.y1 * stride + plan.area.x1 * 2, stride, buffers,
+                []() { return true; },
+                [&](int first, int rows, const uint8_t* band) {
+                    for (int row = 0; row < rows; ++row)
+                        assert(std::memcmp(band + row * bytes, expected.data() +
+                            (first + row) * stride + plan.area.x1 * 2, bytes) == 0);
+                    return true;
+                }, [](int, int) {}));
+        }
+    }
+}
+
+void TestCompactTransferTiming() {
+    using mosaico_board::PlanTransfer;
+    const lv_area_t top = {201, 0, 278, 39};
+    const lv_area_t bottom = {201, 420, 278, 459};
+    assert(PlanTransfer(top, 16931, 800).compact);
+    assert(PlanTransfer(bottom, 16931, 800).compact);
+    assert(PlanTransfer(bottom, 16931, 800).start_us < 1000);
+    const lv_area_t tall = {8, 0, 11, 479}, full = {0, 0, 479, 479};
+    for (auto area : {top, bottom, tall, full}) {
+        for (uint32_t invalid : {0u, 11999u, 25001u, UINT32_MAX}) {
+            const auto plan = PlanTransfer(area, invalid, 800);
+            assert(!plan.compact && plan.area.x1 == 0 && plan.area.x2 == 479);
+        }
+        assert(!PlanTransfer(area, 16931, 16931).compact);
+        assert(!PlanTransfer(area, 16931, 800, false).compact);
+    }
+    assert(!PlanTransfer(tall, 16931, 800).compact);
+    assert(!PlanTransfer(full, 16931, 800).compact);
+    unsigned compact_count = 0, fallback_count = 0;
+    for (uint32_t period : {12000u, 16667u, 16931u, 25000u}) {
+        for (uint32_t blank : {0u, 800u}) {
+            for (int y = 0; y < 480; y += 17) {
+                for (int height : {1, 20, 80, 240, 480}) {
+                    for (int width : {1, 4, 80, 300, 480}) {
+                        const lv_area_t area = {480 - width, y, 479, std::min(479, y + height - 1)};
+                        const auto plan = PlanTransfer(area, period, blank);
+                        assert(mosaico_board::ValidDisplayArea(plan.area));
+                        assert(plan.area.x1 % 4 == 0 && (plan.area.x2 + 1) % 4 == 0);
+                        assert(plan.area.y1 % 2 == 0 && (plan.area.y2 + 1) % 2 == 0);
+                        if (!plan.compact) { ++fallback_count; continue; }
+                        ++compact_count;
+                        const double active = period - blank;
+                        const double first_read = plan.area.y1 * active / 480;
+                        const double last_read = (plan.area.y2 + 1) * active / 480;
+                        const bool before = plan.start_us < first_read;
+                        const double previous_read = before ? last_read - period : last_read;
+                        const double next_read = before ? first_read : first_read + period;
+                        assert(plan.start_us > previous_read);
+                        assert(plan.start_us + plan.budget_us < next_read);
+                        // Model 2x wire time, per-band overhead and a 2 ms stall.
+                        // Every written row must belong to the same panel scan.
+                        const double row_us = (plan.area.x2 - plan.area.x1 + 1) * 16.0 *
+                            1000000 / (4.0 * mosaico_board::kPixelClockHz) * 2;
+                        for (int row = plan.area.y1; row <= plan.area.y2; ++row) {
+                            const int n = row - plan.area.y1 + 1;
+                            const double written = plan.start_us + 2000 + n * row_us +
+                                ((n + mosaico_board::kTransferRows - 1) / mosaico_board::kTransferRows) * 80;
+                            const double read = row * active / 480 + (before ? 0 : period);
+                            assert(written < read);
+                            assert(written > read - period);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert(compact_count > 1000 && fallback_count > 1000);
 }
 
 void TestWakeGestureIsolation() {
@@ -491,13 +609,13 @@ void TestExchangedFramesAndUiTransition() {
     assert(mosaico_board::ExchangeRefreshFrame(full, producer, snapshot));
     // A partial UI refresh after two game frames preserves the newest image
     // outside the patch. Screenshot conversion happens only on demand.
-    assert(mosaico_board::CopyRefreshRows(full, snapshot, producer));
+    assert(mosaico_board::CopyRefreshArea(full, snapshot, producer));
     const uint16_t overlay[] = {0x00f8, 0xe007, 0x1f00, 0xffff};
-    mosaico_board::RefreshRows dirty;
+    mosaico_board::RefreshRegion dirty;
     assert(dirty.Merge(patch, reinterpret_cast<const uint8_t*>(overlay), 4, producer));
     lv_area_t rows;
     assert(dirty.Take(&rows));
-    assert(mosaico_board::CopyRefreshRows(rows, producer, snapshot));
+    assert(mosaico_board::CopyRefreshArea(rows, producer, snapshot));
     std::vector<uint16_t> capture(count);
     mosaico_board::CaptureScanoutRgb565(snapshot, capture.data());
     assert(capture.front() == 0x5678 && capture.back() == 0x5678);
@@ -948,6 +1066,8 @@ int main() {
     TestTransferPipeline();
     TestRefreshBatch();
     TestPipelinedSnapshot();
+    TestPartialRefreshAndWidenedScanout();
+    TestCompactTransferTiming();
     TestExchangedFramesAndUiTransition();
     TestAudioWriteRecovery();
     TestWakeGestureIsolation();

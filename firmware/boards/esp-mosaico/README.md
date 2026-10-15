@@ -29,7 +29,7 @@ GPIOs are driven. No eFuse is written by this firmware.
 | V1.2 | `0x0102` | 44 / 42 | 56 / 3 | Not used |
 
 - CO5300: 480 × 480 RGB565, QSPI at 48 MHz, CS 50 and data 36 / 51 / 35 / 9.
-  Two PSRAM draw buffers use partial refresh with 4-column / 2-row-aligned areas.
+  Two 240-row PSRAM draw buffers use partial refresh with 4-column / 2-row-aligned areas.
   A dedicated flush task feeds two 16-row internal DMA buffers, never the
   PSRAM draw buffer directly. LVGL can render into its other draw buffer while
   SPI is busy; band copies overlap DMA. Completed scanout is converted to
@@ -174,20 +174,29 @@ fresh approximately 16.95 ms TE cycle for each full update normally limits
 scan-follow output to approximately 29.5 FPS. Korvo's RGB scanout/buffer-switch
 path and Pai's smaller 296 x 240 panel have different limits. Native game
 resolution remains 480 x 480; this optimization does not force lower quality.
-This display's LVGL refresh timer targets 33 ms
-(approximately 30 FPS); other boards keep their own refresh periods. Flush
+This display's LVGL refresh timer is 16 ms; actual output is bounded by rendering,
+TE and transfer completion, rather than this timer alone. Other boards keep
+their own refresh periods. Two half-height draw buffers save 460,800 bytes
+(450 KiB) of PSRAM versus the former two full-height buffers. Flush
 callbacks merge dirty rectangles into a persistent RGB565 PSRAM frame and
 return LVGL draw buffers as soon as their pixels have been copied. At the end
-of a refresh, the affected rows are copied into a separate immutable scanout
-snapshot. Full direct game frames instead exchange producer/scanout buffers,
+of a refresh, narrow dirty rectangles are copied into a separate immutable
+scanout snapshot. Wide rectangles (at least 75% of the screen width) retain
+one contiguous full-row copy to avoid per-row call overhead. Full direct game
+frames instead exchange producer/scanout buffers,
 eliminating the 460,800-byte snapshot copy. The first partial UI refresh after
 a direct frame restores the producer once before merging its dirty rectangles.
 The worker transfers that snapshot while LVGL renders the next frame.
 At most one snapshot is submitted; producers sleep until it is available again,
-bounding latency without dropping partial updates. The affected vertical
-span as complete 480-pixel rows, preserving pixels outside the dirty rectangles.
-This removes rendering gaps between panel writes and gives a consistent row
-write speed. One CASET/RASET window covers the refresh: RAMWR starts the first
+bounding latency without dropping partial updates. Small windows can transfer
+only their aligned columns if a measured TE interval admits the entire update
+between scans. The worker prefers a window before the first row is scanned;
+otherwise it waits until the last row was scanned. Wire-time, per-band overhead
+and scheduling margins are budgeted, and a delayed worker rechecks admission.
+Tall/wide updates, unknown TE timing and missing pulses retain full-row
+scan-follow transfers. A compact transfer that misses its deadline disables
+compact mode until reboot; dirty snapshot copying still works. No extra frame
+cache or pending-frame queue is allocated. One CASET/RASET window covers the refresh: RAMWR starts the first
 band and RAMWRC continues subsequent bands, avoiding window commands per band.
 The persistent frame reuses the direct-presentation buffer; the snapshot adds
 460,800 bytes in PSRAM at initialization. Removing the separate screenshot
@@ -224,20 +233,24 @@ the rebuilt board firmware before retrying `tools/dev.sh device`.
 
 TE is connected to GPIO43. CO5300 mode 0 drives TE high during vertical blanking.
 Both edges are observed to measure the blanking duration; refresh waits for a
-fresh falling edge, then for the panel to scan the first affected row. At 48 MHz,
-writing complete rows is slower than the approximately 60 Hz panel scan. The
+fresh falling edge. Full-row transfers then wait for the panel to scan the first
+affected row. At 48 MHz, writing complete rows is slower than the approximately 60 Hz panel scan. The
 writer follows the current scan and must finish before the following scan
 reaches those rows. Starting this slow writer at TE rising can instead put new
 pixels at the top and old pixels at the bottom, producing a stable tear line.
 Missing pulses use a bounded timeout and reduced retry rate.
 
 Health logs include `te_blank_us`, `tx_us`, `tx_max_us`, and `scan_overruns`.
-A separate `frame_stats` line includes `target_fps=30`, `pipeline=async`,
+A separate `frame_stats` line includes `ui_period_ms=16`, `pipeline=async`,
 `render_us`, `render_max_us`, `present_wait_us`, `te_wait_us` and `time_valid`,
 so profiling fields fit PXADB's 320-byte log payload. Rendering duration excludes time
 waiting for the previous snapshot; transfer duration excludes TE waiting.
 `surface_stats` separates direct raster/acquire, compose and snapshot-copy
 time, and counts PPA/CPU direct frames and accelerated background fills.
+`ui_transfer` adds `compact_total`, `compact_enabled` and `draw_rows`.
+The compact counter is cumulative since boot (32-bit wrap); `fps` counts panel
+completions within the log interval. See the [UI optimization report](docs/ui-performance-optimization.zh-CN.md)
+for the baseline, reproducible tests, transfer-volume comparison and device limits.
 GameRender presentation telemetry is recorded at actual transfer completion,
 with the raster-ready timestamp carried through the flush queue.
 Overruns indicate that a completed
