@@ -17,6 +17,8 @@
 
 #include "sdkconfig.h"
 
+#include "pxadb_jpeg_encode.h"
+
 #if CONFIG_PXADB_ENABLED && (CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32S31)
 
 #if CONFIG_PXADB_TRANSPORT_UART
@@ -31,7 +33,6 @@
 #include <esp_app_desc.h>
 #include <esp_attr.h>
 #include <esp_heap_caps.h>
-#include <esp_jpeg_enc.h>
 #include <esp_log.h>
 #include <esp_littlefs.h>
 #include <esp_mac.h>
@@ -97,7 +98,7 @@ constexpr size_t kFsDataChunkSize = 192;
 // the point where a host scheduling hiccup can drop a frame.
 constexpr size_t kFsReadWindowChunks = 32;
 // Filled by SendFsRead; the PXADB task serializes commands, so one buffer is
-// enough and it stays out of the 20 KiB task stack.
+// enough and it stays out of the control task's internal stack.
 // Task-only staging data; transport drivers retain their internal ISR buffers.
 EXT_RAM_BSS_ATTR uint8_t s_fs_read_buffer[kFsDataChunkSize * kFsReadWindowChunks] = {};
 // Host-to-device uploads are request/response paced, so a larger FSDATA chunk
@@ -109,7 +110,7 @@ constexpr size_t kPxaPackageListCapacity = 64;
 #endif
 // Package and file operations access LittleFS. ESP-IDF disables cache during
 // Flash operations, so this task's stack must remain in internal SRAM.
-constexpr uint32_t kTaskStackSize = 20 * 1024;
+constexpr uint32_t kTaskStackSize = CONFIG_PXADB_TASK_STACK_SIZE;
 constexpr uint32_t kAutostartTaskStackSize = 3 * 1024;
 constexpr uint32_t kSessionIdleTimeoutMs = 30000;
 constexpr TickType_t kIoTimeout = pdMS_TO_TICKS(1000);
@@ -1118,7 +1119,13 @@ void DisableLogCapture() {
 int PxaLogVprintf(const char* format, va_list arguments) {
     LogScratch* scratch = AcquireLogScratch();
     if (scratch == nullptr) {
-        if (s_log_subscribed.load()) s_dropped_logs.fetch_add(1);
+        if (s_log_subscribed.load()) {
+            // Never fall back to raw UART while framed log capture is active:
+            // another task may be writing a screenshot/package DATA frame.
+            // Count the bounded log loss instead of corrupting that transfer.
+            s_dropped_logs.fetch_add(1);
+            return 0;
+        }
         if (s_previous_vprintf != nullptr) {
             va_list forwarded;
             va_copy(forwarded, arguments);
@@ -1608,66 +1615,28 @@ bool Sha256Bytes(const uint8_t* bytes, size_t length, char output[65]) {
     uint8_t digest[32] = {};
     size_t digest_length = 0;
     if (bytes == nullptr || output == nullptr) return false;
-    if (psa_hash_compute(PSA_ALG_SHA_256, bytes, length, digest,
-                         sizeof(digest), &digest_length) != PSA_SUCCESS)
+    // PSA copies input into private memory unless exclusive buffers are
+    // enabled. A one-shot capture hash therefore reserved an entire JPEG (or
+    // RGB565 frame) in internal SRAM. Bound each copy without weakening the
+    // digest or changing mbedTLS allocation policy for other services.
+    psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
+    bool success = psa_hash_setup(&operation, PSA_ALG_SHA_256) == PSA_SUCCESS;
+    for (size_t offset = 0; success && offset < length;) {
+        const size_t count = std::min(size_t{1024}, length - offset);
+        success = psa_hash_update(&operation, bytes + offset, count) == PSA_SUCCESS;
+        offset += count;
+    }
+    if (success)
+        success = psa_hash_finish(&operation, digest, sizeof(digest),
+                                  &digest_length) == PSA_SUCCESS;
+    if (!success) {
+        psa_hash_abort(&operation);
         return false;
+    }
     if (digest_length != sizeof(digest)) return false;
     for (size_t index = 0; index < sizeof(digest); ++index) {
         snprintf(output + index * 2, 65 - index * 2, "%02x", digest[index]);
     }
-    return true;
-}
-
-/* JPEG capture encodes the captured logical RGB565 frame. The board adapter
- * already snapshots the final presented frame under its own rotation lock and
- * converts it to logical orientation, so the encoder never touches the live
- * scanout buffer and a mid-encode display update cannot tear the image.
- *
- * The encoder is opened and closed per capture so it stays non-resident: an
- * idle device keeps none of its ~10 KiB DRAM state or the output buffer.
- * task_enable=false also means no encoder task exists at any point. */
-constexpr uint8_t kJpegQuality = 70;
-
-bool EncodeJpegFrame(const uint16_t* pixels, const TestControlCaptureInfo& info,
-                     uint8_t** output, size_t* output_size) {
-    if (pixels == nullptr || output == nullptr || output_size == nullptr ||
-        info.stride_bytes != info.width * sizeof(uint16_t))
-        return false;
-    jpeg_enc_config_t config = DEFAULT_JPEG_ENC_CONFIG();
-    config.width = static_cast<int>(info.width);
-    config.height = static_cast<int>(info.height);
-    config.src_type = JPEG_PIXEL_FORMAT_RGB565_LE;
-    config.subsampling = JPEG_SUBSAMPLE_420;
-    config.quality = kJpegQuality;
-    config.rotate = JPEG_ROTATE_0D;
-    config.task_enable = false;
-    jpeg_enc_handle_t handle = nullptr;
-    if (jpeg_enc_open(&config, &handle) != JPEG_ERR_OK || handle == nullptr)
-        return false;
-    /* Worst-case JPEG output can exceed the raw frame; two raw frames of
-     * PSRAM cover that bound without a copy strategy on the common path. */
-    const size_t capacity =
-        static_cast<size_t>(info.width) * info.height * sizeof(uint16_t) * 2;
-    auto* encoded = static_cast<uint8_t*>(
-        heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (encoded == nullptr) {
-        jpeg_enc_close(handle);
-        return false;
-    }
-    int encoded_size = 0;
-    const int input_size =
-        static_cast<int>(info.width * info.height * sizeof(uint16_t));
-    const jpeg_error_t result =
-        jpeg_enc_process(handle, reinterpret_cast<const uint8_t*>(pixels),
-                         input_size, encoded, static_cast<int>(capacity),
-                         &encoded_size);
-    jpeg_enc_close(handle);
-    if (result != JPEG_ERR_OK || encoded_size <= 0) {
-        heap_caps_free(encoded);
-        return false;
-    }
-    *output = encoded;
-    *output_size = static_cast<size_t>(encoded_size);
     return true;
 }
 
@@ -1719,6 +1688,29 @@ bool SendCaptureFrames(unsigned long sequence, const uint8_t* bytes,
     return SendFrame(sequence, "OK", "");
 }
 
+void SendJpegSelfTest(unsigned long sequence) {
+    uint8_t* encoded = nullptr;
+    size_t size = 0;
+    JpegEncodeStats stats;
+    if (!MakeJpegSelfTest(&encoded, &size, &stats)) {
+        SendFrame(sequence, "ERR", "jpeg_selftest_encode_failed");
+        return;
+    }
+    char details[96];
+    snprintf(details, sizeof(details), "attempts=%u;capacity=%u;bytes=%u",
+             static_cast<unsigned>(stats.attempts), static_cast<unsigned>(stats.capacity),
+             static_cast<unsigned>(size));
+    SendFrame(sequence, "JPEGTEST", details);
+    TestControlCaptureInfo info;
+    info.width = info.height = 256;
+    info.stride_bytes = 512;
+    info.completed_timestamp_us = static_cast<uint64_t>(esp_timer_get_time());
+    info.source = "codec-self-test";
+    if (!SendCaptureFrames(sequence, encoded, size, "jpeg", info, 0))
+        ESP_LOGE(kTag, "PXADB JPEG self-test transmit failed");
+    heap_caps_free(encoded);
+}
+
 void SendScreenshot(unsigned long sequence, bool after_present, bool jpeg) {
     const uint64_t requested_us = static_cast<uint64_t>(esp_timer_get_time());
     if (s_last_capture_us != 0 &&
@@ -1758,7 +1750,7 @@ void SendScreenshot(unsigned long sequence, bool after_present, bool jpeg) {
         uint8_t* encoded = nullptr;
         size_t encoded_size = 0;
         const bool encoded_ok =
-            EncodeJpegFrame(pixels, info, &encoded, &encoded_size);
+            EncodeCaptureJpeg(pixels, info, &encoded, &encoded_size);
         heap_caps_free(pixels);
         if (!encoded_ok) {
             SendFrame(sequence, "ERR", "screenshot_encode_failed");
@@ -2063,6 +2055,10 @@ void HandleCommand(char* line) {
                  static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     } else if (strcmp(command, "INPUT") == 0) {
         HandleInput(sequence, arguments, argument_count);
+#if CONFIG_PXADB_TEST_CONTROL
+    } else if (strcmp(command, "JPEGTEST") == 0 && argument_count == 0) {
+        SendJpegSelfTest(sequence);
+#endif
     } else if (strcmp(command, "SCREENSHOT") == 0) {
         bool jpeg = false;
         bool after_present = false;

@@ -18,10 +18,21 @@ set(PXADB_PRIV_REQUIRES
     mbedtls
     pxa)
 
+set(PXADB_SRCS "src_pxa_service.cc" "pxadb_jpeg_encode.cc")
+if(CONFIG_PXADB_JPEG_PSRAM_WORKSPACE)
+    list(APPEND PXADB_SRCS "pxadb_jpeg_memory.cc")
+endif()
+
 idf_component_register(
-    SRCS "src_pxa_service.cc"
+    SRCS ${PXADB_SRCS}
     INCLUDE_DIRS "include"
     PRIV_REQUIRES ${PXADB_PRIV_REQUIRES})
+
+if(CONFIG_PXADB_JPEG_PSRAM_WORKSPACE)
+    target_link_libraries(${COMPONENT_LIB} INTERFACE
+        "-Wl,--wrap=jpeg_calloc_inner"
+        "-Wl,--wrap=jpeg_calloc_align_inner")
+endif()
 
 # Product main components resolve their board after dependencies have been
 # registered. Read the final build property at generation time.

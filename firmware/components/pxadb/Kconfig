@@ -63,6 +63,17 @@ menu "PXADB development service"
             Start PXADB from a bounded background retry task after platform
             initialization. Keep this disabled in production firmware.
 
+    config PXADB_TASK_STACK_SIZE
+        int "PXADB control task stack size (bytes)"
+        range 16384 32768
+        default 20480
+        depends on PXADB_ENABLED
+        help
+            Internal-memory stack for package verification, filesystem access
+            and screenshot encoding. Boards may tune this after measuring
+            high-water marks with deployment and capture workloads. The
+            stack stays internal because filesystem operations write flash.
+
     config PXADB_TEST_CONTROL
         bool "Enable input injection and display capture"
         depends on PXADB_ENABLED
@@ -82,5 +93,18 @@ menu "PXADB development service"
             screenshot_rate_limited. Device-encoded JPEG captures are much
             cheaper than RGB565 bursts, so a lower value gives a smoother
             preview when the host asks for JPEG frames.
+
+    config PXADB_JPEG_PSRAM_WORKSPACE
+        bool "Prefer PSRAM for large screenshot encoder workspaces"
+        depends on PXADB_TEST_CONTROL && SPIRAM
+        default n
+        help
+            Prefer PSRAM for encoder allocations of at least 4096 bytes on
+            the screenshot thread, with the vendor allocator as fallback.
+            Other threads, including UI image decoding, retain defaults.
+            No cache or helper task remains after capture. This isolates
+            two private esp_new_jpeg 1.0.2 allocation symbols; upgrades
+            require capture and memory regressions. Output capacity remains
+            conservative because undersized outputs can corrupt the heap.
 
 endmenu
