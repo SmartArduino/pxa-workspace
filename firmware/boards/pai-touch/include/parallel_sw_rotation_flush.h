@@ -115,8 +115,6 @@ public:
             &context->worker_done_storage);
         context->rotation_lock = xSemaphoreCreateMutexStatic(
             &context->rotation_lock_storage);
-        context->transfer_done = xSemaphoreCreateBinaryStatic(
-            &context->transfer_done_storage);
         context->free_queue = xQueueCreateStatic(
             kOutputBufferCount, sizeof(uint8_t), context->free_queue_storage,
             &context->free_queue_struct);
@@ -124,7 +122,6 @@ public:
             kReadyQueueLength, sizeof(uint8_t), context->ready_queue_storage,
             &context->ready_queue_struct);
         if (context->worker_done == nullptr || context->rotation_lock == nullptr ||
-            context->transfer_done == nullptr ||
             context->free_queue == nullptr || context->ready_queue == nullptr) {
             ESP_LOGE(kTag, "Unable to create rotation synchronization objects");
             Cleanup(context);
@@ -161,9 +158,9 @@ public:
         }
 #endif
 
-        const esp_lcd_panel_io_callbacks_t callbacks = {
-            .on_color_trans_done = ColorTransferDoneCallback,
-        };
+        // This presenter owns flush completion. Disable any earlier LVGL
+        // callback; the SPI driver's drain below owns DMA buffer lifetime.
+        const esp_lcd_panel_io_callbacks_t callbacks = {};
         const esp_err_t callback_result =
             esp_lcd_panel_io_register_event_callbacks(panel_io, &callbacks,
                                                        context);
@@ -262,12 +259,11 @@ public:
             }
 #endif
         }
-        xSemaphoreGive(context->rotation_lock);
-
         if (copied) {
             LogDiagnostics(context,
                            static_cast<uint32_t>(esp_timer_get_time()));
         }
+        xSemaphoreGive(context->rotation_lock);
 
         if (copied && release != nullptr) {
             release(release_context, buffer_index);
@@ -426,9 +422,8 @@ private:
     static constexpr uint32_t kWorkerStackSize = 2048;
     static constexpr uint32_t kSubmitStackSize = 3072;
     static constexpr uint32_t kPresenterStackSize = 5120;
-    static constexpr uint32_t kReportIntervalUs = 2 * 1000 * 1000;
+    static constexpr uint32_t kReportIntervalUs = 1000 * 1000;
     static constexpr TickType_t kWorkerDoneTimeout = pdMS_TO_TICKS(500);
-    static constexpr TickType_t kTransferDoneTimeout = pdMS_TO_TICKS(50);
     static constexpr TickType_t kTransferErrorDrainDelay = pdMS_TO_TICKS(20);
     static constexpr TickType_t kPxaDirectTransitionTimeout = pdMS_TO_TICKS(150);
     static constexpr int32_t kTileSize = 16;
@@ -453,8 +448,6 @@ private:
         StaticSemaphore_t worker_done_storage = {};
         SemaphoreHandle_t rotation_lock = nullptr;
         StaticSemaphore_t rotation_lock_storage = {};
-        SemaphoreHandle_t transfer_done = nullptr;
-        StaticSemaphore_t transfer_done_storage = {};
         QueueHandle_t free_queue = nullptr;
         StaticQueue_t free_queue_struct = {};
         alignas(4) uint8_t free_queue_storage[
@@ -524,13 +517,13 @@ private:
         uint32_t dropped_queued_frames = 0;
         uint32_t dropped_no_buffer_frames = 0;
 
-#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
         std::atomic<uint32_t> submitted_frames{0};
         std::atomic<uint32_t> completed_frames{0};
-        std::atomic<uint32_t> submit_errors{0};
-        std::atomic<uint32_t> transfer_timeouts{0};
         std::atomic<uint32_t> send_total_us{0};
+#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
         std::atomic<uint32_t> send_max_us{0};
+        std::atomic<uint32_t> submit_errors{0};
+        std::atomic<uint32_t> transfer_errors{0};
 #endif
     };
 
@@ -712,9 +705,6 @@ private:
         }
         if (context->free_queue != nullptr) {
             vQueueDelete(context->free_queue);
-        }
-        if (context->transfer_done != nullptr) {
-            vSemaphoreDelete(context->transfer_done);
         }
         if (context->worker_done != nullptr) {
             vSemaphoreDelete(context->worker_done);
@@ -1143,13 +1133,26 @@ private:
     }
 #endif
 
-    static bool IRAM_ATTR ColorTransferDoneCallback(
-        esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*,
-        void* user_context) {
-        auto* context = static_cast<Context*>(user_context);
-        BaseType_t task_woken = pdFALSE;
-        xSemaphoreGiveFromISR(context->transfer_done, &task_woken);
-        return task_woken == pdTRUE;
+    static void DrainColorTransfers(Context* context) {
+        // tx_param(-1, nullptr, 0) issues no LCD command. The ESP-IDF SPI
+        // implementation recycles every queued transaction before returning.
+        // A timed-out semaphore is not proof that DMA released the frame.
+        // In particular, never recycle output pixels during flash/cache stalls.
+        bool reported = false;
+        for (;;) {
+            const esp_err_t result = esp_lcd_panel_io_tx_param(
+                context->panel_io, -1, nullptr, 0);
+            if (result == ESP_OK) return;
+            if (!reported) {
+#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
+                context->transfer_errors.fetch_add(1, std::memory_order_relaxed);
+#endif
+                ESP_LOGE(kTag, "LCD transfer drain failed; retaining DMA frame: %s",
+                         esp_err_to_name(result));
+                reported = true;
+            }
+            vTaskDelay(kTransferErrorDrainDelay);
+        }
     }
 
     static void SubmitTask(void* arg) {
@@ -1158,131 +1161,118 @@ private:
         while (true) {
             xQueueReceive(context->ready_queue, &buffer_index, portMAX_DELAY);
 
-            xSemaphoreTake(context->transfer_done, 0);
-#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
             const uint32_t send_started_us =
                 static_cast<uint32_t>(esp_timer_get_time());
             context->submitted_frames.fetch_add(1, std::memory_order_relaxed);
-#endif
             const esp_err_t result = esp_lcd_panel_draw_bitmap(
                 context->panel, 0, 0, context->native_width,
                 context->native_height, context->outputs[buffer_index]);
 
+            // Even a failed draw may have queued earlier chunks. Drain both
+            // success and error paths before returning this buffer to free_queue.
+            DrainColorTransfers(context);
             if (result == ESP_OK) {
-                if (xSemaphoreTake(context->transfer_done,
-                                   kTransferDoneTimeout) == pdTRUE) {
-                    const uint64_t completed_us =
-                        static_cast<uint64_t>(esp_timer_get_time());
-                    context->last_completed_frame_id.store(
-                        context->output_frame_id[buffer_index],
-                        std::memory_order_relaxed);
-                    context->last_completed_timestamp_us.store(
-                        completed_us, std::memory_order_relaxed);
-                    context->last_completed_source.store(
-                        context->output_source[buffer_index],
-                        std::memory_order_relaxed);
-                    context->last_completed_output.store(
-                        static_cast<int8_t>(buffer_index),
-                        std::memory_order_release);
-                    context->completed_sequence.fetch_add(
-                        1, std::memory_order_release);
+                const uint64_t completed_us =
+                    static_cast<uint64_t>(esp_timer_get_time());
+                context->last_completed_frame_id.store(
+                    context->output_frame_id[buffer_index],
+                    std::memory_order_relaxed);
+                context->last_completed_timestamp_us.store(
+                    completed_us, std::memory_order_relaxed);
+                context->last_completed_source.store(
+                    context->output_source[buffer_index],
+                    std::memory_order_relaxed);
+                context->last_completed_output.store(
+                    static_cast<int8_t>(buffer_index),
+                    std::memory_order_release);
+                context->completed_sequence.fetch_add(
+                    1, std::memory_order_release);
 #if CONFIG_PXA_ENABLED
-                    pxa_esp_surface_note_display_frame_presented(completed_us);
-                    if (context->output_source[buffer_index] ==
-                            kFrameSourceSurface ||
-                        context->output_source[buffer_index] ==
-                            kFrameSourceComposed) {
-                        context->pxa_visible_frames.fetch_add(
-                            1, std::memory_order_relaxed);
-                        if (context->pxa_visible_last_us != 0 &&
-                            completed_us > context->pxa_visible_last_us) {
-                            const uint64_t interval =
-                                completed_us - context->pxa_visible_last_us;
-                            const uint32_t interval_us =
-                                interval > UINT32_MAX
-                                    ? UINT32_MAX
-                                    : static_cast<uint32_t>(interval);
-                            uint32_t maximum =
-                                context->pxa_visible_interval_max_us.load(
+                pxa_esp_surface_note_display_frame_presented(completed_us);
+                if (context->output_source[buffer_index] ==
+                        kFrameSourceSurface ||
+                    context->output_source[buffer_index] ==
+                        kFrameSourceComposed) {
+                    context->pxa_visible_frames.fetch_add(
+                        1, std::memory_order_relaxed);
+                    if (context->pxa_visible_last_us != 0 &&
+                        completed_us > context->pxa_visible_last_us) {
+                        const uint64_t interval =
+                            completed_us - context->pxa_visible_last_us;
+                        const uint32_t interval_us =
+                            interval > UINT32_MAX
+                                ? UINT32_MAX
+                                : static_cast<uint32_t>(interval);
+                        uint32_t maximum =
+                            context->pxa_visible_interval_max_us.load(
+                                std::memory_order_relaxed);
+                        while (interval_us > maximum &&
+                               !context->pxa_visible_interval_max_us
+                                    .compare_exchange_weak(
+                                        maximum, interval_us,
+                                        std::memory_order_relaxed)) {
+                        }
+                    }
+                    context->pxa_visible_last_us = completed_us;
+                    if (context->pxa_visible_window_started_us == 0) {
+                        context->pxa_visible_window_started_us =
+                            completed_us;
+                        context->pxa_visible_window_frames = 0;
+                    } else {
+                        ++context->pxa_visible_window_frames;
+                        const uint64_t window_us =
+                            completed_us -
+                            context->pxa_visible_window_started_us;
+                        if (window_us >= UINT64_C(1000000)) {
+                            const uint32_t fps_x10 =
+                                static_cast<uint32_t>(
+                                    context->pxa_visible_window_frames *
+                                    UINT64_C(10000000) / window_us);
+                            uint32_t minimum =
+                                context->pxa_visible_min_1s_fps_x10.load(
                                     std::memory_order_relaxed);
-                            while (interval_us > maximum &&
-                                   !context->pxa_visible_interval_max_us
+                            while (fps_x10 < minimum &&
+                                   !context
+                                        ->pxa_visible_min_1s_fps_x10
                                         .compare_exchange_weak(
-                                            maximum, interval_us,
+                                            minimum, fps_x10,
                                             std::memory_order_relaxed)) {
                             }
-                        }
-                        context->pxa_visible_last_us = completed_us;
-                        if (context->pxa_visible_window_started_us == 0) {
                             context->pxa_visible_window_started_us =
                                 completed_us;
                             context->pxa_visible_window_frames = 0;
-                        } else {
-                            ++context->pxa_visible_window_frames;
-                            const uint64_t window_us =
-                                completed_us -
-                                context->pxa_visible_window_started_us;
-                            if (window_us >= UINT64_C(1000000)) {
-                                const uint32_t fps_x10 =
-                                    static_cast<uint32_t>(
-                                        context->pxa_visible_window_frames *
-                                        UINT64_C(10000000) / window_us);
-                                uint32_t minimum =
-                                    context->pxa_visible_min_1s_fps_x10.load(
-                                        std::memory_order_relaxed);
-                                while (fps_x10 < minimum &&
-                                       !context
-                                            ->pxa_visible_min_1s_fps_x10
-                                            .compare_exchange_weak(
-                                                minimum, fps_x10,
-                                                std::memory_order_relaxed)) {
-                                }
-                                context->pxa_visible_window_started_us =
-                                    completed_us;
-                                context->pxa_visible_window_frames = 0;
-                            }
                         }
                     }
-                    if(context->output_has_raster_time[buffer_index]) {
-                        const auto elapsed_ms=static_cast<uint16_t>(
-                            completed_us/1000-context->output_raster_ready_ms[buffer_index]);
-                        pxa_esp_surface_note_raster_frame_presented(
-                            context->output_frame_id[buffer_index],
-                            context->output_input_timestamp_us[buffer_index],
-                            completed_us,static_cast<uint32_t>(elapsed_ms)*1000);
-                    } else {
-                        pxa_esp_surface_note_frame_presented(
-                            context->output_input_timestamp_us[buffer_index],
-                            completed_us);
-                    }
-                    pxa_esp_surface_note_game_frame_presented(
-                        context->output_frame_id[buffer_index], completed_us);
-#endif
-                    context->output_input_timestamp_us[buffer_index] = 0;
-#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
-                    context->completed_frames.fetch_add(
-                        1, std::memory_order_relaxed);
-#endif
-                } else {
-#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
-                    context->transfer_timeouts.fetch_add(
-                        1, std::memory_order_relaxed);
-#endif
-                    ESP_LOGE(kTag, "Timed out waiting for LCD transfer completion");
                 }
+                if(context->output_has_raster_time[buffer_index]) {
+                    const auto elapsed_ms=static_cast<uint16_t>(
+                        completed_us/1000-context->output_raster_ready_ms[buffer_index]);
+                    pxa_esp_surface_note_raster_frame_presented(
+                        context->output_frame_id[buffer_index],
+                        context->output_input_timestamp_us[buffer_index],
+                        completed_us,static_cast<uint32_t>(elapsed_ms)*1000);
+                } else {
+                    pxa_esp_surface_note_frame_presented(
+                        context->output_input_timestamp_us[buffer_index],
+                        completed_us);
+                }
+                pxa_esp_surface_note_game_frame_presented(
+                    context->output_frame_id[buffer_index], completed_us);
+#endif
+                context->output_input_timestamp_us[buffer_index] = 0;
+                context->completed_frames.fetch_add(
+                    1, std::memory_order_relaxed);
             } else {
 #if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
                 context->submit_errors.fetch_add(1, std::memory_order_relaxed);
 #endif
                 ESP_LOGE(kTag, "Panel submit failed: %s", esp_err_to_name(result));
-                // A failed large transfer may still have earlier chunks in flight.
-                vTaskDelay(kTransferErrorDrainDelay);
             }
 
-#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
             const uint32_t send_us =
                 static_cast<uint32_t>(esp_timer_get_time()) - send_started_us;
             context->send_total_us.fetch_add(send_us, std::memory_order_relaxed);
+#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
             UpdateAtomicMax(context->send_max_us, send_us);
 #endif
             xQueueSend(context->free_queue, &buffer_index, portMAX_DELAY);
@@ -1337,32 +1327,38 @@ private:
         const uint32_t overlay_fps_x10 = elapsed_us == 0 ? 0 :
             static_cast<uint32_t>(completed * UINT64_C(10000000) /
                                   elapsed_us);
-        const uint32_t overlay_rotate_us = context->frame_count == 0 ? 0 :
-            context->rotate_total_us / context->frame_count;
+        uint64_t rotate_total_us = context->rotate_total_us;
+        uint32_t rotated_frames = context->frame_count;
+#if CONFIG_PXA_ENABLED
+        rotate_total_us += context->pxa_direct_rotate_total_us;
+        rotated_frames += context->pxa_direct_frame_count;
+#endif
+        const uint32_t overlay_rotate_us = rotated_frames == 0 ? 0 :
+            static_cast<uint32_t>(rotate_total_us / rotated_frames);
         context->performance_fps_x10.store(overlay_fps_x10,
                                            std::memory_order_relaxed);
         context->performance_rotate_us.store(overlay_rotate_us,
                                               std::memory_order_relaxed);
 
-#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
-        const uint32_t fps_x10 = elapsed_us == 0 ? 0 : static_cast<uint32_t>(
-            context->frame_count * 10ULL * 1000ULL * 1000ULL / elapsed_us);
-        const uint32_t average_rotate_us = context->frame_count == 0 ? 0 :
-            context->rotate_total_us / context->frame_count;
         const uint32_t submitted = context->submitted_frames.exchange(
             0, std::memory_order_relaxed);
-        const uint32_t submit_errors = context->submit_errors.exchange(
-            0, std::memory_order_relaxed);
-        const uint32_t transfer_timeouts = context->transfer_timeouts.exchange(
-            0, std::memory_order_relaxed);
         const uint32_t send_total_us = context->send_total_us.exchange(
-            0, std::memory_order_relaxed);
-        const uint32_t send_max_us = context->send_max_us.exchange(
             0, std::memory_order_relaxed);
         const uint32_t average_send_us = submitted == 0 ? 0 :
             send_total_us / submitted;
         context->performance_send_us.store(average_send_us,
                                            std::memory_order_relaxed);
+#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
+        const uint32_t send_max_us = context->send_max_us.exchange(
+            0, std::memory_order_relaxed);
+        const uint32_t fps_x10 = elapsed_us == 0 ? 0 : static_cast<uint32_t>(
+            context->frame_count * 10ULL * 1000ULL * 1000ULL / elapsed_us);
+        const uint32_t average_rotate_us = context->frame_count == 0 ? 0 :
+            context->rotate_total_us / context->frame_count;
+        const uint32_t submit_errors = context->submit_errors.exchange(
+            0, std::memory_order_relaxed);
+        const uint32_t transfer_errors = context->transfer_errors.exchange(
+            0, std::memory_order_relaxed);
         const UBaseType_t free_buffers =
             uxQueueMessagesWaiting(context->free_queue);
         const UBaseType_t ready_buffers =
@@ -1434,10 +1430,10 @@ private:
         ESP_LOGI(kTag,
                  "Pipelined submit: submitted=%" PRIu32 " completed=%" PRIu32
                  " send_us avg/max=%" PRIu32 "/%" PRIu32
-                 " submit_err=%" PRIu32 " timeout=%" PRIu32
+                 " submit_err=%" PRIu32 " drain_error=%" PRIu32
                  " buffers_free/ready=%u/%u stack_words worker/submit=%u/%u",
                  submitted, completed, average_send_us, send_max_us,
-                 submit_errors, transfer_timeouts,
+                 submit_errors, transfer_errors,
                  static_cast<unsigned>(free_buffers),
                  static_cast<unsigned>(ready_buffers),
                  static_cast<unsigned>(worker_stack_words),
@@ -1556,10 +1552,8 @@ private:
         context->has_surface_frame =
             pxa_esp_surface_acquire_latest(&context->surface_frame);
 #endif
-#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
         const uint32_t rotation_started_us =
             static_cast<uint32_t>(esp_timer_get_time());
-#endif
         uint32_t main_us = 0;
         uint32_t worker_us = 0;
         if (context->uses_worker) {
@@ -1631,11 +1625,9 @@ private:
         }
 
         ++context->frame_count;
-#if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
         const uint32_t rotate_us =
             static_cast<uint32_t>(esp_timer_get_time()) - rotation_started_us;
         context->rotate_total_us += rotate_us;
-#endif
         context->main_total_us += main_us;
         context->worker_total_us += worker_us;
 #if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG

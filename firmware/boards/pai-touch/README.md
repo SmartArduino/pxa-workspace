@@ -34,6 +34,15 @@ Behaviour measured on the device, which the link is built around:
 The two CST826 contacts are exposed as independent LVGL pointer devices, so PXA
 apps receive stable `pointer_id` values for simultaneous touches.
 
+The top performance HUD updates about once a second. `FPS` counts completed LCD
+transfers; `R` is the average rotation/conversion/composition time across ordinary
+UI and direct game frames, and `M` is the average panel submission/completion time.
+Both durations are truncated to whole milliseconds. `M` includes waiting for the
+panel transfer, but excludes earlier queueing; neither value includes Guest update
+or Host rasterization. Pipeline stages overlap, so `R + M` is not a frame budget.
+FPS and HUD timing also work when compile-time performance logging is disabled.
+Without new frames the last on-screen sample remains visible.
+
 The launcher picks its target page on release and settles in 160 ms, without
 an inertial coast followed by another snap. Short fast flicks also turn pages.
 Icons and captions are vertically centered as one block. Delete buttons use a
