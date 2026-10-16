@@ -60,6 +60,11 @@ run_logged plane-package env PXA_APP_SOURCE_ROOT="$app_root" \
 run_logged pixel-package env PXA_APP_SOURCE_ROOT="$app_root" \
     PXA_PACKAGE_OUTPUT_ROOT="$test_root/packages" \
     bash "$pxa_root/tools/package/package_app.sh" pixel-dungeon simulator "$test_root/packages/pxa-pixel-dungeon"
+# Store requires the system TextInput capability. The standalone product
+# runner advertises it when a provider is configured, including native fallback.
+run_logged ime-package env PXA_APP_SOURCE_ROOT="$app_root" \
+    PXA_PACKAGE_OUTPUT_ROOT="$test_root/packages" \
+    bash "$pxa_root/tools/package/package_app.sh" pinyin-ime simulator "$test_root/packages/pxa-pinyin-ime"
 run_logged simulator-configure bash "$project_root/tools/simulator.sh" product configure --profile "$profile"
 run_logged simulator-build cmake --build "$project_root/build/simulator/$profile" \
     --target pxsys_resource_app_test pxsys_resource_budget_test pxsys_audio_test pxsys_audio_app_test pxsys_ui_images_test pxsys_store_images_test -j "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
@@ -99,12 +104,12 @@ run_logged plane-exit env PXA_ASSET_READ_DELAY_US=20000 "$image_runner" \
 store_runner="$project_root/build/simulator/$profile/pxsys_store_images_test"
 store_package="$test_root/packages/pxa-store"
 mkdir -p "$test_root/store-ready" "$test_root/store-background" "$test_root/store-exit" "$test_root/store-low"
-run_logged store-ready "$store_runner" "$store_package" "$key" "$test_root/store-ready" ready
-run_logged store-background env PXA_ASSET_READ_DELAY_US=100000 "$store_runner" \
+run_logged store-ready env PXA_IME_PACKAGE="$test_root/packages/pxa-pinyin-ime" "$store_runner" "$store_package" "$key" "$test_root/store-ready" ready
+run_logged store-background env PXA_IME_PACKAGE="$test_root/packages/pxa-pinyin-ime" PXA_ASSET_READ_DELAY_US=100000 "$store_runner" \
     "$store_package" "$key" "$test_root/store-background" background-loading
-run_logged store-exit env PXA_ASSET_READ_DELAY_US=100000 "$store_runner" \
+run_logged store-exit env PXA_IME_PACKAGE="$test_root/packages/pxa-pinyin-ime" PXA_ASSET_READ_DELAY_US=100000 "$store_runner" \
     "$store_package" "$key" "$test_root/store-exit" exit-loading
-run_logged store-low env PXA_ASSET_EXTERNAL_BYTES=4096 "$store_runner" \
+run_logged store-low env PXA_IME_PACKAGE="$test_root/packages/pxa-pinyin-ime" PXA_ASSET_EXTERNAL_BYTES=4096 "$store_runner" \
     "$store_package" "$key" "$test_root/store-low" low-budget
 run_logged pixel-audio-app "$project_root/build/simulator/$profile/pxsys_audio_app_test" \
     "$test_root/packages/pxa-pixel-dungeon" "$key"
