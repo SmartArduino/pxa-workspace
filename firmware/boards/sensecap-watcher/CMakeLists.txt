@@ -50,6 +50,10 @@ target_link_libraries(${_watcher_codec_lib} PRIVATE
 # The codec's SPI source tests version macros without including their header;
 # newer IDF driver headers no longer provide that accidental transitive include.
 target_compile_options(${_watcher_codec_lib} PRIVATE -include esp_idf_version.h)
+# led_strip 2.5 also relies on heap declarations formerly included by SPI.
+idf_component_get_property(_watcher_led_lib espressif__led_strip COMPONENT_LIB)
+target_link_libraries(${_watcher_led_lib} PRIVATE idf::heap)
+target_compile_options(${_watcher_led_lib} PRIVATE -include esp_heap_caps.h)
 
 # Optimize the scanout kernels for speed; all cold board setup keeps the IDF
 # build's selected optimization level.
