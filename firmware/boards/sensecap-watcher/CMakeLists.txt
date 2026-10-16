@@ -38,6 +38,12 @@ idf_component_register(
         pxa_system_reference_ui
         pxa_system_standard)
 
+# knob 0.1.4 keeps its stable API but still depends on IDF's former aggregate
+# driver component. IDF 6 split GPIO out; attach the real build dependency
+# here without editing downloaded managed-component sources.
+idf_component_get_property(_watcher_knob_lib espressif__knob COMPONENT_LIB)
+target_link_libraries(${_watcher_knob_lib} PRIVATE idf::esp_driver_gpio)
+
 # Optimize the scanout kernels for speed; all cold board setup keeps the IDF
 # build's selected optimization level.
 set_source_files_properties("src/watcher_pxa_surface.cc" PROPERTIES COMPILE_OPTIONS "-O3")
