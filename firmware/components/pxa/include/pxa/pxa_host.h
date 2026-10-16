@@ -166,6 +166,10 @@ bool pxa_host_select_input_method(const char *identity);
 bool pxa_host_selected_input_method(char *identity, size_t capacity);
 bool pxa_host_input_method_managed(void *textarea);
 bool pxa_host_focus_input_method(void *textarea);
+/* UI task with the LVGL lock held. The borrowed root is valid only while
+ * holding that lock. Keypad adapters confine focus to this active keyboard. */
+void *pxa_host_input_method_navigation_root(void);
+bool pxa_host_dismiss_input_method(void);
 typedef struct {
     uint64_t count, queue_us, processing_us, queue_max_us, processing_max_us;
     uint64_t provider_load_us;
@@ -188,6 +192,9 @@ void pxa_host_discard_package_transfers(void);
 size_t pxa_host_package_count(void);
 size_t pxa_host_list_packages(pxa_host_package_info_t *packages,
                               size_t capacity);
+/* Includes disabled installed providers. NULL returns the filtered count. */
+size_t pxa_host_list_input_method_packages(pxa_host_package_info_t *packages,
+                                           size_t capacity);
 bool pxa_host_resolve_package_metadata(
     const uint8_t publisher_root[PXA_HOST_PUBLISHER_ROOT_BYTES],
     const char *app_id, const char *locale,
@@ -297,7 +304,11 @@ bool pxa_host_post_app_system_event(const char *identity_key, uint16_t opcode,
 #define PXA_HOST_CONTROLLER_B (UINT32_C(1) << 5)
 #define PXA_HOST_CONTROLLER_START (UINT32_C(1) << 6)
 #define PXA_HOST_CONTROLLER_SELECT (UINT32_C(1) << 7)
-#define PXA_HOST_CONTROLLER_BUTTON_MASK UINT32_C(0xff)
+#define PXA_HOST_CONTROLLER_X (UINT32_C(1) << 8)
+#define PXA_HOST_CONTROLLER_Y (UINT32_C(1) << 9)
+#define PXA_HOST_CONTROLLER_L (UINT32_C(1) << 10)
+#define PXA_HOST_CONTROLLER_R (UINT32_C(1) << 11)
+#define PXA_HOST_CONTROLLER_BUTTON_MASK UINT32_C(0xfff)
 
 bool pxa_host_post_controller_state(uint8_t controller, bool connected,
                                     uint32_t buttons);

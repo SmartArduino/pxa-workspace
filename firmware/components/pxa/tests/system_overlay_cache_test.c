@@ -13,6 +13,7 @@
 
 static bool surface_visible;
 static unsigned allocations, total_allocations, failures;
+static unsigned provider_bindings, composition_wakeups;
 void test_enter(void) {}
 void test_leave(void) {}
 void test_log(const char* tag, const char* format, ...) {
@@ -37,8 +38,9 @@ void heap_caps_free(void* p) {
 bool pxa_esp_surface_has_visible_surface(void) { return surface_visible; }
 void pxa_esp_surface_set_system_alpha_provider(pxa_esp_surface_ui_alpha_provider_fn fn,void* context) {
     (void)fn;(void)context;
+    ++provider_bindings;
 }
-void pxa_esp_surface_require_composition(void) {}
+void pxa_esp_surface_require_composition(void) { ++composition_wakeups; }
 static void flush(lv_display_t* display,const lv_area_t* area,uint8_t* pixels) {
     (void)area;(void)pixels;lv_display_flush_ready(display);
 }
@@ -55,7 +57,9 @@ int main(void) {
     lv_obj_set_style_bg_opa(bar,LV_OPA_COVER,0);
     lv_obj_t* objects[]={bar};
     pxa_esp_system_overlay_set_reference_objects(objects,1);
+    assert(provider_bindings == 1); /* Product shell needs no private bind API. */
     pxa_esp_system_overlay_bind();
+    assert(provider_bindings == 1);
     assert(g_plane.visible&&g_plane.pixels&&g_plane.alpha);
     unsigned unchanged=total_allocations;
     for(unsigned i=0;i<30;++i)pxa_esp_system_overlay_set_reference_objects(objects,1);
@@ -79,6 +83,33 @@ int main(void) {
     assert(g_plane.visible);
     pxa_esp_system_overlay_remove(bar);
     assert(!g_plane.visible&&allocations==0&&failures==0);
+    unsigned idle_wakeups = composition_wakeups;
+    for(unsigned i=0;i<30;++i)pxa_esp_system_overlay_set_reference_objects(NULL,0);
+    assert(composition_wakeups == idle_wakeups);
+
+    /* Mixed-parent native bars must remain behind top-layer dialogs even
+     * when publication order is reversed. More than eight roots are legal. */
+    surface_visible=true;
+    lv_obj_t* mixed[12];
+    mixed[0]=lv_obj_create(lv_layer_top());
+    lv_obj_set_pos(mixed[0],40,40);lv_obj_set_size(mixed[0],20,20);
+    lv_obj_set_style_bg_color(mixed[0],lv_color_hex(0x0000ff),0);
+    lv_obj_set_style_bg_opa(mixed[0],LV_OPA_COVER,0);
+    lv_obj_set_style_border_width(mixed[0],0,0);
+    for(unsigned i=1;i<12;++i) {
+        mixed[i]=lv_obj_create(lv_screen_active());
+        lv_obj_set_pos(mixed[i],40,40);lv_obj_set_size(mixed[i],20,20);
+        lv_obj_set_style_bg_color(mixed[i],lv_color_hex(0xff0000),0);
+        lv_obj_set_style_bg_opa(mixed[i],LV_OPA_COVER,0);
+        lv_obj_set_style_border_width(mixed[i],0,0);
+    }
+    pxa_esp_system_overlay_set_reference_objects(mixed,12);
+    assert(g_reference_count == 12 && g_plane.visible && g_plane.pixels);
+    size_t center=(size_t)(50-g_plane.y)*g_plane.width+(50-g_plane.x);
+    assert(g_plane.pixels[center]==0x001f && g_plane.alpha[center]==255);
+    pxa_esp_system_overlay_set_reference_objects(NULL,0);
+    for(unsigned i=0;i<12;++i)lv_obj_delete(mixed[i]);
+    assert(allocations==0&&failures==0);
     lv_obj_delete(bar);lv_deinit();
-    puts("Overlay cache: fullscreen before first frame clears launcher bars; unchanged shell has zero rebuilds; active overlays preserved");
+    puts("Overlay cache: automatic product binding; empty refresh has no wakeups; fullscreen clears launcher bars; mixed-parent order and 12 roots; no leaked plane memory");
 }

@@ -175,6 +175,17 @@ menu "PXA Development Apps"
                 allow FreeRTOS to schedule it on either core. CPU1 is invalid
                 on single-core targets.
 
+        config PXA_RASTER_INTERNAL_ALLOCATION_MAX_BYTES
+            int "Largest raster asset to prefer internal SRAM (0: unlimited)"
+            range 0 131072
+            default 0
+            help
+                Raster assets larger than this threshold use the existing
+                PSRAM fallback directly. This preserves contiguous SRAM for
+                audio and display DMA on constrained boards. It adds no pool
+                or cache; textures already use PSRAM. Zero keeps the usual
+                internal-first allocation policy.
+
         config PXA_PARALLEL_RASTER
             bool "Use a second core for GameRender rasterization"
             depends on !FREERTOS_UNICORE

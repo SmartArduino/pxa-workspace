@@ -1094,6 +1094,11 @@ static uint32_t raster_capabilities(void) {
 
 static void *allocate_raster_resource(void *context, size_t size) {
     const raster_allocator_t *allocator = (const raster_allocator_t *)context;
+#if CONFIG_PXA_RASTER_INTERNAL_ALLOCATION_MAX_BYTES > 0
+    if (allocator->fallback != NULL &&
+        size > CONFIG_PXA_RASTER_INTERNAL_ALLOCATION_MAX_BYTES)
+        return pxa_memory_allocate(allocator->fallback, size);
+#endif
     void *memory = pxa_memory_allocate(allocator->primary, size);
     if (memory == NULL && allocator->fallback != NULL) {
         memory = pxa_memory_allocate(allocator->fallback, size);

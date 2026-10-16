@@ -240,6 +240,9 @@ void pxa_esp_store_worker(void *context) {
         job->notify(job, 3u);
         goto cleanup;
     } else {
+        /* No approval may carry over into a fresh install/update attempt. Only
+         * the Host confirmation callback can approve this particular job. */
+        job->approved = 0;
         job->notify(job, 1u);
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     }

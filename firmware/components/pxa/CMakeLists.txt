@@ -74,10 +74,10 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_storage.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_installer.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_ime.c"
-    "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ime.c"
     "${PXA_C_CORE_ROOT}/adapters/wamr/pxa_wamr_engine.c"
     "${PXA_C_CORE_ROOT}/adapters/wamr/pxa_wamr_file_reader.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ui.c"
+    "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ui_symbols.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_image.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_gif.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_gif_native.c"
@@ -106,9 +106,9 @@ if(PXA_TARGET STREQUAL "esp32s3" OR PXA_TARGET STREQUAL "esp32s31")
     list(APPEND PXA_REQUIRES wamr)
 endif()
 set(PXA_RASTER_SPAN_IRAM_DEFAULT OFF)
-if(PXA_BOARD STREQUAL "esp32s31-korvo-1")
-    # Measured with the complete board firmware, including audio and menus.
-    # Other boards retain their mapped-code policy until device validation.
+if(PXA_BOARD STREQUAL "esp32s31-korvo-1" OR PXA_BOARD STREQUAL "doit-gamekit")
+    # Keep the depth-texture pixel loop in internal instruction memory on
+    # these S31 game boards. Other boards retain their mapped-code policy.
     set(PXA_RASTER_SPAN_IRAM_DEFAULT ON)
 endif()
 option(PXA_RASTER_SPAN_IRAM "Place the depth-texture pixel loop in IRAM"
@@ -131,10 +131,11 @@ idf_component_register(
     PRIV_REQUIRES ${PXA_PRIV_REQUIRES}
     LDFRAGMENTS ${PXA_LINKER_FRAGMENTS}
 )
-# The extracted depth/texture span kernel wins on ESP32-S31 with O3; the same
-# kernel at O2 regressed the fixed-world device benchmark. Keep this local to
-# the rasterizer and the performance build, without changing Guest/debug policy.
-if(CONFIG_COMPILER_OPTIMIZATION_PERF AND CONFIG_IDF_TARGET_ESP32S31)
+# Device benchmarks select O3 for the S31 span kernel and Watcher's native
+# game renderer. Keep this local to the rasterizer and performance builds,
+# without changing Guest/debug policy or unmeasured boards.
+if(CONFIG_COMPILER_OPTIMIZATION_PERF AND
+   (CONFIG_IDF_TARGET_ESP32S31 OR PXA_BOARD STREQUAL "sensecap-watcher"))
     set_source_files_properties(
         "${PXA_C_CORE_ROOT}/src/services/surface/raster.c"
         PROPERTIES COMPILE_OPTIONS "-O3")

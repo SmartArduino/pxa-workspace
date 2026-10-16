@@ -422,10 +422,28 @@ uint32_t pxa_esp_host_ui_color(uint8_t index) {
 static lv_font_t *load_ui_font(uint16_t size,
                                 const lv_font_t *symbol_fallback) {
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+    /* Semantic font sizes are sp, just like the simulator. Layout dp is
+     * scaled separately by the adapter; passing raw sp here made text tiny
+     * on high-density panels. Reuse the existing six font objects/cache. */
+    lv_lock();
+    lv_display_t *display = lv_display_get_default();
+    uint32_t dpi = display != NULL ? lv_display_get_dpi(display) : 160u;
+    lv_unlock();
+    uint32_t pixels = ((uint32_t)size * (dpi != 0 ? dpi : 160u) + 80u) / 160u;
+    if (pixels < 1u) pixels = 1u;
+    if (pixels > 256u) pixels = 256u;
     lv_font_t *font = lv_freetype_font_create(
         PXA_ESP_HOST_CJK_FONT_PATH, LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
-        size, LV_FREETYPE_FONT_STYLE_NORMAL);
-    if (font != NULL) font->fallback = symbol_fallback;
+        pixels, LV_FREETYPE_FONT_STYLE_NORMAL);
+    if (font != NULL) {
+        font->fallback = symbol_fallback;
+        ESP_LOGI(PXA_ESP_HOST_TAG, "UI font: %u sp -> %u px (dpi=%u, line=%u)",
+                 (unsigned)size, (unsigned)pixels, (unsigned)dpi,
+                 (unsigned)font->line_height);
+    } else {
+        ESP_LOGW(PXA_ESP_HOST_TAG, "UI font unavailable: %u sp -> %u px (dpi=%u)",
+                 (unsigned)size, (unsigned)pixels, (unsigned)dpi);
+    }
     return font;
 #else
     (void)size;
@@ -4852,6 +4870,10 @@ bool pxa_esp_host_initialize(void) {
     ui_config.allocate = esp_ui_alloc;
     ui_config.release = esp_ui_free;
     ui_config.execute = esp_lvgl_execute;
+    ui_config.primary_environment.surface = PXA_UI_PRIMARY_SURFACE;
+    ui_config.primary_environment.density_q16 = UINT32_C(1) << 16;
+    ui_config.primary_environment.font_scale_q16 = UINT32_C(1) << 16;
+    read_display_environment(&ui_config.primary_environment);
     pxa_lvgl_ui_theme_init(&ui_config.theme);
     g_host.ui_caption_font = load_ui_font(12, pxa_esp_ui_shell_text_font());
     g_host.ui_label_font = load_ui_font(14, pxa_esp_ui_shell_text_font());
@@ -4877,7 +4899,8 @@ bool pxa_esp_host_initialize(void) {
     ui_config.theme.display_font = g_host.ui_display_font != NULL
                                        ? g_host.ui_display_font
                                        : ui_config.theme.title_font;
-    ui_config.theme.icon_font = pxa_esp_ui_shell_icon_font();
+    ui_config.theme.icon_font = pxa_lvgl_ui_icon_font(
+        ui_config.primary_environment.density_q16);
     g_host.ui_theme = ui_config.theme;
     g_host.ui_theme_generation = 1u;
     ui_config.resolve_asset = pxa_esp_ui_asset_resolve;
@@ -4889,10 +4912,6 @@ bool pxa_esp_host_initialize(void) {
     ui_config.event_callback = on_ui_event;
     ui_config.text_input_focus = pxa_esp_ime_editor_focus;
     ui_config.now_us = host_now_us;
-    ui_config.primary_environment.surface = PXA_UI_PRIMARY_SURFACE;
-    ui_config.primary_environment.density_q16 = UINT32_C(1) << 16;
-    ui_config.primary_environment.font_scale_q16 = UINT32_C(1) << 16;
-    read_display_environment(&ui_config.primary_environment);
     pxa_esp_ime_environment(&ui_config.primary_environment,&g_host.ui_theme);
     ui_config.primary_environment.color_scheme = g_host.color_scheme;
     ui_config.primary_environment.features =
@@ -5426,16 +5445,19 @@ typedef struct {
     pxa_host_package_info_t *packages;
     size_t capacity;
     size_t count;
+    bool input_methods_only;
 } pxa_esp_host_package_projection_t;
 
 static bool project_host_package(const pxa_esp_package_record_t *record,
                                  void *user_data) {
     pxa_esp_host_package_projection_t *projection = user_data;
     pxa_host_package_info_t *package;
-    if (record == NULL || projection == NULL ||
-        projection->count >= projection->capacity) {
+    if (record == NULL || projection == NULL) {
         return false;
     }
+    if (projection->input_methods_only && !record->input_method) return true;
+    if (projection->packages==NULL) { ++projection->count; return true; }
+    if (projection->count>=projection->capacity) return false;
     package = &projection->packages[projection->count++];
     memset(package, 0, sizeof(*package));
     snprintf(package->id, sizeof(package->id), "%s", record->id);
@@ -5464,16 +5486,18 @@ size_t pxa_esp_host_package_count(void) {
 }
 
 size_t pxa_esp_host_list_packages(pxa_host_package_info_t *packages,
-                                  size_t capacity) {
+                                  size_t capacity, bool input_methods_only) {
     pxa_esp_host_public_state_t public_state;
     pxa_esp_host_package_projection_t projection;
     size_t index;
-    if (!g_host.initialized || packages == NULL || capacity == 0) return 0;
+    if (!g_host.initialized || (packages != NULL && capacity == 0)) return 0;
     projection.packages = packages;
     projection.capacity = capacity;
     projection.count = 0;
+    projection.input_methods_only = input_methods_only;
     (void)pxa_esp_package_store_visit(PXA_ESP_PACKAGE_VIEW_MANAGED,
                                       project_host_package, &projection);
+    if (packages==NULL) return projection.count;
     public_state_snapshot(&public_state);
     for (index = 0; index < projection.count; ++index) {
         packages[index].active =

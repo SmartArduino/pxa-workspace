@@ -9,6 +9,21 @@ menu "PXA System UI selection"
             its own UI. System services, application rendering and the PXA
             runtime remain available; no legacy UI is started automatically.
 
+    config PXA_IME_BUILTIN_SIMPLIFIED
+        bool "Builtin IME: simplified Chinese dictionary"
+        default y
+        help
+            Covers all 8105 characters in the 2013 standard Chinese table.
+            Immutable Flash data; no dictionary file or Guest is loaded.
+
+    config PXA_IME_BUILTIN_TRADITIONAL
+        bool "Builtin IME: traditional Chinese dictionary"
+        default n
+        help
+            Include traditional counterparts. Both options may be enabled;
+            the local keyboard then offers a script switch and starts simplified.
+            If both are disabled the local keyboard provides English only.
+
     config PXSYS_REFERENCE_UI_STATUS_BAR
         bool "Standard status bar"
         default y

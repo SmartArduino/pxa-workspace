@@ -15,10 +15,19 @@ static esp_http_client_config_t http;
 static unsigned random_id, deletes, completions, saved;
 static bool short_body, valid_preview = true, approve = true, install_ok = true;
 static bool low_space;
+static unsigned confirmations, installs;
+static bool cancel_after_confirmation;
+static pxa_esp_store_job_t *waiting_job;
 static const char body[] = "bounded package transport fixture";
 void vTaskDelete(TaskHandle_t task) { (void)task; ++deletes; }
 unsigned uxTaskGetStackHighWaterMark(TaskHandle_t task) { (void)task; return 512; }
-uint32_t ulTaskNotifyTake(int clear, TickType_t ticks) { (void)clear; (void)ticks; return 1; }
+uint32_t ulTaskNotifyTake(int clear, TickType_t ticks) {
+    (void)clear; (void)ticks;
+    assert(waiting_job != NULL);
+    if (cancel_after_confirmation) waiting_job->cancelled = 1;
+    waiting_job = NULL;
+    return 1;
+}
 void test_log(const char *tag, const char *format, ...) { (void)tag; (void)format; }
 const char *esp_err_to_name(esp_err_t status) { (void)status; return "test"; }
 uint32_t esp_random(void) { return ++random_id; }
@@ -44,9 +53,19 @@ bool pxa_esp_package_store_preview_file(const char *source, pxa_esp_package_prev
     (void)source; memset(preview, 0, sizeof(*preview));
     strcpy(preview->app_id, "pxa-store-test"); return valid_preview;
 }
-bool pxa_host_install_package_file(const char *source) { (void)source; return install_ok; }
+bool pxa_host_install_package_file(const char *source) {
+    (void)source;
+    assert(approve && waiting_job == NULL && !cancel_after_confirmation);
+    ++installs;
+    return install_ok;
+}
 static void notified(pxa_esp_store_job_t *job, uint8_t phase) {
-    if (phase == 1) job->approved = approve;
+    if (phase == 1) {
+        assert(job->approved == 0); /* No previous approval can bypass a prompt. */
+        ++confirmations;
+        waiting_job = job;
+        job->approved = approve;
+    }
     if (phase == 2) ++completions;
     if (phase == 3) ++saved;
 }
@@ -90,18 +109,31 @@ int main(void) {
     pxa_esp_store_worker(&value);
     assert(value.status != PXA_STATUS_OK && !exists(&value));
     value = job(0); approve = false;
+    value.approved = 1; /* Even stale approval must be cleared before prompting. */
     pxa_esp_store_worker(&value);
     assert(value.status == PXA_STATUS_DENIED && !exists(&value));
+    assert(confirmations == 1 && installs == 0);
     approve = true;
     value = job(0); value.cancelled = 1;
     pxa_esp_store_worker(&value);
     assert(value.status != PXA_STATUS_OK && !exists(&value));
+    assert(confirmations == 1 && installs == 0);
+    value = job(0); cancel_after_confirmation = true;
+    pxa_esp_store_worker(&value);
+    assert(value.status == PXA_STATUS_DENIED && !exists(&value));
+    assert(confirmations == 2 && installs == 0);
+    cancel_after_confirmation = false;
     value = job(0);
     pxa_esp_store_worker(&value);
     assert(value.status == PXA_STATUS_OK && !exists(&value));
+    assert(confirmations == 3 && installs == 1);
+    value = job(0); /* Reinstall/update must request its own confirmation. */
+    pxa_esp_store_worker(&value);
+    assert(value.status == PXA_STATUS_OK && confirmations == 4 && installs == 2);
     value = job(1);
     pxa_esp_store_worker(&value);
     assert(value.status == PXA_STATUS_OK && exists(&value) && saved == 1);
+    assert(confirmations == 4 && installs == 2); /* Download alone never installs. */
     pxa_esp_store_job_t orphan = job(1);
     pxa_esp_store_worker(&orphan);
     assert(exists(&orphan));
@@ -117,8 +149,10 @@ int main(void) {
     value = job(1); pxa_esp_store_worker(&value); assert(exists(&value));
     value.separate = 2; approve = false;
     pxa_esp_store_worker(&value); assert(exists(&value));
+    assert(confirmations == 5 && installs == 2);
     approve = true; install_ok = false;
     pxa_esp_store_worker(&value); assert(!exists(&value));
+    assert(confirmations == 6 && installs == 3);
     assert(deletes == completions);
     pxa_esp_store_cleanup_interrupted(NULL, NULL);
     assert(rmdir(state) == 0 && rmdir(CONFIG_PXA_MOUNT_POINT) == 0);

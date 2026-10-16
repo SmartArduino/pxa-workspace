@@ -16,13 +16,23 @@ int main(void) {
     assert(!pxa_esp_store_installer_authorized(&record,
                                               "different-root:pxa-store"));
     record.built_in = false;
-    assert(!pxa_esp_store_installer_authorized(&record, identity));
+    assert(pxa_esp_store_installer_authorized(&record, identity));
     record.built_in = true;
     record.enabled = false;
     assert(!pxa_esp_store_installer_authorized(&record, identity));
     record.enabled = true;
     strcpy(record.app_id, "pxa-store-copy");
+    assert(pxa_esp_store_installer_authorized(&record, identity));
+    strcpy(record.id, "third-party-publisher:independent-store");
+    strcpy(record.app_id, "independent-store");
+    record.built_in = false;
+    assert(pxa_esp_store_installer_authorized(&record, record.id));
     assert(!pxa_esp_store_installer_authorized(&record, identity));
+    record.installed = false;
+    record.staged = true;
+    assert(!pxa_esp_store_installer_authorized(&record, record.id));
+    assert(!pxa_esp_store_installer_authorized(NULL, identity));
+    assert(!pxa_esp_store_installer_authorized(&record, NULL));
     puts("pxa_esp_store_policy_test OK");
     return 0;
 }

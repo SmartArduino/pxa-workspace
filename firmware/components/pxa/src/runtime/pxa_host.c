@@ -58,6 +58,8 @@ bool pxa_host_input_method_managed(void *textarea) { return pxa_esp_ime_managed(
 bool pxa_host_focus_input_method(void *textarea) {
     pxa_esp_ime_editor_focus(NULL,textarea,true); return pxa_esp_ime_managed(textarea);
 }
+void *pxa_host_input_method_navigation_root(void) { return pxa_esp_ime_navigation_root(); }
+bool pxa_host_dismiss_input_method(void) { return pxa_esp_ime_dismiss(); }
 
 static bool format_identity_key(
     const uint8_t publisher_root[PXA_HOST_PUBLISHER_ROOT_BYTES],
@@ -102,7 +104,7 @@ static bool resolve_package(
     if (count == 0 || count > SIZE_MAX / sizeof(*packages)) return false;
     packages = calloc(count, sizeof(*packages));
     if (packages == NULL) return false;
-    count = pxa_esp_host_list_packages(packages, count);
+    count = pxa_esp_host_list_packages(packages, count, false);
     for (index = 0; index < count; ++index) {
         if (!packages[index].installed || !packages[index].has_publisher_root)
             continue;
@@ -228,7 +230,13 @@ size_t pxa_host_package_count(void) {
 size_t pxa_host_list_packages(pxa_host_package_info_t *packages,
                               size_t capacity) {
     if (!g_host_ready) return 0;
-    return pxa_esp_host_list_packages(packages, capacity);
+    return pxa_esp_host_list_packages(packages, capacity, false);
+}
+
+size_t pxa_host_list_input_method_packages(pxa_host_package_info_t *packages,
+                                           size_t capacity) {
+    if (!g_host_ready) return 0;
+    return pxa_esp_host_list_packages(packages, capacity, true);
 }
 
 bool pxa_host_resolve_package_metadata(

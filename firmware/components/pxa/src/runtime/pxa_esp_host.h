@@ -71,7 +71,7 @@ bool pxa_esp_host_post_app_system_event(const char *identity_key,
                                         size_t payload_size);
 size_t pxa_esp_host_package_count(void);
 size_t pxa_esp_host_list_packages(pxa_host_package_info_t *packages,
-                                  size_t capacity);
+                                  size_t capacity, bool input_methods_only);
 bool pxa_esp_host_resolve_package_metadata(
     const char *identity, const char *locale,
     pxa_host_package_metadata_t *metadata);

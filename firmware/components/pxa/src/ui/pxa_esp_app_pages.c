@@ -16,6 +16,7 @@
 #include "pxa_esp_package_catalog.h"
 #include "pxa_esp_package_icon.h"
 #include "pxa_esp_package_store.h"
+#include "pxa_esp_system_overlay.h"
 
 static app_pages_app_icon_t app_pages_icon(pxa_host_icon_t source) {
     app_pages_app_icon_t result;
@@ -180,11 +181,23 @@ static bool back_cb(void *user_data) {
 }
 
 static void system_overlay_visibility_cb(bool visible, void *user_data) {
+    static bool modal_visible;
     (void)user_data;
-    pxa_esp_surface_set_system_overlay_visible(visible);
+    if (!pxa_esp_system_overlay_reference_enabled()) {
+        pxa_esp_surface_set_system_overlay_visible(visible);
+        return;
+    }
+    pxa_esp_surface_set_system_overlay_visible(false);
+    if (modal_visible == visible) return;
+    modal_visible = visible;
+    if (visible)
+        pxa_esp_surface_runtime_modal_enter();
+    else
+        pxa_esp_surface_runtime_modal_leave();
 }
 
 void pxa_esp_ui_shell_bind(void) {
+    pxa_esp_system_overlay_bind();
     app_pages_set_app_catalog_callbacks(catalog_cb, launch_cb, NULL);
     app_pages_set_app_manager_callbacks(manager_cb, action_cb, NULL);
     app_pages_set_package_install_callback(install_package_cb, NULL);

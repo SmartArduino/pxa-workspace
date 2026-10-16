@@ -12,7 +12,7 @@
 #include "src/core/lv_obj_draw_private.h"
 
 #define PXA_SYSTEM_OVERLAY_MAX_OBJECTS 8u
-#define PXA_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS 8u
+#define PXA_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS PXA_ESP_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS
 #define PXA_SYSTEM_OVERLAY_MAX_PIXELS (1024u * 768u)
 
 static portMUX_TYPE g_plane_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -21,6 +21,7 @@ static uint8_t g_object_count;
 static lv_obj_t *g_reference_objects[PXA_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS];
 static uint8_t g_reference_count;
 static bool g_bound;
+static bool g_reference_enabled;
 /* The plane below was built while the LVGL shell owned the panel. */
 static bool g_plane_built_for_shell;
 static uint8_t *g_plane_memory;
@@ -47,6 +48,36 @@ static uint8_t expand5(uint16_t value) {
 
 static uint8_t expand6(uint16_t value) {
   return (uint8_t)((value << 2) | (value >> 4));
+}
+
+/* Registered roots can have different parents (native page bars versus the
+ * reference top layer). Compare their sibling branches at the common ancestor
+ * instead of allowing registration order to put a bar over a newer dialog. */
+static int layer_order(lv_obj_t *root) {
+  lv_display_t *display = lv_obj_get_display(root);
+  if (root == lv_display_get_layer_sys(display)) return 3;
+  if (root == lv_display_get_layer_top(display)) return 2;
+  if (root == lv_display_get_layer_bottom(display)) return 0;
+  return 1;
+}
+
+static bool object_is_above(lv_obj_t *first, lv_obj_t *second) {
+  lv_obj_t *a = first, *b = second;
+  unsigned a_depth = 0, b_depth = 0;
+  for (lv_obj_t *parent = a; lv_obj_get_parent(parent) != NULL;
+       parent = lv_obj_get_parent(parent)) ++a_depth;
+  for (lv_obj_t *parent = b; lv_obj_get_parent(parent) != NULL;
+       parent = lv_obj_get_parent(parent)) ++b_depth;
+  while (a_depth > b_depth) { a = lv_obj_get_parent(a); --a_depth; }
+  while (b_depth > a_depth) { b = lv_obj_get_parent(b); --b_depth; }
+  if (a == b) return first != a; /* Descendants draw after their ancestor. */
+  while (lv_obj_get_parent(a) != lv_obj_get_parent(b)) {
+    a = lv_obj_get_parent(a);
+    b = lv_obj_get_parent(b);
+  }
+  return lv_obj_get_parent(a) != NULL
+      ? lv_obj_get_index(a) > lv_obj_get_index(b)
+      : layer_order(a) > layer_order(b);
 }
 
 static void blend_pixel(uint16_t *color, uint8_t *alpha, lv_color32_t source) {
@@ -83,6 +114,11 @@ static void blend_pixel(uint16_t *color, uint8_t *alpha, lv_color32_t source) {
 
 static void publish_plane(uint8_t *memory, int32_t x, int32_t y, uint16_t width,
                           uint16_t height, bool fallback_visible) {
+  /* Empty product-shell refreshes must not wake the presenter and trigger
+   * another LVGL refresh indefinitely while a fullscreen game owns output. */
+  if (memory == NULL && !fallback_visible && !g_plane.visible &&
+      g_plane_memory == NULL)
+    return;
   uint8_t *old;
   pxa_esp_surface_ui_alpha_plane_t plane = {0};
   if (memory != NULL) {
@@ -169,6 +205,7 @@ void pxa_esp_system_overlay_refresh(void) {
     for (uint8_t previous = 0; previous < count; ++previous)
       if (ordered[previous] == object) duplicate = true;
     if (duplicate) continue;
+    lv_obj_update_layout(object);
     lv_obj_get_coords(object, &area);
     ext = lv_obj_get_ext_draw_size(object);
     if (area.x1 - ext < left)
@@ -188,9 +225,7 @@ void pxa_esp_system_overlay_refresh(void) {
   for (uint8_t index = 1; index < count; ++index) {
     lv_obj_t *object = ordered[index];
     uint8_t before = index;
-    while (before != 0 &&
-           lv_obj_get_parent(ordered[before - 1]) == lv_obj_get_parent(object) &&
-           lv_obj_get_index(ordered[before - 1]) > lv_obj_get_index(object)) {
+    while (before != 0 && object_is_above(ordered[before - 1], object)) {
       ordered[before] = ordered[before - 1];
       --before;
     }
@@ -282,6 +317,7 @@ failed:
 
 void pxa_esp_system_overlay_set_reference_objects(lv_obj_t *const *objects,
                                                    size_t count) {
+  g_reference_enabled = true;
   if (count > PXA_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS) {
     ESP_LOGW("PxaOverlay", "Too many reference overlay objects");
     count = PXA_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS;
@@ -300,7 +336,14 @@ void pxa_esp_system_overlay_set_reference_objects(lv_obj_t *const *objects,
   for (size_t index = count;
        index < PXA_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS; ++index)
     g_reference_objects[index] = NULL;
-  if (g_bound) pxa_esp_system_overlay_refresh();
+  if (!g_bound)
+    pxa_esp_system_overlay_bind();
+  else
+    pxa_esp_system_overlay_refresh();
+}
+
+bool pxa_esp_system_overlay_reference_enabled(void) {
+  return g_reference_enabled;
 }
 
 void pxa_esp_system_overlay_add(lv_obj_t *object) {

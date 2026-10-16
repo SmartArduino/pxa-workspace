@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22)
+get_filename_component(PXA_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../.." ABSOLUTE)
+set(EXTRA_COMPONENT_DIRS "${PXA_ROOT}/firmware/managed_components/espressif__esp_new_jpeg")
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(pxa_jpeg_benchmark)

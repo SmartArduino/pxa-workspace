@@ -12,6 +12,7 @@ idf_component_register(
     INCLUDE_DIRS
         "${PXSYS_ROOT}/ui/reference/include"
         "${PXSYS_ROOT}/ui/reference/lvgl/include"
+    PRIV_INCLUDE_DIRS ${PXSYS_REFERENCE_LVGL_PRIVATE_INCLUDE_DIRS}
     REQUIRES lvgl pxa_system_core pxa_system_native pxa_system_standard)
 
 target_compile_features(${COMPONENT_LIB} PUBLIC c_std_99)
@@ -27,6 +28,8 @@ function(pxsys_reference_ui_define_bool config_symbol define_symbol)
     endif()
 endfunction()
 
+pxsys_reference_ui_define_bool(CONFIG_PXA_IME_BUILTIN_SIMPLIFIED PXA_IME_BUILTIN_SIMPLIFIED)
+pxsys_reference_ui_define_bool(CONFIG_PXA_IME_BUILTIN_TRADITIONAL PXA_IME_BUILTIN_TRADITIONAL)
 pxsys_reference_ui_define_bool(CONFIG_PXSYS_REFERENCE_UI_ANIMATIONS PXSYS_REFERENCE_UI_ENABLE_ANIMATIONS)
 pxsys_reference_ui_define_bool(CONFIG_PXSYS_REFERENCE_UI_WIFI PXSYS_REFERENCE_UI_WIFI)
 pxsys_reference_ui_define_bool(CONFIG_PXSYS_REFERENCE_UI_CELLULAR PXSYS_REFERENCE_UI_CELLULAR)

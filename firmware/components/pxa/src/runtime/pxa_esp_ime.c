@@ -155,6 +155,14 @@ void pxa_esp_ime_editor_focus(void *context, void *textarea, bool focused) {
     } else if (ime.keyboard && pxa_lvgl_ime_owns_textarea(textarea)) pxa_lvgl_ime_close(ime.keyboard);
 }
 bool pxa_esp_ime_managed(void *textarea) { return pxa_lvgl_ime_owns_textarea(textarea); }
+void *pxa_esp_ime_navigation_root(void) {
+    return pxa_lvgl_ime_active(ime.keyboard) ? pxa_lvgl_ime_root(ime.keyboard) : NULL;
+}
+bool pxa_esp_ime_dismiss(void) {
+    if (!pxa_lvgl_ime_active(ime.keyboard)) return false;
+    pxa_lvgl_ime_close(ime.keyboard);
+    return true;
+}
 bool pxa_esp_ime_needs_runtime(void) {
     if (!__atomic_load_n(&ime.dirty,__ATOMIC_ACQUIRE)) return false;
     lv_lock(); bool needed=ime.selected && ime.wanted && ime.required &&

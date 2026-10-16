@@ -8,6 +8,8 @@ pxa_system_dir="$project_dir/deps/pxa-system"
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/pxa-esp-host-tests.XXXXXX")
 trap 'rm -rf -- "$build_dir"' EXIT
 
+python3 "$project_dir/firmware/components/pxa_integration/tests/test_startup.py"
+
 cc_flags=(-std=c99 -Wall -Wextra -Wpedantic -Werror)
 cxx_flags=(-std=c++17 -Wall -Wextra -Werror)
 libpxa_options=()
@@ -93,6 +95,14 @@ for backend in surface audio net; do
     "$tests_dir/pxa_esp_${backend}_backend_test.c" \
     "$libpxa_build/libpxa.a" -lm
 done
+
+# Constrained-board policy must retain budget charging and release semantics
+# while placing large raster assets directly in PSRAM.
+build_and_run surface_external_palette \
+  -DCONFIG_PXA_RASTER_INTERNAL_ALLOCATION_MAX_BYTES=4096 \
+  "${adapter_includes[@]}" -pthread \
+  "$tests_dir/pxa_esp_surface_backend_test.c" \
+  "$libpxa_build/libpxa.a" -lm
 
 build_and_run lazy_storage \
   "${adapter_includes[@]}" -pthread \

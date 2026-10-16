@@ -189,7 +189,12 @@ void pxa_esp_surface_set_ui_alpha_provider(
 void pxa_esp_surface_set_system_alpha_provider(
     pxa_esp_surface_ui_alpha_provider_fn callback, void *context);
 struct _lv_obj_t;
-/* Borrowed LVGL objects. Call on the LVGL owner thread after their state changes. */
+#define PXA_ESP_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS 24u
+/* Borrowed trusted LVGL roots; never include the application or launcher.
+ * Call on the LVGL owner thread after layout/state changes and before deleting
+ * a registered root. First publication enables the snapshot provider even in
+ * product shells without the standalone UI. Hidden roots need no plane memory.
+ * Up to PXA_ESP_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS roots are supported. */
 void pxa_esp_system_overlay_set_reference_objects(
     struct _lv_obj_t *const *objects, size_t count);
 void pxa_esp_surface_set_fill_bands_callback(

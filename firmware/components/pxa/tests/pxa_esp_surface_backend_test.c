@@ -23,6 +23,7 @@ static unsigned lock_depth;
 static unsigned allocations;
 static unsigned fail_next_malloc;
 static size_t last_aligned_allocation_size;
+static unsigned last_malloc_caps;
 static unsigned notifications;
 static unsigned release_notifications;
 static int64_t test_now_us;
@@ -45,7 +46,7 @@ void test_log(const char *tag, const char *format, ...) {
     (void)format;
 }
 void *heap_caps_malloc(size_t size, unsigned caps) {
-    (void)caps;
+    last_malloc_caps = caps;
     assert(lock_depth == 0);
     if (fail_next_malloc != 0) {
         --fail_next_malloc;
@@ -454,6 +455,22 @@ static void test_retired_display_budget(pxa_game_render_backend_t *backend) {
 
 int main(void) {
     assert(pxa_esp_resource_memory_begin() == PXA_STATUS_OK);
+    {
+        const raster_allocator_t policy = {
+            pxa_esp_resource_allocator(PXA_MEMORY_INTERNAL, PXA_MEMORY_RASTER),
+            pxa_esp_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_RASTER)};
+        void *small = allocate_raster_resource((void *)&policy, 256);
+        assert(small && (last_malloc_caps & MALLOC_CAP_INTERNAL));
+        free_raster_resource(NULL, small);
+        void *large = allocate_raster_resource((void *)&policy, 16408);
+#if CONFIG_PXA_RASTER_INTERNAL_ALLOCATION_MAX_BYTES > 0
+        assert(large && (last_malloc_caps & MALLOC_CAP_SPIRAM));
+#else
+        assert(large && (last_malloc_caps & MALLOC_CAP_INTERNAL));
+#endif
+        free_raster_resource(NULL, large);
+        assert(allocations == 0);
+    }
     pxa_surface_backend_t backend;
     pxa_game_render_backend_t game_backend;
     pxa_surface_desc_t desc = {

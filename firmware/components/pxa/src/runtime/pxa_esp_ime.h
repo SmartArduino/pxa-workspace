@@ -31,6 +31,9 @@ bool pxa_esp_ime_preferences(pxa_ime_preferences_t *preferences,bool save);
 bool pxa_esp_ime_select(const char *identity);
 bool pxa_esp_ime_selected(char *identity, size_t capacity);
 bool pxa_esp_ime_managed(void *textarea);
+/* UI task / LVGL lock held; the root is borrowed under the same lock. */
+void *pxa_esp_ime_navigation_root(void);
+bool pxa_esp_ime_dismiss(void);
 void pxa_esp_ime_timing(pxa_host_input_method_timing_t *output);
 /* Watchdog thread: only the active provider's call can be terminated. */
 bool pxa_esp_ime_poll_deadline(uint64_t now_us);
