@@ -1,0 +1,362 @@
+[
+  {
+    "board": "pai-touch",
+    "version": "0.4.0",
+    "chip": "esp32s3",
+    "flash_bytes": 16777216,
+    "partitions": [
+      {
+        "name": "nvs",
+        "offset": 36864,
+        "size": 24576
+      },
+      {
+        "name": "phy_init",
+        "offset": 61440,
+        "size": 4096
+      },
+      {
+        "name": "factory",
+        "offset": 65536,
+        "size": 7274496
+      },
+      {
+        "name": "pxa_data",
+        "offset": 7340032,
+        "size": 9437184
+      }
+    ],
+    "workspace_commit": "b6cde7499119d6ac193f1e3106a7ae6138ce2ca2",
+    "system_commit": "9cb5e6643be41e873154c4690eba3baf88b181cf",
+    "store_container_sha256": "ef19a0faaeaf0c0ddf9919b0c166cbc7c38c035cbf7993ae2482ea5a06cb48e5",
+    "regions": [
+      {
+        "file": "bootloader.bin",
+        "offset": 0,
+        "size": 23824,
+        "sha256": "0fcbc2523f27a9104079b65a9c1f843af2b9f04b665d7c02906dfeb4e3f74e6c"
+      },
+      {
+        "file": "partition-table.bin",
+        "offset": 32768,
+        "size": 3072,
+        "sha256": "c9d92371d66a8288cefcad03fb2db0f26ae8203809143e5bbe3ca8db410f10d7"
+      },
+      {
+        "file": "pxa_esp_platform.bin",
+        "offset": 65536,
+        "size": 3509296,
+        "sha256": "1e2119a0773e891de8a7a01ca284ca4d6fb6f45c953d0116028740e1ddcbeccc"
+      },
+      {
+        "file": "pxa-data.bin",
+        "offset": 7340032,
+        "size": 9437184,
+        "sha256": "b305f6cf2bd997a081ea735b329bbb0d91648057df93c1f8f5acedd42b021b09"
+      }
+    ],
+    "merged": {
+      "file": "pxa-firmware-0.4.0-pai-touch-merged.bin",
+      "bytes": 16777216,
+      "sha256": "f80606b73e16373b4af4a070685dfb3164603029c2c3fc487595525736201a61"
+    },
+    "application": {
+      "file": "pxa-firmware-0.4.0-pai-touch-app.bin",
+      "bytes": 3509296,
+      "sha256": "1e2119a0773e891de8a7a01ca284ca4d6fb6f45c953d0116028740e1ddcbeccc"
+    },
+    "archive": {
+      "file": "pxa-firmware-0.4.0-pai-touch.zip",
+      "bytes": 11192330,
+      "sha256": "71fabf4ca977904ab24a007913cb88c6989003d10ee310bf2aa29d8e134f0afb"
+    }
+  },
+  {
+    "board": "esp-mosaico",
+    "version": "0.4.0",
+    "chip": "esp32s31",
+    "flash_bytes": 16777216,
+    "partitions": [
+      {
+        "name": "nvs",
+        "offset": 36864,
+        "size": 24576
+      },
+      {
+        "name": "phy_init",
+        "offset": 61440,
+        "size": 4096
+      },
+      {
+        "name": "factory",
+        "offset": 65536,
+        "size": 4194304
+      },
+      {
+        "name": "pxa_data",
+        "offset": 4259840,
+        "size": 12517376
+      }
+    ],
+    "workspace_commit": "b6cde7499119d6ac193f1e3106a7ae6138ce2ca2",
+    "system_commit": "9cb5e6643be41e873154c4690eba3baf88b181cf",
+    "store_container_sha256": "8c9b504f93276f2db1f2a39d745dfc87a985a0a2d6e38da504c29ba7bd384577",
+    "regions": [
+      {
+        "file": "bootloader.bin",
+        "offset": 8192,
+        "size": 21216,
+        "sha256": "10bcdabe72e807f92e3ced6a48b90b9aa4407f75c12152c98af85b070a5a948f"
+      },
+      {
+        "file": "partition-table.bin",
+        "offset": 32768,
+        "size": 3072,
+        "sha256": "b037cdfb42ee6e6725b154ff617609a197444912f86fa76e234de48aefc03254"
+      },
+      {
+        "file": "pxa_esp_platform.bin",
+        "offset": 65536,
+        "size": 4101456,
+        "sha256": "2c660b4c1c4174e614b407fdccf42697483cf29e28907f9dd0c8763e3c12e70f"
+      },
+      {
+        "file": "pxa-data.bin",
+        "offset": 4259840,
+        "size": 12517376,
+        "sha256": "c5cb84939135d85b67cbdcaebdce003ecfeacea16ad91dd20877d48d5dacdd76"
+      }
+    ],
+    "merged": {
+      "file": "pxa-firmware-0.4.0-esp-mosaico-merged.bin",
+      "bytes": 16777216,
+      "sha256": "dc8036ec8e2a0fed0ad921c08537d42384a63cb51c0e0b5c5a44e8821d53cef5"
+    },
+    "application": {
+      "file": "pxa-firmware-0.4.0-esp-mosaico-app.bin",
+      "bytes": 4101456,
+      "sha256": "2c660b4c1c4174e614b407fdccf42697483cf29e28907f9dd0c8763e3c12e70f"
+    },
+    "archive": {
+      "file": "pxa-firmware-0.4.0-esp-mosaico.zip",
+      "bytes": 11928000,
+      "sha256": "31dfceac43ed18689daac503bfb997bf392d5449ca0d154272f9d52aeddc3b36"
+    }
+  },
+  {
+    "board": "esp32s31-korvo-1",
+    "version": "0.4.0",
+    "chip": "esp32s31",
+    "flash_bytes": 16777216,
+    "partitions": [
+      {
+        "name": "nvs",
+        "offset": 36864,
+        "size": 24576
+      },
+      {
+        "name": "phy_init",
+        "offset": 61440,
+        "size": 4096
+      },
+      {
+        "name": "factory",
+        "offset": 65536,
+        "size": 4194304
+      },
+      {
+        "name": "pxa_data",
+        "offset": 4259840,
+        "size": 12517376
+      }
+    ],
+    "workspace_commit": "b6cde7499119d6ac193f1e3106a7ae6138ce2ca2",
+    "system_commit": "9cb5e6643be41e873154c4690eba3baf88b181cf",
+    "store_container_sha256": "8c9b504f93276f2db1f2a39d745dfc87a985a0a2d6e38da504c29ba7bd384577",
+    "regions": [
+      {
+        "file": "bootloader.bin",
+        "offset": 8192,
+        "size": 21216,
+        "sha256": "7176b0bf4857c1cd5dc25795788ebd6cb63674ce7973ce2c3f2c2db98cc0fc31"
+      },
+      {
+        "file": "partition-table.bin",
+        "offset": 32768,
+        "size": 3072,
+        "sha256": "b037cdfb42ee6e6725b154ff617609a197444912f86fa76e234de48aefc03254"
+      },
+      {
+        "file": "pxa_esp_platform.bin",
+        "offset": 65536,
+        "size": 3923232,
+        "sha256": "ef4663dcf3d84fac3a543b0abff135f12e3bd40375024f1ab71f5ee8b7052907"
+      },
+      {
+        "file": "pxa-data.bin",
+        "offset": 4259840,
+        "size": 12517376,
+        "sha256": "c5cb84939135d85b67cbdcaebdce003ecfeacea16ad91dd20877d48d5dacdd76"
+      }
+    ],
+    "merged": {
+      "file": "pxa-firmware-0.4.0-esp32s31-korvo-1-merged.bin",
+      "bytes": 16777216,
+      "sha256": "10ff95e6e81b9313b0444ec2d2b1aa9e083fb912384c6240283bb59a0f5a40e5"
+    },
+    "application": {
+      "file": "pxa-firmware-0.4.0-esp32s31-korvo-1-app.bin",
+      "bytes": 3923232,
+      "sha256": "ef4663dcf3d84fac3a543b0abff135f12e3bd40375024f1ab71f5ee8b7052907"
+    },
+    "archive": {
+      "file": "pxa-firmware-0.4.0-esp32s31-korvo-1.zip",
+      "bytes": 11638826,
+      "sha256": "551aa286d378773a689fbc01da9a3c49116d466012d92e5758b9cc39a098a2bc"
+    }
+  },
+  {
+    "board": "sensecap-watcher",
+    "version": "0.4.0",
+    "chip": "esp32s3",
+    "flash_bytes": 33554432,
+    "partitions": [
+      {
+        "name": "nvs",
+        "offset": 36864,
+        "size": 24576
+      },
+      {
+        "name": "phy_init",
+        "offset": 61440,
+        "size": 4096
+      },
+      {
+        "name": "factory",
+        "offset": 65536,
+        "size": 7274496
+      },
+      {
+        "name": "pxa_data",
+        "offset": 7340032,
+        "size": 26214400
+      }
+    ],
+    "workspace_commit": "b6cde7499119d6ac193f1e3106a7ae6138ce2ca2",
+    "system_commit": "9cb5e6643be41e873154c4690eba3baf88b181cf",
+    "store_container_sha256": "ef19a0faaeaf0c0ddf9919b0c166cbc7c38c035cbf7993ae2482ea5a06cb48e5",
+    "regions": [
+      {
+        "file": "bootloader.bin",
+        "offset": 0,
+        "size": 23824,
+        "sha256": "37c45505a8d2aa72b95a2084c151dc5a02584d3751ff307dfa100fe1764eaaa3"
+      },
+      {
+        "file": "partition-table.bin",
+        "offset": 32768,
+        "size": 3072,
+        "sha256": "f7318813e0d6c836bcbb8a8516e54c414eadd87d00f491fb4573d25e134512cf"
+      },
+      {
+        "file": "pxa_esp_platform.bin",
+        "offset": 65536,
+        "size": 3623600,
+        "sha256": "90bcdd2db16c3ee52cffeff5629c3b47761113bf695b667c3075899ff63b4460"
+      },
+      {
+        "file": "pxa-data.bin",
+        "offset": 7340032,
+        "size": 26214400,
+        "sha256": "4eb76288841a1cd271a0e806ff3c888e56174396c94519b9df75657099a74ec7"
+      }
+    ],
+    "merged": {
+      "file": "pxa-firmware-0.4.0-sensecap-watcher-merged.bin",
+      "bytes": 33554432,
+      "sha256": "8934b249261fec0dd5f9f0bcea0087f13f68dd69839ccd4b0b2ec40a89671f50"
+    },
+    "application": {
+      "file": "pxa-firmware-0.4.0-sensecap-watcher-app.bin",
+      "bytes": 3623600,
+      "sha256": "90bcdd2db16c3ee52cffeff5629c3b47761113bf695b667c3075899ff63b4460"
+    },
+    "archive": {
+      "file": "pxa-firmware-0.4.0-sensecap-watcher.zip",
+      "bytes": 11470696,
+      "sha256": "943354dfc9751a911c30e8e1548dea8c48ea55ea4fcc4fc18bcc757e11222757"
+    }
+  },
+  {
+    "board": "doit-gamekit",
+    "version": "0.4.0",
+    "chip": "esp32s31",
+    "flash_bytes": 16777216,
+    "partitions": [
+      {
+        "name": "nvs",
+        "offset": 36864,
+        "size": 24576
+      },
+      {
+        "name": "phy_init",
+        "offset": 61440,
+        "size": 4096
+      },
+      {
+        "name": "factory",
+        "offset": 65536,
+        "size": 5242880
+      },
+      {
+        "name": "pxa_data",
+        "offset": 5308416,
+        "size": 11468800
+      }
+    ],
+    "workspace_commit": "b6cde7499119d6ac193f1e3106a7ae6138ce2ca2",
+    "system_commit": "9cb5e6643be41e873154c4690eba3baf88b181cf",
+    "store_container_sha256": "8c9b504f93276f2db1f2a39d745dfc87a985a0a2d6e38da504c29ba7bd384577",
+    "regions": [
+      {
+        "file": "bootloader.bin",
+        "offset": 8192,
+        "size": 21216,
+        "sha256": "6848e7a1fa3f92e13860f6c50984600bde7a6ba3443c8b0e4e9003a1c4c19422"
+      },
+      {
+        "file": "partition-table.bin",
+        "offset": 32768,
+        "size": 3072,
+        "sha256": "4d89b45cabfbb8d61a369847571cd5beda3aa6c4ec1c4278db654662a1531c50"
+      },
+      {
+        "file": "pxa_esp_platform.bin",
+        "offset": 65536,
+        "size": 3898208,
+        "sha256": "867e4974b783ca3d871c3bd6ba87a18649e4001190b0fe5e4e52986f62dbdae2"
+      },
+      {
+        "file": "pxa-data.bin",
+        "offset": 5308416,
+        "size": 11468800,
+        "sha256": "a0fdbe11531dbde5e8ea09324333e762dabfa69db2bf20f0c83568410a09a1b3"
+      }
+    ],
+    "merged": {
+      "file": "pxa-firmware-0.4.0-doit-gamekit-merged.bin",
+      "bytes": 16777216,
+      "sha256": "22fbed6ad45a6dd031e900402781beaf1450fa8355f2539999c2ae6c27a22176"
+    },
+    "application": {
+      "file": "pxa-firmware-0.4.0-doit-gamekit-app.bin",
+      "bytes": 3898208,
+      "sha256": "867e4974b783ca3d871c3bd6ba87a18649e4001190b0fe5e4e52986f62dbdae2"
+    },
+    "archive": {
+      "file": "pxa-firmware-0.4.0-doit-gamekit.zip",
+      "bytes": 11627248,
+      "sha256": "9a373831364206e15389b4d148eb3d4715d8a92a377215813e8a2251bf1d3dc3"
+    }
+  }
+]

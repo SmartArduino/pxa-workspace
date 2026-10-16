@@ -1,0 +1,57 @@
+[
+  {
+    "board": "pai-touch",
+    "chip": "esp32s3",
+    "flash_bytes": 16777216,
+    "app_version": "0.4.0",
+    "image_checksum_valid": true,
+    "factory_files_verified": 11,
+    "zip_crc_and_merged_verified": true,
+    "store_container_sha256": "ef19a0faaeaf0c0ddf9919b0c166cbc7c38c035cbf7993ae2482ea5a06cb48e5",
+    "passed": true
+  },
+  {
+    "board": "esp-mosaico",
+    "chip": "esp32s31",
+    "flash_bytes": 16777216,
+    "app_version": "0.4.0",
+    "image_checksum_valid": true,
+    "factory_files_verified": 11,
+    "zip_crc_and_merged_verified": true,
+    "store_container_sha256": "8c9b504f93276f2db1f2a39d745dfc87a985a0a2d6e38da504c29ba7bd384577",
+    "passed": true
+  },
+  {
+    "board": "esp32s31-korvo-1",
+    "chip": "esp32s31",
+    "flash_bytes": 16777216,
+    "app_version": "0.4.0",
+    "image_checksum_valid": true,
+    "factory_files_verified": 11,
+    "zip_crc_and_merged_verified": true,
+    "store_container_sha256": "8c9b504f93276f2db1f2a39d745dfc87a985a0a2d6e38da504c29ba7bd384577",
+    "passed": true
+  },
+  {
+    "board": "sensecap-watcher",
+    "chip": "esp32s3",
+    "flash_bytes": 33554432,
+    "app_version": "0.4.0",
+    "image_checksum_valid": true,
+    "factory_files_verified": 11,
+    "zip_crc_and_merged_verified": true,
+    "store_container_sha256": "ef19a0faaeaf0c0ddf9919b0c166cbc7c38c035cbf7993ae2482ea5a06cb48e5",
+    "passed": true
+  },
+  {
+    "board": "doit-gamekit",
+    "chip": "esp32s31",
+    "flash_bytes": 16777216,
+    "app_version": "0.4.0",
+    "image_checksum_valid": true,
+    "factory_files_verified": 11,
+    "zip_crc_and_merged_verified": true,
+    "store_container_sha256": "8c9b504f93276f2db1f2a39d745dfc87a985a0a2d6e38da504c29ba7bd384577",
+    "passed": true
+  }
+]
