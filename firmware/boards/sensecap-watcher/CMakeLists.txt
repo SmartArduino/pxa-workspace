@@ -43,6 +43,10 @@ idf_component_register(
 # here without editing downloaded managed-component sources.
 idf_component_get_property(_watcher_knob_lib espressif__knob COMPONENT_LIB)
 target_link_libraries(${_watcher_knob_lib} PRIVATE idf::esp_driver_gpio)
+# The pinned codec driver uses the same aggregate-driver convention.
+idf_component_get_property(_watcher_codec_lib espressif__esp_codec_dev COMPONENT_LIB)
+target_link_libraries(${_watcher_codec_lib} PRIVATE
+    idf::esp_driver_gpio idf::esp_driver_i2c idf::esp_driver_i2s idf::esp_driver_spi)
 
 # Optimize the scanout kernels for speed; all cold board setup keeps the IDF
 # build's selected optimization level.
