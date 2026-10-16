@@ -50,6 +50,8 @@ def main():
                         help="tap a menu before --start; repeat to load the same saved world")
     parser.add_argument("--expected-serial", help="abort before input if HELLO identity differs")
     parser.add_argument("--size", type=int, nargs=2, default=[800, 480])
+    parser.add_argument("--screenshot-format", choices=["jpeg", "raw"], default="jpeg",
+                        help="raw captures the scanout buffer on hosts without direct-game JPEG capture")
     parser.add_argument("--scenes", nargs="+", choices=["idle", "turn", "walk", "charge"],
                         default=["idle", "turn"])
     args = parser.parse_args()
@@ -66,6 +68,7 @@ def main():
               "seconds": args.seconds, "warmup": args.warmup,
               "charge_seconds": args.charge_seconds,
               "size": args.size, "start": args.start, "prepare_taps": args.prepare_tap,
+              "screenshot_format": args.screenshot_format,
               "runs": [], "passed": False, "display_errors": [],
               "latency_scope": "injected device sample to Host Guest dispatch, associated submission and panel buffer completion; excludes physical controller and optical response"}
     epoch = time.monotonic()
@@ -121,15 +124,17 @@ def main():
             request("INPUT SYNC")
 
         def screenshot(name):
+            command = "SCREENSHOT" if args.screenshot_format == "raw" else "SCREENSHOT JPEG"
             for attempt in range(6):
                 try:
-                    shot = pxadb.screenshot_capture(request("SCREENSHOT JPEG"))
+                    shot = pxadb.screenshot_capture(request(command))
                     break
                 except pxadb.PxaDbError as error:
                     if attempt == 5 or not (pxadb.screenshot_retryable(error) or "rate_limited" in str(error)):
                         raise
                     pump(.25)
-            pxadb.write_screenshot(shot, args.output / (name + ".jpg"))
+            suffix = ".png" if args.screenshot_format == "raw" else ".jpg"
+            pxadb.write_screenshot(shot, args.output / (name + suffix))
             if [int(shot.metadata[k]) for k in ("width", "height")] != args.size:
                 raise RuntimeError("unexpected display geometry: " + str(shot.metadata))
             return shot.metadata
