@@ -1,0 +1,8 @@
+[desktop]
+width = 320
+height = 240
+density_dpi = 160
+locale = "zh-CN"
+theme = "dark"
+gestures = false
+navigation_bar = false

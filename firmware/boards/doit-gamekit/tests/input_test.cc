@@ -1,0 +1,59 @@
+#include "doit_gamekit_input.h"
+#include <cassert>
+#include <cstdint>
+
+using namespace doit_gamekit;
+int main() {
+    Debouncer keys;
+    assert(keys.Update(Up | A, 100) == 0);
+    assert(keys.Update(Up | A, 111) == 0);
+    assert(keys.Update(Up | A, 112) == (Up | A));
+    assert(keys.Update(Up, 113) == (Up | A));
+    assert(keys.Update(Up | A, 115) == (Up | A)); // contact bounce
+    assert(keys.Update(Up, 120) == (Up | A));
+    assert(keys.Update(Up, 132) == Up); // one key releases independently
+    assert(keys.Update(Up | X | Y | L | R, 140) == Up);
+    assert(keys.Update(Up | X | Y | L | R, 152) == (Up | X | Y | L | R));
+    assert(keys.Update(0, 160) != 0);
+    assert(keys.Update(0, 172) == 0);
+    Debouncer wrapping;
+    assert(wrapping.Update(B, UINT32_MAX - 5) == 0);
+    assert(wrapping.Update(B, 6) == B); // debounce spans tick wrap
+    assert(wrapping.Update(B | (1u << 31), 7) == B);
+
+    Shortcuts hotkeys;
+    assert(hotkeys.Update(A | R | X, 0).buttons == (A | R | X));
+    auto home = hotkeys.Update(Select | Start, 10);
+    assert(!home.home && home.buttons == 0);
+    assert(!hotkeys.Update(Select | Start, 609).home);
+    assert(hotkeys.Update(Select | Start, 610).home);
+    assert(!hotkeys.Update(Select | Start, 900).home);
+    assert(hotkeys.Update(Start, 901).buttons == 0); // no trailing Start
+    assert(hotkeys.Update(0, 902).buttons == 0);
+    assert(hotkeys.Update(X | Y | L | R, 903).buttons == (X | Y | L | R));
+
+    auto cursor = hotkeys.Update(Select | X, 1000);
+    assert(cursor.toggle_pointer && cursor.buttons == 0);
+    assert(!hotkeys.Update(Select | X, 1001).toggle_pointer);
+    assert(hotkeys.Update(X | A, 1002).buttons == 0);
+    (void)hotkeys.Update(0, 1003);
+    assert(hotkeys.Update(A, 1004).buttons == A);
+
+    assert(!hotkeys.Update(Select | Y, 2000).provision_wifi);
+    assert(!hotkeys.Update(Select | Y, 3199).provision_wifi);
+    assert(hotkeys.Update(Select | Y, 3200).provision_wifi);
+    assert(!hotkeys.Update(Select | Y, 3201).provision_wifi);
+    (void)hotkeys.Update(0, 3202);
+    assert(hotkeys.Update(Select | L, 4000).volume_delta == -5);
+    assert(hotkeys.Update(Select | L, 4249).volume_delta == 0);
+    assert(hotkeys.Update(Select | L, 4250).volume_delta == -5);
+    (void)hotkeys.Update(0, 4251);
+    assert(hotkeys.Update(Select | R, 4300).volume_delta == 5);
+    (void)hotkeys.Update(0, 4301);
+
+    // Abandoning a long shortcut must never trigger it later.
+    assert(!hotkeys.Update(Select | Start, 5000).home);
+    assert(!hotkeys.Update(Start, 6000).home);
+    (void)hotkeys.Update(0, 6001);
+    assert(hotkeys.Update(Start, 6002).buttons == Start);
+}

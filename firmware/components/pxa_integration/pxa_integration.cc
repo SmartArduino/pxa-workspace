@@ -718,8 +718,11 @@ void ListInputMethods(void*, pxsys_reference_input_method_emit_fn emit, void* co
 
 size_t ListManagedApps(void*,
                        pxsys_reference_managed_app_t* apps,
-                       size_t capacity) {
-    const size_t total = pxa_host_package_count();
+                       size_t capacity, pxsys_reference_app_filter_t filter) {
+    const auto list=filter==PXSYS_REFERENCE_APPS_INPUT_METHODS?
+        pxa_host_list_input_method_packages:pxa_host_list_packages;
+    const size_t total = filter==PXSYS_REFERENCE_APPS_INPUT_METHODS?
+        list(nullptr,0):pxa_host_package_count();
     if (apps == nullptr) return total;
     if (capacity == 0) return 0;
     if (capacity > total) capacity = total;
@@ -727,7 +730,7 @@ size_t ListManagedApps(void*,
         static_cast<pxa_host_package_info_t*>(std::calloc(
             capacity, sizeof(pxa_host_package_info_t)));
     if (packages == nullptr) return 0;
-    const size_t listed = pxa_host_list_packages(packages, capacity);
+    const size_t listed = list(packages, capacity);
     for (size_t index = 0; index < listed; ++index) {
         const pxa_host_package_info_t* info = &packages[index];
         pxsys_reference_managed_app_t* app = &apps[index];
@@ -1153,7 +1156,8 @@ void PublishDisplayProfile(void*, const pxsys_display_profile_t* display) {
 }
 
 bool CreateSystem(const pxa_board_port_t* board,
-                  const pxa_product_profile_t* profile) {
+                  const pxa_product_profile_t* profile,
+                  const pxsys_display_profile_t& initial_display) {
     pxsys_allocator_t allocator = {};
     allocator.struct_size = sizeof(allocator);
     allocator.allocate = Allocate;
@@ -1203,8 +1207,7 @@ bool CreateSystem(const pxa_board_port_t* board,
             pxsys_string_from_cstr(profile->locale)) != PXSYS_STATUS_OK) {
         return false;
     }
-    board->display_profile(board->context, &system_config.initial_display);
-    lv_display_set_dpi(display, system_config.initial_display.density_dpi);
+    system_config.initial_display = initial_display;
     pxsys_reference_theme_adapt_display(&system_config.initial_display,
                                         &system_config.initial_theme);
     g_display_width = system_config.initial_display.width;
@@ -1388,6 +1391,24 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     if (board->initialize_before_storage && !board->initialize(board->context)) return false;
     if (profile->mount_storage && !MountPxaStorage()) return false;
     if (!board->initialize_before_storage && !board->initialize(board->context)) return false;
+    // Host semantic fonts are created during initialization, before CreateSystem.
+    // Publish density now and pass the same profile to the shell; a later DPI
+    // update changes dp layout but cannot resize already-created font objects.
+    auto* display = board->display(board->context);
+    if (display == nullptr) {
+        ESP_LOGE(kTag, "Board did not provide an LVGL display");
+        return false;
+    }
+    pxsys_display_profile_t initial_display = {};
+    board->display_profile(board->context, &initial_display);
+    if (initial_display.density_dpi == 0) initial_display.density_dpi = 160;
+    lv_lock();
+    lv_display_set_dpi(display, initial_display.density_dpi);
+    lv_unlock();
+    ESP_LOGI(kTag, "Display prepared for Host: %ux%u dpi=%u",
+             static_cast<unsigned>(initial_display.width),
+             static_cast<unsigned>(initial_display.height),
+             static_cast<unsigned>(initial_display.density_dpi));
     if (!pxa_host_initialize()) {
         ShowStartupRecovery(board);
         return false;
@@ -1405,7 +1426,7 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
         ? board->lock_display(board->context, 2000) : lvgl_port_lock(2000);
     if (!locked) return false;
     lv_lock();
-    const bool started = CreateSystem(board, profile);
+    const bool started = CreateSystem(board, profile, initial_display);
     lv_unlock();
     if (board->unlock_display != nullptr)
         board->unlock_display(board->context);

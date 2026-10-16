@@ -1,0 +1,49 @@
+menu "DOIT GameKit"
+
+config PXA_DOIT_LCD_CLOCK_HZ
+    int "ST7789 SPI clock (Hz)"
+    range 10000000 80000000
+    default 80000000
+
+choice PXA_DOIT_LCD_SOFTWARE_ROTATION
+    prompt "Landscape software rotation"
+    default PXA_DOIT_LCD_ROTATE_270
+    help
+        Keep ST7789 in native 240x320 scan order. Rotate a complete logical
+        320x240 frame in software before sending it. No panel axis swap or
+        mirror commands are used for landscape. There is no TE connection.
+
+config PXA_DOIT_LCD_ROTATE_270
+    bool "270 degrees (default board orientation)"
+
+config PXA_DOIT_LCD_ROTATE_90
+    bool "90 degrees (upside down)"
+
+endchoice
+
+config PXA_DOIT_LCD_INVERT
+    bool "Invert ST7789 colors"
+    default y
+
+config PXA_DOIT_LCD_BGR
+    bool "Use BGR panel color order"
+    default n
+
+config PXA_DOIT_LCD_X_GAP
+    int "Native portrait panel X offset (pixels)"
+    range 0 80
+    default 0
+
+config PXA_DOIT_LCD_Y_GAP
+    int "Native portrait panel Y offset (pixels)"
+    range 0 80
+    default 0
+
+config PXA_DOIT_DENSITY_DPI
+    int "Display density (DPI)"
+    range 80 500
+    default 160
+    help
+        Logical 160 DPI until the physical active panel size is measured.
+
+endmenu

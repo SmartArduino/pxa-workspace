@@ -1,0 +1,6 @@
+dependencies:
+  idf:
+    version: '>=6.2'
+  78/esp-wifi-connect: ~3.1.5
+  espressif/esp_lv_decoder: ^0.4.3
+  espressif/freetype: ^2.14.3~1

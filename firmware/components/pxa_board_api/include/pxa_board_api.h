@@ -60,7 +60,16 @@ const pxa_board_port_t* pxa_board_current(void);
 bool pxa_board_performance_get(pxsys_reference_performance_option_t option);
 bool pxa_board_performance_set(pxsys_reference_performance_option_t option,
                                bool enabled);
+/* Count one successfully displayed content frame, outside interrupt context.
+ * Diagnostic-only redraws must not feed this counter. */
 void pxa_board_performance_note_frame(void);
+/* Sample approximately once a second. Safe alongside completion callbacks;
+ * calling this while idle publishes zero without generating a content frame. */
+uint32_t pxa_board_performance_refresh(void);
+enum {
+    PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH = 60,
+    PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT = 16,
+};
 void pxa_board_performance_draw_rgb565(uint16_t* pixels, uint16_t viewport_width,
                                        uint16_t viewport_height, uint32_t stride,
                                        int32_t origin_x, int32_t origin_y,
