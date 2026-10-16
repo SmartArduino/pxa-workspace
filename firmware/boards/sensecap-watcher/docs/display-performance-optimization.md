@@ -4,6 +4,35 @@
 从"能显示但花屏/白屏/卡顿"到"无花屏、通知栏拖动 23~36 FPS"的完整过程，
 包含每一步的现象、根因、改动和实测数据，便于后续回归时对照。
 
+若要快速了解采用了哪些优化、实现入口及迁移约束，先读[游戏优化方法与复用参考](game-pipeline-optimization-reference.zh-CN.md)。
+下文同时保留历史 UI 调优，不能把历史参数或通知栏帧率当作当前游戏配置与结果。
+
+**2026-10-14 更新：** 下文 23～36 FPS 是历史通知栏场景，不能代表游戏帧率。
+首轮板级修复使原生 412×412 Jump Jump 3D 从约 12.2 FPS 提升至 18.6 FPS，并恢复音频输出。
+本轮在正确画面下实测静止 **34.33 / 34.48 FPS**、成功跳跃 **31.60 / 31.92 FPS**，画质及玩法不变。
+首次冷启动额外复核为静止 **33.73 / 33.57**、跳跃 **29.89 / 29.73 FPS**，不能把较快的 UI 后结果代表所有启动状态。
+相同 UI 预热后四轮最坏稳定 SRAM 519496 → 511624 B、PSRAM 3372160 → 3334176 B；
+游戏峰值 523856 / 3432272 → 515984 / 3392716 B，初始化峰值也下降。
+SRAM heap 总容量比基线少 80 B，按固定参考容量补回后仍全部下降。帧率来自不同帧 DMA 完成间隔。
+成功跳跃输入到关联显示完成 P95 109.7 / 111.1 → 78 / 80 ms；Guest 分发并非每轮改善，未做物理触摸 / 光学测量。
+两次冷启动 UI 验证完成 25 + 46 次 SHA 校验截图、3 次及 10 次启动；SRAM 峰值 518420 B，PSRAM 最坏 4982044 B，
+低于匹配基线 533356 / 4985628 B。UI 后跳跃均值超过 30，首次冷启动约 29.8 FPS，尚非逐帧锁定。
+
+此前原生 35 / 39 FPS 数据全部撤回：用户实拍发现重复横带，根因是临时 Surface 漏设 visible，实际跳过游戏像素转换。
+现在原生分块直接调用独立的原始 RGB565 转换，不再伪造 Surface 描述符。生产转换器到 transport 的整帧 339488 B 回归通过，
+用户物理屏幕确认修复正常。Host Surface 截图绕过 SRAM 送屏小块，仅能验证逻辑画面，不能单独证明显示正确。
+SPD2010 的左边界和排他右边界须按四像素对齐；原生 `[0,412)`、LVGL rounder 及送屏检查均覆盖该要求。
+
+当前采用单 LVGL draw unit、两个 200 行 PSRAM UI 缓冲、两个十二行 SRAM DMA 块（共 19776 B）。
+原生游戏持有已有 Surface lease，融合字节交换与分块拷贝，下一帧光栅化与 DMA 重叠；透明层及缩放保留镜像合成路径。
+大 Raster 资源直接使用既有 PSRAM 后备池，Watcher 性能构建的 Raster 使用 O3，16 字节对齐的转换使用局部 S3 SIMD，其他数据保留标量路径；设备数据是组合收益。
+SPI3 保持 40 MHz；SPI2 / SPI3 直接 PSRAM DMA 都曾下溢，因此未采用，也未修改 IDF 私有驱动。
+音频无声曾由连续 SRAM 不足导致：混音器需要 8592 B，而旧最大空闲块只有 8192 B。
+单绘制单元释放了两条 32 KiB 工作线程栈，音频会话和非静音 I2S 输出、解码零 underrun 已验证；未作声学测量。
+
+首轮记录：`pxa-apps/jump-jump-3d/docs/sensecap-watcher-20261014.zh-CN.md`；
+本轮完整对比、撤回原因、真实局部峰值和限制：`pxa-apps/jump-jump-3d/docs/sensecap-watcher-pipeline-20261014.zh-CN.md`。
+
 参考对象：同仓库的 pai-touch 板（ST7789 SPI + CST826 + **TE 锁帧**），
 其 `DISPLAY_OPTIMIZATION.md` 记录了三段流水线方案；Watcher 的硬件条件不同，
 不能照搬，差异见文末。
@@ -18,7 +47,7 @@
 | 显示 | SPD2010，412×412，QSPI（SPI3），无 TE 引脚（原理图已核对，TE 未接 ESP32） |
 | 触摸 | SPD2010 触摸，I2C1（GPIO38/39，400 kHz），INT 经 PCA9555 P0.5，扩展器 INT=GPIO2 |
 | 电源/输入 | PCA9555（I2C0）、滚轮音量、电源键、ES8311 音频、电池 ADC |
-| 图形库 | LVGL 9.5 + esp_lvgl_port 2.9 |
+| 图形库 | 当前 LVGL 9.6.0~1 + esp_lvgl_port 2.9；历史记录为 LVGL 9.5 |
 | 运行时 | PXA/WAMR guest 系统 + reference UI（`deps/pxa-system`） |
 
 ---
@@ -27,15 +56,27 @@
 
 `src/watcher_hardware.cc`：
 
-- QSPI 时钟 **40 MHz**（`WATCHER_LCD_PIXEL_CLK_HZ`），8 KB 分块
-  （`kLcdChunkBytes`），`trans_queue_depth = 2`；
-- LVGL 局部渲染模式：**全屏 PSRAM 双缓冲**（412×412×2B×2 ≈ 663 KB），
+- QSPI 时钟 **40 MHz**（`WATCHER_LCD_PIXEL_CLK_HZ`），总线单次上限 9888 B
+  （`kLcdChunkBytes`）；正常使用两个 9888 B 的内部 DMA 块，每块十二行，原生全帧尾部四行；
+- LVGL 局部渲染模式：**全宽 200 行 PSRAM 双缓冲**（412×200×2B×2 ≈ 322 KiB），
   `LV_COLOR_FORMAT_RGB565_SWAPPED` + `swap_bytes = false`（免 CPU 字节交换）；
-- **2 个软件 draw unit**（`LV_DRAW_SW_DRAW_UNIT_CNT=2`）：整屏切 2 块，
-  两个渲染线程跑在两核上；
-- 独立的 **刷屏任务**（`watcher_flush`，优先级 4，栈 4 KB，队列 2）：
-  LVGL 的 flush 回调只入队，弹跳拷贝与 `esp_lcd_panel_draw_bitmap` 在刷屏任务里做；
-  出错时记录 `flush failed (...)` 并调用 `lv_display_flush_ready()`，避免 LVGL 死等。
+- **1 个软件 draw unit**（`LV_DRAW_SW_DRAW_UNIT_CNT=1`），UI 在既有 owner 任务绘制，
+  不再额外分配两条 32 KiB 工作线程栈；
+- 游戏呈现任务在 core 1、优先级 4，光栅化在 LVGL 锁之外执行；呈现阶段同时持有端口锁和 LVGL 全局锁。
+  RGB565 拷贝内核使用 `-O3`、对齐像素对读写。完整、无透明层的原生 Host Surface 持有 lease 至 DMA 完成，
+  不复制整帧镜像；缩放、Guest 映射及透明合成沿用已有镜像，DMA 完成前不可修改；
+- 独立的 **刷屏任务**（`watcher_flush`，优先级 4，栈 3 KB，队列 1）：
+  LVGL 的 flush 回调只入队；板级 `watcher_lcd_io` 使用公开 SPI API，在刷屏任务中将像素转换/复制到两个固定 DMA 块。
+  重用块之前等待该块真实完成，尾块结果也检查；正常像素路径无临时 DMA 分配或驱动弹跳拷贝。
+  游戏入队后返回，允许下一帧 Raster 与扫描输出重叠；旧信号量和 lease 保证截图、UI 切换及写入等待完成。
+  LVGL `flush_wait_cb` 用原子完成标志和 `vTaskDelay(1)` 等待；刷屏任务只发布完成，
+  由 LVGL owner 自身结束 flushing 状态。成功和失败均释放等待，避免跨任务改 LVGL 状态或忙等饿死 idle。
+  冷启动重复打开曾在默认忙等中触发 watchdog，此回调经过同流程冷启动与反复启动回归。
+- PXADB 控制栈由 20 KiB 调至 18 KiB，其他板维持默认；部署和截图均实测高水位。
+  截图 SHA-256 用 1 KiB 分段更新，避免 PSA 一次复制整幅 JPEG / RGB565 到内部 SRAM。
+  JPEG 输出保留原先两张原始帧容量；小输出重试在真实供应商库产生堆损坏，已撤回。
+  Watcher 可选配置把截图线程的 ≥4096 B 编码工作区优先放到 PSRAM；无常驻缓存。
+  由于 esp_new_jpeg 1.0.2 没有公开的逐实例分配器，两个私有分配入口被隔离适配，库升级必须复测；其他板默认关闭。
 
 `sdkconfig.defaults` 关键项：
 
@@ -45,12 +86,12 @@ CONFIG_ESP32S3_DATA_CACHE_32KB=y
 CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
 CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=262144
-CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
-CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=6
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=6
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=24
 CONFIG_LV_DEF_REFR_PERIOD=16
-CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
 CONFIG_LV_DRAW_THREAD_PRIO=4
 CONFIG_LV_DRAW_THREAD_STACK_SIZE=32768
 CONFIG_LV_CACHE_DEF_SIZE=1048576
@@ -91,7 +132,7 @@ I (xxxxx) LVGL: [User] lv_sysmon: 26 FPS (refr_cnt: 8 | redraw_cnt: 8),
 
 ---
 
-## 4. 优化时间线
+## 4. 历史 UI 优化时间线（2026-10-14 之前）
 
 ### 4.1 花屏（刷新区域）—— direct 模式 flush 指针 + 80 MHz
 
@@ -174,7 +215,7 @@ I (xxxxx) LVGL: [User] lv_sysmon: 26 FPS (refr_cnt: 8 | redraw_cnt: 8),
 
 ---
 
-## 5. 最终实测数据（同一帧周期内取样）
+## 5. 历史 UI 实测数据（同一帧周期内取样）
 
 | 场景 | render | flush | FPS |
 | --- | --- | --- | --- |
@@ -211,8 +252,7 @@ I (xxxxx) LVGL: [User] lv_sysmon: 26 FPS (refr_cnt: 8 | redraw_cnt: 8),
 1. **esp_lvgl_port 的 direct 模式在 SPI 屏上不会偏移 flush 指针**，
    局部刷新会花屏；要么自己写 flush，要么用局部渲染 + 全屏缓冲。
 2. **LVGL 的 `wait_for_flushing` 是忙等**（未设置 `flush_wait_cb` 时）：
-   任何 flush 提交失败都会把 LVGL 任务卡死并触发看门狗，必须兜底
-   `lv_display_flush_ready()`。
+   正常和失败路径都必须发布完成；当前使用让出调度的等待回调，由 LVGL owner 自身清除 flushing。
 3. **PSRAM 绘制缓冲的 SPI 传输要走内部 DMA 弹跳缓冲**，
    小块（8 KB）比大块（21 KB）安全得多；内部 RAM 不足时的报错是
    `Failed to allocate priv TX buffer`。

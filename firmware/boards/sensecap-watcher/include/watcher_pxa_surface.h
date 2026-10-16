@@ -1,24 +1,26 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include <lvgl.h>
+#include <pxa/pxa_esp_surface.h>
 
 // PXA Surface presentation for the SenseCAP Watcher QSPI panel.
 //
-// The panel has no rotation and no TE synchronization, so unlike pai-touch the
-// board does not need a direct-scanout rotation pipeline. The presenter task
-// only wakes LVGL so the newly submitted Surface frame is rendered again, and
-// the LVGL flush callback composites the latest Sensor Surface under the
-// trusted UI alpha plane before the area is queued to the panel. The lease is
-// released as soon as the composited copy is complete, so the Guest buffer
-// returns to the Surface pool before the SPI transfer finishes.
+// The existing presenter rasterizes outside the LVGL lock, then presents an
+// eligible fullscreen RGB565 frame through the board callback. Smaller
+// surfaces and overlays without a complete plane use LVGL composition.
+// Native scanout holds its lease until DMA completes; composed paths release
+// after copying into their immutable output buffer.
 namespace watcher_pxa_surface {
 
 // Installs the Surface frame-ready callback and the presenter task. Returns
 // false when the presenter task cannot be created; the board then keeps its
 // plain LVGL flush path.
-bool Install(lv_display_t* display);
+using DirectPresenter = bool (*)(void* context);
+bool Install(lv_display_t* display, DirectPresenter presenter = nullptr,
+             void* context = nullptr);
 
 // Composites the latest Surface frame into one LVGL flush area. It must run on
 // the LVGL task, after LVGL rendered the area and before the area is handed to
@@ -30,5 +32,14 @@ struct ComposedFrameInfo {
     uint32_t raster_ready_tick_us = 0;
 };
 ComposedFrameInfo ComposeFlushArea(const lv_area_t* area, uint8_t* pixels);
+bool DirectFrameEligible(const pxa_esp_surface_frame_t& frame);
+ComposedFrameInfo ComposeFrame(const pxa_esp_surface_frame_t& frame,
+                              const lv_area_t* area, uint8_t* pixels);
+
+// Packs a contiguous native RGB565 range into DMA SRAM in panel byte order.
+// Offset and size are even, destination is uint16_t-aligned; unlike ComposeFrame
+// this raw-pixel operation does not depend on Surface visibility or UI metadata.
+void PackNativeRgb565Band(const void* source, void* destination,
+                         size_t offset_bytes, size_t size_bytes);
 
 }  // namespace watcher_pxa_surface

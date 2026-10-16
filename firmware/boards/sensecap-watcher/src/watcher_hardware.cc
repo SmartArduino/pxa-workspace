@@ -2,6 +2,7 @@
 
 #include "sensecap_watcher_config.h"
 #include "watcher_pxa_surface.h"
+#include "watcher_lcd_io.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -33,17 +34,37 @@
 
 namespace {
 constexpr char kTag[] = "WatcherHw";
-// The SPI driver bounces PSRAM color data through an internal DMA buffer it
-// allocates per transaction. The watcher's internal heap runs with an ~8 KiB
-// largest free block once the runtime and PXADB stacks are up, so the chunk
-// has to stay well below that: an 8 KiB chunk failed to allocate, the panel
-// silently dropped the transfer, and LVGL spun forever in wait_for_flushing
-// with the screen frozen. 4 KiB in flight twice fits where 8 KiB did not.
-constexpr int kLcdChunkBytes = 4 * 1024;
+// One LVGL draw unit leaves room for audio and the fixed DMA staging blocks.
+// The bus limit also bounds the dynamic fallback used if staging is unavailable.
 constexpr int kLcdQueueDepth = 2;
-// The flush task only runs the SPI submission and its bounce copies.
+// Twelve full rows bound the two reserved DMA blocks to 19776 bytes. Packing
+// directly into SRAM removes both hot-path allocation and a PSRAM bounce.
+constexpr size_t kScanoutRows = 12;
+constexpr size_t kScanoutBlockBytes = WATCHER_DISPLAY_WIDTH * kScanoutRows * 2;
+constexpr int kLcdChunkBytes = kScanoutBlockBytes;
+static_assert(kScanoutBlockBytes % 4 == 0);
+// esp_lcd uses an exclusive x_end; both 0 and 412 meet SPD2010's rule.
+static_assert(WATCHER_DISPLAY_WIDTH % 4 == 0);
+
+void PackNativeFrame(void* timing, const void* source, void* destination,
+                     size_t offset, size_t bytes) {
+    const int64_t start = timing ? esp_timer_get_time() : 0;
+    // Raw pixels are already validated/leased by PresentDirectFrame. Do not
+    // manufacture a Surface descriptor: a default visible=false silently
+    // skipped composition and left old scratch pixels (including FPS) intact.
+    watcher_pxa_surface::PackNativeRgb565Band(source, destination, offset, bytes);
+    const int y = offset / (WATCHER_DISPLAY_WIDTH * 2);
+    const int rows = bytes / (WATCHER_DISPLAY_WIDTH * 2);
+    pxa_board_performance_draw_rgb565(static_cast<uint16_t*>(destination),
+        WATCHER_DISPLAY_WIDTH, WATCHER_DISPLAY_HEIGHT, WATCHER_DISPLAY_WIDTH,
+        0, y, WATCHER_DISPLAY_WIDTH, rows, true);
+    if (timing)
+        *static_cast<uint64_t*>(timing) += esp_timer_get_time() - start;
+}
+// The existing flush task packs/stages pixels and owns panel submission.
 constexpr int kFlushTaskPriority = 4;
-constexpr uint32_t kFlushTaskStack = 4096;
+// Measured about 2 KiB with UI/game/capture; retain about 1 KiB headroom.
+constexpr uint32_t kFlushTaskStack = 3072;
 // The official BSP polls the touchpad on the LVGL indev timer and treats a
 // report as a touch only when its pressure is above this threshold, which
 // also filters the controller's zero-pressure lift records.
@@ -308,7 +329,7 @@ bool SensecapWatcherHardware::InitializeDisplay() {
         .lcd_param_bits = 8,
         .flags = {.quad_mode = true},
     };
-    if (esp_lcd_new_panel_io_spi(WATCHER_LCD_SPI_HOST, &io_config,
+    if (WatcherLcdIoCreate(WATCHER_LCD_SPI_HOST, io_config,
                                  &panel_io_) != ESP_OK) {
         ESP_LOGE(kTag, "Cannot create SPD2010 panel IO");
         return false;
@@ -358,11 +379,13 @@ bool SensecapWatcherHardware::InitializeDisplay() {
         .io_handle = panel_io_,
         .panel_handle = panel_,
         .control_handle = nullptr,
-        // Full-screen PSRAM draw buffer with two software draw units: LVGL
-        // splits the refreshed area into two tiles and renders them on both
-        // cores, without the per-band tiling overhead internal RAM bands
-        // introduced. The native swapped format removes the CPU byte swap.
-        .buffer_size = WATCHER_DISPLAY_WIDTH * WATCHER_DISPLAY_HEIGHT,
+        // Full-width PSRAM buffers avoid narrow-band tiling overhead. One draw
+        // unit keeps the fallback UI on its owner task without worker stacks.
+        // Keep two approximately half-height UI buffers. Align their rows to
+        // an eight-row allocation granularity, saving 9888 bytes at 412x412;
+        // native games use their leased Surface rather than these buffers.
+        .buffer_size = WATCHER_DISPLAY_WIDTH *
+            ((WATCHER_DISPLAY_HEIGHT / 2) / 8 * 8),
         .double_buffer = true,
         .trans_size = 0,
         .hres = WATCHER_DISPLAY_WIDTH,
@@ -388,7 +411,7 @@ bool SensecapWatcherHardware::InitializeDisplay() {
     // PXADB screenshots are mirrored out of the flush path: the SPD2010 has no
     // readable framebuffer, so the flush callback copies the composed areas
     // into this snapshot before they are handed to the panel.
-    snapshot_ = static_cast<uint16_t*>(heap_caps_malloc(
+    snapshot_ = static_cast<uint16_t*>(heap_caps_aligned_alloc(64,
         static_cast<size_t>(WATCHER_DISPLAY_WIDTH) * WATCHER_DISPLAY_HEIGHT *
             sizeof(uint16_t),
         MALLOC_CAP_SPIRAM));
@@ -404,10 +427,35 @@ bool SensecapWatcherHardware::InitializeDisplay() {
             snapshot_sem_ = nullptr;
         }
     }
+    scanout_ = static_cast<uint8_t*>(heap_caps_aligned_alloc(
+        16, kScanoutBlockBytes * kLcdQueueDepth, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
+    if (scanout_ == nullptr)
+        ESP_LOGW(kTag, "Continuing with bounded dynamic LCD DMA buffers");
+#if CONFIG_PXADB_TEST_CONTROL
+    // Native host tests cannot execute Xtensa PIE instructions. Verify the
+    // actual device kernel once, using only this existing setup task's stack.
+    alignas(16) uint16_t packing_source[96], packing_output[96];
+    for (size_t i = 0; i < 96; ++i) packing_source[i] = (i * 173u) ^ 0xa55a;
+    for (size_t offset = 0; offset < 8; ++offset) {
+        for (size_t count = 0; count < 80; ++count) {
+            std::fill_n(packing_output, 96, 0x5a5a);
+            watcher_pxa_surface::PackNativeRgb565Band(
+                packing_source, packing_output + offset, offset * 2, count * 2);
+            for (size_t i = 0; i < 96; ++i) {
+                const uint16_t expected = i >= offset && i < offset + count
+                    ? __builtin_bswap16(packing_source[i]) : 0x5a5a;
+                if (packing_output[i] != expected) {
+                    ESP_LOGE(kTag, "Native packing self-check failed");
+                    return false;
+                }
+            }
+        }
+    }
+    ESP_LOGI(kTag, "Native packing self-check passed: aligned, clipped and tail pixels");
+#endif
 
-    // Submitting a PSRAM frame costs the SPI driver a bounce copy per chunk.
-    // A dedicated task does that work so the LVGL task can start the next
-    // render immediately; LVGL still waits for the transfer completion.
+    // The existing flush task owns packing/staging and DMA. LVGL or the game
+    // presenter can prepare the next buffer while this owner transfers pixels.
     flush_queue_ = xQueueCreate(1, sizeof(FlushRequest));
     if (flush_queue_ == nullptr ||
         xTaskCreate(FlushTaskEntry, "watcher_flush", kFlushTaskStack, this,
@@ -435,10 +483,13 @@ bool SensecapWatcherHardware::InitializeDisplay() {
     if (registered == ESP_OK) {
         lv_display_set_user_data(display_, this);
         lv_display_set_flush_cb(display_, FlushDisplay);
+        lv_display_set_flush_wait_cb(display_, WaitFlushDisplay);
     }
     lvgl_port_unlock();
     if (registered != ESP_OK) return false;
-    if (!watcher_pxa_surface::Install(display_)) {
+    if (!watcher_pxa_surface::Install(display_, [](void* context) {
+            return static_cast<SensecapWatcherHardware*>(context)->PresentDirectFrame();
+        }, this)) {
         ESP_LOGW(kTag, "Continuing without PXA Surface presentation");
     }
     ESP_LOGI(kTag, "SPD2010 display initialized as %dx%d",
@@ -459,7 +510,9 @@ void SensecapWatcherHardware::FlushDisplay(lv_display_t* display,
     // Composite the latest PXA Surface under the trusted UI before the area
     // leaves the LVGL task; the queued pixels are then fully owned by the
     // flush task and the Surface lease can be released immediately.
+    self->WaitDirectFrame();
     const auto composed = watcher_pxa_surface::ComposeFlushArea(area, pixels);
+    self->direct_snapshot_current_ = false;
     const bool last = lv_display_flush_is_last(display);
     const uint16_t snapshot = self->snapshot_pending_.load(std::memory_order_acquire);
     if (snapshot != 0) {
@@ -480,13 +533,24 @@ void SensecapWatcherHardware::FlushDisplay(lv_display_t* display,
         .last = last,
         .snapshot_revision = snapshot,
     };
+    self->ui_flush_done_.store(false, std::memory_order_release);
     if (xQueueSend(self->flush_queue_, &request, 0) != pdTRUE) {
         // LVGL waits for the previous transfer before the next flush, so the
         // queue should never fill; drop the frame instead of blocking the
         // render task if it ever does.
         ESP_LOGW(kTag, "flush queue full, dropping frame");
+        self->ui_flush_done_.store(true, std::memory_order_release);
         lv_display_flush_ready(display);
     }
+}
+
+void SensecapWatcherHardware::WaitFlushDisplay(lv_display_t* display) {
+    auto* self = static_cast<SensecapWatcherHardware*>(
+        lv_display_get_user_data(display));
+    if (self == nullptr) return;
+    while (!self->ui_flush_done_.load(std::memory_order_acquire)) vTaskDelay(1);
+    // LVGL clears its flushing flag after this callback. Only that owner
+    // clears it: an asynchronous ready write could race the next UI flush.
 }
 
 void SensecapWatcherHardware::FlushTaskEntry(void* arg) {
@@ -510,9 +574,24 @@ void SensecapWatcherHardware::FlushTask() {
             continue;
         }
         (void)ulTaskNotifyTake(pdTRUE, 0);
-        const esp_err_t err = esp_lcd_panel_draw_bitmap(
+        const uint64_t lease = request.display == nullptr ? direct_lease_ : 0;
+        const int64_t transfer_start = esp_timer_get_time();
+        static uint32_t timing_ms = 0;
+        const bool trace = request.display == nullptr &&
+            static_cast<uint32_t>(transfer_start / 1000) - timing_ms >= 5000;
+        uint64_t pack_us = 0;
+        WatcherLcdIoSetPacking(panel_io_, lease != 0 ? PackNativeFrame : nullptr,
+                              trace ? &pack_us : nullptr, scanout_,
+                              scanout_ ? kScanoutBlockBytes : 0);
+        // LVGL areas include x2; esp_lcd's x_end is exclusive. Never send an
+        // unaligned window to SPD2010, even if a future caller skips rounder_cb.
+        const bool aligned = request.area.x1 % 4 == 0 &&
+            (request.area.x2 + 1) % 4 == 0;
+        const esp_err_t err = aligned ? esp_lcd_panel_draw_bitmap(
             panel_, request.area.x1, request.area.y1, request.area.x2 + 1,
-            request.area.y2 + 1, request.pixels);
+            request.area.y2 + 1, request.pixels) : ESP_ERR_INVALID_ARG;
+        const int64_t transfer_submitted = esp_timer_get_time();
+        WatcherLcdIoSetPacking(panel_io_, nullptr, nullptr, nullptr, 0);
         if (err != ESP_OK) {
             const uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
             if (static_cast<uint32_t>(now_ms - flush_error_ms_) > 1000) {
@@ -531,6 +610,14 @@ void SensecapWatcherHardware::FlushTask() {
             const auto completed_us = pxa_board_common::DisplayCompletionTimestamp(
                 static_cast<uint64_t>(esp_timer_get_time()),
                 flush_done_us_low_.load(std::memory_order_acquire));
+            const uint32_t now_ms = completed_us / 1000;
+            if (trace) {
+                timing_ms = now_ms;
+                ESP_LOGI(kTag, "Direct transfer: submit=%lld us complete=%llu us pack=%llu us",
+                    static_cast<long long>(transfer_submitted - transfer_start),
+                    static_cast<unsigned long long>(completed_us - transfer_start),
+                    static_cast<unsigned long long>(pack_us));
+            }
             if (request.last) {
                 pxa_board_performance_note_frame();
                 pxa_esp_surface_note_display_latency(
@@ -546,8 +633,119 @@ void SensecapWatcherHardware::FlushTask() {
                 }
             }
         }
-        lv_display_flush_ready(request.display);
+        if (request.display != nullptr)
+            ui_flush_done_.store(true, std::memory_order_release);
+        if (request.display == nullptr) {
+            if (lease != 0) {
+                pxa_esp_surface_release_frame(lease);
+                direct_lease_ = 0;
+            }
+            direct_snapshot_current_ = err == ESP_OK;
+            direct_native_current_ = lease != 0;
+            snapshot_timestamp_us_.store(pxa_board_common::DisplayCompletionTimestamp(
+                static_cast<uint64_t>(esp_timer_get_time()),
+                flush_done_us_low_.load(std::memory_order_acquire)), std::memory_order_relaxed);
+            // Frame-ready notifications can arrive while DMA runs. Use the
+            // existing capture semaphore for completion, not that notification.
+            xSemaphoreGive(snapshot_sem_);
+        }
     }
+}
+
+bool SensecapWatcherHardware::PresentDirectFrame() {
+    // Called under LVGL's lock. Native frames use the bounded SRAM staging
+    // blocks; composition reuses the existing mirror. No new full frame/task.
+    if (snapshot_ == nullptr || snapshot_sem_ == nullptr ||
+        snapshot_pending_.load(std::memory_order_acquire) != 0 ||
+        !screen_enabled_.load() || reference_ui_ == nullptr ||
+        pxsys_reference_lvgl_is_locked(reference_ui_)) return false;
+    WaitDirectFrame();
+    pxa_esp_surface_frame_t frame;
+    if (!pxa_esp_surface_acquire_prepared_with_alpha(&frame)) return false;
+    if (!watcher_pxa_surface::DirectFrameEligible(frame)) {
+        pxa_esp_surface_release_frame(frame.lease);
+        return false;
+    }
+    const lv_area_t area = {0, 0, WATCHER_DISPLAY_WIDTH - 1, WATCHER_DISPLAY_HEIGHT - 1};
+    const auto visible = [](const pxa_esp_surface_ui_alpha_plane_t& plane) {
+        return plane.visible && plane.opacity != 0;
+    };
+    const bool native = scanout_ != nullptr && frame.width == WATCHER_DISPLAY_WIDTH &&
+        frame.height == WATCHER_DISPLAY_HEIGHT &&
+        frame.stride_bytes == WATCHER_DISPLAY_WIDTH * 2 &&
+        (frame.flags & PXA_SURFACE_FLAG_GUEST_MAPPED) == 0 &&
+        (!visible(frame.ui_alpha_plane) || frame.suppress_guest_alpha) &&
+        !visible(frame.system_alpha_plane);
+    if (native) {
+        // Pack straight from the leased Surface into two small DMA blocks.
+        // No whole-frame mirror copy; the next raster may use another buffer.
+        direct_lease_ = frame.lease;
+        (void)xSemaphoreTake(snapshot_sem_, 0);
+        const FlushRequest request{nullptr, area, const_cast<uint8_t*>(frame.pixels),
+            frame.frame_id, frame.input_timestamp_us, frame.raster_ready_tick_us, true, 0};
+        if (xQueueSend(flush_queue_, &request, portMAX_DELAY) != pdTRUE) {
+            direct_lease_ = 0;
+            pxa_esp_surface_release_frame(frame.lease);
+            return false;
+        }
+        direct_frame_pending_ = true;
+        return true;
+    }
+    const int64_t compose_start = esp_timer_get_time();
+    const auto composed = watcher_pxa_surface::ComposeFrame(
+        frame, &area, reinterpret_cast<uint8_t*>(snapshot_));
+    static uint32_t timing_ms = 0;
+    const int64_t composed_us = esp_timer_get_time();
+    const uint32_t now_ms = composed_us / 1000;
+    if (now_ms - timing_ms >= 5000) {
+        timing_ms = now_ms;
+        ESP_LOGI(kTag, "Direct compose: copy=%lld us alpha=%u,%u",
+            static_cast<long long>(composed_us - compose_start),
+            frame.ui_alpha_plane.visible, frame.system_alpha_plane.visible);
+    }
+    pxa_esp_surface_release_frame(frame.lease);
+    pxa_board_performance_draw_rgb565(snapshot_, WATCHER_DISPLAY_WIDTH,
+        WATCHER_DISPLAY_HEIGHT, WATCHER_DISPLAY_WIDTH, 0, 0,
+        WATCHER_DISPLAY_WIDTH, WATCHER_DISPLAY_HEIGHT, true);
+    (void)xSemaphoreTake(snapshot_sem_, 0);
+    const FlushRequest request = {nullptr, area, reinterpret_cast<uint8_t*>(snapshot_),
+        composed.frame_id, composed.input_timestamp_us, composed.raster_ready_tick_us,
+        true, 0};
+    // A previous LVGL transfer may still be in flight. The existing queue
+    // serializes panel access. Return after queuing so the next raster overlaps
+    // DMA; every mirror reader/writer drains pending before accessing it.
+    if (xQueueSend(flush_queue_, &request, portMAX_DELAY) != pdTRUE) return false;
+    direct_frame_pending_ = true;
+    return true;
+}
+
+void SensecapWatcherHardware::WaitDirectFrame() {
+    if (!direct_frame_pending_) return;
+    (void)xSemaphoreTake(snapshot_sem_, portMAX_DELAY);
+    direct_frame_pending_ = false;
+}
+
+bool SensecapWatcherHardware::CopyDirectSnapshot(uint16_t* pixels) {
+    const size_t count = WATCHER_DISPLAY_WIDTH * WATCHER_DISPLAY_HEIGHT;
+    if (direct_native_current_) {
+        pxa_esp_surface_frame_t frame{};
+        if (!pxa_esp_surface_acquire_current_for_preview(&frame)) return false;
+        if (frame.format != PXA_SURFACE_FORMAT_RGB565 ||
+            frame.width != WATCHER_DISPLAY_WIDTH || frame.height != WATCHER_DISPLAY_HEIGHT ||
+            frame.stride_bytes != WATCHER_DISPLAY_WIDTH * sizeof(uint16_t)) {
+            pxa_esp_surface_release_frame(frame.lease);
+            return false;
+        }
+        memcpy(pixels, frame.pixels, count * sizeof(uint16_t));
+        pxa_esp_surface_release_frame(frame.lease);
+        pxa_board_performance_draw_rgb565(pixels, WATCHER_DISPLAY_WIDTH,
+            WATCHER_DISPLAY_HEIGHT, WATCHER_DISPLAY_WIDTH, 0, 0,
+            WATCHER_DISPLAY_WIDTH, WATCHER_DISPLAY_HEIGHT, false);
+    } else {
+        for (size_t index = 0; index < count; ++index)
+            pixels[index] = __builtin_bswap16(snapshot_[index]);
+    }
+    return true;
 }
 
 bool SensecapWatcherHardware::InitializeTouch() {
@@ -1136,6 +1334,14 @@ void SensecapWatcherHardware::LogHeapUsage() {
              static_cast<unsigned>(psram_total),
              static_cast<unsigned>(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM)),
              static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)));
+#if CONFIG_PXADB_TEST_CONTROL
+    for (const char* name : {"taskLVGL", "watcher_flush", "watcher_pxa"}) {
+        if (const auto task = xTaskGetHandle(name)) {
+            ESP_LOGI(kTag, "Stack[%s]: minimum_free=%u B", name,
+                     static_cast<unsigned>(uxTaskGetStackHighWaterMark(task)));
+        }
+    }
+#endif
 }
 
 void SensecapWatcherHardware::StatusOnLvgl(void* context) {
@@ -1287,12 +1493,34 @@ bool SensecapWatcherHardware::CaptureRgb565(
     const size_t needed =
         static_cast<size_t>(WATCHER_DISPLAY_WIDTH) * WATCHER_DISPLAY_HEIGHT;
     if (pixel_count < needed) return false;
-    // This mirror is populated on demand, rather than during every flush.
-    // A ready mirror belongs to the previous request and can be arbitrarily
-    // old. Both capture modes must acquire a fresh completed frame.
+    // Direct games capture their completed Surface or composed mirror. The
+    // fallback UI populates the mirror through a fresh completed redraw.
     (void)after_present;
     {
         if (snapshot_sem_ == nullptr || !lvgl_port_lock(1000)) return false;
+        lv_lock();
+        WaitDirectFrame();
+        if (direct_snapshot_current_ && pxa_esp_surface_has_visible_surface() &&
+            !pxa_esp_surface_composition_required()) {
+            // Export the completed native Surface or composed mirror without
+            // forcing a redraw. Both owners are blocked during this copy.
+            if (!CopyDirectSnapshot(pixels)) {
+                lv_unlock();
+                lvgl_port_unlock();
+                return false;
+            }
+            if (info != nullptr) {
+                info->width = WATCHER_DISPLAY_WIDTH;
+                info->height = WATCHER_DISPLAY_HEIGHT;
+                info->stride_bytes = WATCHER_DISPLAY_WIDTH * sizeof(uint16_t);
+                info->frame_id = snapshot_frame_id_.fetch_add(1, std::memory_order_relaxed) + 1;
+                info->completed_timestamp_us = snapshot_timestamp_us_.load(std::memory_order_relaxed);
+                info->source = "pxa-direct";
+            }
+            lv_unlock();
+            lvgl_port_unlock();
+            return true;
+        }
         (void)xSemaphoreTake(snapshot_sem_, 0);
         uint32_t revision = snapshot_frame_id_.fetch_add(1, std::memory_order_relaxed) + 1;
         if (static_cast<uint16_t>(revision) == 0)
@@ -1303,6 +1531,7 @@ bool SensecapWatcherHardware::CaptureRgb565(
         // ordinary flush. Install the token under LVGL's lock so no partial
         // refresh can be mistaken for this requested frame.
         lv_obj_invalidate(lv_display_get_screen_active(display_));
+        lv_unlock();
         lvgl_port_unlock();
         if (xSemaphoreTake(snapshot_sem_, pdMS_TO_TICKS(1000)) != pdTRUE) {
             uint16_t expected = static_cast<uint16_t>(revision);
@@ -1311,7 +1540,18 @@ bool SensecapWatcherHardware::CaptureRgb565(
             return false;
         }
     }
-    memcpy(pixels, snapshot_, needed * sizeof(uint16_t));
+    // The presenter also uses this mirror. Keep it immutable during export,
+    // including if a direct frame replaced the requested LVGL snapshot.
+    if (!lvgl_port_lock(1000)) return false;
+    WaitDirectFrame();
+    if (direct_snapshot_current_) {
+        lv_lock();
+        const bool copied = CopyDirectSnapshot(pixels);
+        lv_unlock();
+        if (!copied) { lvgl_port_unlock(); return false; }
+    } else {
+        memcpy(pixels, snapshot_, needed * sizeof(uint16_t));
+    }
     if (info != nullptr) {
         info->width = WATCHER_DISPLAY_WIDTH;
         info->height = WATCHER_DISPLAY_HEIGHT;
@@ -1321,6 +1561,7 @@ bool SensecapWatcherHardware::CaptureRgb565(
             snapshot_timestamp_us_.load(std::memory_order_relaxed);
         info->source = "lvgl-flush";
     }
+    lvgl_port_unlock();
     return true;
 }
 

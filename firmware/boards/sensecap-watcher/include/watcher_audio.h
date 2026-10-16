@@ -29,4 +29,5 @@ private:
     esp_codec_dev_handle_t speaker_ = nullptr;
     SemaphoreHandle_t mutex_ = nullptr;
     std::atomic<uint8_t> volume_{70};
+    bool nonzero_written_ = false;
 };

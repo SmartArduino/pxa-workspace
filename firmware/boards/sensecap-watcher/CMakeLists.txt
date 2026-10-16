@@ -6,6 +6,8 @@ idf_component_register(
         "src/watcher_battery.cc"
         "src/watcher_audio.cc"
         "src/watcher_pxa_surface.cc"
+        "src/watcher_lcd_io.cc"
+        "src/watcher_rgb565_swap.S"
         "src/watcher_spd2010_touch.c"
     INCLUDE_DIRS "include"
     PRIV_REQUIRES
@@ -35,6 +37,10 @@ idf_component_register(
         pxadb
         pxa_system_reference_ui
         pxa_system_standard)
+
+# Optimize the scanout kernels for speed; all cold board setup keeps the IDF
+# build's selected optimization level.
+set_source_files_properties("src/watcher_pxa_surface.cc" PROPERTIES COMPILE_OPTIONS "-O3")
 
 if(CONFIG_LV_USE_FREETYPE)
     idf_component_get_property(LVGL_COMPONENT_LIB lvgl__lvgl COMPONENT_LIB)

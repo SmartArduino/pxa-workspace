@@ -36,7 +36,10 @@ CONFIG_COMPILER_CXX_RTTI=y
 CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_PERF=y
 # The Watcher exposes UART0 on the debug connector, matching the factory
 # firmware. USB-Serial-JTAG stays available as a secondary console.
-CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_CUSTOM=y
+CONFIG_ESP_CONSOLE_UART_CUSTOM_NUM_0=y
+CONFIG_ESP_CONSOLE_UART_TX_GPIO=43
+CONFIG_ESP_CONSOLE_UART_RX_GPIO=44
 CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 # Long littlefs/FreeType flash operations run with the cache disabled.
@@ -75,21 +78,17 @@ CONFIG_LV_USE_CLIB_SPRINTF=y
 # Refreshes are invalidation-driven with partial rendering; a 16 ms period
 # keeps drags and animations smooth without forcing full-screen redraws.
 CONFIG_LV_DEF_REFR_PERIOD=16
-# Two software draw units: LVGL splits the refreshed area into tiles and the
-# two render threads run on both cores. Each thread costs a
-# LV_DRAW_THREAD_STACK_SIZE stack (32 KiB, the compile-time minimum while
-# FreeType is enabled), and dropping to one unit was measurably laggy, so the
-# RAM is better spent here.
-CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
-# Highest draw-thread priority: the LVGL task runs at 4, and with the default
-# (3) the render threads competed with it instead of preempting it.
+# Fullscreen games use the board presenter. A single LVGL draw unit renders
+# the fallback UI on its owner task, avoiding two 32 KiB worker stacks that
+# fragmented SRAM and prevented lazy PXA audio/mixer and SPI allocations.
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
+# Retain valid worker defaults if multiple units are enabled for diagnostics.
 CONFIG_LV_DRAW_THREAD_PRIO=4
 # FreeType requires at least 32 KiB here, and the value is checked at compile
 # time by LVGL; do not lower it while CONFIG_LV_USE_FREETYPE is on.
 CONFIG_LV_DRAW_THREAD_STACK_SIZE=32768
-# Touch follows the official Watcher BSP: one point polled on the indev timer
-# with a pressure threshold. LVGL gesture recognition stays off because the
-# port's gesture path swallows drags on multi-point panels.
+# Five stable pointer slots are sampled by the board touch task. LVGL gesture
+# recognition stays off: its gesture path swallows multi-pointer game drags.
 CONFIG_ESP_LCD_TOUCH_MAX_POINTS=5
 # LVGL performance monitor is off in production. Enable SYSMON +
 # PERF_MONITOR + PERF_MONITOR_LOG_MODE to measure FPS and render/flush times.
@@ -132,6 +131,8 @@ CONFIG_PXA_HOST_MANAGED_HEAP_SIZE=16384
 CONFIG_PXA_RUNTIME_TASK_STACK_SIZE=12288
 CONFIG_PXA_RUNTIME_TASK_PRIORITY=3
 CONFIG_PXA_RUNTIME_TASK_AFFINITY=0
+# Keep large palettes out of the contiguous SRAM needed by audio and QSPI.
+CONFIG_PXA_RASTER_INTERNAL_ALLOCATION_MAX_BYTES=4096
 CONFIG_PXA_PARALLEL_RASTER=y
 CONFIG_PXA_RASTER_WORKER_AFFINITY=0
 CONFIG_PXA_RASTER_WORKER_PRIORITY=4
@@ -168,6 +169,8 @@ CONFIG_PXSYS_REFERENCE_UI_TASK_SWITCHER_CARDS=y
 CONFIG_PXSYS_REFERENCE_UI_TASK_PREVIEW_COUNT=3
 
 CONFIG_PXADB_ENABLED=y
+CONFIG_PXADB_TASK_STACK_SIZE=18432
+CONFIG_PXADB_JPEG_PSRAM_WORKSPACE=y
 CONFIG_PXADB_AUTOSTART=y
 CONFIG_PXADB_TEST_CONTROL=y
 # The Watcher's native USB port is not always wired; tunnel PXADB over UART0,

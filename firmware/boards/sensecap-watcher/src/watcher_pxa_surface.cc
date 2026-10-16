@@ -13,21 +13,81 @@
 
 #include "sensecap_watcher_config.h"
 
+#if defined(__XTENSA__) && CONFIG_IDF_TARGET_ESP32S3
+extern "C" void watcher_rgb565_swap_aligned(void* destination,
+    const void* source, size_t bytes);
+#endif
+
 namespace watcher_pxa_surface {
 namespace {
 
 constexpr char kTag[] = "WatcherPxa";
-// The task only takes the LVGL lock and invalidates the screen.
-constexpr uint32_t kPresenterTaskStack = 3072;
-constexpr UBaseType_t kPresenterTaskPriority = 3;
+// Raster and scanout share the UI core, leaving the Guest on core 0.
+constexpr uint32_t kPresenterTaskStack = 4096;
+constexpr UBaseType_t kPresenterTaskPriority = 4;
 constexpr uint32_t kPresenterLockTimeoutMs = 100;
 
 lv_display_t* g_display = nullptr;
 TaskHandle_t g_presenter_task = nullptr;
 lv_area_t g_last_present_area = {};
 bool g_has_last_present_area = false;
+DirectPresenter g_direct_presenter = nullptr;
+void* g_direct_context = nullptr;
 
 uint16_t SwapBytes(uint16_t value) { return __builtin_bswap16(value); }
+// uint16_t frame storage may be accessed in pairs without violating aliasing.
+// Xtensa cannot assume memcpy's byte pointers are aligned, and otherwise emits
+// two out-of-line memcpy calls for every pair in a full-panel copy.
+using PixelPair = uint32_t __attribute__((may_alias));
+
+void SwapRgb565Pixels(const uint8_t* source, uint16_t* destination, size_t count) {
+#if defined(__XTENSA__) && CONFIG_IDF_TARGET_ESP32S3
+    // Odd row counts alternate between 0 and 8 modulo 16. When source and
+    // destination share that alignment, peel at most seven pixels so the
+    // remaining band can still use PIE. Small/mismatched rows stay scalar.
+    const uintptr_t source_address = reinterpret_cast<uintptr_t>(source);
+    const uintptr_t destination_address = reinterpret_cast<uintptr_t>(destination);
+    if (count >= 24 && (source_address & 1u) == 0 &&
+        ((source_address ^ destination_address) & 15u) == 0) {
+        const size_t leading = ((16u - source_address) & 15u) / 2;
+        for (size_t i = 0; i < leading; ++i) {
+            uint16_t pixel;
+            std::memcpy(&pixel, source, sizeof(pixel));
+            *destination++ = SwapBytes(pixel);
+            source += sizeof(pixel);
+        }
+        count -= leading;
+    }
+    if (count >= 16 && ((reinterpret_cast<uintptr_t>(source) |
+                        reinterpret_cast<uintptr_t>(destination)) & 15u) == 0) {
+        const size_t pixels = count & ~size_t{15};
+        watcher_rgb565_swap_aligned(destination, source, pixels * 2);
+        source += pixels * 2;
+        destination += pixels;
+        count -= pixels;
+    }
+#endif
+    if (((reinterpret_cast<uintptr_t>(source) |
+          reinterpret_cast<uintptr_t>(destination)) & 3u) == 0) {
+        auto* output = reinterpret_cast<PixelPair*>(destination);
+        const auto* input = reinterpret_cast<const PixelPair*>(source);
+        // Keep consecutive PSRAM loads together and amortize loop control.
+        // Scalar tails retain the exact bounds for clipped/partial UI rows.
+        #pragma GCC unroll 8
+        while (count >= 2) {
+            const uint32_t pair = *input++;
+            *output++ = ((pair & UINT32_C(0x00ff00ff)) << 8u) |
+                        ((pair & UINT32_C(0xff00ff00)) >> 8u);
+            count -= 2;
+        }
+        source = reinterpret_cast<const uint8_t*>(input);
+        destination = reinterpret_cast<uint16_t*>(output);
+    }
+    while (count-- != 0) {
+        *destination++ = SwapBytes(static_cast<uint16_t>(source[0] | source[1] << 8));
+        source += 2;
+    }
+}
 
 // Mirrors the pai-touch tile worker: the trusted alpha overlay carries
 // premultiplied RGB565 plus an A8 coverage plane.
@@ -135,22 +195,7 @@ void ComposeRgb565Scale1(const pxa_esp_surface_frame_t& frame,
         uint16_t* destination = reinterpret_cast<uint16_t*>(pixels) +
             static_cast<size_t>(y - area->y1) * area_width +
             (left - area->x1);
-        int32_t remaining = right - left;
-        while (remaining >= 2) {
-            uint32_t pair;
-            std::memcpy(&pair, source, sizeof(pair));
-            pair = ((pair & UINT32_C(0x00ff00ff)) << 8u) |
-                   ((pair & UINT32_C(0xff00ff00)) >> 8u);
-            std::memcpy(destination, &pair, sizeof(pair));
-            source += sizeof(pair);
-            destination += 2;
-            remaining -= 2;
-        }
-        if (remaining != 0) {
-            uint16_t value;
-            std::memcpy(&value, source, sizeof(value));
-            *destination = SwapBytes(value);
-        }
+        SwapRgb565Pixels(source, destination, right - left);
     }
 }
 
@@ -179,31 +224,56 @@ void ComposeRgb565Scale2(const pxa_esp_surface_frame_t& frame,
 
         // A partial LVGL flush can begin at the second half of a scaled pixel.
         if (((x - origin_x) & 1) != 0) {
-            uint16_t value;
-            std::memcpy(&value, source + source_x * 2, sizeof(value));
+            const uint16_t value = source[source_x * 2] | source[source_x * 2 + 1] << 8;
             *destination++ = SwapBytes(value);
             ++x;
             ++source_x;
         }
         while (x + 1 < right) {
-            uint16_t value;
-            std::memcpy(&value, source + source_x * 2, sizeof(value));
+            const uint16_t value = source[source_x * 2] | source[source_x * 2 + 1] << 8;
             const uint32_t doubled = static_cast<uint32_t>(SwapBytes(value)) *
                 0x00010001u;
-            std::memcpy(destination, &doubled, sizeof(doubled));
+            if ((reinterpret_cast<uintptr_t>(destination) & 3u) == 0)
+                *reinterpret_cast<PixelPair*>(destination) = doubled;
+            else
+                destination[0] = destination[1] = static_cast<uint16_t>(doubled);
             destination += 2;
             x += 2;
             ++source_x;
         }
         if (x < right) {
-            uint16_t value;
-            std::memcpy(&value, source + source_x * 2, sizeof(value));
+            const uint16_t value = source[source_x * 2] | source[source_x * 2 + 1] << 8;
             *destination = SwapBytes(value);
         }
     }
 }
 
-void ComposeFrame(const pxa_esp_surface_frame_t& frame,
+void CompositeAlphaPlane(const pxa_esp_surface_ui_alpha_plane_t& plane,
+                         const lv_area_t* area, uint8_t* pixels) {
+    const int32_t left = std::max<int32_t>(area->x1, plane.x);
+    const int32_t right = std::min<int32_t>(area->x2 + 1, plane.x + plane.width);
+    const int32_t top = std::max<int32_t>(area->y1, plane.y);
+    const int32_t bottom = std::min<int32_t>(area->y2 + 1, plane.y + plane.height);
+    const int32_t stride = lv_area_get_width(area);
+    for (int32_t y = top; y < bottom; ++y) {
+        const auto* colors = reinterpret_cast<const uint16_t*>(
+            reinterpret_cast<const uint8_t*>(plane.pixels) +
+            static_cast<size_t>(y - plane.y) * plane.pixel_stride_bytes);
+        const auto* alpha = plane.alpha +
+            static_cast<size_t>(y - plane.y) * plane.alpha_stride_bytes;
+        auto* row = reinterpret_cast<uint16_t*>(pixels) +
+            static_cast<size_t>(y - area->y1) * stride;
+        for (int32_t x = left; x < right; ++x) {
+            const auto coverage = alpha[x - plane.x];
+            if (coverage == 0) continue;
+            auto& destination = row[x - area->x1];
+            destination = SwapBytes(pxa_esp_surface_blend_alpha_pixel(
+                SwapBytes(destination), colors[x - plane.x], coverage, plane.opacity));
+        }
+    }
+}
+
+void CompositePixels(const pxa_esp_surface_frame_t& frame,
                   const lv_area_t* area, uint8_t* pixels) {
     const int32_t area_width = lv_area_get_width(area);
     const int32_t area_height = lv_area_get_height(area);
@@ -233,18 +303,19 @@ void ComposeFrame(const pxa_esp_surface_frame_t& frame,
             planes[1]->pixels != nullptr && planes[1]->alpha != nullptr};
 
     if (frame.format == PXA_SURFACE_FORMAT_RGB565 &&
-        frame.opaque_ui_region_count == 0 && !plane_visible[0] &&
-        !plane_visible[1]) {
-        if (scale == 1) {
+        frame.opaque_ui_region_count == 0 && (scale == 1 || scale == 2)) {
+        if (scale == 1)
             ComposeRgb565Scale1(frame, area, pixels, origin_x, origin_y,
                                 drawn_width, drawn_height);
-            return;
-        }
-        if (scale == 2) {
+        else
             ComposeRgb565Scale2(frame, area, pixels, origin_x, origin_y,
                                 drawn_width, drawn_height);
-            return;
-        }
+        // Copy the opaque game with the pair kernel; blend only each overlay's
+        // bounds. A small HUD must not make every panel pixel take the general
+        // path with coordinate division, clipping and two overlay checks.
+        for (uint8_t index = 0; index < 2; ++index)
+            if (plane_visible[index]) CompositeAlphaPlane(*planes[index], area, pixels);
+        return;
     }
 
     for (int32_t y = area->y1; y <= area->y2; ++y) {
@@ -335,7 +406,24 @@ void PresenterTaskEntry(void*) {
     for (;;) {
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         if (g_display == nullptr) continue;
-        if (!lvgl_port_lock(kPresenterLockTimeoutMs)) continue;
+        // Rasterize outside LVGL's lock so input/UI can run during geometry
+        // work. Keep the existing presenter task and newest-frame mailbox.
+        (void)pxa_esp_surface_prepare_latest_raster();
+        if (!lvgl_port_lock(kPresenterLockTimeoutMs)) {
+            xTaskNotifyGive(g_presenter_task);
+            continue;
+        }
+        // The port mutex and LVGL's global mutex protect different callers.
+        // Alpha providers can build snapshots and send LVGL events, so they
+        // need the same global lock as Host UI and overlay callbacks.
+        lv_lock();
+        if (g_direct_presenter != nullptr && g_direct_presenter(g_direct_context)) {
+            g_has_last_present_area = ResolvePresentArea(&g_last_present_area);
+            lv_unlock();
+            lvgl_port_unlock();
+            if (pxa_esp_surface_has_pending_raster_draw()) FrameReady(nullptr);
+            continue;
+        }
         lv_obj_t* screen = lv_display_get_screen_active(g_display);
         if (screen != nullptr) {
             lv_area_t area;
@@ -353,21 +441,24 @@ void PresenterTaskEntry(void*) {
                 g_has_last_present_area = false;
             }
         }
+        lv_unlock();
         lvgl_port_unlock();
     }
 }
 
 }  // namespace
 
-bool Install(lv_display_t* display) {
+bool Install(lv_display_t* display, DirectPresenter presenter, void* context) {
     if (display == nullptr || g_display != nullptr) return false;
-    if (xTaskCreate(PresenterTaskEntry, "watcher_pxa", kPresenterTaskStack,
+    if (xTaskCreatePinnedToCore(PresenterTaskEntry, "watcher_pxa", kPresenterTaskStack,
                     nullptr, kPresenterTaskPriority,
-                    &g_presenter_task) != pdPASS) {
+                    &g_presenter_task, 1) != pdPASS) {
         g_presenter_task = nullptr;
         return false;
     }
     g_display = display;
+    g_direct_presenter = presenter;
+    g_direct_context = context;
     // The compositor implements fast native and 2x RGB565 paths. The round
     // panel remains native by default, while a Guest can explicitly request 2x.
     (void)pxa_esp_game_render_set_scale_profile(
@@ -377,8 +468,10 @@ bool Install(lv_display_t* display) {
     // A Surface may already exist when the board installs the presenter;
     // repaint once so its first frame is composed even without a new submit.
     if (lvgl_port_lock(kPresenterLockTimeoutMs)) {
+        lv_lock();
         lv_obj_t* screen = lv_display_get_screen_active(display);
         if (screen != nullptr) lv_obj_invalidate(screen);
+        lv_unlock();
         lvgl_port_unlock();
     }
     ESP_LOGI(kTag, "PXA Surface presentation installed");
@@ -389,11 +482,41 @@ ComposedFrameInfo ComposeFlushArea(const lv_area_t* area, uint8_t* pixels) {
     if (area == nullptr || pixels == nullptr) return {};
     pxa_esp_surface_frame_t frame;
     if (!pxa_esp_surface_acquire_latest(&frame)) return {};
-    ComposeFrame(frame, area, pixels);
+    CompositePixels(frame, area, pixels);
     const ComposedFrameInfo composed{frame.frame_id, frame.input_timestamp_us,
                                      frame.raster_ready_tick_us};
     pxa_esp_surface_release_frame(frame.lease);
     return composed;
+}
+
+bool DirectFrameEligible(const pxa_esp_surface_frame_t& frame) {
+    if (!frame.visible || frame.pixels == nullptr ||
+        frame.format != PXA_SURFACE_FORMAT_RGB565 ||
+        frame.x != 0 || frame.y != 0 || frame.opaque_ui_region_count != 0 ||
+        frame.stride_bytes < frame.width * sizeof(uint16_t)) return false;
+    const auto scale = pxa_surface_fit_scale(frame.width, frame.height,
+        WATCHER_DISPLAY_WIDTH, WATCHER_DISPLAY_HEIGHT);
+    if (frame.width * scale != WATCHER_DISPLAY_WIDTH ||
+        frame.height * scale != WATCHER_DISPLAY_HEIGHT) return false;
+    for (const auto* plane : {&frame.ui_alpha_plane, &frame.system_alpha_plane}) {
+        if (plane == &frame.ui_alpha_plane && frame.suppress_guest_alpha) continue;
+        if (plane->visible && (!plane->pixels || !plane->alpha || !plane->width ||
+            !plane->height || plane->pixel_stride_bytes < plane->width * sizeof(uint16_t) ||
+            plane->alpha_stride_bytes < plane->width)) return false;
+    }
+    return true;
+}
+
+ComposedFrameInfo ComposeFrame(const pxa_esp_surface_frame_t& frame,
+                               const lv_area_t* area, uint8_t* pixels) {
+    CompositePixels(frame, area, pixels);
+    return {frame.frame_id, frame.input_timestamp_us, frame.raster_ready_tick_us};
+}
+
+void PackNativeRgb565Band(const void* source, void* destination,
+                         size_t offset_bytes, size_t size_bytes) {
+    SwapRgb565Pixels(static_cast<const uint8_t*>(source) + offset_bytes,
+                    static_cast<uint16_t*>(destination), size_bytes / 2);
 }
 
 }  // namespace watcher_pxa_surface

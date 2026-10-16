@@ -93,11 +93,15 @@ private:
 
     static void FlushDisplay(lv_display_t* display, const lv_area_t* area,
                              uint8_t* pixels);
+    static void WaitFlushDisplay(lv_display_t* display);
     static void FlushTaskEntry(void* arg);
     static bool OnFlushComplete(esp_lcd_panel_io_handle_t io,
                                 esp_lcd_panel_io_event_data_t* event,
                                 void* context);
     void FlushTask();
+    bool PresentDirectFrame();
+    void WaitDirectFrame();
+    bool CopyDirectSnapshot(uint16_t* pixels);
     static void TouchReadCallback(lv_indev_t* indev, lv_indev_data_t* data);
     static void IRAM_ATTR TouchInterruptHandler(void* arg);
     static void TouchTaskEntry(void* arg);
@@ -149,6 +153,15 @@ private:
     lv_display_t* display_ = nullptr;
     lv_indev_t* touch_indev_ = nullptr;
     lv_indev_t* injected_pointer_ = nullptr;
+    // Only the LVGL/port owner changes pending; the flush task publishes the
+    // completed mirror through snapshot_sem_. The next raster can overlap DMA.
+    bool direct_frame_pending_ = false;
+    bool direct_snapshot_current_ = false;
+    bool direct_native_current_ = false;
+    // LVGL waits with a scheduler yield instead of its default busy loop.
+    // Fits the padding before the lease; no new semaphore or queue.
+    std::atomic<bool> ui_flush_done_{true};
+    uint64_t direct_lease_ = 0;
     uint32_t flush_error_ms_ = 0;
     std::atomic<uint32_t> flush_done_us_low_{0};
     QueueHandle_t flush_queue_ = nullptr;
@@ -188,9 +201,11 @@ private:
     std::atomic<uint16_t> injected_pointer_x_{0};
     std::atomic<uint16_t> injected_pointer_y_{0};
     std::atomic<bool> injected_pointer_pressed_{false};
-    // Latest composed frame, mirrored out of the LVGL flush: the SPD2010 path
-    // has no readable framebuffer, so PXADB screenshots are served from here.
+    // UI capture mirror and composed scanout buffer. Native game captures
+    // lease the completed Surface; two small SRAM blocks serve all LCD DMA.
+    // The SPD2010 has no readable framebuffer.
     uint16_t* snapshot_ = nullptr;
+    uint8_t* scanout_ = nullptr;
     SemaphoreHandle_t snapshot_sem_ = nullptr;
     // A generation token prevents a late DMA from completing a newer capture.
     // uint16_t reuses padding before snapshot_frame_id_; no larger queue/cache.

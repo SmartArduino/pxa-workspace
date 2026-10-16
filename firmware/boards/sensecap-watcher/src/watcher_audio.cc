@@ -126,10 +126,14 @@ bool WatcherAudio::Initialize(i2c_master_bus_handle_t i2c_bus) {
         ESP_LOGE(kTag, "Cannot open ES8311 playback");
         return false;
     }
+    if (esp_codec_dev_set_out_mute(speaker_, false) != ESP_OK) {
+        ESP_LOGE(kTag, "Cannot unmute ES8311 playback");
+        return false;
+    }
     SetVolume(volume_.load());
     if (!output_.Initialize([](void* context, const int16_t* pcm, size_t samples) {
             return static_cast<WatcherAudio*>(context)->Write(pcm, samples);
-        }, this)) return false;
+        }, this, true)) return false;
     ESP_LOGI(kTag, "ES8311 speaker ready at %d Hz mono",
              WATCHER_AUDIO_SAMPLE_RATE);
     return true;
@@ -142,8 +146,10 @@ void WatcherAudio::SetVolume(uint8_t percent) {
     const int codec_volume =
         percent > kMaxCodecVolume ? kMaxCodecVolume : percent;
     xSemaphoreTake(mutex_, portMAX_DELAY);
-    esp_codec_dev_set_out_vol(speaker_, codec_volume);
+    const int result = esp_codec_dev_set_out_vol(speaker_, codec_volume);
     xSemaphoreGive(mutex_);
+    if (result != ESP_OK)
+        ESP_LOGW(kTag, "Cannot set speaker volume: %d", result);
 }
 
 bool WatcherAudio::Write(const int16_t* pcm, size_t samples) {
@@ -155,6 +161,19 @@ bool WatcherAudio::Write(const int16_t* pcm, size_t samples) {
     if (result != ESP_OK) {
         ESP_LOGW(kTag, "Playback write failed: %s", esp_err_to_name(result));
         return false;
+    }
+    if (!nonzero_written_) {
+        int peak = 0;
+        for (size_t index = 0; index < samples; ++index) {
+            const int value = pcm[index];
+            const int magnitude = value < 0 ? -value : value;
+            if (magnitude > peak) peak = magnitude;
+        }
+        if (peak != 0) {
+            nonzero_written_ = true;
+            ESP_LOGI(kTag, "First non-silent PCM reached I2S: peak=%d volume=%u",
+                peak, volume_.load());
+        }
     }
     return true;
 }
