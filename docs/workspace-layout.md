@@ -27,6 +27,18 @@ tools/firmware.sh pai-touch monitor --port /dev/ttyACM0 --baud 115200
 Do not put board-specific drivers in generic PXA components. Existing products
 can keep their original structure and add a local adapter beside the board code.
 
+Declare the chip target in `firmware/boards/<board>/board.cmake`, for example:
+
+```cmake
+set(PXA_BOARD_TARGET "esp32s31")
+set(PXA_BOARD_COMPONENT "my-board")
+```
+
+Firmware, `tools/dev.sh device`, `tools/app.sh` and the package wrapper read this
+metadata. New boards using a supported AOT architecture require no board-name
+mapping in these tools. App builds accept an explicit `--target` override;
+missing declarations or unsupported native package targets fail with an error.
+
 ## App Work
 
 PXA App sources normally live outside this workspace, often in separate App

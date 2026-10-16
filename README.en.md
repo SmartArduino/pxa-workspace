@@ -12,16 +12,16 @@ same `pxa_board_port_t` contract:
 
 ## Developing an app? Start with DevKit
 
-You do not need this workspace or ESP-IDF. Download [DevKit 0.3.0](https://pxa.doit.am/docs/downloads/), extract it, then run:
+You do not need this workspace or ESP-IDF. Download [DevKit 0.4.0](https://pxa.doit.am/docs/downloads/), extract it, then run:
 
 ```sh
-export PATH="$PWD/pxa-devkit-0.3.0-linux-x86_64/bin:$PATH"
+export PATH="$PWD/pxa-devkit-0.4.0-linux-x86_64/bin:$PATH"
 pxa init hello
 pxa run hello
 ```
 
 C++26 and O3 are the defaults; `pxa.lock` pins the SDK and toolchain. The published binary requires Linux x86_64 and glibc 2.39+. Apps require Core 2.0 and their declared services.
-[Getting started (Chinese)](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [Release](https://github.com/SmartArduino/pxa-system/releases/tag/v0.3.0)
+[Getting started (Chinese)](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [Release](https://github.com/SmartArduino/pxa-system/releases/tag/v0.4.0)
 
 The optional [PXA AI kit](https://pxa.doit.am/docs/ai-development/) adds development/debug/device/release skills, project-scoped agents and repeatable verification scripts. It works with the existing DevKit and adds no device runtime overhead. [Validation report (Chinese)](docs/ai-kit-validation-20261014.zh-CN.md)
 
@@ -77,6 +77,14 @@ The `esp-mosaico` profile targets ESP32-S31 with a 480 × 480 CO5300 panel,
 CST92xx touch, ES8311 playback and native USB CDC. See
 [its board guide](firmware/boards/esp-mosaico/README.md) for revision detection,
 the ESP-IDF main environment and hardware limitations.
+
+`doit-gamekit` (doit游戏机 / DOIT GameKit) targets ESP32-S31 with a 320 × 240
+ST7789, twelve gamepad buttons, MAX98357A audio and an SPI SD card, without
+touch. It uses button focus navigation without a bottom navigation bar, plus
+a fallback mouse pointer. Landscape frames are rotated in software and sent in
+ST7789 native scan order, without a TE signal. Build with
+`tools/firmware.sh doit-gamekit build`; see the
+[board guide](firmware/boards/doit-gamekit/README.md) for wiring and controls.
 
 ```sh
 tools/firmware.sh pai-touch build
@@ -148,7 +156,11 @@ separate development instance. For standalone App testing, use
 explicitly declared Wasm-only components are preserved. Use `tools/app.sh build`
 directly when you need both artifacts.
 
-Device mode selects the CPU target from `--board` (default: pai-touch / esp32s3) and replaces the App in
+Device mode reads `PXA_BOARD_TARGET` from `firmware/boards/<board>/board.cmake`
+(default: pai-touch / esp32s3). New boards using a supported architecture need
+no tool-side board-name mapping. `tools/app.sh` and the package wrapper use the
+same reader; explicit `--target` overrides the default, and missing declarations
+fail with an error. Device mode replaces the App in
 the existing firmware without reflashing it. It starts `pxadb logcat` after
 each deployment and releases that USB Serial/JTAG connection before the next
 update:

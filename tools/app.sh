@@ -27,8 +27,8 @@ mode "both" (the default) or "wasm" in package.json.
 --aot-only omits the WASM fallback (including explicit "both") in AOT packages. Explicitly
 declared WASM-only Components remain included.
 
-Default target: the board's own target (pai-touch -> esp32s3,
-esp32s31-korvo-1 / esp-mosaico -> esp32s31).
+Default target: PXA_BOARD_TARGET from firmware/boards/<board>/board.cmake.
+An explicit --target overrides it; 'all' puts the board's architecture first.
 Default output: local/app-output/<board> (container: pxa-<app-id>.pxa).
 EOF
 }
@@ -91,21 +91,16 @@ fi
 
 targets=()
 requested_wasm=0
-board_target=""
-case "$board" in
-  pai-touch) board_target="esp32s3" ;;
-  esp32s31-korvo-1|esp-mosaico) board_target="esp32s31" ;;
-esac
+board_target="$(cmake --log-level=ERROR \
+  "-DPXA_BOARD_METADATA=$project_root/firmware/boards/$board/board.cmake" \
+  -P "$script_dir/board-target.cmake")"
 if [[ -n "$target_spec" ]]; then
   IFS=',' read -r -a raw_targets <<< "$target_spec"
   for raw_target in "${raw_targets[@]}"; do
     [[ -n "$raw_target" ]] || continue
     case "$raw_target" in
       all)
-        case "$board" in
-          esp32s31-korvo-1|esp-mosaico) targets+=(esp32s31 esp32s3 simulator) ;;
-          *) targets+=(esp32s3 esp32s31 simulator) ;;
-        esac
+        targets+=(esp32s3 esp32s31 simulator)
         requested_wasm=1
         ;;
       wasm) requested_wasm=1 ;;
@@ -137,10 +132,6 @@ if [[ ${#targets[@]} -gt 0 ]]; then
   done
   targets=("${unique_targets[@]}")
 else
-  if [[ -z "$board_target" ]]; then
-    echo "No default package target for board '$board'. Use --target." >&2
-    exit 2
-  fi
   targets=("$board_target")
 fi
 if [[ -n "$board_target" && ${#targets[@]} -gt 1 &&

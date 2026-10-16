@@ -21,6 +21,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 APP_TOOL = ROOT / "tools" / "app.sh"
 SIMULATOR_TOOL = ROOT / "tools" / "simulator.sh"
 PXADB_TOOL = ROOT / "tools" / "pxadb" / "pxadb.py"
+BOARD_TARGET_TOOL = ROOT / "tools" / "board-target.cmake"
 IGNORED_DIRECTORIES = {".git", "__pycache__", "build", "dist", "node_modules", "out"}
 
 
@@ -46,6 +47,20 @@ class LogWriter:
 
 def command_label(command: Iterable[str]) -> str:
     return " ".join(command)
+
+
+def board_target(board: str) -> str:
+    metadata = ROOT / "firmware" / "boards" / board / "board.cmake"
+    try:
+        result = subprocess.run(
+            ["cmake", "--log-level=ERROR", f"-DPXA_BOARD_METADATA={metadata}",
+             "-P", str(BOARD_TARGET_TOOL)],
+            check=True, capture_output=True, text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) else str(error)
+        raise DevError(f"cannot read target for board '{board}': {detail}") from error
+    return result.stdout.strip()
 
 
 def stream_command(command: list[str], log: LogWriter) -> None:
@@ -190,15 +205,18 @@ class Developer:
             command.extend(["--simulator", self.simulator_id])
         elif self.args.port:
             command.extend(["--port", self.args.port])
-        if self.args.mode == "device" and self.args.baud:
-            command.extend(["--baud", str(self.args.baud)])
+        if self.args.mode == "device":
+            baud = self.args.baud
+            # CH343P UART on DOIT GameKit runs PXADB at 2 Mbaud. Explicit
+            # --baud and PXADB_BAUD retain precedence over this board default.
+            if baud is None and self.args.board == "doit-gamekit" and not os.environ.get("PXADB_BAUD"):
+                baud = 2000000
+            if baud is not None:
+                command.extend(["--baud", str(baud)])
         return command
 
     def build(self) -> None:
-        target = "simulator" if self.args.mode == "sim" else (
-            "esp32s31" if self.args.board in ("esp32s31-korvo-1", "esp-mosaico")
-            else "esp32s3"
-        )
+        target = "simulator" if self.args.mode == "sim" else board_target(self.args.board)
         command = [
             str(APP_TOOL), "build", self.app_id,
             "--board", self.args.board,

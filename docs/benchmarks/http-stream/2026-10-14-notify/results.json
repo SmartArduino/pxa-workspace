@@ -1,0 +1,218 @@
+{
+  "measurement": "same 256KiB workload; discard first pair per launch; 12 observations per path",
+  "samples": [
+    {
+      "run": 0,
+      "mode": 1,
+      "head_ms": 1025,
+      "first_ms": 1025,
+      "total_ms": 1059,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 2,
+      "head_ms": 25,
+      "first_ms": 163,
+      "total_ms": 1406,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 1,
+      "head_ms": 977,
+      "first_ms": 978,
+      "total_ms": 1010,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 2,
+      "head_ms": 26,
+      "first_ms": 155,
+      "total_ms": 1334,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 1,
+      "head_ms": 936,
+      "first_ms": 936,
+      "total_ms": 1001,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 2,
+      "head_ms": 63,
+      "first_ms": 223,
+      "total_ms": 1285,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 1,
+      "head_ms": 961,
+      "first_ms": 961,
+      "total_ms": 1173,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 2,
+      "head_ms": 31,
+      "first_ms": 163,
+      "total_ms": 1809,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 1,
+      "head_ms": 1004,
+      "first_ms": 1004,
+      "total_ms": 1037,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 2,
+      "head_ms": 101,
+      "first_ms": 152,
+      "total_ms": 1651,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 1,
+      "head_ms": 1114,
+      "first_ms": 1115,
+      "total_ms": 1147,
+      "bytes": 262144
+    },
+    {
+      "run": 0,
+      "mode": 2,
+      "head_ms": 48,
+      "first_ms": 214,
+      "total_ms": 1313,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 1,
+      "head_ms": 907,
+      "first_ms": 909,
+      "total_ms": 1122,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 2,
+      "head_ms": 26,
+      "first_ms": 149,
+      "total_ms": 1638,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 1,
+      "head_ms": 1053,
+      "first_ms": 1053,
+      "total_ms": 1103,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 2,
+      "head_ms": 23,
+      "first_ms": 107,
+      "total_ms": 1492,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 1,
+      "head_ms": 1058,
+      "first_ms": 1059,
+      "total_ms": 1179,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 2,
+      "head_ms": 42,
+      "first_ms": 265,
+      "total_ms": 1549,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 1,
+      "head_ms": 933,
+      "first_ms": 933,
+      "total_ms": 1100,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 2,
+      "head_ms": 22,
+      "first_ms": 144,
+      "total_ms": 1432,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 1,
+      "head_ms": 1040,
+      "first_ms": 1041,
+      "total_ms": 1105,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 2,
+      "head_ms": 64,
+      "first_ms": 163,
+      "total_ms": 1289,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 1,
+      "head_ms": 944,
+      "first_ms": 945,
+      "total_ms": 977,
+      "bytes": 262144
+    },
+    {
+      "run": 1,
+      "mode": 2,
+      "head_ms": 70,
+      "first_ms": 133,
+      "total_ms": 1286,
+      "bytes": 262144
+    }
+  ],
+  "medians_ms": {
+    "1": {
+      "head_ms": 990.5,
+      "first_ms": 991.0,
+      "total_ms": 1101.5
+    },
+    "2": {
+      "head_ms": 36.5,
+      "first_ms": 159.0,
+      "total_ms": 1419.0
+    }
+  },
+  "desktop_backend_bytes": {
+    "before": 104,
+    "after": 104
+  },
+  "firmware_for_final_browser": {
+    "bytes": 3400576,
+    "sha256": "d5b38627e8611f7664c0cf4bb70484a177445966ba8e3c447007e50eb608e591"
+  },
+  "note": "paired timings collected on notify-only firmware before UI inset publication fix; not an A/B of notify change and not a per-path memory comparison"
+}

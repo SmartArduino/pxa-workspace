@@ -77,6 +77,7 @@ class DeviceLaunchTest(unittest.TestCase):
         for board, target in (
             ("esp-mosaico", "esp32s31"),
             ("esp32s31-korvo-1", "esp32s31"),
+            ("doit-gamekit", "esp32s31"),
             ("pai-touch", "esp32s3"),
             ("sensecap-watcher", "esp32s3"),
         ):
@@ -87,6 +88,29 @@ class DeviceLaunchTest(unittest.TestCase):
                 command = run.call_args.args[0]
                 self.assertEqual(command[command.index("--target") + 1], target)
                 self.assertIn("--aot-only", command)
+
+    def test_doit_uart_default_applies_to_install_run_and_logs(self) -> None:
+        self.developer.args.board = "doit-gamekit"
+        self.developer.args.baud = None
+        with mock.patch.dict(os.environ, {}, clear=True):
+            for arguments in (("package", "install", "store.pxa"),
+                              ("package", "run", "pxa-store"), ("logcat",)):
+                with self.subTest(arguments=arguments):
+                    command = self.developer.pxadb(*arguments)
+                    self.assertEqual(command[-2:], ["--baud", "2000000"])
+
+    def test_doit_uart_explicit_and_environment_overrides(self) -> None:
+        self.developer.args.board = "doit-gamekit"
+        with mock.patch.dict(os.environ, {"PXADB_BAUD": "460800"}):
+            self.developer.args.baud = None
+            self.assertNotIn("--baud", self.developer.pxadb("info"))
+            self.developer.args.baud = 921600
+            self.assertEqual(self.developer.pxadb("info")[-2:], ["--baud", "921600"])
+
+    def test_other_boards_keep_pxadb_baud_default(self) -> None:
+        self.developer.args.baud = None
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertNotIn("--baud", self.developer.pxadb("info"))
 
 
 class SimulatorProfileTest(unittest.TestCase):

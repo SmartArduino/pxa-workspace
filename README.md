@@ -11,16 +11,16 @@
 
 ## 只开发应用？先用 DevKit
 
-无需克隆本仓库或安装 ESP-IDF。下载 [DevKit 0.3.0](https://pxa.doit.am/docs/downloads/)，解压后：
+无需克隆本仓库或安装 ESP-IDF。下载 [DevKit 0.4.0](https://pxa.doit.am/docs/downloads/)，解压后：
 
 ```sh
-export PATH="$PWD/pxa-devkit-0.3.0-linux-x86_64/bin:$PATH"
+export PATH="$PWD/pxa-devkit-0.4.0-linux-x86_64/bin:$PATH"
 pxa init hello
 pxa run hello
 ```
 
 默认 C++26、O3，项目通过 `pxa.lock` 固定 SDK 与工具链版本。当前发行包要求 Linux x86_64、glibc 2.39+。应用包需要 Core 2.0 及其声明的服务能力。
-[中文入门教程](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [发布说明](https://github.com/SmartArduino/pxa-system/releases/tag/v0.3.0)
+[中文入门教程](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [发布说明](https://github.com/SmartArduino/pxa-system/releases/tag/v0.4.0)
 
 可选的 [PXA AI 套件](https://pxa.doit.am/docs/ai-development/) 提供开发、调试、真机验收与发布 skills，以及项目内 agent 配置和自动验证脚本。配合现有 DevKit 使用，不增加设备运行开销。[实际验证报告](docs/ai-kit-validation-20261014.zh-CN.md)
 
@@ -64,6 +64,13 @@ ESP-IDF 依赖由拥有对应代码的目录声明。产品基线在 `firmware/m
 `esp-mosaico` 配置适配 ESP32-S31、480 × 480 CO5300 显示、CST92xx 触摸、
 ES8311 播放和原生 USB CDC。硬件版本识别、ESP-IDF main 环境与当前外设限制见
 [板级说明](firmware/boards/esp-mosaico/README.md)。
+
+`doit-gamekit`（doit游戏机 / DOIT GameKit）适配 ESP32-S31、320×240 ST7789、
+12 个手柄键、MAX98357A 音频和 SPI SD 卡，无触摸。构建命令为
+`tools/firmware.sh doit-gamekit build`；默认纯按键焦点导航，无底部导航栏，支持
+兜底鼠标。横屏使用整帧软件旋转，按 ST7789 原生方向输出，不依赖 TE。
+接线、按键操作和首次烧录见
+[板级说明](firmware/boards/doit-gamekit/README.md)。
 
 ```sh
 tools/firmware.sh pai-touch build
@@ -126,7 +133,10 @@ tools/dev.sh sim --board esp-mosaico voxel-craft
 的组件）；应用中明确声明为
 Wasm-only 的组件仍会保留。需要同时打包 Wasm 时，可直接使用 `tools/app.sh build`。
 
-设备模式按 `--board` 选择芯片目标（默认 pai-touch / esp32s3），覆盖安装到现有固件，不会重新烧录固件；部署后默认会显示
+设备模式从 `firmware/boards/<board>/board.cmake` 的 `PXA_BOARD_TARGET` 读取芯片目标
+（默认 pai-touch / esp32s3）。新增同架构板型只需声明该值，无需修改应用工具的板名映射。
+`tools/app.sh` 与底层打包入口共用同一读取方式；显式 `--target` 可覆盖默认架构，
+缺失声明时直接报错。设备模式覆盖安装到现有固件，不会重新烧录固件；部署后默认会显示
 `pxadb logcat`，下一次更新前会自动暂时关闭它以释放 USB Serial/JTAG 连接：
 
 ```sh

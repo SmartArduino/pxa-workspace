@@ -1,0 +1,11 @@
+http://127.0.0.1:40753
+baseline buffered first_ms=84 total_ms=86 bytes=262144 body_storage=262144
+baseline streamed header_ms=2 first_ms=82 total_ms=106 bytes=262144 body_storage=4096
+stream chunked=0 slow=0 head_ms=2 first_ms=81 total_ms=149 bytes=1048576 storage=5320 notifications=577
+stream chunked=1 slow=1 head_ms=2 first_ms=102 total_ms=658 bytes=1048576 storage=5320 notifications=1160
+upload bytes=102400 bounded-buffer PASS
+cancel-full-ring PASS
+response-budget PASS
+redirect-returned PASS
+early-upload-response PASS
+ambiguous-framing PASS

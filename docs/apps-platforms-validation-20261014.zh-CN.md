@@ -52,7 +52,12 @@ Podman 用户换为 `podman load/tag` 并给包装器加 `--engine podman`。这
 
 Store 长中文描述曾在 120 字节缓冲尾部留下半个 UTF-8 码点，Host 拒绝整次 UI 更新。`bb7ef75` 改为逐码点写入并保留有效前缀，校验原始编码、\u、代理对和剩余输入。最终 Store 0.8.5 / sequence 13 的四目标包已发布；pai-touch 可正常浏览中文目录和详情。
 
-pai-touch 原本没有 PXA 预置应用。普通安装的 pxa-store 无法调用安装服务，这是系统的 built-in 权限规则。此次通过受保护 factory root 预置已验证 Store，保持普通 Guest 的权限限制；未把权限规则放宽到仅凭 App ID 授权。当前 managed overlay 不保留 built-in 身份，Store 自身应走 factory 更新流程，已在商店描述及官网说明。
+pai-touch 原本没有 PXA 预置应用。普通安装的 pxa-store 无法调用安装服务，这是此次测试时的 built-in 权限规则。此次通过受保护 factory root 预置已验证 Store，保持普通 Guest 的权限限制；未把权限规则放宽到仅凭 App ID 授权。当时 managed overlay 不保留 built-in 身份，Store 自身走 factory 更新流程。
+
+2026-10-16 后续变更：按用户要求，安装服务向运行中的已安装、已启用签名应用开放，
+不再限定预置位置、发布者或商城名称。普通安装和更新的商城可调用；每次安装、更新和
+离线包安装仍需系统原生弹窗确认，不能静默安装。旧固件仍有本节描述的限制，需要更新
+Host，单独更新商城包不能解除限制。详见 pxa-apps/store/docs/install-access-20261016。
 
 预置操作还发现 `FSUNLOCK` 后仍不能创建缺失的 `system/pxa` 父目录。`93a619c` 仅允许显式解锁后 mkdir 这两个受保护父目录（PXA/fonts）；文件上传、删除和替换仍使用严格子路径策略。输入邮箱及路径策略 ASan/UBSan 检查通过，没有新增运行时缓存。
 

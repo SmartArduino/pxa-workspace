@@ -1,0 +1,59 @@
+Test project /tmp/pxa-http-lib
+      Start  1: pxa_asset_read_test
+ 1/27 Test  #1: pxa_asset_read_test ...............   Passed    0.00 sec
+      Start  2: pxa_guest_image_set_test
+ 2/27 Test  #2: pxa_guest_image_set_test ..........   Passed    0.00 sec
+      Start  3: pxa_assets_service_test
+ 3/27 Test  #3: pxa_assets_service_test ...........   Passed    0.00 sec
+      Start  4: pxa_asset_scene_test
+ 4/27 Test  #4: pxa_asset_scene_test ..............   Passed    0.00 sec
+      Start  5: pxa_resource_budget_test
+ 5/27 Test  #5: pxa_resource_budget_test ..........   Passed    0.12 sec
+      Start  6: pxa_asset_cache_test
+ 6/27 Test  #6: pxa_asset_cache_test ..............   Passed    0.00 sec
+      Start  7: pxa_asset_catalog_test
+ 7/27 Test  #7: pxa_asset_catalog_test ............   Passed    0.00 sec
+      Start  8: pxa_resource_compiler_test
+ 8/27 Test  #8: pxa_resource_compiler_test ........   Passed    0.20 sec
+      Start  9: pxa_raster_assets_test
+ 9/27 Test  #9: pxa_raster_assets_test ............   Passed    0.00 sec
+      Start 10: pxa_audio_mixer_test
+10/27 Test #10: pxa_audio_mixer_test ..............   Passed    0.00 sec
+      Start 11: pxa_audio_buffer_test
+11/27 Test #11: pxa_audio_buffer_test .............   Passed    0.00 sec
+      Start 12: pxa_audio_playback_test
+12/27 Test #12: pxa_audio_playback_test ...........   Passed    0.00 sec
+      Start 13: pxa_audio_notification_test
+13/27 Test #13: pxa_audio_notification_test .......   Passed    0.00 sec
+      Start 14: pxa_api_compile_test
+14/27 Test #14: pxa_api_compile_test ..............   Passed    0.00 sec
+      Start 15: pxa_core_test
+15/27 Test #15: pxa_core_test .....................   Passed    0.03 sec
+      Start 16: pxa_http_stream_test
+16/27 Test #16: pxa_http_stream_test ..............   Passed    0.02 sec
+      Start 17: pxa_handle64_test
+17/27 Test #17: pxa_handle64_test .................   Passed    0.00 sec
+      Start 18: pxa_surface_test
+18/27 Test #18: pxa_surface_test ..................   Passed    0.00 sec
+      Start 19: pxa_game_render_test
+19/27 Test #19: pxa_game_render_test ..............   Passed    0.00 sec
+      Start 20: pxa_ime_test
+20/27 Test #20: pxa_ime_test ......................   Passed    0.00 sec
+      Start 21: pxa_log_test
+21/27 Test #21: pxa_log_test ......................   Passed    0.00 sec
+      Start 22: pxa_raster_test
+22/27 Test #22: pxa_raster_test ...................   Passed    0.00 sec
+      Start 23: pxa_raster_span_test
+23/27 Test #23: pxa_raster_span_test ..............   Passed    0.01 sec
+      Start 24: pxa_ui_test
+24/27 Test #24: pxa_ui_test .......................   Passed    0.01 sec
+      Start 25: pxa_package_test
+25/27 Test #25: pxa_package_test ..................   Passed    0.01 sec
+      Start 26: pxa_generated_wire_vectors_test
+26/27 Test #26: pxa_generated_wire_vectors_test ...   Passed    1.80 sec
+      Start 27: pxa_ui_vectors_test
+27/27 Test #27: pxa_ui_vectors_test ...............   Passed    0.05 sec
+
+100% tests passed out of 27
+
+Total Test time (real) =   2.33 sec

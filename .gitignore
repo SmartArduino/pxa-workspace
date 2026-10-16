@@ -22,3 +22,6 @@
 
 # Workspace locks and local tool state
 /.pxa/
+
+# Python bytecode is local build state at any tool depth.
+**/__pycache__/

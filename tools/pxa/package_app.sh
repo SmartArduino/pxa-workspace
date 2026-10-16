@@ -45,8 +45,8 @@ if [[ ! -x "$package_tool" ]]; then
   exit 1
 fi
 
-board_target="$(sed -nE 's/^[[:space:]]*set\(PXA_BOARD_TARGET[[:space:]]+"([^"]+)"\).*/\1/p' \
-  "$board_metadata" | head -n 1)"
+board_target="$(cmake --log-level=ERROR "-DPXA_BOARD_METADATA=$board_metadata" \
+  -P "$project_root/tools/board-target.cmake")"
 package_target="${PXA_PACKAGE_TARGET:-$board_target}"
 if [[ "$package_target" != "esp32s3" && "$package_target" != "esp32s31" && "$package_target" != "simulator" ]]; then
   echo "PXA package target is unsupported: $package_target" >&2
