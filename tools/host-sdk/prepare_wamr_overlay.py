@@ -22,8 +22,10 @@ def prepare(root: Path, source: Path, output: Path,
     root, source, output, metadata, series = (
         p.resolve() for p in (root, source, output, metadata, series))
     system = root / 'deps/pxa-system'
+    allowed_series = {system / 'platforms/esp-idf/wamr/patches/series',
+                      system / 'tools/wamr/patches/series'}
     if source != system / 'wamr' or metadata != system / 'config/wamr.json' or \
-            series != system / 'platforms/esp-idf/wamr/patches/series':
+            series not in allowed_series:
         raise ValueError('Overlay input must come from the verified Host SDK')
     if output.is_relative_to(root) or root.is_relative_to(output):
         raise ValueError('WAMR overlay must be outside the immutable SDK')

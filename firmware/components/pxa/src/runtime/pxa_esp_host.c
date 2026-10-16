@@ -2716,10 +2716,6 @@ static pxa_status_t acquire_ui_image(pxa_component_t component, pxa_handle64_t h
 
 static pxa_status_t prepare_start(void *context, pxa_component_t component,
                                   uint64_t instance_id, uint8_t kind);
-static pxa_status_t read_artifact(void *host_context, pxa_bytes_t path,
-                                  uint8_t *output, size_t capacity,
-                                  size_t *size);
-
 static pxa_status_t reset_runtime(uint16_t max_components) {
     pxa_runtime_limits_t limits;
     pxa_service_ops_t operations;
@@ -2798,7 +2794,7 @@ static pxa_status_t initialize_engine(uint16_t max_components) {
     g_host.engine_workspace = NULL;
     memset(&config, 0, sizeof(config));
     config.struct_size = sizeof(config);
-    config.read_artifact = read_artifact;
+    config.open_artifact = pxa_wamr_open_artifact_file;
     config.now_us = host_now_us;
     config.prepare_start = prepare_start;
     config.call_timeout_us = (uint64_t)CONFIG_PXA_CALL_TIMEOUT_MS * 1000u;
@@ -2843,54 +2839,6 @@ static void destroy_services(void) {
 }
 
 /* --- engine artifacts ---------------------------------------------------- */
-
-static pxa_status_t read_artifact(void *host_context, pxa_bytes_t path,
-                                  uint8_t *output, size_t capacity,
-                                  size_t *size) {
-    struct stat metadata;
-    (void)host_context;
-    if (path.data == NULL || size == NULL ||
-        (output == NULL && capacity != 0)) {
-        return PXA_STATUS_INVALID_ARGUMENT;
-    }
-    int file = open((const char *)path.data, O_RDONLY);
-    if (file < 0) return PXA_STATUS_NOT_FOUND;
-    if (fstat(file, &metadata) != 0) {
-        close(file);
-        return PXA_STATUS_INTERNAL;
-    }
-    if (!S_ISREG(metadata.st_mode) || metadata.st_size <= 0 ||
-        (uint64_t)metadata.st_size > SIZE_MAX) {
-        close(file);
-        return PXA_STATUS_RESOURCE_LIMIT;
-    }
-    size_t file_size = (size_t)metadata.st_size;
-    if (output == NULL) {
-        close(file);
-        *size = file_size;
-        return PXA_STATUS_OK;
-    }
-    if (file_size > capacity) {
-        close(file);
-        return PXA_STATUS_RESOURCE_LIMIT;
-    }
-    /* Bulk reads write into WAMR's final artifact allocation. A FILE cache
-     * otherwise fragments flash reads and adds a transient allocation. */
-    size_t offset = 0;
-    while (offset < file_size) {
-        ssize_t count;
-        do { count = read(file, output + offset, file_size - offset); }
-        while (count < 0 && errno == EINTR);
-        if (count <= 0) {
-            close(file);
-            return PXA_STATUS_INTERNAL;
-        }
-        offset += (size_t)count;
-    }
-    close(file);
-    *size = file_size;
-    return PXA_STATUS_OK;
-}
 
 /* --- app start/stop ------------------------------------------------------ */
 

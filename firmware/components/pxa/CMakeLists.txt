@@ -76,6 +76,7 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_ime.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ime.c"
     "${PXA_C_CORE_ROOT}/adapters/wamr/pxa_wamr_engine.c"
+    "${PXA_C_CORE_ROOT}/adapters/wamr/pxa_wamr_file_reader.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ui.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_image.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_gif.c"

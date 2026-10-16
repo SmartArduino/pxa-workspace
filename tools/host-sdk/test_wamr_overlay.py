@@ -27,19 +27,22 @@ class ArchiveOverlayTest(unittest.TestCase):
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(self.upstream / relative, dest)
         shutil.copytree(self.upstream / 'platforms/esp-idf/wamr/patches', self.series.parent)
+        loader_series = self.system / 'tools/wamr/patches/series'
+        shutil.copytree(self.upstream / 'tools/wamr/patches', loader_series.parent)
         spec = importlib.util.spec_from_file_location(
             'test_core_wamr_overlay', self.upstream / 'tools/wamr/prepare_overlay.py')
         self.core = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = self.core
         spec.loader.exec_module(self.core)
-        for name in self.series.read_text().splitlines():
-            if not name.strip() or name.lstrip().startswith('#'):
-                continue
-            for patch in self.core.parse_patch(self.series.parent / name):
-                relative = Path('wamr') / patch.path
-                dest = self.system / relative
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(self.upstream / relative, dest)
+        for series in (self.series, loader_series):
+            for name in series.read_text().splitlines():
+                if not name.strip() or name.lstrip().startswith('#'):
+                    continue
+                for patch in self.core.parse_patch(series.parent / name):
+                    relative = Path('wamr') / patch.path
+                    dest = self.system / relative
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(self.upstream / relative, dest)
         files = {p.relative_to(self.root).as_posix(): {'sha256': sdk.digest(p.read_bytes()), 'mode': 0o644}
                  for p in self.root.rglob('*') if p.is_file()}
         manifest = {'schema': sdk.SCHEMA, 'sources': {'wamr': json.loads(self.metadata.read_text())['commit']},
@@ -71,6 +74,17 @@ class ArchiveOverlayTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'modified'):
             self.prepare()
         self.assertEqual(before, {p: p.read_bytes() for p in self.output.rglob('*') if p.is_file()})
+
+    def test_owned_section_loader_archive_matches_pinned_source(self):
+        relative = Path('tools/wamr/patches/series')
+        expected = Path(self.temporary.name) / 'loader-overlay'
+        self.core.prepare(self.upstream / 'wamr', expected,
+                          self.upstream / 'config/wamr.json', self.upstream / relative)
+        paths = overlay.prepare(self.root, self.system / 'wamr', self.output,
+                                self.metadata, self.system / relative)
+        for path in paths:
+            self.assertEqual(path.read_bytes(), (expected / path.relative_to(self.output)).read_bytes())
+        sdk.verify(self.root)
 
     def test_output_cannot_replace_sdk_sources_or_ancestor(self):
         for output in [self.system / 'wamr', self.root.parent]:
