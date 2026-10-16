@@ -47,6 +47,9 @@ target_link_libraries(${_watcher_knob_lib} PRIVATE idf::esp_driver_gpio)
 idf_component_get_property(_watcher_codec_lib espressif__esp_codec_dev COMPONENT_LIB)
 target_link_libraries(${_watcher_codec_lib} PRIVATE
     idf::esp_driver_gpio idf::esp_driver_i2c idf::esp_driver_i2s idf::esp_driver_spi)
+# The codec's SPI source tests version macros without including their header;
+# newer IDF driver headers no longer provide that accidental transitive include.
+target_compile_options(${_watcher_codec_lib} PRIVATE -include esp_idf_version.h)
 
 # Optimize the scanout kernels for speed; all cold board setup keeps the IDF
 # build's selected optimization level.
