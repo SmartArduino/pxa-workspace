@@ -1,0 +1,10 @@
+{
+  "url": "https://unifoundry.com/pub/unifont/unifont-18.0.01/font-builds/unifont_upper-18.0.01.otf",
+  "sha256": "472201e45a050bff4c7658208b8c73e34ebce3764b287a5a46c7774038ef9391",
+  "retained_characters": "𡑍𣈶𥗽",
+  "codepoints": [
+    "0x2144d",
+    "0x23236",
+    "0x255fd"
+  ]
+}

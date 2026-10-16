@@ -6,6 +6,7 @@
 #include FT_FREETYPE_H
 #include FT_SYSTEM_H
 #include FT_MODULE_H
+#include FT_TRUETYPE_TABLES_H
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -37,18 +38,26 @@ static void *resize(FT_Memory memory,long old_size,long size,void *ptr) {
     }
     return next;
 }
+/* Separate EOF from invalid Unicode so the caller can release FreeType on
+ * every error path as well as successful measurements. */
+#define INVALID_CODEPOINT (UINT32_MAX-1u)
 static uint32_t read_codepoint(FILE *file) {
     int ch=fgetc(file);
     if(ch==EOF) return UINT32_MAX;
     uint32_t cp=(uint32_t)ch;
-    int following=0;
-    if((ch&0xe0)==0xc0) { cp=ch&31; following=1; }
-    else if((ch&0xf0)==0xe0) { cp=ch&15; following=2; }
-    else if((ch&0xf8)==0xf0) { cp=ch&7; following=3; }
+    int following=0; uint32_t minimum=0;
+    if(ch<0x80) return cp;
+    if(ch>=0xc2 && ch<=0xdf) { cp=ch&31; following=1; minimum=0x80; }
+    else if(ch>=0xe0 && ch<=0xef) { cp=ch&15; following=2; minimum=0x800; }
+    else if(ch>=0xf0 && ch<=0xf4) { cp=ch&7; following=3; minimum=0x10000; }
+    else { fprintf(stderr,"Invalid UTF-8 lead byte\n"); return INVALID_CODEPOINT; }
     while(following--) {
         ch=fgetc(file);
-        if(ch==EOF || (ch&0xc0)!=0x80) { fprintf(stderr,"Invalid UTF-8\n"); exit(6); }
+        if(ch==EOF || (ch&0xc0)!=0x80) { fprintf(stderr,"Invalid UTF-8\n"); return INVALID_CODEPOINT; }
         cp=(cp<<6)|(ch&63);
+    }
+    if(cp<minimum || cp>0x10ffff || (cp>=0xd800 && cp<=0xdfff)) {
+        fprintf(stderr,"Invalid UTF-8 scalar\n"); return INVALID_CODEPOINT;
     }
     return cp;
 }
@@ -74,26 +83,28 @@ int main(int argc,char **argv) {
         return 2;
     }
     struct FT_MemoryRec_ memory={NULL,allocate,release,resize};
-    FT_Library library; FT_Face face,other=NULL;
-    if(FT_New_Library(&memory,&library)) return 3;
-    FT_Add_Default_Modules(library);
-    if(FT_New_Face(library,argv[compare?2:1],0,&face)) return 4;
-    if(compare && FT_New_Face(library,argv[3],0,&other)) return 4;
-    size_t opened=live_bytes, opened_peak=peak_bytes;
-    FILE *text=fopen(argv[compare?4:2],"rb");
-    if(!text) return 5;
+    FT_Library library=NULL; FT_Face face=NULL,other=NULL; FILE *text=NULL;
+    int status=0;
     unsigned count=0,missing=0,blank=0,mismatch=0;
+    if(FT_New_Library(&memory,&library)) { status=3; goto done; }
+    FT_Add_Default_Modules(library);
+    if(FT_New_Face(library,argv[compare?2:1],0,&face)) { status=4; goto done; }
+    if(compare && FT_New_Face(library,argv[3],0,&other)) { status=4; goto done; }
+    size_t opened=live_bytes, opened_peak=peak_bytes;
+    text=fopen(argv[compare?4:2],"rb");
+    if(!text) { status=5; goto done; }
     const unsigned sizes[]={12,16,28,56};
     uint64_t checksum=0;
     for(unsigned i=0;i<sizeof(sizes)/sizeof(sizes[0]);++i) {
         if(FT_Set_Pixel_Sizes(face,0,sizes[i]) ||
-           (compare && FT_Set_Pixel_Sizes(other,0,sizes[i]))) return 7;
+           (compare && FT_Set_Pixel_Sizes(other,0,sizes[i]))) { status=7; goto done; }
         rewind(text); uint32_t cp;
         while((cp=read_codepoint(text))!=UINT32_MAX) {
+            if(cp==INVALID_CODEPOINT) { status=6; goto done; }
             if(whitespace(cp)) continue;
             FT_UInt gid=FT_Get_Char_Index(face,cp);
             ++count; if(!gid) ++missing;
-            if(render(face,gid)) return 7;
+            if(render(face,gid)) { status=7; goto done; }
             uint64_t ink=0;
             for(unsigned y=0;y<face->glyph->bitmap.rows;++y)
                 for(unsigned x=0;x<face->glyph->bitmap.width;++x)
@@ -102,21 +113,27 @@ int main(int argc,char **argv) {
             checksum+=ink;
             if(compare) {
                 FT_UInt replacement=FT_Get_Char_Index(other,cp);
-                if(render(other,replacement)) return 7;
+                if(render(other,replacement)) { status=7; goto done; }
                 if(!replacement || !same_bitmap(face->glyph,other->glyph)) {
                     if(mismatch++<8) fprintf(stderr,"Changed glyph U+%04X size=%u\n",cp,sizes[i]);
                 }
             }
         }
+        if(ferror(text)) { status=5; goto done; }
     }
-    fclose(text);
     printf("{\"open_live\":%zu,\"open_peak\":%zu,\"render_live\":%zu,"
            "\"render_peak\":%zu,\"glyph_count\":%u,\"missing\":%u,"
-           "\"blank\":%u,\"bitmap_mismatch\":%u,\"checksum\":%llu",
+           "\"blank\":%u,\"bitmap_mismatch\":%u,\"checksum\":%llu,"
+           "\"charmaps\":%d,\"unicode_cmap_format\":%ld",
            opened,opened_peak,live_bytes,peak_bytes,count,missing,blank,mismatch,
-           (unsigned long long)checksum);
+           (unsigned long long)checksum,face->num_charmaps,
+           (long)FT_Get_CMap_Format(face->charmap));
+done:
+    if(text) fclose(text);
     if(other) FT_Done_Face(other);
-    FT_Done_Face(face); FT_Done_Library(library);
+    if(face) FT_Done_Face(face);
+    if(library) FT_Done_Library(library);
+    if(status) return status;
     printf(",\"after_close\":%zu}\n",live_bytes);
-    return live_bytes || mismatch;
+    return live_bytes || mismatch || missing;
 }
