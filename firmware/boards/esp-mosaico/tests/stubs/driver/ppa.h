@@ -10,7 +10,7 @@ struct ppa_client_config_t { int oper_type; uint32_t max_pending_trans_num; int 
 struct color_pixel_argb8888_data_t { uint8_t a, r, g, b; };
 struct ppa_in_pic_blk_config_t {
     void* buffer;
-    uint32_t pic_w, pic_h, block_w, block_h;
+    uint32_t pic_w, pic_h, block_w, block_h, block_offset_x, block_offset_y;
     int srm_cm;
 };
 struct ppa_out_pic_blk_config_t {

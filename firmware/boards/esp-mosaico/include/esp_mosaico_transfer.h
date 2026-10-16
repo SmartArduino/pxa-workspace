@@ -28,6 +28,12 @@ public:
                 std::memcpy(frame + (y * kWidth + area.x1) * sizeof(uint16_t),
                             source + (y - area.y1) * stride, bytes);
         }
+        return Include(area);
+    }
+
+    template <typename Area>
+    bool Include(const Area& area) {
+        if (!ValidDisplayArea(area)) return false;
         const bool pending = last_ >= 0;
         left_ = pending ? std::min<int32_t>(left_, area.x1) : area.x1;
         right_ = pending ? std::max<int32_t>(right_, area.x2) : area.x2;
@@ -51,8 +57,8 @@ private:
     int16_t last_ = -1;
 };
 
-// Retain the old contiguous copy for wide UI scroll regions: extra row calls
-// cost more than the small byte reduction. Narrow updates copy only dirty pixels.
+// Wide scroll regions use full rows for contiguous copies or one PPA transfer.
+// Narrow updates copy only dirty pixels, preserving the surrounding snapshot.
 template <typename Area>
 Area SnapshotArea(Area area) {
     if (area.x2 - area.x1 + 1 >= kWidth * 3 / 4) {
@@ -66,11 +72,33 @@ Area SnapshotArea(Area area) {
 // pixels. Copying extra pixels is safe, including when TE later widens the
 // panel window to full rows. The caller owns the entire two frames.
 template <typename Area>
-bool CopyRefreshArea(const Area& dirty, const uint8_t* frame, uint8_t* snapshot) {
+bool CopyRefreshArea(const Area& dirty, const uint8_t* frame, uint8_t* snapshot,
+                     bool swap_bytes = false) {
     if (!ValidDisplayArea(dirty) || !frame || !snapshot) return false;
     const Area area = SnapshotArea(dirty);
     const size_t row_bytes = kWidth * sizeof(uint16_t);
     const size_t bytes = (area.x2 - area.x1 + 1) * sizeof(uint16_t);
+    if (swap_bytes) {
+        // A paired conversion is also the fallback when PPA is unavailable.
+        // memcpy keeps unaligned buffers and strict aliasing well-defined.
+        for (int32_t y = area.y1; y <= area.y2; ++y) {
+            const size_t offset = y * row_bytes + area.x1 * sizeof(uint16_t);
+            size_t x = 0;
+            for (; x + 4 <= bytes; x += 4) {
+                uint32_t pair;
+                std::memcpy(&pair, frame + offset + x, 4);
+                pair = ((pair & 0x00ff00ffu) << 8) | ((pair & 0xff00ff00u) >> 8);
+                std::memcpy(snapshot + offset + x, &pair, 4);
+            }
+            if (x < bytes) {
+                uint16_t pixel;
+                std::memcpy(&pixel, frame + offset + x, 2);
+                pixel = __builtin_bswap16(pixel);
+                std::memcpy(snapshot + offset + x, &pixel, 2);
+            }
+        }
+        return true;
+    }
     if (bytes == row_bytes) {
         const size_t offset = area.y1 * row_bytes;
         std::memcpy(snapshot + offset, frame + offset, (area.y2 - area.y1 + 1) * bytes);

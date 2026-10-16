@@ -25,6 +25,7 @@
 #include <esp_netif_sntp.h>
 #include <esp_timer.h>
 #include <button_gpio.h>
+#include "esp_mosaico_input_lvgl.h"
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
 #include <pxa_board_api.h>
@@ -298,7 +299,7 @@ bool EspMosaicoHardware::InitializeDisplay() {
     display_config.profile.ver_res = mosaico_board::kHeight;
     display_config.profile.buffer_height = mosaico_board::kDrawBufferRows;
     display_config.profile.use_psram = true;
-    display_config.profile.require_double_buffer = true;
+    display_config.profile.require_double_buffer = false;
     display_config.tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE;
     display_config.te_sync.gpio_num = -1;
     if (esp_lv_adapter_lock(1000) != ESP_OK) return false;
@@ -308,17 +309,35 @@ bool EspMosaicoHardware::InitializeDisplay() {
         return false;
     }
     lv_display_set_driver_data(display_, this);
-    lv_display_set_color_format(display_, LV_COLOR_FORMAT_RGB565_SWAPPED);
+    lv_display_set_color_format(display_, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_render_mode(display_, LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(display_, FlushDisplay);
-    // Return draw buffers after copying; the panel reads an owned PSRAM
-    // snapshot while LVGL renders the next refresh. Limit only this display.
-    lv_display_set_flush_wait_cb(display_, nullptr);
+    // The worker converts the final dirty snapshot outside the UI lock.
+    // LVGL must retain the source until that conversion calls flush_ready.
+    lv_display_set_flush_wait_cb(display_, [](lv_display_t* display) {
+        static_cast<EspMosaicoHardware*>(lv_display_get_driver_data(display))->WaitForUiSnapshot();
+    });
     lv_timer_set_period(lv_display_get_refr_timer(display_), mosaico_board::kUiRefreshPeriodMs);
     lv_display_add_event_cb(display_, [](lv_event_t* event) {
         auto* self = static_cast<EspMosaicoHardware*>(lv_event_get_user_data(event));
         if (lv_event_get_code(event) == LV_EVENT_RENDER_START) {
             self->refresh_started_us_ = esp_timer_get_time();
-            self->refresh_wait_us_ = 0;
+            self->WaitForUiSnapshot();
+            self->refresh_wait_us_ = esp_timer_get_time() - self->refresh_started_us_;
+            if (self->ui_frame_state_.load(std::memory_order_acquire) == UiFrameState::RestoreRequired) {
+                // Restore before drawing, so a direct game does not leave old
+                // UI pixels around newly drawn patches. Never overwrite a
+                // patch which LVGL has already rendered in this refresh.
+                const int64_t started = esp_timer_get_time();
+                self->WaitForFlush();
+                xSemaphoreTake(self->panel_mutex_, portMAX_DELAY);
+                self->refresh_wait_us_ += esp_timer_get_time() - started;
+                const lv_area_t full = {0, 0, mosaico_board::kWidth - 1, mosaico_board::kHeight - 1};
+                mosaico_board::CopyRefreshArea(full, self->scanout_pixels_,
+                    lv_display_get_buf_active(self->display_)->data, true);
+                xSemaphoreGive(self->panel_mutex_);
+                self->ui_frame_state_.store(UiFrameState::Current, std::memory_order_release);
+            }
             self->flush_direct_checked_ = false;
             self->flush_direct_ready_ = false;
         } else if (lv_event_get_code(event) == LV_EVENT_RENDER_READY) {
@@ -350,11 +369,11 @@ bool EspMosaicoHardware::InitializeDisplay() {
     // The task sleeps during TE and DMA waits, leaving CPU time for rendering.
     if (xTaskCreatePinnedToCore(FlushTask, "mosaico_flush", 4096, this, 6,
                     &flush_task_, 0) != pdPASS) return false;
-    if (esp_lv_adapter_start() != ESP_OK ||
-        !mosaico_pxa_surface::Install(display_, [](void* context) {
-            return static_cast<EspMosaicoHardware*>(context)->PresentDirectFrame();
-        }, this)) return false;
     if (!InitializeTe()) ESP_LOGW(kTag, "TE unavailable; using unsynchronized refresh");
+    // Publish acceleration clients before any UI job can run on the worker.
+    if (!mosaico_pxa_surface::Install(display_, [](void* context) {
+            return static_cast<EspMosaicoHardware*>(context)->PresentDirectFrame();
+        }, this) || esp_lv_adapter_start() != ESP_OK) return false;
     return ApplyBrightness();
 }
 
@@ -502,32 +521,25 @@ void EspMosaicoHardware::FlushDisplay(lv_display_t* display,
         lv_display_flush_ready(display);
         return;
     }
+    // DIRECT flush maps start at the full frame, unlike PARTIAL chunk maps.
+    uint8_t* patch = pixels + area->y1 * source_stride + area->x1 * sizeof(uint16_t);
     const uint64_t timestamp = mosaico_pxa_surface::ComposeFlushArea(
-        area, pixels, source_stride);
+        area, patch, source_stride, mosaico_pxa_surface::PixelOrder::Native);
     const bool last = lv_display_flush_is_last(display);
-    if (last) pxa_board_performance_note_frame();
-    // Paint the diagnostics before transferring ownership to the worker.
-    pxa_board_performance_draw_rgb565(reinterpret_cast<uint16_t*>(pixels),
-        mosaico_board::kWidth, mosaico_board::kHeight, source_stride / 2,
-        area->x1, area->y1, width, lv_area_get_height(area), true);
-    if (!self->present_pixels_current_) {
-        // Full game frames exchange buffers. Restore the newest complete
-        // image once before merging UI patches into the producer again.
-        const lv_area_t full = {0, 0, mosaico_board::kWidth - 1, mosaico_board::kHeight - 1};
-        self->WaitForFlush();
-        mosaico_board::CopyRefreshArea(full, self->scanout_pixels_, self->present_pixels_);
-        self->present_pixels_current_ = true;
-    }
-    if (!self->pending_region_.Merge(*area, pixels, source_stride,
-                                   self->present_pixels_)) {
+    // Diagnostics are painted into the owned scanout by the transfer worker.
+    // Keeping them outside LVGL also covers refreshes below the top strip.
+    if (!self->pending_region_.Include(*area)) {
         self->compose_failed_ = true;
         self->redraw_pending_ = true;
     }
     if (last) {
         lv_area_t dirty;
-        if (self->pending_region_.Take(&dirty) && !self->compose_failed_)
-            (void)self->QueuePresent(dirty, timestamp);
+        const bool queued = self->pending_region_.Take(&dirty) && !self->compose_failed_ &&
+                            self->QueuePresent(dirty, timestamp);
         self->compose_failed_ = false;
+        // The worker keeps this single retained buffer until its snapshot is
+        // complete. Non-last flushes need no handoff and are ready immediately.
+        if (queued) return;
     }
     lv_display_flush_ready(display);
 }
@@ -619,6 +631,8 @@ bool EspMosaicoHardware::TransferArea(
             displayed_frame_id_ = frame_id != 0 ? frame_id : completed_frames_.load();
             displayed_timestamp_us_ = esp_timer_get_time();
             displayed_source_ = source_name;
+            pxa_board_performance_note_frame();
+            pxa_esp_surface_note_display_frame_presented(displayed_timestamp_us_);
             if (frame_id == 0)
                 pxa_esp_surface_note_frame_presented(timestamp, displayed_timestamp_us_);
         } else {
@@ -636,6 +650,9 @@ bool EspMosaicoHardware::PresentDirectFrame() {
 }
 
 bool EspMosaicoHardware::PrepareDirectFrame(FlushRequest* request) {
+    // The UI worker and direct presenter share one SRM client. Its UI operation
+    // must finish before a new game conversion is submitted.
+    WaitForUiSnapshot();
     if (!panel_on_.load() || (reference_ui_ != nullptr &&
         pxsys_reference_lvgl_is_locked(reference_ui_))) return false;
     pxa_esp_surface_frame_t frame;
@@ -660,48 +677,53 @@ bool EspMosaicoHardware::PrepareDirectFrame(FlushRequest* request) {
     const uint64_t frame_id = frame.frame_id;
     const uint32_t raster_ready_tick_us = frame.raster_ready_tick_us;
     pxa_esp_surface_release_frame(frame.lease);
-    pxa_board_performance_note_frame();
-    pxa_board_performance_draw_rgb565(reinterpret_cast<uint16_t*>(present_pixels_),
-        mosaico_board::kWidth, mosaico_board::kHeight, mosaico_board::kWidth,
-        0, 0, mosaico_board::kWidth, mosaico_board::kHeight, true);
-    *request = {area, timestamp, frame_id, raster_ready_tick_us};
+    *request = {area, timestamp, {frame_id}, raster_ready_tick_us, FlushKind::Frame};
     return true;
 }
 
 void EspMosaicoHardware::WaitForFlush() {
-    // Called with the display lock: no producer can enqueue another frame
-    // while snapshots, panel controls or initial display-on wait for completion.
+    // Content producers hold the display lock. Callers also take panel_mutex_
+    // before reading the snapshot or changing panel controls: an idle HUD may
+    // reserve the transfer slot after this wait returns.
     xSemaphoreTake(present_available_, portMAX_DELAY);
     xSemaphoreGive(present_available_);
+}
+
+void EspMosaicoHardware::WaitForUiSnapshot() {
+    // The adapter uses task notifications as advisory wakeups too. Always
+    // check ownership, so an unrelated/stale wake cannot release pixels early.
+    // A different caller (e.g. PXADB screenshot) may own the UI lock now; the
+    // bounded wait also covers a notification sent to the original producer.
+    while (ui_frame_state_.load(std::memory_order_acquire) == UiFrameState::Copying)
+        (void)ulTaskNotifyTake(pdTRUE, 1);
 }
 
 bool EspMosaicoHardware::QueuePresent(const lv_area_t& area, uint64_t timestamp,
                                       uint64_t frame_id, uint32_t raster_ready_tick_us) {
     // Exactly one submitted frame, plus the frame LVGL is currently drawing.
-    // Backpressure prevents a backlog of stale scroll frames and lost patches.
     const int64_t wait_started = esp_timer_get_time();
     xSemaphoreTake(present_available_, portMAX_DELAY);
     present_wait_us_ = esp_timer_get_time() - wait_started;
     refresh_wait_us_ += present_wait_us_.load();
-    const int64_t snapshot_started = esp_timer_get_time();
-    const bool exchanged = frame_id != 0;
-    const bool was_current = present_pixels_current_;
-    const bool snapshotted = exchanged
-        ? mosaico_board::ExchangeRefreshFrame(area, present_pixels_, scanout_pixels_)
-        : mosaico_board::CopyRefreshArea(area, present_pixels_, scanout_pixels_);
-    if (!snapshotted) {
-        xSemaphoreGive(present_available_);
-        redraw_pending_ = true;
-        return false;
+    FlushRequest request = {area, timestamp, {frame_id}, raster_ready_tick_us, FlushKind::Frame};
+    const auto previous = ui_frame_state_.load(std::memory_order_acquire);
+    if (frame_id != 0) {
+        const int64_t snapshot_started = esp_timer_get_time();
+        if (!mosaico_board::ExchangeRefreshFrame(area, present_pixels_, scanout_pixels_)) {
+            xSemaphoreGive(present_available_);
+            redraw_pending_ = true;
+            return false;
+        }
+        snapshot_us_ = esp_timer_get_time() - snapshot_started;
+        ui_frame_state_.store(UiFrameState::RestoreRequired, std::memory_order_release);
+    } else {
+        request.kind = FlushKind::UiSnapshot;
+        request.ui = {lv_display_get_buf_active(display_)->data, xTaskGetCurrentTaskHandle()};
+        ui_frame_state_.store(UiFrameState::Copying, std::memory_order_release);
     }
-    if (exchanged) present_pixels_current_ = false;
-    snapshot_us_ = esp_timer_get_time() - snapshot_started;
-    const FlushRequest request = {area, timestamp, frame_id, raster_ready_tick_us};
     if (xQueueSend(flush_queue_, &request, 0) == pdTRUE) return true;
-    if (exchanged) {
-        std::swap(present_pixels_, scanout_pixels_);
-        present_pixels_current_ = was_current;
-    }
+    if (frame_id != 0) std::swap(present_pixels_, scanout_pixels_);
+    ui_frame_state_.store(previous, std::memory_order_release);
     xSemaphoreGive(present_available_);
     redraw_pending_ = true;
     return false;
@@ -709,16 +731,88 @@ bool EspMosaicoHardware::QueuePresent(const lv_area_t& area, uint64_t timestamp,
 
 void EspMosaicoHardware::FlushTask(void* context) {
     auto* self = static_cast<EspMosaicoHardware*>(context);
+    lv_area_t overlay_area = {
+        (mosaico_board::kWidth - PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) / 2, 0,
+        (mosaico_board::kWidth + PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) / 2 - 1,
+        PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT - 1};
+    RoundDisplayArea(&overlay_area);
+    uint32_t overlay_fps = UINT32_MAX;
+    bool overlay_enabled = false;
     FlushRequest request;
     for (;;) {
-        if (xQueueReceive(self->flush_queue_, &request, portMAX_DELAY) != pdTRUE)
+        // Reuse the transfer task and retained snapshot for idle HUD updates.
+        // With diagnostics disabled there is no extra periodic wakeup.
+        const TickType_t timeout = pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY) &&
+            self->panel_on_.load() ? pdMS_TO_TICKS(100) : portMAX_DELAY;
+        const bool content = xQueueReceive(self->flush_queue_, &request, timeout) == pdTRUE;
+        // A producer may already have reserved the snapshot and be about to
+        // queue it. Do not race its buffer exchange or delay its content frame.
+        if (!content && xSemaphoreTake(self->present_available_, 0) != pdTRUE)
             continue;
         xSemaphoreTake(self->panel_mutex_, portMAX_DELAY);
-        const bool completed = self->TransferArea(request.area, self->scanout_pixels_,
-            mosaico_board::kWidth * sizeof(uint16_t), true,
-            request.timestamp, request.frame_id ? "surface-direct" : "lvgl-composited",
-            request.frame_id);
-        if (completed && request.frame_id) {
+        const bool ui = content && request.kind == FlushKind::UiSnapshot;
+        if (ui) {
+            const int64_t started = esp_timer_get_time();
+            const bool copied = mosaico_pxa_surface::CopyUiSnapshot(
+                request.area, request.ui.pixels, self->scanout_pixels_);
+            self->snapshot_us_ = esp_timer_get_time() - started;
+            // Signal in this order. RENDER_START also waits for Copying to end,
+            // including when flush_ready makes LVGL skip its own wait callback.
+            lv_display_flush_ready(self->display_);
+            self->ui_frame_state_.store(UiFrameState::Current, std::memory_order_release);
+            xTaskNotifyGive(request.ui.waiter);
+            if (!copied) {
+                self->displayed_frame_valid_ = false;
+                self->redraw_pending_ = true;
+                xSemaphoreGive(self->panel_mutex_);
+                xSemaphoreGive(self->present_available_);
+                continue;
+            }
+        }
+        const uint32_t fps = pxa_board_performance_refresh();
+        const bool enabled = pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY);
+        const bool changed = enabled != overlay_enabled || fps != overlay_fps;
+        // Removing a HUD needs clean underlying pixels. The next full UI/game
+        // render supplies them; never borrow a framebuffer being drawn now.
+        if (!enabled && overlay_enabled) self->redraw_pending_ = true;
+        if (!content && (!enabled || !changed || !self->panel_on_.load() ||
+                         !self->displayed_frame_initialized_)) {
+            if (!enabled) overlay_enabled = false;
+            xSemaphoreGive(self->panel_mutex_);
+            xSemaphoreGive(self->present_available_);
+            continue;
+        }
+        lv_area_t dirty = content ? request.area : overlay_area;
+        if (enabled && (changed || dirty.y1 < PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT)) {
+            pxa_board_performance_draw_rgb565(
+                reinterpret_cast<uint16_t*>(self->scanout_pixels_),
+                mosaico_board::kWidth, mosaico_board::kHeight, mosaico_board::kWidth,
+                0, 0, mosaico_board::kWidth, mosaico_board::kHeight, true);
+            if (changed) {
+                mosaico_board::RefreshRegion region;
+                region.Include(dirty);
+                region.Include(overlay_area);
+                (void)region.Take(&dirty);
+            }
+        }
+        const uint64_t frame_id = content && !ui ? request.frame_id : 0;
+        const bool completed = self->TransferArea(dirty, self->scanout_pixels_,
+            mosaico_board::kWidth * sizeof(uint16_t), content,
+            content ? request.timestamp : 0,
+            frame_id ? "surface-direct" : "lvgl-composited", frame_id);
+        if (!content) {
+            // A failed diagnostic stripe must request a clean recovery frame
+            // without carrying its failure into the next content refresh.
+            self->refresh_failed_ = false;
+            if (!completed) self->redraw_pending_ = true;
+        }
+        if (completed) {
+            overlay_fps = fps;
+            overlay_enabled = enabled;
+        }
+        // HUD-only transfers do not complete a new content frame. Neither the
+        // on-screen FPS nor PXADB PERF should count their own instrumentation.
+        if (content && completed && frame_id) {
             ++self->direct_frames_;
             pxa_esp_surface_note_game_frame_presented(request.frame_id, self->displayed_timestamp_us_);
             if (request.raster_ready_tick_us) {
@@ -869,7 +963,7 @@ void EspMosaicoHardware::ReadTouch(lv_indev_t* input, lv_indev_data_t* data) {
     data->timestamp = MosaicoTouchLvglTimestamp(sample.timestamp_us,
         esp_timer_get_time(), lv_tick_get(), queued);
 #if CONFIG_LV_USE_GESTURE_RECOGNITION
-    if (context->slot == 0) lv_indev_gesture_recognizers_set_data(input, data);
+    if (context->slot == 0) MosaicoSetGestureMetadata(input, data);
 #endif
     const bool pressed = data->state == LV_INDEV_STATE_PRESSED;
     const bool asleep = !self->panel_on_.load();
@@ -1309,12 +1403,13 @@ void EspMosaicoHardware::PublishDiagnostics() {
              static_cast<unsigned long>(lv_display_get_inactive_time(display_)),
              reference_ui_ != nullptr && pxsys_reference_lvgl_is_locked(reference_ui_),
              panel_on_.load(), idle_dim_enabled_.load());
-    ESP_LOGI(kTag, "surface_stats presenter_core=1 raster_us=%lu compose_us=%lu snapshot_us=%lu ppa_frames=%lu cpu_frames=%lu alpha_frames=%lu ppa_background=%lu",
+    ESP_LOGI(kTag, "surface_stats presenter_core=1 raster_us=%lu compose_us=%lu snapshot_us=%lu ppa_frames=%lu cpu_frames=%lu alpha_frames=%lu ppa_background=%lu flush_stack_free=%lu",
              static_cast<unsigned long>(direct_raster_us_.load()),
              static_cast<unsigned long>(direct_compose_us_.load()),
              static_cast<unsigned long>(snapshot_us_.load()),
              static_cast<unsigned long>(direct_ppa_frames_.load()),
              static_cast<unsigned long>(direct_cpu_frames_.load()),
              static_cast<unsigned long>(direct_alpha_frames_.load()),
-             static_cast<unsigned long>(mosaico_pxa_surface::AcceleratedFillCount()));
+             static_cast<unsigned long>(mosaico_pxa_surface::AcceleratedFillCount()),
+             static_cast<unsigned long>(uxTaskGetStackHighWaterMark(flush_task_)));
 }

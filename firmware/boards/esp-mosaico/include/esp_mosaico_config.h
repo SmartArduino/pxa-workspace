@@ -30,9 +30,10 @@ constexpr std::optional<HardwareConfig> DecodeHardwareConfig(uint16_t version) {
 
 inline constexpr uint16_t kWidth = 480;
 inline constexpr uint16_t kHeight = 480;
-// Two half-height buffers retain parallel render/flush without reserving two
-// full-screen LVGL scratch frames. Persistent compositor frames are separate.
-inline constexpr uint16_t kDrawBufferRows = (kHeight / 2) & ~7u;
+// One retained full-frame draw buffer replaces two half-frame scratch buffers
+// at the same total capacity. DIRECT drawing avoids copying every LVGL chunk
+// into a second full-frame producer before taking the scanout snapshot.
+inline constexpr uint16_t kDrawBufferRows = kHeight;
 inline constexpr uint32_t kUiRefreshPeriodMs = 16;
 // Two 16-row buffers retain the original 32-row total SRAM footprint.
 inline constexpr uint16_t kTransferRows = 16;

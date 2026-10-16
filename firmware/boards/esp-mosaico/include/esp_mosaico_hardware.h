@@ -66,6 +66,7 @@ private:
     bool ApplyBrightness();
     bool WaitForTransfer(TickType_t timeout);
     void WaitForFlush();
+    void WaitForUiSnapshot();
     bool QueuePresent(const lv_area_t& area, uint64_t timestamp,
                       uint64_t frame_id = 0, uint32_t raster_ready_tick_us = 0);
     static void FlushTask(void* context);
@@ -132,12 +133,21 @@ private:
     int64_t scan_deadline_us_ = 0; // Serialized by panel_mutex_.
     SemaphoreHandle_t present_available_ = nullptr;
     SemaphoreHandle_t panel_mutex_ = nullptr;
+    enum class FlushKind : uint8_t { Frame, UiSnapshot };
     struct FlushRequest {
         lv_area_t area;
         uint64_t timestamp;
-        uint64_t frame_id;
+        union {
+            uint64_t frame_id;
+            struct { const uint8_t* pixels; TaskHandle_t waiter; } ui;
+        };
         uint32_t raster_ready_tick_us;
+        FlushKind kind;
     };
+    // The discriminator occupies the former padding; queue and object capacity
+    // stay unchanged on this 32-bit board.
+    static_assert(sizeof(FlushRequest) == 40);
+    enum class UiFrameState : uint8_t { Current, Copying, RestoreRequired };
     bool PrepareDirectFrame(FlushRequest* request);
     bool flush_direct_checked_ = false;
     bool flush_direct_ready_ = false;
@@ -159,7 +169,7 @@ private:
     int64_t diagnostics_logged_us_ = 0;
     uint8_t* present_pixels_ = nullptr;
     uint8_t* scanout_pixels_ = nullptr; // Immutable while the worker owns it.
-    bool present_pixels_current_ = true; // Restore once on direct -> LVGL.
+    std::atomic<UiFrameState> ui_frame_state_{UiFrameState::Current};
     mosaico_board::RefreshRegion pending_region_; // Only with the display lock held.
     bool compose_failed_ = false;
     int64_t refresh_started_us_ = 0;

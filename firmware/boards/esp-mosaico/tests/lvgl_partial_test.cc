@@ -5,24 +5,39 @@
 #include <lvgl.h>
 #include "esp_mosaico_transfer.h"
 #include "esp_mosaico_input.h"
+#include "esp_mosaico_input_lvgl.h"
 
 namespace {
 class Display {
 public:
-    explicit Display(unsigned rows)
+    explicit Display(unsigned rows, bool retained = false, bool native = false, bool deferred = false)
         : draw_{std::vector<uint8_t>(480 * rows * 2), std::vector<uint8_t>(480 * rows * 2)},
-          frame_(480 * 480 * 2), snapshot_(frame_.size()) {
+          frame_(480 * 480 * 2), snapshot_(frame_.size()), retained_(retained), native_(native), deferred_(deferred) {
         display_ = lv_display_create(480, 480);
         assert(display_);
         lv_display_set_default(display_);
-        lv_display_set_color_format(display_, LV_COLOR_FORMAT_RGB565_SWAPPED);
-        lv_display_set_buffers(display_, draw_[0].data(), draw_[1].data(), draw_[0].size(),
-                               LV_DISPLAY_RENDER_MODE_PARTIAL);
+        lv_display_set_color_format(display_, native ? LV_COLOR_FORMAT_RGB565 : LV_COLOR_FORMAT_RGB565_SWAPPED);
+        lv_display_set_buffers(display_, draw_[0].data(), retained ? nullptr : draw_[1].data(), draw_[0].size(),
+                               retained ? LV_DISPLAY_RENDER_MODE_DIRECT : LV_DISPLAY_RENDER_MODE_PARTIAL);
         lv_display_set_driver_data(display_, this);
         lv_display_set_flush_cb(display_, Flush);
+        if (deferred_) lv_display_set_flush_wait_cb(display_, [](lv_display_t* display) {
+            static_cast<Display*>(lv_display_get_driver_data(display))->CompleteSnapshot();
+        });
         lv_display_add_event_cb(display_, [](lv_event_t* event) {
             mosaico_board::RoundDisplayArea(static_cast<lv_area_t*>(lv_event_get_param(event)));
         }, LV_EVENT_INVALIDATE_AREA, nullptr);
+        lv_display_add_event_cb(display_, [](lv_event_t* event) {
+            auto* self = static_cast<Display*>(lv_event_get_user_data(event));
+            // The production RENDER_START guard also covers callers that
+            // acquire the display lock before the previous worker completes.
+            self->CompleteSnapshot();
+            if (self->retained_ && !self->ui_current_) {
+                const lv_area_t full = {0, 0, 479, 479};
+                assert(mosaico_board::CopyRefreshArea(full, self->snapshot_.data(), self->draw_[0].data(), self->native_));
+                self->ui_current_ = true;
+            }
+        }, LV_EVENT_RENDER_START, this);
         auto* screen = lv_display_get_screen_active(display_);
         lv_obj_set_style_bg_color(screen, lv_color_hex(0x172338), 0);
         container_ = lv_obj_create(screen);
@@ -51,7 +66,7 @@ public:
         lv_obj_set_style_radius(overlay_, 22, 0);
         lv_obj_set_hidden(overlay_, true);
     }
-    ~Display() { lv_display_delete(display_); }
+    ~Display() { CompleteSnapshot(); lv_display_delete(display_); }
     Display(const Display&) = delete;
     Display& operator=(const Display&) = delete;
 
@@ -62,20 +77,49 @@ public:
         lv_refr_now(display_);
     }
     const std::vector<uint8_t>& pixels() const { return snapshot_; }
+    bool pending() const { return pending_pixels_ != nullptr; }
+    void SignalReadyBeforeOwnershipRelease() {
+        assert(pending());
+        lv_display_flush_ready(display_);
+    }
+    void CompleteSnapshot() {
+        if (!pending_pixels_) return;
+        // Defer the worker deliberately. The single retained source must remain
+        // byte-exact while LVGL updates/layouts the next frame or changes caller.
+        assert(std::memcmp(pending_pixels_, pending_bytes_.data(), pending_bytes_.size()) == 0);
+        assert(mosaico_board::CopyRefreshArea(pending_area_, pending_pixels_, snapshot_.data(), native_));
+        pending_pixels_ = nullptr;
+        lv_display_flush_ready(display_);
+    }
     unsigned flushes() const { return flushes_; }
     unsigned refreshes() const { return refreshes_; }
+    void SimulateDirectGame() {
+        CompleteSnapshot(); // Direct presenter must not share SRM with a pending UI copy.
+        for (size_t i = 0; i < snapshot_.size(); ++i) snapshot_[i] = (i * 37) ^ (i >> 9);
+        frame_ = snapshot_;
+        ui_current_ = false;
+    }
 
 private:
     static void Flush(lv_display_t* display, const lv_area_t* area, uint8_t* pixels) {
         auto* self = static_cast<Display*>(lv_display_get_driver_data(display));
         const auto* active = lv_display_get_buf_active(display);
-        assert(self->dirty_.Merge(*area, pixels, active->header.stride, self->frame_.data()));
+        if (self->retained_) assert(self->dirty_.Include(*area));
+        else assert(self->dirty_.Merge(*area, pixels, active->header.stride, self->frame_.data()));
         ++self->flushes_;
         if (lv_display_flush_is_last(display)) {
             lv_area_t dirty;
             assert(self->dirty_.Take(&dirty));
-            assert(mosaico_board::CopyRefreshArea(dirty, self->frame_.data(), self->snapshot_.data()));
             ++self->refreshes_;
+            if (self->deferred_) {
+                assert(self->retained_ && !self->pending());
+                self->pending_area_ = dirty;
+                self->pending_pixels_ = pixels;
+                self->pending_bytes_.assign(pixels, pixels + self->draw_[0].size());
+                return;
+            }
+            assert(mosaico_board::CopyRefreshArea(dirty,
+                self->retained_ ? pixels : self->frame_.data(), self->snapshot_.data(), self->native_));
         }
         lv_display_flush_ready(display);
     }
@@ -86,6 +130,13 @@ private:
     lv_obj_t* indicator_ = nullptr;
     lv_obj_t* overlay_ = nullptr;
     unsigned flushes_ = 0, refreshes_ = 0;
+    bool retained_ = false;
+    bool native_ = false;
+    bool ui_current_ = true;
+    bool deferred_ = false;
+    lv_area_t pending_area_ = {};
+    const uint8_t* pending_pixels_ = nullptr;
+    std::vector<uint8_t> pending_bytes_;
 };
 
 void TestLvglInputTakeover() {
@@ -112,11 +163,26 @@ void TestLvglInputTakeover() {
         lv_indev_set_user_data(pointers[slot], &contexts[slot]);
         lv_indev_set_read_cb(pointers[slot], [](lv_indev_t* input, lv_indev_data_t* data) {
             auto* context = static_cast<Context*>(lv_indev_get_user_data(input));
+#if LV_USE_GESTURE_RECOGNITION
+            if (context->slot == 0) {
+                EspMosaicoTouchPoint points[EspMosaicoInput::kPointers] = {};
+                const auto count = context->router->Points(points);
+                lv_indev_touch_data_t touches[EspMosaicoInput::kPointers] = {};
+                for (size_t index = 0; index < count; ++index) {
+                    touches[index].state = LV_INDEV_STATE_PRESSED;
+                    touches[index].point = {points[index].x, points[index].y};
+                    touches[index].id = points[index].id;
+                    touches[index].timestamp = lv_tick_get();
+                }
+                lv_indev_gesture_recognizers_update(input, touches, count);
+            }
+#endif
             const auto sample = context->router->Read(context->slot);
             if (sample.cancelled) lv_indev_wait_release(input);
             data->state = sample.event.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
             data->point = {sample.event.point.x, sample.event.point.y};
             data->continue_reading = context->router->pending(context->slot);
+            if (context->slot == 0) MosaicoSetGestureMetadata(input, data);
         });
     }
     auto pump = [&]() {
@@ -163,24 +229,61 @@ void TestLvglInputTakeover() {
     pump();
     assert(clicks[1] == 2); // Physical input resumes, without clicking the remote target.
     for (auto* pointer : pointers) lv_indev_delete(pointer);
-    std::puts("Real LVGL: dual remote taps, cancellation and physical takeover passed.");
+    std::printf("Real LVGL: dual remote taps, cancellation and physical takeover passed; recognizers=%d.\n",
+        LV_USE_GESTURE_RECOGNITION);
 }
 }
 
 int main() {
     lv_init();
     {
-        Display full(mosaico_board::kHeight), half(mosaico_board::kDrawBufferRows);
+        Display full(mosaico_board::kHeight), half(mosaico_board::kHeight / 2),
+            retained(mosaico_board::kDrawBufferRows, true),
+            native(mosaico_board::kDrawBufferRows, true, true);
         for (int stage = 0; stage < 30; ++stage) {
             full.Render(stage);
             half.Render(stage);
+            retained.Render(stage);
+            native.Render(stage);
             assert(full.pixels() == half.pixels());
+            assert(full.pixels() == retained.pixels());
+            assert(full.pixels() == native.pixels());
         }
         assert(full.refreshes() == half.refreshes() && half.refreshes() == 30);
         assert(half.flushes() > full.flushes());
+        assert(retained.refreshes() == 30);
         std::printf("Real LVGL: 30 scrolling/alpha/rounded UI frames match byte-for-byte; "
-                    "full-height flushes=%u, half-height flushes=%u.\n",
-                    full.flushes(), half.flushes());
+                    "full-height flushes=%u, half-height flushes=%u, retained flushes=%u.\n",
+                    full.flushes(), half.flushes(), retained.flushes());
+        for (int stage = 30; stage < 34; ++stage) {
+            full.SimulateDirectGame(); half.SimulateDirectGame(); retained.SimulateDirectGame(); native.SimulateDirectGame();
+            full.Render(stage); half.Render(stage); retained.Render(stage); native.Render(stage);
+            assert(full.pixels() == half.pixels());
+            assert(full.pixels() == retained.pixels());
+            assert(full.pixels() == native.pixels());
+        }
+        std::puts("Real LVGL: direct game to partial UI restores before drawing and preserves untouched pixels.");
+    }
+    {
+        Display reference(480, true, true), deferred(480, true, true, true);
+        for (int stage = 0; stage < 30; ++stage) {
+            reference.Render(stage); deferred.Render(stage);
+            assert(deferred.pending());
+            deferred.CompleteSnapshot();
+            assert(reference.pixels() == deferred.pixels());
+        }
+        // Exercise a next refresh before the old worker completes. Checking
+        // the entire source catches even writes outside the old dirty region.
+        deferred.Render(30); assert(deferred.pending());
+        deferred.SignalReadyBeforeOwnershipRelease();
+        deferred.Render(31); deferred.CompleteSnapshot();
+        reference.Render(31);
+        assert(reference.pixels() == deferred.pixels());
+        deferred.Render(32); assert(deferred.pending());
+        deferred.SimulateDirectGame(); reference.SimulateDirectGame();
+        reference.Render(33); deferred.Render(33); deferred.CompleteSnapshot();
+        assert(reference.pixels() == deferred.pixels());
+        std::puts("Real LVGL: deferred snapshots preserve source ownership, next refresh and game-to-UI restoration.");
     }
     TestLvglInputTakeover();
     lv_deinit();

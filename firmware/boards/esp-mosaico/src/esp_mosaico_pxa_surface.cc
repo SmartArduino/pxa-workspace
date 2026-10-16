@@ -13,6 +13,7 @@
 #include <pxa/pxa_surface_transform.h>
 
 #include "esp_mosaico_config.h"
+#include "esp_mosaico_transfer.h"
 
 namespace mosaico_pxa_surface {
 namespace {
@@ -74,7 +75,7 @@ void InitializeAcceleration() {
     };
     if (ppa_register_client(&fill, &g_ppa_fill) != ESP_OK) g_ppa_fill = nullptr;
     if (g_ppa_fill) pxa_esp_surface_set_fill_bands_callback(FillRasterBands, nullptr);
-    ESP_LOGI("mosaico_surface", "Raster cores=1+0 outside UI lock; presenter core=1 priority=5; GameRender PPA copy/scale/swap=%d background=%d",
+    ESP_LOGI("mosaico_surface", "Raster cores=1+0 outside UI lock; presenter core=1 priority=5; PPA 1x copy/swap=%d background=%d",
              g_ppa_srm != nullptr, g_ppa_fill != nullptr);
 }
 
@@ -201,6 +202,13 @@ uint16_t ComposePlane(uint16_t background,
         background, colors[offset_x], alpha[offset_x], plane.opacity);
 }
 
+template <bool Panel>
+uint16_t PixelOrder565(uint16_t value) {
+    if constexpr (Panel) return __builtin_bswap16(value);
+    return value;
+}
+
+template <bool Panel = true>
 void ComposePlaneArea(const pxa_esp_surface_ui_alpha_plane_t& plane,
                       const lv_area_t& area, uint8_t* pixels, uint32_t stride) {
     if (!plane.visible || !plane.opacity || !plane.pixels || !plane.alpha) return;
@@ -218,9 +226,9 @@ void ComposePlaneArea(const pxa_esp_surface_ui_alpha_plane_t& plane,
             const uint8_t a = alpha[x - plane.x];
             if (a == 0) continue;
             const uint16_t source = colors[x - plane.x];
-            row[x - area.x1] = __builtin_bswap16(a == 255 && plane.opacity == 255
+            row[x - area.x1] = PixelOrder565<Panel>(a == 255 && plane.opacity == 255
                 ? source : pxa_esp_surface_blend_alpha_pixel(
-                    __builtin_bswap16(row[x - area.x1]), source, a, plane.opacity));
+                    PixelOrder565<Panel>(row[x - area.x1]), source, a, plane.opacity));
         }
     }
 }
@@ -279,6 +287,49 @@ bool DirectFrameEligible(const pxa_esp_surface_frame_t& frame) {
         frame.height * scale == mosaico_board::kHeight;
 }
 
+static bool CopyNativeAreaWithPpa(const lv_area_t& area, const uint8_t* source,
+                                  uint32_t stride, uint8_t* pixels) {
+    // SRM invalidates complete output rows, not just its block. Only use it
+    // when those cache-line-aligned rows are completely overwritten; narrow
+    // blocks could discard dirty CPU pixels outside the block.
+    static_assert(mosaico_board::kWidth * sizeof(uint16_t) % 64 == 0);
+    if (!g_ppa_srm || area.x1 != 0 || area.x2 != mosaico_board::kWidth - 1)
+        return false;
+    const ppa_srm_oper_config_t config = {
+        .in = {.buffer = const_cast<uint8_t*>(source),
+               .pic_w = stride / 2u, .pic_h = mosaico_board::kHeight,
+               .block_w = static_cast<uint32_t>(lv_area_get_width(&area)),
+               .block_h = static_cast<uint32_t>(lv_area_get_height(&area)),
+               .block_offset_x = static_cast<uint32_t>(area.x1),
+               .block_offset_y = static_cast<uint32_t>(area.y1),
+               .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
+        .out = {.buffer = pixels,
+                .buffer_size = static_cast<size_t>(mosaico_board::kWidth) * mosaico_board::kHeight * 2,
+                .pic_w = mosaico_board::kWidth, .pic_h = mosaico_board::kHeight,
+                .block_offset_x = static_cast<uint32_t>(area.x1),
+                .block_offset_y = static_cast<uint32_t>(area.y1),
+                .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
+        .rotation_angle = PPA_SRM_ROTATION_ANGLE_0,
+        .scale_x = 1.0f, .scale_y = 1.0f,
+        // CO5300 needs big-endian RGB565. PPA's input byte swap preserves
+        // those bytes through the verified RGB565 -> RGB565 1x copy.
+        .byte_swap = true,
+        .mode = PPA_TRANS_MODE_BLOCKING,
+    };
+    if (ppa_do_scale_rotate_mirror(g_ppa_srm, &config) != ESP_OK) return false;
+    return true;
+}
+
+bool CopyUiSnapshot(const lv_area_t& dirty, const uint8_t* pixels, uint8_t* snapshot) {
+    if (!pixels || !snapshot || !mosaico_board::ValidDisplayArea(dirty)) return false;
+    const auto area = mosaico_board::SnapshotArea(dirty);
+    // One large operation amortizes cache synchronization and PPA setup.
+    // Small/narrow changes keep the paired CPU conversion; no extra buffers/client.
+    if (lv_area_get_size(&area) >= 4096 &&
+        CopyNativeAreaWithPpa(area, pixels, mosaico_board::kWidth * 2, snapshot)) return true;
+    return mosaico_board::CopyRefreshArea(area, pixels, snapshot, true);
+}
+
 bool TryAcceleratedDirectFrame(const pxa_esp_surface_frame_t& frame, uint8_t* pixels) {
     if (!g_ppa_srm || !pixels || !DirectFrameEligible(frame)) return false;
     const uint8_t scale = pxa_surface_fit_scale(frame.width, frame.height,
@@ -288,24 +339,8 @@ bool TryAcceleratedDirectFrame(const pxa_esp_surface_frame_t& frame, uint8_t* pi
     // RGB565 pixels. Use CPU nearest-neighbor expansion for 2x/4x; retain
     // the verified byte-exact PPA copy at 1x without extra frame buffers.
     if (scale != 1) return false;
-    const ppa_srm_oper_config_t config = {
-        .in = {.buffer = const_cast<uint8_t*>(frame.pixels),
-               .pic_w = frame.stride_bytes / 2u, .pic_h = frame.height,
-               .block_w = frame.width, .block_h = frame.height,
-               .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
-        .out = {.buffer = pixels,
-                .buffer_size = static_cast<size_t>(mosaico_board::kWidth) * mosaico_board::kHeight * 2,
-                .pic_w = mosaico_board::kWidth, .pic_h = mosaico_board::kHeight,
-                .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
-        .rotation_angle = PPA_SRM_ROTATION_ANGLE_0,
-        .scale_x = static_cast<float>(scale), .scale_y = static_cast<float>(scale),
-        // CO5300 needs big-endian RGB565. PPA's input byte swap preserves
-        // those bytes through the verified RGB565 -> RGB565 1x copy.
-        .byte_swap = true,
-        .mode = PPA_TRANS_MODE_BLOCKING,
-    };
-    if (ppa_do_scale_rotate_mirror(g_ppa_srm, &config) != ESP_OK) return false;
     const lv_area_t full = {0, 0, mosaico_board::kWidth - 1, mosaico_board::kHeight - 1};
+    if (!CopyNativeAreaWithPpa(full, frame.pixels, frame.stride_bytes, pixels)) return false;
     if (!frame.suppress_guest_alpha)
         ComposePlaneArea(frame.ui_alpha_plane, full, pixels, mosaico_board::kWidth * 2);
     ComposePlaneArea(frame.system_alpha_plane, full, pixels, mosaico_board::kWidth * 2);
@@ -316,7 +351,8 @@ uint32_t RasterTimeUs() { return g_raster_us.load(std::memory_order_relaxed); }
 
 uint32_t AcceleratedFillCount() { return g_ppa_fills.load(std::memory_order_relaxed); }
 
-uint64_t ComposeFrame(const pxa_esp_surface_frame_t& frame,
+template <bool Panel>
+uint64_t ComposeFrameImpl(const pxa_esp_surface_frame_t& frame,
                       const lv_area_t* area, uint8_t* pixels,
                       uint32_t stride_bytes) {
     if (area == nullptr || pixels == nullptr ||
@@ -371,8 +407,9 @@ uint64_t ComposeFrame(const pxa_esp_surface_frame_t& frame,
                 for (; pixel_x + 1 < right; pixel_x += 2) {
                     uint32_t pair;
                     std::memcpy(&pair, source + (pixel_x - origin_x) * 2, 4);
-                    pair = ((pair & 0x00ff00ffu) << 8) |
-                           ((pair & 0xff00ff00u) >> 8);
+                    if constexpr (Panel)
+                        pair = ((pair & 0x00ff00ffu) << 8) |
+                               ((pair & 0xff00ff00u) >> 8);
                     std::memcpy(row + pixel_x - area->x1, &pair, 4);
                 }
             }
@@ -381,7 +418,7 @@ uint64_t ComposeFrame(const pxa_esp_surface_frame_t& frame,
                 uint16_t value;
                 std::memcpy(&value, source + relative_x / scale * sizeof(value),
                             sizeof(value));
-                value = __builtin_bswap16(value);
+                value = PixelOrder565<Panel>(value);
                 int32_t repeat = std::min<int32_t>(
                     scale - relative_x % scale, right - pixel_x);
                 const uint32_t pair = static_cast<uint32_t>(value) * 0x00010001u;
@@ -396,15 +433,15 @@ uint64_t ComposeFrame(const pxa_esp_surface_frame_t& frame,
         // Copy/scale the game with the fast RGB565 path, then blend only
         // overlay intersections. Hidden or transparent pixels do no blending.
         if (!frame.suppress_guest_alpha)
-            ComposePlaneArea(frame.ui_alpha_plane, *area, pixels, stride_bytes);
-        ComposePlaneArea(frame.system_alpha_plane, *area, pixels, stride_bytes);
+            ComposePlaneArea<Panel>(frame.ui_alpha_plane, *area, pixels, stride_bytes);
+        ComposePlaneArea<Panel>(frame.system_alpha_plane, *area, pixels, stride_bytes);
         return frame.input_timestamp_us;
     }
     for (int32_t pixel_y = area->y1; pixel_y <= area->y2; ++pixel_y) {
         auto* row = reinterpret_cast<uint16_t*>(
             pixels + (pixel_y - area->y1) * stride_bytes);
         for (int32_t pixel_x = area->x1; pixel_x <= area->x2; ++pixel_x) {
-            uint16_t value = __builtin_bswap16(row[pixel_x - area->x1]);
+            uint16_t value = PixelOrder565<Panel>(row[pixel_x - area->x1]);
             if (pixel_x >= origin_x && pixel_y >= origin_y &&
                 pixel_x < origin_x + drawn_width &&
                 pixel_y < origin_y + drawn_height) {
@@ -428,14 +465,21 @@ uint64_t ComposeFrame(const pxa_esp_surface_frame_t& frame,
                                       pixel_x, pixel_y);
             value = ComposePlane(value, frame.system_alpha_plane,
                                   pixel_x, pixel_y);
-            row[pixel_x - area->x1] = __builtin_bswap16(value);
+            row[pixel_x - area->x1] = PixelOrder565<Panel>(value);
         }
     }
     return frame.input_timestamp_us;
 }
 
+uint64_t ComposeFrame(const pxa_esp_surface_frame_t& frame, const lv_area_t* area,
+                      uint8_t* pixels, uint32_t stride_bytes, PixelOrder order) {
+    return order == PixelOrder::Panel
+        ? ComposeFrameImpl<true>(frame, area, pixels, stride_bytes)
+        : ComposeFrameImpl<false>(frame, area, pixels, stride_bytes);
+}
+
 uint64_t ComposeFlushArea(const lv_area_t* area, uint8_t* pixels,
-                          uint32_t stride_bytes) {
+                          uint32_t stride_bytes, PixelOrder order) {
     if (area == nullptr || pixels == nullptr ||
         !mosaico_board::ValidDisplayArea(*area)) return 0;
     const size_t row_bytes = lv_area_get_width(area) * sizeof(uint16_t);
@@ -443,7 +487,7 @@ uint64_t ComposeFlushArea(const lv_area_t* area, uint8_t* pixels,
         return 0;
     pxa_esp_surface_frame_t frame;
     if (!pxa_esp_surface_acquire_prepared(&frame, false)) return 0;
-    const uint64_t timestamp = ComposeFrame(frame, area, pixels, stride_bytes);
+    const uint64_t timestamp = ComposeFrame(frame, area, pixels, stride_bytes, order);
     pxa_esp_surface_release_frame(frame.lease);
     if (pxa_esp_surface_has_pending_raster_draw()) FrameReady(nullptr);
     return timestamp;

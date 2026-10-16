@@ -297,6 +297,89 @@ void TestPpaAlphaComposition() {
     g_has_frame = false;
 }
 
+// The retained LVGL frame is native RGB565; game scanout stays panel order.
+// Verify both orders against one another across fast and protected/alpha paths.
+void CheckNativeComposition(const lv_area_t& area) {
+    using namespace mosaico_pxa_surface;
+    const size_t stride = lv_area_get_width(&area) + 3;
+    std::vector<uint16_t> native(stride * lv_area_get_height(&area)), panel(native.size());
+    for (size_t i = 0; i < native.size(); ++i) {
+        native[i] = i * 131 + 0x1234;
+        panel[i] = __builtin_bswap16(native[i]);
+    }
+    assert(ComposeFrame(g_frame, &area, reinterpret_cast<uint8_t*>(native.data()), stride * 2,
+                        PixelOrder::Native) == 123);
+    assert(ComposeFrame(g_frame, &area, reinterpret_cast<uint8_t*>(panel.data()), stride * 2) == 123);
+    for (size_t i = 0; i < native.size(); ++i)
+        assert(native[i] == __builtin_bswap16(panel[i]));
+}
+
+void TestNativeComposition() {
+    const lv_area_t area = {203, 209, 238, 240};
+    std::vector<uint16_t> colors(40 * 70, 0x07e0);
+    std::vector<uint8_t> alpha(42 * 70);
+    for (size_t i = 0; i < alpha.size(); ++i) alpha[i] = i % 3 ? i : 255;
+    for (uint8_t scale : {1, 2, 4}) {
+        const uint16_t width = 480 / scale;
+        std::vector<uint16_t> source((width + 3) * width);
+        for (size_t i = 0; i < source.size(); ++i) source[i] = i * 37;
+        PrepareFrame(source.data(), width, width, (width + 3) * 2);
+        CheckNativeComposition(area);
+        g_frame.ui_alpha_plane = {colors.data(), alpha.data(), 80, 42, 200, 211, 36, 68, 170, 1, 1};
+        g_frame.system_alpha_plane = g_frame.ui_alpha_plane;
+        g_frame.system_alpha_plane.x = 220;
+        for (bool suppress : {false, true}) {
+            g_frame.suppress_guest_alpha = suppress;
+            CheckNativeComposition(area);
+            g_frame.opaque_ui_region_count = 1;
+            g_frame.opaque_ui_regions[0] = {static_cast<uint16_t>(215 / scale), static_cast<uint16_t>(212 / scale), 8, 8};
+            CheckNativeComposition(area);
+            g_frame.opaque_ui_region_count = 0;
+        }
+        g_frame.x = -7; g_frame.y = 220;
+        CheckNativeComposition(area);
+    }
+    std::vector<uint32_t> argb(310 * 100);
+    for (size_t i = 0; i < argb.size(); ++i)
+        argb[i] = i % 3 == 0 ? 0 : i % 3 == 1 ? 0xff332211 : 0x80402010;
+    PrepareFrame(argb.data(), 300, 100, 310 * 4, PXA_SURFACE_FORMAT_ARGB8888_PREMULTIPLIED);
+    CheckNativeComposition(area);
+    g_has_frame = false;
+}
+
+void TestNativeSnapshots() {
+    using namespace mosaico_pxa_surface;
+    std::vector<uint16_t> source(480 * 480);
+    for (size_t i = 0; i < source.size(); ++i) source[i] = i * 37;
+    const lv_area_t areas[] = {{13, 21, 21, 27}, {12, 20, 91, 81},
+                               {4, 18, 475, 233}, {0, 0, 479, 479}};
+    for (const auto& area : areas) {
+        std::vector<uint16_t> expected(source.size(), 0xa55a);
+        assert(mosaico_board::CopyRefreshArea(area, reinterpret_cast<uint8_t*>(source.data()),
+                                             reinterpret_cast<uint8_t*>(expected.data()), true));
+        for (unsigned mode = 0; mode < 3; ++mode) {
+            std::vector<uint16_t> actual(source.size(), 0xa55a);
+            g_ppa_srm = mode == 0 ? nullptr : reinterpret_cast<void*>(1);
+            g_ppa_fail = mode == 2;
+            const unsigned calls = g_ppa_calls;
+            assert(CopyUiSnapshot(area, reinterpret_cast<uint8_t*>(source.data()),
+                                   reinterpret_cast<uint8_t*>(actual.data())));
+            assert(actual == expected);
+            const auto copied = mosaico_board::SnapshotArea(area);
+            if (copied.x1 != 0 || copied.x2 != 479) assert(g_ppa_calls == calls);
+        }
+    }
+    g_ppa_fail = false;
+    assert(!CopyUiSnapshot({-1, 0, 2, 2}, reinterpret_cast<uint8_t*>(source.data()), nullptr));
+    // Reversible game-to-UI restoration also supports unaligned buffers and odd widths.
+    std::vector<uint8_t> first(480 * 480 * 2 + 1), second(first.size()), restored(first.size());
+    for (size_t i = 0; i < first.size(); ++i) first[i] = i * 59;
+    const lv_area_t full = {0, 0, 479, 479};
+    assert(mosaico_board::CopyRefreshArea(full, first.data() + 1, second.data() + 1, true));
+    assert(mosaico_board::CopyRefreshArea(full, second.data() + 1, restored.data() + 1, true));
+    assert(std::memcmp(first.data() + 1, restored.data() + 1, first.size() - 1) == 0);
+}
+
 void TestTransferPipeline() {
     const lv_area_t area = {12, 20, 27, 20 + 2 * mosaico_board::kTransferRows + 14};
     const size_t row_bytes = 16 * 2;
@@ -1141,13 +1224,15 @@ int ppa_do_scale_rotate_mirror(ppa_client_handle_t, const ppa_srm_oper_config_t*
     assert(c->out.buffer_size >= c->out.pic_w * c->out.pic_h * 2);
     const auto* source = static_cast<const uint16_t*>(c->in.buffer);
     auto* target = static_cast<uint16_t*>(c->out.buffer);
-    for (uint32_t y = 0; y < c->out.pic_h; ++y) {
-        for (uint32_t x = 0; x < c->out.pic_w; ++x) {
+    for (uint32_t y = 0; y < c->in.block_h * c->scale_y; ++y) {
+        for (uint32_t x = 0; x < c->in.block_w * c->scale_x; ++x) {
             const uint32_t sx = x / static_cast<unsigned>(c->scale_x);
             const uint32_t sy = y / static_cast<unsigned>(c->scale_y);
             assert(sx < c->in.block_w && sy < c->in.block_h);
-            const uint16_t color = source[sy * c->in.pic_w + sx];
-            target[y * c->out.pic_w + x] = c->byte_swap ? __builtin_bswap16(color) : color;
+            assert(sx + c->in.block_offset_x < c->in.pic_w && sy + c->in.block_offset_y < c->in.pic_h);
+            assert(x + c->out.block_offset_x < c->out.pic_w && y + c->out.block_offset_y < c->out.pic_h);
+            const uint16_t color = source[(sy + c->in.block_offset_y) * c->in.pic_w + sx + c->in.block_offset_x];
+            target[(y + c->out.block_offset_y) * c->out.pic_w + x + c->out.block_offset_x] = c->byte_swap ? __builtin_bswap16(color) : color;
         }
     }
     return 0;
@@ -1189,6 +1274,8 @@ int main() {
     TestOptimizedComposition();
     TestPpaDirectAndFallback();
     TestPpaAlphaComposition();
+    TestNativeComposition();
+    TestNativeSnapshots();
     TestTransferPipeline();
     TestRefreshBatch();
     TestPipelinedSnapshot();

@@ -16,6 +16,12 @@ struct lv_area_t {
 inline int32_t lv_area_get_width(const lv_area_t* area) {
     return area->x2 - area->x1 + 1;
 }
+inline int32_t lv_area_get_height(const lv_area_t* area) {
+    return area->y2 - area->y1 + 1;
+}
+inline uint32_t lv_area_get_size(const lv_area_t* area) {
+    return lv_area_get_width(area) * lv_area_get_height(area);
+}
 inline lv_obj_t* lv_display_get_screen_active(lv_display_t*) { return nullptr; }
 inline void lv_obj_invalidate(lv_obj_t*) {}
 

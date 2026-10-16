@@ -3,9 +3,9 @@ CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 # Native USB CDC has no hardware RTS/DTR auto-download wiring. Enter ROM
 # download mode with BOOT before flashing, and keep that USB session intact.
 CONFIG_ESPTOOLPY_BEFORE_NORESET=y
-# The bundled esptool v5.4 S31 stub is verified over external UART. Override
-# IDF bring-up's ROM-only default to enable compressed, buffered writes.
-# CONFIG_ESPTOOLPY_NO_STUB is not set
+# Native USB-OTG on rev0 has failed during stub writes. Use the verified ROM
+# path by default. External UART users may enable the stub in menuconfig.
+CONFIG_ESPTOOLPY_NO_STUB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="boards/esp-mosaico/partitions.csv"
 CONFIG_PARTITION_TABLE_OFFSET=0x8000
@@ -38,7 +38,7 @@ CONFIG_LV_USE_CLIB_STRING=y
 CONFIG_LV_USE_CLIB_SPRINTF=y
 CONFIG_LV_COLOR_DEPTH_16=y
 CONFIG_LV_DEF_REFR_PERIOD=16
-CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
 CONFIG_LV_DRAW_THREAD_STACK_SIZE=32768
 CONFIG_LV_DRAW_THREAD_PRIO=4
 CONFIG_LV_DRAW_SW_SHADOW_CACHE_SIZE=24
@@ -49,8 +49,8 @@ CONFIG_LV_USE_FLOAT=y
 CONFIG_LV_INDEV_DEF_GESTURE_ROTATION_THRESHOLD=150
 CONFIG_LV_CACHE_DEF_SIZE=4194304
 CONFIG_LV_IMAGE_HEADER_CACHE_DEF_CNT=32
-# Keep LVGL's small UI primitives on the two software draw workers.  The PPA
-# renderer performs synchronous cache maintenance for every operation on the
+# Retained UI drawing uses one worker, avoiding cross-core task overhead. PPA's
+# per-primitive renderer performs synchronous cache maintenance on the
 # PSRAM framebuffer, which is slower for the settings list's many small fills.
 # CONFIG_LV_USE_PPA is not set
 CONFIG_LV_USE_FREETYPE=y

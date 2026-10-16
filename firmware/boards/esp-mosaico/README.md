@@ -29,10 +29,12 @@ GPIOs are driven. No eFuse is written by this firmware.
 | V1.2 | `0x0102` | 44 / 42 | 56 / 3 | Not used |
 
 - CO5300: 480 × 480 RGB565, QSPI at 48 MHz, CS 50 and data 36 / 51 / 35 / 9.
-  Two 240-row PSRAM draw buffers use partial refresh with 4-column / 2-row-aligned areas.
+  One retained 480-row PSRAM draw buffer uses LVGL DIRECT rendering with
+  4-column / 2-row-aligned dirty areas. Its capacity equals the previous two
+  240-row scratch buffers; it eliminates their copy into a separate producer.
   A dedicated flush task feeds two 16-row internal DMA buffers, never the
-  PSRAM draw buffer directly. LVGL can render into its other draw buffer while
-  SPI is busy; band copies overlap DMA. Completed scanout is converted to
+  PSRAM draw buffer directly. LVGL renders its retained UI frame while
+  SPI reads the immutable snapshot; band copies overlap DMA. Completed scanout is converted to
   screenshot RGB565 only on request, avoiding an extra full-frame write.
   The two staging buffers together retain the original 32-row SRAM footprint.
   Row copies respect LVGL's draw-buffer stride. DMA completion waits are bounded;
@@ -161,9 +163,10 @@ waits so rendering and audio can use the CPU. This adds one 4 KiB task stack;
 it allocates no additional framebuffers.
 PPA fills validated full-width GameRender background bands before the CPU
 rasterizes the remaining commands, as on Korvo. Eligible full-panel RGB565
-frames use a blocking PPA SRM operation for copy, exact 1x/2x/4x scaling and
-byte swapping into the owned PSRAM presentation buffer. This is a board
-GameRender path; LVGL's drawing backend remains unchanged. Driver cache
+frames at 1x use a blocking PPA SRM operation for copy and byte swapping
+into the owned PSRAM presentation buffer. 2x/4x expansion uses CPU nearest
+neighbour copies: SRM upscaling changed edge colors on this S31, so it is
+not used for pixel art. LVGL primitives stay on the software drawing backend. Driver cache
 synchronization completes before CPU/scanout reads. Allocation/operation
 failures fall back to the CPU path: native composition byte-swaps pixel pairs;
 2x/4x expansion writes pixel pairs and copies repeated rows.
@@ -206,17 +209,32 @@ path and Pai's smaller 296 x 240 panel have different limits. Native game
 resolution remains 480 x 480; this optimization does not force lower quality.
 This display's LVGL refresh timer is 16 ms; actual output is bounded by rendering,
 TE and transfer completion, rather than this timer alone. Other boards keep
-their own refresh periods. Two half-height draw buffers save 460,800 bytes
-(450 KiB) of PSRAM versus the former two full-height buffers. Flush
-callbacks merge dirty rectangles into a persistent RGB565 PSRAM frame and
-return LVGL draw buffers as soon as their pixels have been copied. At the end
-of a refresh, narrow dirty rectangles are copied into a separate immutable
+their own refresh periods. One retained full-height draw buffer keeps the
+460,800-byte (450 KiB) PSRAM saving versus the original two full-height buffers.
+LVGL renders dirty rectangles directly into that retained UI frame. Flush
+callbacks collect their bounds without copying each chunk into another frame.
+At the end of a refresh, narrow dirty rectangles are copied into a separate immutable
 scanout snapshot. Wide rectangles (at least 75% of the screen width) retain
-one contiguous full-row copy to avoid per-row call overhead. Full direct game
+full-row copies to avoid per-row call overhead. LVGL draws native RGB565;
+large full-row snapshots reuse the existing PPA SRM client for one 1x copy/byte
+swap; narrow/small snapshots or accelerator failures use a paired CPU conversion.
+SRM invalidates whole output rows, so narrow blocks stay on the CPU to preserve
+untouched pixels which may still be dirty in the cache.
+This avoids repeated byte-order work during text and opacity drawing without
+adding a framebuffer or enabling per-primitive PPA rendering. One software
+draw worker avoids the measured cross-core overhead and saves about 32 KiB
+of SRAM task storage compared with the former two-worker configuration. Full direct game
 frames instead exchange producer/scanout buffers,
 eliminating the 460,800-byte snapshot copy. The first partial UI refresh after
-a direct frame restores the producer once before merging its dirty rectangles.
+a direct frame restores the retained UI frame before LVGL draws new patches.
 The worker transfers that snapshot while LVGL renders the next frame.
+The final UI flush queues its retained source to the existing core-0 worker.
+That worker converts the snapshot, calls `flush_ready`, publishes source
+ownership and wakes the producer before starting TE/DMA. Input and layout can
+advance during conversion; the single retained pixel buffer waits until its
+source lease is returned. Both render-start and flush-wait guard that handoff,
+including refreshes initiated by a different task such as PXADB. The request
+still occupies 40 bytes and no new task, semaphore or frame buffer is allocated.
 At most one snapshot is submitted; producers sleep until it is available again,
 bounding latency without dropping partial updates. Small windows can transfer
 only their aligned columns if a measured TE interval admits the entire update
@@ -228,8 +246,9 @@ scan-follow transfers. A compact transfer that misses its deadline disables
 compact mode until reboot; dirty snapshot copying still works. No extra frame
 cache or pending-frame queue is allocated. One CASET/RASET window covers the refresh: RAMWR starts the first
 band and RAMWRC continues subsequent bands, avoiding window commands per band.
-The persistent frame reuses the direct-presentation buffer; the snapshot adds
-460,800 bytes in PSRAM at initialization. Removing the separate screenshot
+The retained UI frame, direct-game producer and scanout snapshot each occupy
+460,800 bytes in PSRAM. Their combined capacity is unchanged from the previous
+two-half-buffer path. Removing the separate screenshot
 shadow saves 460,800 bytes in PSRAM. DMA SRAM usage is unchanged.
 Screenshots, brightness commands, direct presentation and initial panel enable
 are synchronized with the worker. Health logs report actual completed-frame
@@ -283,6 +302,14 @@ completions within the log interval. See the [UI optimization report](docs/ui-pe
 for the baseline, reproducible tests, transfer-volume comparison and device limits.
 GameRender presentation telemetry is recorded at actual transfer completion,
 with the raster-ready timestamp carried through the flush queue.
+The top `FPS26.4` HUD counts successful content transfers and updates about once
+a second. It is painted into the retained scanout by the existing transfer task,
+so a scroll below the top edge still refreshes the value. Idle updates transfer
+only the 60×16 diagnostic strip (rounded for the panel); those transfers do not
+feed FPS or PXADB PERF. Turning the HUD off requests a clean UI redraw.
+No additional task, framebuffer or queue is allocated. The shared HUD's decimal,
+sampling, rollover and concurrency checks run with
+`bash firmware/components/pxa_board_api/tests/test_host.sh` from the repository root.
 Overruns indicate that a completed
 transfer missed its predicted next-scan deadline (with a 250 us margin); they
 need investigation under load. This policy assumes the default top-to-bottom
@@ -320,6 +347,10 @@ are not exposed by this port. See the [PXA integration audit](docs/pxa-integrati
 for connected interfaces, remaining hardware-specific work and validation limits.
 Follow-up input, audio and power fixes are documented in the
 [reliability and UI latency report](docs/reliability-and-ui-latency.zh-CN.md).
+Further worker handoff measurements are in [the parallel pipeline report](docs/ui-parallel-pipeline-20261016.zh-CN.md).
+
+Actual settings/shade measurements and the retained UI drawing path are recorded
+in the [device profiling report](docs/ui-device-profile-20261016.zh-CN.md).
 
 ## Build and use
 
@@ -365,6 +396,30 @@ change. This USB CDC implementation does not implement esptool's automatic
 download-reset sequence, so this board defaults to `--before=no-reset` to keep
 the manually established download-mode connection intact.
 
+On Linux, `tools/firmware.sh` holds the native device's usbfs node read-only
+before waiting for the build lock and running CMake/Ninja. This keeps runtime
+USB autosuspend from interrupting the ROM while the build is busy, follows
+re-enumeration at the same physical port, and leaves CDC/DTR/RTS and system power
+settings untouched. Start the command before entering download mode so the
+guard can acquire the new ROM immediately. A ROM which already stopped replying
+after suspension may still need a fresh BOOT/reset; a visible tty node alone does
+not prove that synchronization works. The suspend/reply failure is under device
+verification; the guard's runtime-PM mechanism follows the Linux USB power API.
+
+Ordinary firmware updates can use `app-flash` to preserve bootloader, partition
+table, NVS and application data:
+
+```sh
+tools/firmware.sh esp-mosaico app-flash --port /dev/ttyACM2 --baud 2000000
+```
+
+ROM-only flashing is now the profile default because a rev0 USB-OTG stub transfer
+previously failed midway. Existing saved configs must also set
+`CONFIG_ESPTOOLPY_NO_STUB=y` (Serial flasher config → Disable download stub).
+External UART can retain the faster stub path if separately verified. Stub
+selection takes effect after synchronization; it does not repair an initial
+`No serial data received` handshake failure. No full-chip erase is needed.
+
 If esptool prints `Connecting` and subsequently reports `Permission denied`,
 the first serial open succeeded; investigate access after USB re-enumeration
 rather than assuming a permanent lack of permissions. On Linux the current
@@ -406,6 +461,9 @@ Host regressions (with AddressSanitizer and UndefinedBehaviorSanitizer):
 
 ```sh
 bash firmware/boards/esp-mosaico/tests/test_host.sh
+bash firmware/boards/esp-mosaico/tests/test_lvgl.sh
+# Build a separate host LVGL library with the device's gesture recognizers enabled:
+bash firmware/boards/esp-mosaico/tests/test_lvgl.sh --gestures
 python3 -m unittest discover -s tools -p 'test_dev.py'
 ```
 

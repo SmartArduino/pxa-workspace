@@ -2,6 +2,13 @@
 set -euo pipefail
 tests_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_dir="$(cd "$tests_dir/../../../.." && pwd)"
+if [[ "${1:-}" == --gestures ]]; then
+  gesture_build="$project_dir/build/tests/mosaico-lvgl-gestures"
+  cmake -S "$tests_dir/lvgl_host" -B "$gesture_build" -DCMAKE_BUILD_TYPE=Release
+  cmake --build "$gesture_build" --target mosaico_test --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$gesture_build/mosaico_test"
+  exit
+fi
 sim_build="${1:-$project_dir/build/simulator/esp-mosaico}"
 build_dir="$(mktemp -d "${TMPDIR:-/tmp}/mosaico-lvgl.XXXXXX")"
 trap 'rm -rf -- "$build_dir"' EXIT
