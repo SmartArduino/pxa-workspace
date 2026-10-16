@@ -12,7 +12,7 @@ import subprocess
 import tarfile
 import tempfile
 
-VERSION = '0.1.0'
+VERSION = (Path(__file__).resolve().parents[2] / 'deps/pxa-system/VERSION').read_text().strip()
 
 
 def git(root: Path, *args: str):
@@ -64,12 +64,12 @@ def build(root: Path, output: Path, image: Path, image_id: str, devkit_sha: str,
                                 archive.addfile(info, source)
                         else:
                             archive.addfile(info)
-    image_name = 'pxa-devkit-container-0.3.0-linux-amd64.tar.gz'
+    image_name = f'pxa-devkit-container-{VERSION}-linux-amd64.tar.gz'
     shutil.copyfile(image, output / image_name)
     names = [host_name + '.tar.gz', image_name]
     manifest = {'schema': 'pxa-host-distribution-1', 'version': VERSION,
-        'devkit': {'release': '0.3.0', 'archive_sha256': devkit_sha, 'core_major': 2},
-        'source': {'commit': commit}, 'container': {'image': 'pxa-devkit:0.3.0-linux-amd64',
+        'devkit': {'release': VERSION, 'archive_sha256': devkit_sha, 'core_major': 2},
+        'source': {'commit': commit}, 'container': {'image': f'pxa-devkit:{VERSION}-linux-amd64',
             'image_id': image_id, 'platform': 'linux/amd64'},
         'artifacts': [{'file': name, 'size': (output / name).stat().st_size,
                        'sha256': sha(output / name)} for name in names]}

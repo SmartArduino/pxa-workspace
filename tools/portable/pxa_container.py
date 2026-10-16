@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 
-DEFAULT_IMAGE = 'pxa-devkit:0.3.0-linux-amd64'
+DEFAULT_IMAGE = 'pxa-devkit:0.4.0-linux-amd64'
 
 
 def invocation(workspace: Path, state: Path, engine: str, image: str, arguments: list[str]):
