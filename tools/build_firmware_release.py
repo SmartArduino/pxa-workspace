@@ -141,18 +141,19 @@ def build_board(args, name: str, version: str) -> dict:
     (destination / 'flash-map.json').write_text(json.dumps(record, indent=2) + '\n')
     port = '/dev/ttyACM2' if name == 'esp-mosaico' else '/dev/ttyACM0'
     before = 'no-reset' if chip == 'esp32s31' else 'default-reset'
+    stub_option = '--no-stub ' if not flash['extra_esptool_args'].get('stub', True) else ''
     for language in ('zh-CN', 'en'):
         text = (f'# PXA {version} / {name}\n\n'
                 + ('合并固件用于首次安装，会重写存储分区并清除已有应用、存档和设置。包含系统字体与商城，勿用于保留数据的升级。\n\n'
                    if language == 'zh-CN' else
                    'Merged firmware is for initial provisioning. It replaces application/data partitions and removes existing apps, saves and settings. Includes the system font and Store.\n\n')
                 + f'```sh\npython -m esptool --chip {chip} --port {port} --baud 2000000 '
-                  f'--before {before} write-flash 0x0 {merged.name}\n```\n\n'
+                  f'--before {before} {stub_option}write-flash 0x0 {merged.name}\n```\n\n'
                 + ('保留数据的升级：仅烧录 app 文件到以下地址，先确认当前分区表与 flash-map.json 相同。ESP32-S31 使用 BOOT/RESET 手动进入下载模式；串口号码仅为示例。\n\n'
                    if language == 'zh-CN' else
                    'To preserve data, flash only the application below after checking that the existing partition table matches flash-map.json. Enter ROM download mode manually on ESP32-S31. Port names are examples.\n\n')
                 + f'```sh\npython -m esptool --chip {chip} --port {port} --baud 2000000 '
-                  f'--before {before} write-flash {hex(app_region["offset"])} {app_name}\n```\n\n'
+                  f'--before {before} {stub_option}write-flash {hex(app_region["offset"])} {app_name}\n```\n\n'
                 + 'SHA-256: SHA256SUMS / flash-map.json.\n')
         (destination / f'README.{language}.md').write_text(text)
     # A ZIP is convenient for tools which expect a local map and separate bins.
