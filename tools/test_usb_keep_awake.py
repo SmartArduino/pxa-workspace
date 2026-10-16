@@ -1,6 +1,7 @@
 import fcntl
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -89,6 +90,15 @@ class FirmwareRoutingTest(unittest.TestCase):
         workspace = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix='usb guard ') as temp:
             root = Path(temp)
+            source = workspace
+            workspace = root / 'workspace'
+            (workspace / 'tools').mkdir(parents=True)
+            for name in ('firmware.sh', 'usb_keep_awake.py'):
+                shutil.copy2(source / 'tools' / name, workspace / 'tools' / name)
+            for name in ('esp-mosaico', 'pai-touch'):
+                board_path = workspace / 'firmware/boards' / name
+                board_path.mkdir(parents=True)
+                (board_path / 'board.cmake').touch()
             record = root/'calls.jsonl'
             for name in ('flock', 'fake-idf'):
                 script = root/name
@@ -98,6 +108,7 @@ class FirmwareRoutingTest(unittest.TestCase):
                                   'args=sys.argv[1:], guard=os.environ.get("PXA_USB_GUARD_ACTIVE"), '
                                   'baud=os.environ.get("ESPBAUD")))+"\\n")\n')
                 script.chmod(0o755)
+            previous_board = None
             for board, action, expected_guard in [('esp-mosaico', 'app-flash', '1'),
                                                    ('esp-mosaico', 'build', None),
                                                    ('pai-touch', 'flash', None),
@@ -113,8 +124,11 @@ class FirmwareRoutingTest(unittest.TestCase):
                                     '--port', '/dev/pxa-test-no-device', '--baud', '921600', literal],
                                    env=env, check=True)
                     calls = [json.loads(v) for v in record.read_text().splitlines()]
-                    self.assertEqual([v['tool'] for v in calls],
-                                     ['fake-idf'] if action == 'monitor' else ['flock', 'fake-idf'])
+                    expected_tools = ['fake-idf']
+                    if action != 'monitor':
+                        expected_tools = ['flock'] + ['fake-idf'] * (2 if previous_board != board else 1)
+                        previous_board = board
+                    self.assertEqual([v['tool'] for v in calls], expected_tools)
                     self.assertTrue(all(v['guard'] == expected_guard for v in calls))
                     args = calls[-1]['args']
                     self.assertEqual(args[-3:], ['921600', action, literal])
