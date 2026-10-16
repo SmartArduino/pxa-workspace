@@ -99,5 +99,24 @@ if [[ "$board" == esp-mosaico ]]; then
   esac
 fi
 
+# A different board can replace shared managed components while this board's
+# Ninja cache still names the old files. Refresh the graph on board switches,
+# under the same lock; repeated builds of one board keep the fast path.
+dependency_state="$project_root/.pxa/firmware-components-board"
+case "$action" in
+  monitor|clean|fullclean|erase-flash) ;;
+  *)
+    previous_board=""
+    [[ ! -f "$dependency_state" ]] || previous_board="$(cat "$dependency_state")"
+    if [[ "$previous_board" != "$board" || "$action" == reconfigure ]]; then
+      "$idf_py" -C "$firmware_dir" -B "$build_dir" \
+        -DPXA_BOARD="$board" "${global_args[@]}" reconfigure
+      printf '%s\n' "$board" > "$dependency_state.tmp"
+      mv "$dependency_state.tmp" "$dependency_state"
+      [[ "$action" != reconfigure ]] || exit 0
+    fi
+    ;;
+esac
+
 exec "$idf_py" -C "$firmware_dir" -B "$build_dir" \
   -DPXA_BOARD="$board" "${global_args[@]}" "$action" "${action_args[@]}"
