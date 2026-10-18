@@ -1,0 +1,12 @@
+{
+  "app_version": "0.3.4",
+  "release_sequence": 19,
+  "app_commit": "8c60ef340d382a93cdb4aa43338ef406d9156af6",
+  "app_engine_commit": "4836a86",
+  "sdk_commit": "4694b2904f382a97c85c4844556d14a22b541a0c",
+  "sdk_has_unrelated_worktree_changes": true,
+  "workspace_commit_before_validation": "4b814a8d88d951c3e9ea874168211963b6f8b575",
+  "engine_upstream": "3b268ca4bf986c380f44a26ffd9218bf6d376249",
+  "full_campaign_tested": false,
+  "hardware_full_engine_tested": false
+}

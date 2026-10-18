@@ -1,0 +1,35 @@
+(node:1845340) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+MEMORY input linear=3473408
+OpenLara (Oct 19 2026)
+Renderer : Software
+Version  : 0.1
+cache    : 
+supports :
+  variyngs count : 0
+  binary shaders : false
+  vertex arrays  : false
+  depth texture  : false
+  shadow sampler : false
+  discard frame  : false
+  NPOT textures  : false
+  3D   textures  : false
+  RG   textures  : false
+  border color   : false
+  max level      : true
+  anisotropic    : 0
+  float textures : float = false, half = false
+
+shader: cache warm-up...
+shader: cache is ready
+meshes: 181
+MegaMesh (i:59142 v:40760 a:3, size:1422604)
+error loading file "level/1/AZTECLOA.PNG"
+error loading file "audio/1/003.ogg"
+Read Slots...
+MEMORY loaded linear=7274496
+FPS: 0 DIP: 238 TRI: 4449 RT: 0
+FPS: 0 DIP: 238 TRI: 4449 RT: 0
+FPS: 29 DIP: 237 TRI: 4437 RT: 0
+MEMORY 90-frames linear=7274496
+MEMORY freed linear=7274496

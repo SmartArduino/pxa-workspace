@@ -1,0 +1,30 @@
+[serial] I (6477776) Pxadb: Package list finished: stack_free=6892B
+5094402	I (5094402) Pxadb: PXADB control session disconnected
+5230603	I (5230603) Pxadb: PXADB control session connected
+5230621	I (5230621) Pxadb: Package list finished: stack_free=6892B
+5230643	I (5230643) Pxadb: PXADB control session disconnected
+5388386	I (5388386) Pxadb: PXADB control session connected
+5388401	I (5388401) Pxadb: Package list finished: stack_free=6892B
+5388440	I (5388439) Pxadb: Package list finished: stack_free=6892B
+5388578	I (5388578) PxaHost: UI peaks: dynamic=2076 current=1660 assets=0 current_assets=0 largest_decoded=0 asset_count=0 referenced=0 hits=0 misses=0 evictions=0 nodes=2 canvases=0 surfaces=1
+5388579	I (5388579) PxaHost: Audio: active=1 queued=0/12 peak_queued=4 submitted=47003 rendered=46983 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=5271 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=8592 stack=4096
+5388694	I (5388694) PxaHost: Runtime peaks: components=1 requests=4 handles=5 events=6 event_blocks=7 services=19
+5388694	I (5388694) PxaHost: WAMR dynamic: peak=344015 current=416 linear=0 linear_peak=6684672 artifact=0 events=0
+5388695	I (5388695) PxaHost: Activation memory: workspaces=24 blocks=4 used=24718 reserved=34610 peak_used=24718 peak_reserved=34610
+5388707	I (5388707) PxaAssets: peak_internal=0 peak_external=0 metadata=9195 task_stack=6144 evictions=0 failures=0
+5388708	I (5388708) PxaStorage: lane=0 reads=2 bytes=96 wait_us=37 max_wait_us=29 service_us=101 max_service_us=94 max_read=96 cancelled=0 errors=0
+5388708	I (5388708) PxaStorage: lane=1 reads=0 bytes=0 wait_us=0 max_wait_us=0 service_us=0 max_service_us=0 max_read=0 cancelled=0 errors=0
+5389107	I (5389107) Pxadb: Package list finished: stack_free=6892B
+INPUT SWIPE 160 205 160 30 300 12 [('OK', 'event=294;device_us=6476790544;status=processed')]
+6478120	I (6478120) PxaHost: UI lifecycle: component=65537 foreground=1 requested=1 display_interactive=1
+INPUT KEY HOME [('OK', 'event=295;device_us=6477298835;status=processed')]
+6478631	I (6478631) PxaBridge: Application backgrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara
+PACKAGE run pxa-openlara [('OK', 'launch_queued')]
+6479355	I (6479355) PxaBridge: Application foregrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara
+6479380	I (6479380) PxaHost: UI lifecycle: component=65537 foreground=0 requested=0 display_interactive=1
+6479388	I (6479388) PxaHost: UI lifecycle: component=65537 foreground=1 requested=1 display_interactive=1
+6492309	[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara ready level=0 bytes=313700 linear_bytes=6684672[0m
+6492318	[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1280 rendered=320 queued=960 flags=1 writes=4 blocked=0 nonzero=927[0m
+[('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.2.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=1'), ('OK', '')]
+6492336	I (6492334) PxaSurface: First frame submitted: id=1 buffer=0
+6492340	I (6492340) Pxadb: Package list finished: stack_free=6892B

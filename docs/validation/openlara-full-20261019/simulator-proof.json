@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "input_path": "SDL keyboard events -> desktop controller -> Core 2 controller state -> complete OpenLara Guest",
+  "yaw_log_tolerance_units": 1,
+  "saved_position": [
+    78747,
+    -1024,
+    12534,
+    22511
+  ],
+  "moved_position": [
+    77822,
+    -1024,
+    11224,
+    -26361
+  ],
+  "restored_position": [
+    78747,
+    -1024,
+    12534,
+    22510
+  ],
+  "save_load": true,
+  "start_inventory": true,
+  "select_pause": true,
+  "missing_level_guard": true,
+  "controller_only_level_selection": true
+}
