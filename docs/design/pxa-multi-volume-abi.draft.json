@@ -384,14 +384,14 @@
         "buffer": "offset:u64|cookie:u64|requested:u32|reserved:u32=0|data:bytes[requested]",
         "header_bytes": 24,
         "return": "actual data byte count, zero at or beyond EOF, or existing negative PXA status",
-        "rule": "Nonzero unique cookie; no cursor mutation; repeat same tuple retrieves pending result; one lane per FILE; different in-flight tuple is busy; max bytes negotiated; no retained Guest pointer"
+        "rule": "Implemented synchronous profile: requested is 1..4096, buffer size exactly 24+requested, reserved zero, offset+requested cannot overflow; cookie is strictly increasing and nonzero per FILE; completion/error retires it; reused/retired returns cancelled; no cursor mutation or retained Guest pointer"
       },
       {
         "id": 17,
         "name": "cancel-read-at",
         "buffer": "cookie:u64",
         "return": "0 on idempotent cancellation or existing negative PXA status",
-        "rule": "Invalidate matching lane synchronously; release late completion without delivery; cookie cannot be reused"
+        "rule": "Implemented synchronous profile: exact 8-byte nonzero cookie; idempotently retire all cookies through this value; no background operation to interrupt"
       }
     ],
     "waiting": "Future asynchronous lane only: Existing Core wait-resource READ readiness and PXA_IO_POLL; tolerate spurious wakeups; file close cancels lane",
@@ -404,7 +404,13 @@
       "memory": "caller header+data borrowed only for current call; no retained pointer, worker, pending lane or WOULD_BLOCK",
       "normative": "../../deps/pxa-system/spec/draft/pxa-fs.json"
     },
-    "asynchronous_lane_status": "proposal only; requires additional opt-in capability before enabling the pending/readiness rules below"
+    "asynchronous_lane_status": "proposal only; requires additional opt-in capability before enabling the pending/readiness rules",
+    "asynchronous_lane_proposal": {
+      "status": "not implemented; requires an additional opt-in capability",
+      "read_at": "same tuple retrieves pending result; at most one lane per FILE; different in-flight tuple is busy; no retained Guest pointer",
+      "cancel": "invalidate matching lane; discard late completion without delivery",
+      "readiness": "Core wait-resource READ and PXA_IO_POLL; tolerate spurious wakeups; close cancels lane"
+    }
   },
   "permission_integration": {
     "service": 11,
