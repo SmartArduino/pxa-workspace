@@ -1,0 +1,236 @@
+{
+  "wasm": "local/app-build-cache/openlara-wasm-f20f5ab9d2d37daa/artifacts/main.wasm",
+  "total": 728977,
+  "sections": [
+    {
+      "id": 1,
+      "bytes": 757
+    },
+    {
+      "id": 2,
+      "bytes": 186
+    },
+    {
+      "id": 3,
+      "bytes": 1570
+    },
+    {
+      "id": 4,
+      "bytes": 7
+    },
+    {
+      "id": 5,
+      "bytes": 5
+    },
+    {
+      "id": 6,
+      "bytes": 29
+    },
+    {
+      "id": 7,
+      "bytes": 119
+    },
+    {
+      "id": 9,
+      "bytes": 867
+    },
+    {
+      "id": 10,
+      "bytes": 440433
+    },
+    {
+      "id": 11,
+      "bytes": 229836
+    },
+    {
+      "id": 0,
+      "bytes": 54816
+    },
+    {
+      "id": 0,
+      "bytes": 142
+    },
+    {
+      "id": 0,
+      "bytes": 164
+    }
+  ],
+  "functions": 1568,
+  "largest": [
+    {
+      "function": 586,
+      "bytes": 8921,
+      "name": "TR::Level::readSAT(Stream&)"
+    },
+    {
+      "function": 1559,
+      "bytes": 8764,
+      "name": "printf_core"
+    },
+    {
+      "function": 154,
+      "bytes": 5484,
+      "name": "TR::getLevelID(int, char const*, TR::Version&, bool&)"
+    },
+    {
+      "function": 1565,
+      "bytes": 5389,
+      "name": "dlmalloc"
+    },
+    {
+      "function": 597,
+      "bytes": 5145,
+      "name": "TR::Level::initMesh(int, TR::Entity::Type)"
+    },
+    {
+      "function": 928,
+      "bytes": 5001,
+      "name": "Camera::update()"
+    },
+    {
+      "function": 299,
+      "bytes": 4795,
+      "name": "MeshBuilder::MeshBuilder(TR::Level*, Texture*)"
+    },
+    {
+      "function": 615,
+      "bytes": 4714,
+      "name": "TR::Level::readRoom(Stream&, int)"
+    },
+    {
+      "function": 1497,
+      "bytes": 3988,
+      "name": "__rem_pio2_large"
+    },
+    {
+      "function": 1480,
+      "bytes": 3865,
+      "name": "tinf_uncompress"
+    },
+    {
+      "function": 1439,
+      "bytes": 3066,
+      "name": "_GLOBAL__sub_I_classic_engine.cpp"
+    },
+    {
+      "function": 546,
+      "bytes": 2912,
+      "name": "Lara::checkTrigger(Controller*, bool)"
+    },
+    {
+      "function": 12,
+      "bytes": 2889,
+      "name": "pxa_app_on_event"
+    },
+    {
+      "function": 330,
+      "bytes": 2830,
+      "name": "Inventory::update()"
+    },
+    {
+      "function": 170,
+      "bytes": 2650,
+      "name": "TR::getGameVideo(TR::LevelID)"
+    },
+    {
+      "function": 21,
+      "bytes": 2511,
+      "name": "data_done()"
+    },
+    {
+      "function": 228,
+      "bytes": 2442,
+      "name": "UI::textOut(vec2 const&, char const*, UI::Align, float, unsigned char, UI::ShadeType, bool)"
+    },
+    {
+      "function": 462,
+      "bytes": 2403,
+      "name": "MeshBuilder::buildWaterVolume(int, unsigned short*, Vertex*, int&, int&, int)"
+    },
+    {
+      "function": 596,
+      "bytes": 2314,
+      "name": "TR::Entity::remap(TR::Version, TR::Entity::Type)"
+    },
+    {
+      "function": 472,
+      "bytes": 2116,
+      "name": "Level::initController(int)"
+    },
+    {
+      "function": 800,
+      "bytes": 2100,
+      "name": "Lara::move()"
+    },
+    {
+      "function": 1461,
+      "bytes": 2065,
+      "name": "audio_event(pxa_event_t const&)"
+    },
+    {
+      "function": 29,
+      "bytes": 1947,
+      "name": "tick(unsigned long long)"
+    },
+    {
+      "function": 854,
+      "bytes": 1920,
+      "name": "Lara::getInput()"
+    },
+    {
+      "function": 1383,
+      "bytes": 1872,
+      "name": "Video::Escape::decode124(unsigned char*, Color32*)"
+    },
+    {
+      "function": 327,
+      "bytes": 1866,
+      "name": "Level::update()"
+    },
+    {
+      "function": 823,
+      "bytes": 1715,
+      "name": "Lara::updateVelocity()"
+    },
+    {
+      "function": 1568,
+      "bytes": 1674,
+      "name": "dlfree"
+    },
+    {
+      "function": 69,
+      "bytes": 1644,
+      "name": "Input::update()"
+    },
+    {
+      "function": 790,
+      "bytes": 1616,
+      "name": "Controller::getFloorInfo(int, vec3 const&, TR::Level::FloorInfo&) const"
+    },
+    {
+      "function": 1571,
+      "bytes": 1587,
+      "name": "dispose_chunk"
+    },
+    {
+      "function": 828,
+      "bytes": 1582,
+      "name": "Lara::getStand()"
+    },
+    {
+      "function": 1451,
+      "bytes": 1573,
+      "name": "store_tick()"
+    },
+    {
+      "function": 827,
+      "bytes": 1556,
+      "name": "Lara::checkCollisions()"
+    },
+    {
+      "function": 1384,
+      "bytes": 1548,
+      "name": "Video::Escape::decode130(unsigned char*, Color32*)"
+    }
+  ]
+}

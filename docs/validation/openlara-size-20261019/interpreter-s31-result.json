@@ -1,0 +1,42 @@
+{
+  "mode": "raw WASM fast interpreter; not AOT",
+  "app_id": "pxa-openlara-probe",
+  "wasm_sha256": "cce9b9e54ad60ddf6ac87f6db9d6a523862688cc56d710c9322c6c0557150160",
+  "full_engine_city_loaded": true,
+  "linear_bytes": 7733248,
+  "fps_samples": [
+    1.9,
+    0.9,
+    0.9,
+    0.9,
+    0.9,
+    2.0,
+    1.9,
+    1.9,
+    1.9,
+    0.9,
+    1.9,
+    1.9,
+    1.9,
+    1.9,
+    0.9,
+    1.9,
+    1.9,
+    1.9,
+    1.9,
+    0.9
+  ],
+  "fps": {
+    "median": 1.9,
+    "mean": 1.555,
+    "min": 0.9,
+    "max": 2.0
+  },
+  "sample_count": 20,
+  "active_app_checked_each_sample": true,
+  "initialization_timeout_prompts": 1,
+  "timeout_prompts_during_sampling": 0,
+  "first_run_samples_invalid": true,
+  "first_run_note": "Automated neutral input hit ANR stop and later launched pxa-scoped-files; all those samples discarded. SD test stopped by cleanup. Safe rerun uses no periodic input and validates active app.",
+  "production_aot_fps_measured": false
+}

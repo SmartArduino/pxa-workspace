@@ -1,0 +1,6 @@
+{
+  "native_hint_follows_swap": true,
+  "swap_hint_persisted": true,
+  "swapped_B_confirms_A_cancels": true,
+  "swapped_A_matches_default_B_jump": true
+}

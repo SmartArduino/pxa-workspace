@@ -1,0 +1,22 @@
+[
+  {
+    "path": "local/openlara-full/device-0.3.5/pxa-openlara/artifacts/main.esp32-s31.aot",
+    "bytes": 2697712,
+    "sha256": "da4767f02a80e30536448282a465d00617caa33d3e217051efed35222e625ab8"
+  },
+  {
+    "path": "local/openlara-full/wasm-0.3.5/pxa-openlara/artifacts/main.wasm",
+    "bytes": 933565,
+    "sha256": "569495d39c4c9bdccfa94a1c1be5f578e10216abe46968d9c4cf9ca9dd94f7b4"
+  },
+  {
+    "path": "local/openlara-full/simulator-0.3.5/pxa-openlara/artifacts/main.linux-x86_64.aot",
+    "bytes": 1796176,
+    "sha256": "bab36c89e74f33b0c68cb337694242fceb5b653fb54a135a2848a80a84bb318e"
+  },
+  {
+    "path": "local/simulator/doit-gamekit/packages/pxa-openlara/artifacts/main.linux-x86_64.aot",
+    "bytes": 1796176,
+    "sha256": "bab36c89e74f33b0c68cb337694242fceb5b653fb54a135a2848a80a84bb318e"
+  }
+]

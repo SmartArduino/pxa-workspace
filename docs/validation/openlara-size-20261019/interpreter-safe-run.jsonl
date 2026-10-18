@@ -1,0 +1,948 @@
+{"t": 148087.524842593, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148087.540966306, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148087.541498167, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148087.541659017, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148087.541782081, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148087.542118728, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148087.542267007, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148087.542385811, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148087.542496024, "kind": "OK", "payload": ""}
+{"t": 148087.542950009, "kind": "RAW", "payload": "I (32556) Pxadb: Package list finished: stack_free=10948B\r\n"}
+{"t": 148087.549199629, "kind": "RAW", "payload": "\n"}
+{"t": 148087.549719337, "kind": "LOG", "payload": "13042\tI (13042) Pxadb: Package list finished: stack_free=11552B"}
+{"t": 148087.549887311, "kind": "RAW", "payload": "\n"}
+{"t": 148087.550245191, "kind": "COMMAND", "payload": "INPUT KEY HOME"}
+{"t": 148087.556453533, "kind": "RAW", "payload": "\n"}
+{"t": 148087.557187801, "kind": "OK", "payload": "event=2;device_us=31250806;status=processed"}
+{"t": 148087.858421042, "kind": "COMMAND", "payload": "INPUT SWIPE 160 205 160 30 300 12"}
+{"t": 148088.165357516, "kind": "RAW", "payload": "\n"}
+{"t": 148088.166324293, "kind": "OK", "payload": "event=3;device_us=31859541;status=processed"}
+{"t": 148088.675275606, "kind": "COMMAND", "payload": "MEMORY START"}
+{"t": 148088.682211232, "kind": "RAW", "payload": "\n"}
+{"t": 148088.682817895, "kind": "OK", "payload": "minimum_scope=local"}
+{"t": 148088.682957233, "kind": "COMMAND", "payload": "PACKAGE run pxa-openlara-probe"}
+{"t": 148088.689940213, "kind": "RAW", "payload": "\n"}
+{"t": 148088.69067008, "kind": "OK", "payload": "launch_queued"}
+{"t": 148088.712344067, "kind": "RAW", "payload": "\n"}
+{"t": 148088.712834021, "kind": "LOG", "payload": "33716\tI (33716) PxaHost: Queueing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe"}
+{"t": 148088.713088601, "kind": "RAW", "payload": "\n"}
+{"t": 148088.713292964, "kind": "LOG", "payload": "33725\tI (33725) PxaHost: Processing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe"}
+{"t": 148088.879673245, "kind": "RAW", "payload": "\n"}
+{"t": 148088.880308893, "kind": "LOG", "payload": "33884\tI (33884) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"t": 148088.91240315, "kind": "RAW", "payload": "\n"}
+{"t": 148088.912908191, "kind": "LOG", "payload": "33917\tI (33916) PxaHost: Heap[launch-begin]: SRAM used=473760 free=182819 total=656579 min_free=158731 largest=131072 exec_free=15425272 exec_largest=15204352; PSRAM used=1315928 free=15425272 total=16741200 min_free=15095220 largest=15204352"}
+{"t": 148088.996531153, "kind": "COMMAND", "payload": "PING"}
+{"t": 148089.003609609, "kind": "RAW", "payload": "\n"}
+{"t": 148089.004295684, "kind": "OK", "payload": "pong"}
+{"t": 148089.311879173, "kind": "COMMAND", "payload": "PING"}
+{"t": 148089.31945338, "kind": "RAW", "payload": "\n"}
+{"t": 148089.320207413, "kind": "OK", "payload": "pong"}
+{"t": 148089.630715804, "kind": "COMMAND", "payload": "PING"}
+{"t": 148089.637296134, "kind": "RAW", "payload": "\n"}
+{"t": 148089.637833582, "kind": "OK", "payload": "pong"}
+{"t": 148089.941784202, "kind": "COMMAND", "payload": "PING"}
+{"t": 148089.948808529, "kind": "RAW", "payload": "\n"}
+{"t": 148089.949631218, "kind": "OK", "payload": "pong"}
+{"t": 148090.260137514, "kind": "COMMAND", "payload": "PING"}
+{"t": 148090.267489338, "kind": "RAW", "payload": "\n"}
+{"t": 148090.268275848, "kind": "OK", "payload": "pong"}
+{"t": 148090.465177625, "kind": "RAW", "payload": "\n"}
+{"t": 148090.465633705, "kind": "LOG", "payload": "35471\tW (35471) wifi:"}
+{"t": 148090.465815159, "kind": "RAW", "payload": "\n"}
+{"t": 148090.465995845, "kind": "LOG", "payload": "35472\t<ba-add>idx:0, ifx:0, tid:6, TAHI:0x1002e56, TALO:0x6d5a1638, (ssn:1, win:64, cur_ssn:1), CONF:0xc0006001"}
+{"t": 148090.466259994, "kind": "RAW", "payload": "\n"}
+{"t": 148090.466428876, "kind": "LOG", "payload": "35472\t"}
+{"t": 148090.569713965, "kind": "COMMAND", "payload": "PING"}
+{"t": 148090.576373707, "kind": "RAW", "payload": "\n"}
+{"t": 148090.577093796, "kind": "OK", "payload": "pong"}
+{"t": 148090.887286616, "kind": "COMMAND", "payload": "PING"}
+{"t": 148090.894435684, "kind": "RAW", "payload": "\n"}
+{"t": 148090.895186294, "kind": "OK", "payload": "pong"}
+{"t": 148091.185606137, "kind": "RAW", "payload": "\n"}
+{"t": 148091.186144284, "kind": "LOG", "payload": "36195\tI (36195) PxaSurface: Created: 320x240 format=1 buffers=2 flags=0x06 mapped=1"}
+{"t": 148091.196496246, "kind": "COMMAND", "payload": "PING"}
+{"t": 148091.197426355, "kind": "RAW", "payload": "\n"}
+{"t": 148091.197710759, "kind": "LOG", "payload": "36201\tI (36196) PxaHost: Component memory: id=main status=0 sram_delta=2212 free_sram=173827 largest_sram=131072 psram_delta=14426236 free_psram=932168 largest_psram=917504 wamr_delta=1146550 wamr_current=1146966"}
+{"t": 148091.203819364, "kind": "RAW", "payload": "\n"}
+{"t": 148091.204478689, "kind": "OK", "payload": "pong"}
+{"t": 148091.391492469, "kind": "RAW", "payload": "\n"}
+{"t": 148091.392102624, "kind": "LOG", "payload": "36395\tI (36395) PxaSurface: Guest buffers registered: frame_bytes=153600 count=2 total=307200"}
+{"t": 148091.505843667, "kind": "COMMAND", "payload": "PING"}
+{"t": 148091.51270826, "kind": "RAW", "payload": "\n"}
+{"t": 148091.513540309, "kind": "OK", "payload": "pong"}
+{"t": 148091.514180846, "kind": "RAW", "payload": "\n"}
+{"t": 148091.514452817, "kind": "DROP", "payload": "dropped=2"}
+{"t": 148091.514794563, "kind": "RAW", "payload": "\n"}
+{"t": 148091.515127648, "kind": "LOG", "payload": "36523\tI (36523) PxaBridge: Application foregrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe"}
+{"t": 148091.515479031, "kind": "RAW", "payload": "\n"}
+{"t": 148091.515714754, "kind": "LOG", "payload": "36523\tI (36523) PxaBridge: Launch completion: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe intent=0 status=0"}
+{"t": 148091.526562118, "kind": "RAW", "payload": "\n"}
+{"t": 148091.527141961, "kind": "LOG", "payload": "36523\tI (36516) PxaHost: Heap[launch-ready]: SRAM used=482752 free=173827 total=656579 min_free=150531 largest=131072 exec_free=1472476 exec_largest=1212416; PSRAM used=15268724 free=1472476 total=16741200 min_free=931248 largest=1212416"}
+{"t": 148091.527437889, "kind": "RAW", "payload": "\n"}
+{"t": 148091.527671306, "kind": "LOG", "payload": "36523\tI (36523) PxaHost: WAMR dynamic: peak=1146970 current=1146966 linear=1245184 linear_peak=1245184 artifact=697031 events=64"}
+{"t": 148091.738178216, "kind": "RAW", "payload": "\n"}
+{"t": 148091.73881533, "kind": "LOG", "payload": "36745\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara audio ready rate=16000 channels=1\u001b[0m"}
+{"t": 148091.821906629, "kind": "COMMAND", "payload": "PING"}
+{"t": 148091.829377675, "kind": "RAW", "payload": "\n"}
+{"t": 148091.830189469, "kind": "OK", "payload": "pong"}
+{"t": 148092.140331008, "kind": "COMMAND", "payload": "PING"}
+{"t": 148092.147506615, "kind": "RAW", "payload": "\n"}
+{"t": 148092.148221257, "kind": "OK", "payload": "pong"}
+{"t": 148092.458525802, "kind": "COMMAND", "payload": "PING"}
+{"t": 148092.465777958, "kind": "RAW", "payload": "\n"}
+{"t": 148092.466490574, "kind": "OK", "payload": "pong"}
+{"t": 148092.776433391, "kind": "COMMAND", "payload": "PING"}
+{"t": 148092.783464981, "kind": "RAW", "payload": "\n"}
+{"t": 148092.784165164, "kind": "OK", "payload": "pong"}
+{"t": 148093.094237052, "kind": "COMMAND", "payload": "PING"}
+{"t": 148093.100587525, "kind": "RAW", "payload": "\n"}
+{"t": 148093.101371661, "kind": "OK", "payload": "pong"}
+{"t": 148093.411482377, "kind": "COMMAND", "payload": "PING"}
+{"t": 148093.418363452, "kind": "RAW", "payload": "\n"}
+{"t": 148093.419139836, "kind": "OK", "payload": "pong"}
+{"t": 148093.606350411, "kind": "RAW", "payload": "\n"}
+{"t": 148093.606838689, "kind": "LOG", "payload": "38613\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara ready level=0 bytes=316138 linear_bytes=2097152\u001b[0m"}
+{"t": 148093.72124959, "kind": "COMMAND", "payload": "PING"}
+{"t": 148093.727542372, "kind": "RAW", "payload": "\n"}
+{"t": 148093.728326089, "kind": "OK", "payload": "pong"}
+{"t": 148094.009827189, "kind": "RAW", "payload": "\n"}
+{"t": 148094.010390828, "kind": "LOG", "payload": "39013\tI (39013) PxaSurface: First frame submitted: id=1 buffer=0"}
+{"t": 148094.104140343, "kind": "RAW", "payload": "\n"}
+{"t": 148094.104582524, "kind": "LOG", "payload": "39108\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara audio submitted=1280 rendered=1280 queued=0 flags=1 writes=8 blocked=0 nonzero=2560\u001b[0m"}
+{"t": 148095.436476166, "kind": "RAW", "payload": "\n"}
+{"t": 148095.436919604, "kind": "DROP", "payload": "dropped=2"}
+{"t": 148095.437222656, "kind": "RAW", "payload": "\n"}
+{"t": 148095.437421152, "kind": "LOG", "payload": "40445\tW (40445) wifi:"}
+{"t": 148095.437606447, "kind": "RAW", "payload": "\n"}
+{"t": 148095.437786434, "kind": "LOG", "payload": "40445\t<ba-add>idx:1, ifx:0, tid:0, TAHI:0x1002e56, TALO:0x6d5a1638, (ssn:0, win:64, cur_ssn:0), CONF:0xc0000001"}
+{"t": 148095.43794463, "kind": "RAW", "payload": "\n"}
+{"t": 148095.438196068, "kind": "LOG", "payload": "40445\t"}
+{"t": 148095.438353915, "kind": "RAW", "payload": "\n"}
+{"t": 148095.438525311, "kind": "LOG", "payload": "40445\tW (40445) wifi:"}
+{"t": 148095.438844916, "kind": "RAW", "payload": "\n"}
+{"t": 148095.439107668, "kind": "DROP", "payload": "dropped=2"}
+{"t": 148095.439276481, "kind": "RAW", "payload": "\n"}
+{"t": 148095.439440893, "kind": "LOG", "payload": "40449\tE (40449) wifi:"}
+{"t": 148095.439590428, "kind": "RAW", "payload": "\n"}
+{"t": 148095.439755609, "kind": "LOG", "payload": "40449\tCCMP replay detected: A1=1c:29:04:d0:af:5e A2=38:16:5a:6d:56:2e PN=6, RSC=7 seq=256"}
+{"t": 148095.439913386, "kind": "RAW", "payload": "\n"}
+{"t": 148095.440152112, "kind": "LOG", "payload": "40449\t"}
+{"t": 148095.440311495, "kind": "RAW", "payload": "\n"}
+{"t": 148095.440500283, "kind": "LOG", "payload": "40452\tE (40452) wifi:"}
+{"t": 148095.461541547, "kind": "RAW", "payload": "\n"}
+{"t": 148095.461970458, "kind": "LOG", "payload": "40464\tE (40464) wifi:"}
+{"t": 148095.462370523, "kind": "RAW", "payload": "\n"}
+{"t": 148095.462599051, "kind": "LOG", "payload": "40464\tCCMP replay detected: A1=1c:29:04:d0:af:5e A2=38:16:5a:6d:56:2e PN=6, RSC=7 seq=256"}
+{"t": 148095.46278267, "kind": "RAW", "payload": "\n"}
+{"t": 148095.463096059, "kind": "LOG", "payload": "40464\t"}
+{"t": 148095.484229797, "kind": "RAW", "payload": "\n"}
+{"t": 148095.484615754, "kind": "LOG", "payload": "40493\tI (40493) wifi:"}
+{"t": 148095.484763752, "kind": "RAW", "payload": "\n"}
+{"t": 148095.484905605, "kind": "LOG", "payload": "40493\t<ba-del>idx:1, tid:0"}
+{"t": 148095.485090202, "kind": "RAW", "payload": "\n"}
+{"t": 148095.485297708, "kind": "LOG", "payload": "40493\t"}
+{"t": 148095.732524291, "kind": "COMMAND", "payload": "SCREENSHOT JPEG"}
+{"t": 148095.816495603, "kind": "RAW", "payload": "\n"}
+{"t": 148095.817379266, "kind": "RAW", "payload": "\n"}
+{"t": 148095.825710576, "kind": "RAW", "payload": "\n"}
+{"t": 148095.836217589, "kind": "RAW", "payload": "\n"}
+{"t": 148095.846794236, "kind": "RAW", "payload": "\n"}
+{"t": 148095.859326508, "kind": "RAW", "payload": "\n"}
+{"t": 148095.868269998, "kind": "RAW", "payload": "\n"}
+{"t": 148095.879521825, "kind": "RAW", "payload": "\n"}
+{"t": 148095.891684903, "kind": "RAW", "payload": "\n"}
+{"t": 148095.900335189, "kind": "RAW", "payload": "\n"}
+{"t": 148095.91226904, "kind": "RAW", "payload": "\n"}
+{"t": 148095.921210226, "kind": "RAW", "payload": "\n"}
+{"t": 148095.931590752, "kind": "RAW", "payload": "\n"}
+{"t": 148095.941238756, "kind": "RAW", "payload": "\n"}
+{"t": 148095.942955236, "kind": "RAW", "payload": "\n"}
+{"t": 148095.943938636, "kind": "META", "payload": "format=jpeg;width=320;height=240;orientation=logical;frame_id=31;device_us=39451911;source=st7789-native-sw270-completed;bytes=12500;sha256=10ac1ffbfd3ca2f6aca977b6086d6b4fe21357fa426d4d56a66650ef78390557"}
+{"t": 148095.944199642, "kind": "OK", "payload": ""}
+{"t": 148095.951980304, "kind": "COMMAND", "payload": "INPUT TAP 180 220"}
+{"t": 148095.964461869, "kind": "RAW", "payload": "\n"}
+{"t": 148095.965238462, "kind": "LOG", "payload": "40975\tI (40975) PxaHost: pointer queued id=0 phase=0 x=180 y=220"}
+{"t": 148095.993573369, "kind": "RAW", "payload": "\n"}
+{"t": 148095.994349123, "kind": "OK", "payload": "event=4;device_us=39687570;status=processed"}
+{"t": 148096.005418308, "kind": "RAW", "payload": "\n"}
+{"t": 148096.005923628, "kind": "LOG", "payload": "41009\tI (41009) PxaHost: pointer queued id=0 phase=2 x=180 y=220"}
+{"t": 148096.162889679, "kind": "RAW", "payload": "\n"}
+{"t": 148096.163404218, "kind": "LOG", "payload": "41167\tI (41167) PxaHost: pointer delivered id=0 phase=0 x=180 y=220"}
+{"t": 148097.437230126, "kind": "RAW", "payload": "\n"}
+{"t": 148097.437834414, "kind": "DROP", "payload": "dropped=5"}
+{"t": 148097.43813132, "kind": "RAW", "payload": "\n"}
+{"t": 148097.438364598, "kind": "LOG", "payload": "42445\tI (42445) wifi:"}
+{"t": 148097.438532363, "kind": "RAW", "payload": "\n"}
+{"t": 148097.438709486, "kind": "LOG", "payload": "42445\t<ba-del>idx:2, tid:5"}
+{"t": 148097.438859022, "kind": "RAW", "payload": "\n"}
+{"t": 148097.439118771, "kind": "LOG", "payload": "42445\t"}
+{"t": 148097.439292262, "kind": "RAW", "payload": "\n"}
+{"t": 148097.439445988, "kind": "LOG", "payload": "42445\tW (42445) wifi:"}
+{"t": 148097.720692101, "kind": "RAW", "payload": "\n"}
+{"t": 148097.721224589, "kind": "LOG", "payload": "42728\tI (42728) PxaHost: pointer delivered id=0 phase=2 x=180 y=220"}
+{"t": 148098.002935442, "kind": "COMMAND", "payload": "INPUT TAP 160 116"}
+{"t": 148098.019927235, "kind": "RAW", "payload": "\n"}
+{"t": 148098.020496321, "kind": "LOG", "payload": "43030\tI (43030) PxaHost: pointer queued id=0 phase=0 x=160 y=116"}
+{"t": 148098.04627264, "kind": "RAW", "payload": "\n"}
+{"t": 148098.046931615, "kind": "OK", "payload": "event=5;device_us=41738605;status=processed"}
+{"t": 148098.058517014, "kind": "RAW", "payload": "\n"}
+{"t": 148098.058944598, "kind": "LOG", "payload": "43061\tI (43061) PxaHost: pointer queued id=0 phase=2 x=160 y=116"}
+{"t": 148098.356487764, "kind": "COMMAND", "payload": "PING"}
+{"t": 148098.362658597, "kind": "RAW", "payload": "\n"}
+{"t": 148098.363356196, "kind": "OK", "payload": "pong"}
+{"t": 148098.508853465, "kind": "RAW", "payload": "\n"}
+{"t": 148098.509349774, "kind": "LOG", "payload": "43517\tI (43517) PxaHost: pointer delivered id=0 phase=0 x=160 y=116"}
+{"t": 148098.664687675, "kind": "COMMAND", "payload": "PING"}
+{"t": 148098.671558412, "kind": "RAW", "payload": "\n"}
+{"t": 148098.672230518, "kind": "OK", "payload": "pong"}
+{"t": 148098.872457891, "kind": "RAW", "payload": "\n"}
+{"t": 148098.872926961, "kind": "LOG", "payload": "43877\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara frames=13 elapsed_us=5256664 render_us=3738604 convert_us=37307 updates=41 skipped=0 pos=0,0,0 yaw=0\u001b[0m"}
+{"t": 148098.946577522, "kind": "RAW", "payload": "\n"}
+{"t": 148098.947209398, "kind": "LOG", "payload": "43952\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara audio submitted=33280 rendered=32640 queued=640 flags=1 writes=104 blocked=0 nonzero=33275\u001b[0m"}
+{"t": 148098.978532634, "kind": "COMMAND", "payload": "PING"}
+{"t": 148098.985299235, "kind": "RAW", "payload": "\n"}
+{"t": 148098.985901427, "kind": "OK", "payload": "pong"}
+{"t": 148099.017777616, "kind": "RAW", "payload": "\n"}
+{"t": 148099.018290688, "kind": "LOG", "payload": "44029\tI (44029) PxaHost: pointer delivered id=0 phase=2 x=160 y=116"}
+{"t": 148099.290720133, "kind": "COMMAND", "payload": "PING"}
+{"t": 148099.301245233, "kind": "RAW", "payload": "\n"}
+{"t": 148099.301916362, "kind": "OK", "payload": "pong"}
+{"t": 148099.603511485, "kind": "COMMAND", "payload": "PING"}
+{"t": 148099.61019497, "kind": "RAW", "payload": "\n"}
+{"t": 148099.610924069, "kind": "OK", "payload": "pong"}
+{"t": 148099.91522843, "kind": "COMMAND", "payload": "PING"}
+{"t": 148099.921745408, "kind": "RAW", "payload": "\n"}
+{"t": 148099.922512781, "kind": "OK", "payload": "pong"}
+{"t": 148100.228378149, "kind": "COMMAND", "payload": "PING"}
+{"t": 148100.234884651, "kind": "RAW", "payload": "\n"}
+{"t": 148100.235653421, "kind": "OK", "payload": "pong"}
+{"t": 148100.536979494, "kind": "COMMAND", "payload": "PING"}
+{"t": 148100.544725791, "kind": "RAW", "payload": "\n"}
+{"t": 148100.545412564, "kind": "OK", "payload": "pong"}
+{"t": 148100.852552355, "kind": "COMMAND", "payload": "PING"}
+{"t": 148100.860406352, "kind": "RAW", "payload": "\n"}
+{"t": 148100.861289246, "kind": "OK", "payload": "pong"}
+{"t": 148101.168676144, "kind": "COMMAND", "payload": "PING"}
+{"t": 148101.174784187, "kind": "RAW", "payload": "\n"}
+{"t": 148101.175765422, "kind": "OK", "payload": "pong"}
+{"t": 148101.481509726, "kind": "COMMAND", "payload": "PING"}
+{"t": 148101.487925989, "kind": "RAW", "payload": "\n"}
+{"t": 148101.488724652, "kind": "OK", "payload": "pong"}
+{"t": 148101.791183082, "kind": "COMMAND", "payload": "PING"}
+{"t": 148101.798373423, "kind": "RAW", "payload": "\n"}
+{"t": 148101.79919709, "kind": "OK", "payload": "pong"}
+{"t": 148102.110268578, "kind": "COMMAND", "payload": "PING"}
+{"t": 148102.116842409, "kind": "RAW", "payload": "\n"}
+{"t": 148102.117925056, "kind": "OK", "payload": "pong"}
+{"t": 148102.42690842, "kind": "COMMAND", "payload": "PING"}
+{"t": 148102.434456779, "kind": "RAW", "payload": "\n"}
+{"t": 148102.435184481, "kind": "OK", "payload": "pong"}
+{"t": 148102.74142619, "kind": "COMMAND", "payload": "PING"}
+{"t": 148102.749254972, "kind": "RAW", "payload": "\n"}
+{"t": 148102.749968007, "kind": "OK", "payload": "pong"}
+{"t": 148103.05614092, "kind": "COMMAND", "payload": "PING"}
+{"t": 148103.063088344, "kind": "RAW", "payload": "\n"}
+{"t": 148103.063753047, "kind": "OK", "payload": "pong"}
+{"t": 148103.367756681, "kind": "COMMAND", "payload": "PING"}
+{"t": 148103.374174969, "kind": "RAW", "payload": "\n"}
+{"t": 148103.374849659, "kind": "OK", "payload": "pong"}
+{"t": 148103.684144222, "kind": "COMMAND", "payload": "PING"}
+{"t": 148103.692304901, "kind": "RAW", "payload": "\n"}
+{"t": 148103.693687597, "kind": "OK", "payload": "pong"}
+{"t": 148103.998129209, "kind": "COMMAND", "payload": "PING"}
+{"t": 148104.00508704, "kind": "RAW", "payload": "\n"}
+{"t": 148104.005753209, "kind": "OK", "payload": "pong"}
+{"t": 148104.316499333, "kind": "COMMAND", "payload": "PING"}
+{"t": 148104.322678894, "kind": "RAW", "payload": "\n"}
+{"t": 148104.323492504, "kind": "OK", "payload": "pong"}
+{"t": 148104.626622296, "kind": "COMMAND", "payload": "PING"}
+{"t": 148104.634132031, "kind": "RAW", "payload": "\n"}
+{"t": 148104.634799807, "kind": "OK", "payload": "pong"}
+{"t": 148104.937094269, "kind": "COMMAND", "payload": "PING"}
+{"t": 148104.944228175, "kind": "RAW", "payload": "\n"}
+{"t": 148104.945103736, "kind": "OK", "payload": "pong"}
+{"t": 148105.248969052, "kind": "COMMAND", "payload": "PING"}
+{"t": 148105.257367409, "kind": "RAW", "payload": "\n"}
+{"t": 148105.258118508, "kind": "OK", "payload": "pong"}
+{"t": 148105.567872265, "kind": "COMMAND", "payload": "PING"}
+{"t": 148105.575561987, "kind": "RAW", "payload": "\n"}
+{"t": 148105.576305612, "kind": "OK", "payload": "pong"}
+{"t": 148105.880659121, "kind": "COMMAND", "payload": "PING"}
+{"t": 148105.886982351, "kind": "RAW", "payload": "\n"}
+{"t": 148105.887772633, "kind": "OK", "payload": "pong"}
+{"t": 148106.190631836, "kind": "COMMAND", "payload": "PING"}
+{"t": 148106.198454051, "kind": "RAW", "payload": "\n"}
+{"t": 148106.199314456, "kind": "OK", "payload": "pong"}
+{"t": 148106.507369601, "kind": "COMMAND", "payload": "PING"}
+{"t": 148106.514306896, "kind": "RAW", "payload": "\n"}
+{"t": 148106.515139154, "kind": "OK", "payload": "pong"}
+{"t": 148106.826290814, "kind": "COMMAND", "payload": "PING"}
+{"t": 148106.833868088, "kind": "RAW", "payload": "\n"}
+{"t": 148106.834683722, "kind": "OK", "payload": "pong"}
+{"t": 148107.138492645, "kind": "COMMAND", "payload": "PING"}
+{"t": 148107.145569768, "kind": "RAW", "payload": "\n"}
+{"t": 148107.146306619, "kind": "OK", "payload": "pong"}
+{"t": 148107.457177849, "kind": "COMMAND", "payload": "PING"}
+{"t": 148107.463112887, "kind": "RAW", "payload": "\n"}
+{"t": 148107.463680507, "kind": "OK", "payload": "pong"}
+{"t": 148107.765462341, "kind": "COMMAND", "payload": "PING"}
+{"t": 148107.772548263, "kind": "RAW", "payload": "\n"}
+{"t": 148107.773227633, "kind": "OK", "payload": "pong"}
+{"t": 148108.055534111, "kind": "RAW", "payload": "\n"}
+{"t": 148108.056381035, "kind": "LOG", "payload": "53057\tI (53057) esp_netif_handlers: sta ip: 192.168.5.135, mask: 255.255.255.0, gw: 192.168.5.1"}
+{"t": 148108.05663366, "kind": "RAW", "payload": "\n"}
+{"t": 148108.05683928, "kind": "LOG", "payload": "53058\tI (53058) WifiStation: Got IP: 192.168.5.135"}
+{"t": 148108.07748829, "kind": "COMMAND", "payload": "PING"}
+{"t": 148108.084586714, "kind": "RAW", "payload": "\n"}
+{"t": 148108.085492238, "kind": "OK", "payload": "pong"}
+{"t": 148108.389183524, "kind": "COMMAND", "payload": "PING"}
+{"t": 148108.396393419, "kind": "RAW", "payload": "\n"}
+{"t": 148108.397160791, "kind": "OK", "payload": "pong"}
+{"t": 148108.698804879, "kind": "COMMAND", "payload": "PING"}
+{"t": 148108.715243849, "kind": "RAW", "payload": "\n"}
+{"t": 148108.716109492, "kind": "OK", "payload": "pong"}
+{"t": 148109.023305594, "kind": "COMMAND", "payload": "PING"}
+{"t": 148109.029657948, "kind": "RAW", "payload": "\n"}
+{"t": 148109.030500263, "kind": "OK", "payload": "pong"}
+{"t": 148109.33459684, "kind": "COMMAND", "payload": "PING"}
+{"t": 148109.341511365, "kind": "RAW", "payload": "\n"}
+{"t": 148109.342372677, "kind": "OK", "payload": "pong"}
+{"t": 148109.645331697, "kind": "COMMAND", "payload": "PING"}
+{"t": 148109.65126457, "kind": "RAW", "payload": "\n"}
+{"t": 148109.651951692, "kind": "OK", "payload": "pong"}
+{"t": 148109.955327888, "kind": "COMMAND", "payload": "PING"}
+{"t": 148109.962350671, "kind": "RAW", "payload": "\n"}
+{"t": 148109.962929536, "kind": "OK", "payload": "pong"}
+{"t": 148110.265785885, "kind": "COMMAND", "payload": "PING"}
+{"t": 148110.272329261, "kind": "RAW", "payload": "\n"}
+{"t": 148110.272943187, "kind": "OK", "payload": "pong"}
+{"t": 148110.575946963, "kind": "COMMAND", "payload": "PING"}
+{"t": 148110.583299198, "kind": "RAW", "payload": "\n"}
+{"t": 148110.584186772, "kind": "OK", "payload": "pong"}
+{"t": 148110.887889612, "kind": "COMMAND", "payload": "PING"}
+{"t": 148110.894424397, "kind": "RAW", "payload": "\n"}
+{"t": 148110.895276141, "kind": "OK", "payload": "pong"}
+{"t": 148111.203818869, "kind": "COMMAND", "payload": "PING"}
+{"t": 148111.21045842, "kind": "RAW", "payload": "\n"}
+{"t": 148111.211278385, "kind": "OK", "payload": "pong"}
+{"t": 148111.514371199, "kind": "COMMAND", "payload": "PING"}
+{"t": 148111.520290591, "kind": "RAW", "payload": "\n"}
+{"t": 148111.520895507, "kind": "OK", "payload": "pong"}
+{"t": 148111.827121715, "kind": "COMMAND", "payload": "PING"}
+{"t": 148111.833391164, "kind": "RAW", "payload": "\n"}
+{"t": 148111.834220627, "kind": "OK", "payload": "pong"}
+{"t": 148112.136541316, "kind": "COMMAND", "payload": "PING"}
+{"t": 148112.143642603, "kind": "RAW", "payload": "\n"}
+{"t": 148112.144282371, "kind": "OK", "payload": "pong"}
+{"t": 148112.363927971, "kind": "RAW", "payload": "\n"}
+{"t": 148112.364881477, "kind": "LOG", "payload": "57373\tI (57373) wifi:"}
+{"t": 148112.365437014, "kind": "RAW", "payload": "\n"}
+{"t": 148112.365641656, "kind": "LOG", "payload": "57373\t[ADDBA]TX addba request, tid:0, dialogtoken:7, bufsize:32, A-MSDU:0(not supported), policy:1(IMR), ssn:0(0x0)"}
+{"t": 148112.365785254, "kind": "RAW", "payload": "\n"}
+{"t": 148112.365922218, "kind": "LOG", "payload": "57373\t"}
+{"t": 148112.428335159, "kind": "RAW", "payload": "\n"}
+{"t": 148112.428767282, "kind": "LOG", "payload": "57438\tI (57438) wifi:"}
+{"t": 148112.428966406, "kind": "RAW", "payload": "\n"}
+{"t": 148112.429271064, "kind": "LOG", "payload": "57438\t[ADDBA]RX addba response, status:0, tid:0/tb:1(0xa1), bufsize:32, batimeout:0, txa_wnd:32"}
+{"t": 148112.429462855, "kind": "RAW", "payload": "\n"}
+{"t": 148112.429657719, "kind": "LOG", "payload": "57438\t"}
+{"t": 148112.450551106, "kind": "COMMAND", "payload": "PING"}
+{"t": 148112.456409315, "kind": "RAW", "payload": "\n"}
+{"t": 148112.457151753, "kind": "OK", "payload": "pong"}
+{"t": 148112.759868162, "kind": "COMMAND", "payload": "PING"}
+{"t": 148112.766706975, "kind": "RAW", "payload": "\n"}
+{"t": 148112.768231244, "kind": "OK", "payload": "pong"}
+{"t": 148113.070180629, "kind": "COMMAND", "payload": "PING"}
+{"t": 148113.076555122, "kind": "RAW", "payload": "\n"}
+{"t": 148113.077228485, "kind": "OK", "payload": "pong"}
+{"t": 148113.264525279, "kind": "RAW", "payload": "\n"}
+{"t": 148113.265181949, "kind": "LOG", "payload": "58270\tW (58270) PxaHost: Guest callback exceeded 3000 ms; awaiting user decision"}
+{"t": 148113.378929991, "kind": "COMMAND", "payload": "PING"}
+{"t": 148113.385465613, "kind": "RAW", "payload": "\n"}
+{"t": 148113.386285927, "kind": "OK", "payload": "pong"}
+{"t": 148113.386730971, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148113.395830415, "kind": "RAW", "payload": "\n"}
+{"t": 148113.39757951, "kind": "RAW", "payload": "\n"}
+{"t": 148113.399001877, "kind": "RAW", "payload": "\n"}
+{"t": 148113.400343224, "kind": "RAW", "payload": "\n"}
+{"t": 148113.401838368, "kind": "RAW", "payload": "\n"}
+{"t": 148113.403391901, "kind": "RAW", "payload": "\n"}
+{"t": 148113.404624013, "kind": "RAW", "payload": "\n"}
+{"t": 148113.405448169, "kind": "RAW", "payload": "\n"}
+{"t": 148113.405715949, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148113.405826651, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148113.405920591, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148113.40608661, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148113.406253536, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148113.406342587, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148113.406424653, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148113.406573839, "kind": "OK", "payload": ""}
+{"t": 148113.406768563, "kind": "COMMAND", "payload": "SCREENSHOT JPEG"}
+{"t": 148113.407216541, "kind": "RAW", "payload": "\n"}
+{"t": 148113.407393455, "kind": "LOG", "payload": "58421\tI (58420) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148113.866847859, "kind": "RAW", "payload": "\n"}
+{"t": 148113.86837576, "kind": "RAW", "payload": "\n"}
+{"t": 148113.879762235, "kind": "RAW", "payload": "\n"}
+{"t": 148113.890187102, "kind": "RAW", "payload": "\n"}
+{"t": 148113.9017954, "kind": "RAW", "payload": "\n"}
+{"t": 148113.912409125, "kind": "RAW", "payload": "\n"}
+{"t": 148113.922492177, "kind": "RAW", "payload": "\n"}
+{"t": 148113.933380597, "kind": "RAW", "payload": "\n"}
+{"t": 148113.943663542, "kind": "RAW", "payload": "\n"}
+{"t": 148113.95256414, "kind": "RAW", "payload": "\n"}
+{"t": 148113.952984599, "kind": "RAW", "payload": "\n"}
+{"t": 148113.953259504, "kind": "META", "payload": "format=jpeg;width=320;height=240;orientation=logical;frame_id=42;device_us=57490693;source=st7789-native-sw270-completed;bytes=8197;sha256=58272b4a50ca5ad98811b2f8e465e400a4db980ebe56f23ba251b66ee4146b0b"}
+{"t": 148113.953420075, "kind": "OK", "payload": ""}
+{"t": 148113.955811592, "kind": "COMMAND", "payload": "INPUT TAP 226 170"}
+{"t": 148113.998352677, "kind": "RAW", "payload": "\n"}
+{"t": 148113.999287884, "kind": "OK", "payload": "event=6;device_us=57690839;status=processed"}
+{"t": 148113.999467452, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 148114.006479967, "kind": "RAW", "payload": "\n"}
+{"t": 148114.007262565, "kind": "OK", "payload": "event=7;device_us=57699095;status=processed"}
+{"t": 148114.008571016, "kind": "RAW", "payload": "\n"}
+{"t": 148114.009070259, "kind": "LOG", "payload": "59014\tW (59014) PxaHost: Guest callback timeout: app=17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe action=wait"}
+{"t": 148114.310987571, "kind": "COMMAND", "payload": "PING"}
+{"t": 148114.318147944, "kind": "RAW", "payload": "\n"}
+{"t": 148114.31886482, "kind": "OK", "payload": "pong"}
+{"t": 148114.341714108, "kind": "RAW", "payload": "\n"}
+{"t": 148114.342310433, "kind": "LOG", "payload": "59352\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara ready level=3 bytes=2873406 linear_bytes=7733248\u001b[0m"}
+{"t": 148114.353502463, "kind": "RAW", "payload": "\n"}
+{"t": 148114.353992137, "kind": "LOG", "payload": "59357\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara audio submitted=33280 rendered=32640 queued=0 flags=1 writes=104 blocked=0 nonzero=33275\u001b[0m"}
+{"t": 148114.624091311, "kind": "COMMAND", "payload": "PING"}
+{"t": 148114.630782544, "kind": "RAW", "payload": "\n"}
+{"t": 148114.631634358, "kind": "OK", "payload": "pong"}
+{"t": 148120.131296343, "kind": "RAW", "payload": "\n"}
+{"t": 148120.13176192, "kind": "LOG", "payload": "65136\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara frames=8 elapsed_us=5777125 render_us=3903268 convert_us=22099 updates=49 skipped=0 pos=78336,-1024,12800 yaw=0\u001b[0m"}
+{"t": 148120.282998372, "kind": "RAW", "payload": "\n"}
+{"t": 148120.283741508, "kind": "LOG", "payload": "65281\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara audio submitted=48640 rendered=48000 queued=0 flags=1 writes=156 blocked=0 nonzero=49908\u001b[0m"}
+{"t": 148120.645326643, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148120.65468709, "kind": "RAW", "payload": "\n"}
+{"t": 148120.656971117, "kind": "RAW", "payload": "\n"}
+{"t": 148120.657820904, "kind": "RAW", "payload": "\n"}
+{"t": 148120.658151405, "kind": "RAW", "payload": "\n"}
+{"t": 148120.658618379, "kind": "RAW", "payload": "\n"}
+{"t": 148120.659784279, "kind": "RAW", "payload": "\n"}
+{"t": 148120.661360162, "kind": "RAW", "payload": "\n"}
+{"t": 148120.663521264, "kind": "RAW", "payload": "\n"}
+{"t": 148120.663776054, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148120.66400123, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148120.664281373, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148120.664411421, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148120.664615435, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148120.664746741, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148120.664865475, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148120.664981415, "kind": "OK", "payload": ""}
+{"t": 148120.665239977, "kind": "COMMAND", "payload": "SCREENSHOT JPEG"}
+{"t": 148120.665664836, "kind": "RAW", "payload": "\n"}
+{"t": 148120.665914946, "kind": "LOG", "payload": "65676\tI (65676) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148120.728955548, "kind": "RAW", "payload": "\n"}
+{"t": 148120.732257616, "kind": "RAW", "payload": "\n"}
+{"t": 148120.741483055, "kind": "RAW", "payload": "\n"}
+{"t": 148120.753561607, "kind": "RAW", "payload": "\n"}
+{"t": 148120.762846343, "kind": "RAW", "payload": "\n"}
+{"t": 148120.773378137, "kind": "RAW", "payload": "\n"}
+{"t": 148120.783306133, "kind": "RAW", "payload": "\n"}
+{"t": 148120.793670373, "kind": "RAW", "payload": "\n"}
+{"t": 148120.804236949, "kind": "RAW", "payload": "\n"}
+{"t": 148120.815514255, "kind": "RAW", "payload": "\n"}
+{"t": 148120.827482174, "kind": "RAW", "payload": "\n"}
+{"t": 148120.836834658, "kind": "RAW", "payload": "\n"}
+{"t": 148120.845949116, "kind": "RAW", "payload": "\n"}
+{"t": 148120.848885413, "kind": "RAW", "payload": "\n"}
+{"t": 148120.849329758, "kind": "META", "payload": "format=jpeg;width=320;height=240;orientation=logical;frame_id=56;device_us=63829803;source=st7789-native-sw270-completed;bytes=11582;sha256=b304a8b491f8bcb67a2aa7db34545eee49aac04aa624a131e6e44ac92b4f8955"}
+{"t": 148120.849523714, "kind": "OK", "payload": ""}
+{"t": 148120.866308401, "kind": "COMMAND", "payload": "MEMORY STOP"}
+{"t": 148120.878551714, "kind": "RAW", "payload": "\n"}
+{"t": 148120.879329004, "kind": "RAW", "payload": "\n"}
+{"t": 148120.879730326, "kind": "RAW", "payload": "\n"}
+{"t": 148120.880196253, "kind": "RAW", "payload": "\n"}
+{"t": 148120.880679291, "kind": "RAW", "payload": "\n"}
+{"t": 148120.881430739, "kind": "RAW", "payload": "\n"}
+{"t": 148120.8822301, "kind": "RAW", "payload": "\n"}
+{"t": 148120.882616056, "kind": "RAW", "payload": "\n"}
+{"t": 148120.882959477, "kind": "RAW", "payload": "\n"}
+{"t": 148120.884827306, "kind": "RAW", "payload": "\n"}
+{"t": 148120.88530329, "kind": "DATA", "payload": "scope=heap;sram_total=656579;sram_free=160683;sram_min=119739;sram_largest=122880;psram_total=16741200;psram_free=1695016;psram_min=931248;psram_largest=1441792"}
+{"t": 148120.885467074, "kind": "DATA", "payload": "scope=budget;internal=28500;external=24919;peak_internal=28500;peak_external=24919;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"}
+{"t": 148120.885596634, "kind": "DATA", "payload": "scope=kind;name=raster;internal=0;external=0"}
+{"t": 148120.88568778, "kind": "DATA", "payload": "scope=kind;name=image;internal=0;external=0"}
+{"t": 148120.885766913, "kind": "DATA", "payload": "scope=kind;name=audio;internal=0;external=16400"}
+{"t": 148120.885845696, "kind": "DATA", "payload": "scope=kind;name=temporary;internal=0;external=0"}
+{"t": 148120.885997327, "kind": "DATA", "payload": "scope=kind;name=metadata;internal=28500;external=8519"}
+{"t": 148120.886226414, "kind": "DATA", "payload": "scope=kind;name=frame;internal=0;external=0"}
+{"t": 148120.886309598, "kind": "DATA", "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"}
+{"t": 148120.886388381, "kind": "OK", "payload": "minimum_scope=boot"}
+{"t": 148121.896827595, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148121.90473201, "kind": "RAW", "payload": "\n"}
+{"t": 148121.905633901, "kind": "RAW", "payload": "\n"}
+{"t": 148121.907236743, "kind": "RAW", "payload": "\n"}
+{"t": 148121.909537113, "kind": "RAW", "payload": "\n"}
+{"t": 148121.910323413, "kind": "RAW", "payload": "\n"}
+{"t": 148121.91120938, "kind": "RAW", "payload": "\n"}
+{"t": 148121.912316542, "kind": "RAW", "payload": "\n"}
+{"t": 148121.912942899, "kind": "RAW", "payload": "\n"}
+{"t": 148121.913238687, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148121.913381029, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148121.913503953, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148121.913619126, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148121.913817412, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148121.913929511, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148121.914143721, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148121.914256239, "kind": "OK", "payload": ""}
+{"t": 148121.914413178, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148121.914927716, "kind": "RAW", "payload": "\n"}
+{"t": 148121.915281754, "kind": "LOG", "payload": "66927\tI (66927) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148121.922614429, "kind": "RAW", "payload": "\n"}
+{"t": 148121.92370867, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148122.927580017, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148122.935697315, "kind": "RAW", "payload": "\n"}
+{"t": 148122.936464198, "kind": "RAW", "payload": "\n"}
+{"t": 148122.938233338, "kind": "RAW", "payload": "\n"}
+{"t": 148122.939478301, "kind": "RAW", "payload": "\n"}
+{"t": 148122.940812035, "kind": "RAW", "payload": "\n"}
+{"t": 148122.942155757, "kind": "RAW", "payload": "\n"}
+{"t": 148122.943379627, "kind": "RAW", "payload": "\n"}
+{"t": 148122.94388313, "kind": "RAW", "payload": "\n"}
+{"t": 148122.944139317, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148122.944247295, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148122.944336415, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148122.94441946, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148122.94464254, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148122.944787536, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148122.944875818, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148122.94495984, "kind": "OK", "payload": ""}
+{"t": 148122.945144925, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148122.945529694, "kind": "RAW", "payload": "\n"}
+{"t": 148122.945691522, "kind": "LOG", "payload": "67958\tI (67958) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148122.950853806, "kind": "RAW", "payload": "\n"}
+{"t": 148122.951536387, "kind": "OK", "payload": "presentation_fps_x10=9"}
+{"t": 148123.955905392, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148123.963433978, "kind": "RAW", "payload": "\n"}
+{"t": 148123.964595758, "kind": "RAW", "payload": "\n"}
+{"t": 148123.965957709, "kind": "RAW", "payload": "\n"}
+{"t": 148123.967155737, "kind": "RAW", "payload": "\n"}
+{"t": 148123.96854325, "kind": "RAW", "payload": "\n"}
+{"t": 148123.970162156, "kind": "RAW", "payload": "\n"}
+{"t": 148123.97115233, "kind": "RAW", "payload": "\n"}
+{"t": 148123.971743067, "kind": "RAW", "payload": "\n"}
+{"t": 148123.971941493, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148123.972166948, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148123.972289105, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148123.972400645, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148123.972596696, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148123.972712637, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148123.972828158, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148123.972938301, "kind": "OK", "payload": ""}
+{"t": 148123.973173744, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148123.973685209, "kind": "RAW", "payload": "\n"}
+{"t": 148123.973915693, "kind": "LOG", "payload": "68986\tI (68986) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148123.978870471, "kind": "RAW", "payload": "\n"}
+{"t": 148123.979498086, "kind": "OK", "payload": "presentation_fps_x10=9"}
+{"t": 148124.989955383, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148124.99815356, "kind": "RAW", "payload": "\n"}
+{"t": 148124.999150857, "kind": "RAW", "payload": "\n"}
+{"t": 148124.999800473, "kind": "RAW", "payload": "\n"}
+{"t": 148125.000840585, "kind": "RAW", "payload": "\n"}
+{"t": 148125.00371053, "kind": "RAW", "payload": "\n"}
+{"t": 148125.004226954, "kind": "RAW", "payload": "\n"}
+{"t": 148125.004618637, "kind": "RAW", "payload": "\n"}
+{"t": 148125.005374066, "kind": "RAW", "payload": "\n"}
+{"t": 148125.005752339, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148125.006102605, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148125.006333298, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148125.006459156, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148125.006664497, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148125.00678798, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148125.006900778, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148125.007078739, "kind": "OK", "payload": ""}
+{"t": 148125.007249018, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148125.007775779, "kind": "RAW", "payload": "\n"}
+{"t": 148125.008108025, "kind": "LOG", "payload": "70020\tI (70020) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148125.014260272, "kind": "RAW", "payload": "\n"}
+{"t": 148125.014965204, "kind": "OK", "payload": "presentation_fps_x10=9"}
+{"t": 148125.218550546, "kind": "RAW", "payload": "\n"}
+{"t": 148125.219419959, "kind": "LOG", "payload": "70221\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara frames=6 elapsed_us=5084723 render_us=3286720 convert_us=17584 updates=45 skipped=0 pos=78336,-1024,12800 yaw=0\u001b[0m"}
+{"t": 148125.356222277, "kind": "RAW", "payload": "\n"}
+{"t": 148125.356735418, "kind": "LOG", "payload": "70366\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara audio submitted=64000 rendered=63360 queued=0 flags=1 writes=204 blocked=0 nonzero=65265\u001b[0m"}
+{"t": 148126.020682514, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148126.028422377, "kind": "RAW", "payload": "\n"}
+{"t": 148126.029409407, "kind": "RAW", "payload": "\n"}
+{"t": 148126.030824509, "kind": "RAW", "payload": "\n"}
+{"t": 148126.032165856, "kind": "RAW", "payload": "\n"}
+{"t": 148126.033666726, "kind": "RAW", "payload": "\n"}
+{"t": 148126.034902539, "kind": "RAW", "payload": "\n"}
+{"t": 148126.036213295, "kind": "RAW", "payload": "\n"}
+{"t": 148126.036742779, "kind": "RAW", "payload": "\n"}
+{"t": 148126.037199766, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148126.037467407, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148126.037634683, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148126.037757188, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148126.037964833, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148126.038182466, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148126.038386619, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148126.038570238, "kind": "OK", "payload": ""}
+{"t": 148126.038724662, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148126.039344734, "kind": "RAW", "payload": "\n"}
+{"t": 148126.039580387, "kind": "LOG", "payload": "71051\tI (71051) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148126.045342696, "kind": "RAW", "payload": "\n"}
+{"t": 148126.045955853, "kind": "OK", "payload": "presentation_fps_x10=9"}
+{"t": 148127.05229256, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148127.060771786, "kind": "RAW", "payload": "\n"}
+{"t": 148127.062829031, "kind": "RAW", "payload": "\n"}
+{"t": 148127.063643128, "kind": "RAW", "payload": "\n"}
+{"t": 148127.064698675, "kind": "RAW", "payload": "\n"}
+{"t": 148127.066205831, "kind": "RAW", "payload": "\n"}
+{"t": 148127.067749235, "kind": "RAW", "payload": "\n"}
+{"t": 148127.068954806, "kind": "RAW", "payload": "\n"}
+{"t": 148127.069574389, "kind": "RAW", "payload": "\n"}
+{"t": 148127.069773304, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148127.070663112, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148127.070837302, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148127.070953871, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148127.07122675, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148127.07134737, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148127.071461215, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148127.071576666, "kind": "OK", "payload": ""}
+{"t": 148127.071746037, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148127.07236108, "kind": "RAW", "payload": "\n"}
+{"t": 148127.072604066, "kind": "LOG", "payload": "72083\tI (72083) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148127.078336064, "kind": "RAW", "payload": "\n"}
+{"t": 148127.078997483, "kind": "OK", "payload": "presentation_fps_x10=20"}
+{"t": 148128.084463541, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148128.095395745, "kind": "RAW", "payload": "\n"}
+{"t": 148128.097177247, "kind": "RAW", "payload": "\n"}
+{"t": 148128.097799833, "kind": "RAW", "payload": "\n"}
+{"t": 148128.099930971, "kind": "RAW", "payload": "\n"}
+{"t": 148128.100567247, "kind": "RAW", "payload": "\n"}
+{"t": 148128.101498193, "kind": "RAW", "payload": "\n"}
+{"t": 148128.101939116, "kind": "RAW", "payload": "\n"}
+{"t": 148128.103939926, "kind": "RAW", "payload": "\n"}
+{"t": 148128.104655404, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148128.104859976, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148128.105168266, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148128.105391347, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148128.105839044, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148128.106071973, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148128.10628779, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148128.106543697, "kind": "OK", "payload": ""}
+{"t": 148128.106826633, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148128.107400538, "kind": "RAW", "payload": "\n"}
+{"t": 148128.107700586, "kind": "LOG", "payload": "73117\tI (73117) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148128.114268751, "kind": "RAW", "payload": "\n"}
+{"t": 148128.115103103, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148129.117259783, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148129.124776703, "kind": "RAW", "payload": "\n"}
+{"t": 148129.125902024, "kind": "RAW", "payload": "\n"}
+{"t": 148129.127329628, "kind": "RAW", "payload": "\n"}
+{"t": 148129.128434414, "kind": "RAW", "payload": "\n"}
+{"t": 148129.129859294, "kind": "RAW", "payload": "\n"}
+{"t": 148129.13124108, "kind": "RAW", "payload": "\n"}
+{"t": 148129.132373246, "kind": "RAW", "payload": "\n"}
+{"t": 148129.133165971, "kind": "RAW", "payload": "\n"}
+{"t": 148129.133554231, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148129.133686445, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148129.133779407, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148129.133888922, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148129.134160195, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148129.134255392, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148129.134341579, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148129.134427137, "kind": "OK", "payload": ""}
+{"t": 148129.134547827, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148129.13494405, "kind": "RAW", "payload": "\n"}
+{"t": 148129.135191995, "kind": "LOG", "payload": "74147\tI (74147) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148129.14048677, "kind": "RAW", "payload": "\n"}
+{"t": 148129.141193588, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148129.991151604, "kind": "RAW", "payload": "\n"}
+{"t": 148129.991695755, "kind": "LOG", "payload": "74997\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara audio submitted=67200 rendered=66560 queued=0 flags=1 writes=210 blocked=0 nonzero=67071\u001b[0m"}
+{"t": 148130.14918796, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148130.15674972, "kind": "RAW", "payload": "\n"}
+{"t": 148130.157830899, "kind": "RAW", "payload": "\n"}
+{"t": 148130.159236642, "kind": "RAW", "payload": "\n"}
+{"t": 148130.16049725, "kind": "RAW", "payload": "\n"}
+{"t": 148130.162103374, "kind": "RAW", "payload": "\n"}
+{"t": 148130.163310621, "kind": "RAW", "payload": "\n"}
+{"t": 148130.164389495, "kind": "RAW", "payload": "\n"}
+{"t": 148130.165095125, "kind": "RAW", "payload": "\n"}
+{"t": 148130.165308567, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148130.165444134, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148130.165560493, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148130.165667145, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148130.165859354, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148130.165972571, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148130.166169739, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148130.166282118, "kind": "OK", "payload": ""}
+{"t": 148130.166439545, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148130.166910571, "kind": "RAW", "payload": "\n"}
+{"t": 148130.167208174, "kind": "LOG", "payload": "75179\tI (75179) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148130.172323033, "kind": "RAW", "payload": "\n"}
+{"t": 148130.172910348, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148130.547317702, "kind": "RAW", "payload": "\n"}
+{"t": 148130.547756181, "kind": "LOG", "payload": "75551\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara frames=9 elapsed_us=5330834 render_us=4902310 convert_us=25393 updates=68 skipped=0 pos=78336,-1024,12800 yaw=0\u001b[0m"}
+{"t": 148131.181785681, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148131.189519535, "kind": "RAW", "payload": "\n"}
+{"t": 148131.190547493, "kind": "RAW", "payload": "\n"}
+{"t": 148131.191990952, "kind": "RAW", "payload": "\n"}
+{"t": 148131.193222225, "kind": "RAW", "payload": "\n"}
+{"t": 148131.194395598, "kind": "RAW", "payload": "\n"}
+{"t": 148131.195780667, "kind": "RAW", "payload": "\n"}
+{"t": 148131.197283422, "kind": "RAW", "payload": "\n"}
+{"t": 148131.1977131, "kind": "RAW", "payload": "\n"}
+{"t": 148131.197916484, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148131.198137679, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148131.198265563, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148131.198379967, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148131.198728067, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148131.198879209, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148131.198992914, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148131.199204052, "kind": "OK", "payload": ""}
+{"t": 148131.19936539, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148131.199862398, "kind": "RAW", "payload": "\n"}
+{"t": 148131.200151969, "kind": "LOG", "payload": "76211\tI (76211) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148131.205745116, "kind": "RAW", "payload": "\n"}
+{"t": 148131.206696107, "kind": "OK", "payload": "presentation_fps_x10=9"}
+{"t": 148132.208669657, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148132.21737748, "kind": "RAW", "payload": "\n"}
+{"t": 148132.218354312, "kind": "RAW", "payload": "\n"}
+{"t": 148132.219642578, "kind": "RAW", "payload": "\n"}
+{"t": 148132.220945371, "kind": "RAW", "payload": "\n"}
+{"t": 148132.222511893, "kind": "RAW", "payload": "\n"}
+{"t": 148132.223754691, "kind": "RAW", "payload": "\n"}
+{"t": 148132.224925619, "kind": "RAW", "payload": "\n"}
+{"t": 148132.22810979, "kind": "RAW", "payload": "\n"}
+{"t": 148132.228796422, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148132.228980111, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148132.229182169, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148132.229299995, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148132.229505125, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148132.229617713, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148132.22973079, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148132.229838489, "kind": "OK", "payload": ""}
+{"t": 148132.22998984, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148132.230550684, "kind": "RAW", "payload": "\n"}
+{"t": 148132.230776838, "kind": "LOG", "payload": "77242\tI (77241) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148132.236583846, "kind": "RAW", "payload": "\n"}
+{"t": 148132.237278022, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148133.244834684, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148133.252645854, "kind": "RAW", "payload": "\n"}
+{"t": 148133.253999005, "kind": "RAW", "payload": "\n"}
+{"t": 148133.255399788, "kind": "RAW", "payload": "\n"}
+{"t": 148133.256599911, "kind": "RAW", "payload": "\n"}
+{"t": 148133.258218956, "kind": "RAW", "payload": "\n"}
+{"t": 148133.259707952, "kind": "RAW", "payload": "\n"}
+{"t": 148133.260690861, "kind": "RAW", "payload": "\n"}
+{"t": 148133.261483097, "kind": "RAW", "payload": "\n"}
+{"t": 148133.261735093, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148133.261971863, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148133.262340148, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148133.262470965, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148133.262685665, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148133.262813548, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148133.262930816, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148133.263112409, "kind": "OK", "payload": ""}
+{"t": 148133.263279335, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148133.263977283, "kind": "RAW", "payload": "\n"}
+{"t": 148133.264308691, "kind": "LOG", "payload": "78275\tI (78275) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148133.270400241, "kind": "RAW", "payload": "\n"}
+{"t": 148133.270969397, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148134.276884897, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148134.285303148, "kind": "RAW", "payload": "\n"}
+{"t": 148134.286257212, "kind": "RAW", "payload": "\n"}
+{"t": 148134.287569573, "kind": "RAW", "payload": "\n"}
+{"t": 148134.289455281, "kind": "RAW", "payload": "\n"}
+{"t": 148134.290289633, "kind": "RAW", "payload": "\n"}
+{"t": 148134.291633074, "kind": "RAW", "payload": "\n"}
+{"t": 148134.293710363, "kind": "RAW", "payload": "\n"}
+{"t": 148134.294385402, "kind": "RAW", "payload": "\n"}
+{"t": 148134.294619308, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148134.294767376, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148134.294887996, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148134.294999746, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148134.295290784, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148134.295410915, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148134.295545085, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148134.295658581, "kind": "OK", "payload": ""}
+{"t": 148134.29581063, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148134.296470303, "kind": "RAW", "payload": "\n"}
+{"t": 148134.296726979, "kind": "LOG", "payload": "79308\tI (79307) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148134.301621689, "kind": "RAW", "payload": "\n"}
+{"t": 148134.302465958, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148135.311810105, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148135.320363153, "kind": "RAW", "payload": "\n"}
+{"t": 148135.321520461, "kind": "RAW", "payload": "\n"}
+{"t": 148135.323091244, "kind": "RAW", "payload": "\n"}
+{"t": 148135.323920218, "kind": "RAW", "payload": "\n"}
+{"t": 148135.325339859, "kind": "RAW", "payload": "\n"}
+{"t": 148135.326579723, "kind": "RAW", "payload": "\n"}
+{"t": 148135.327870153, "kind": "RAW", "payload": "\n"}
+{"t": 148135.328641855, "kind": "RAW", "payload": "\n"}
+{"t": 148135.328883584, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148135.329108131, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148135.329228122, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148135.329335402, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148135.329534945, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148135.329652422, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148135.329757467, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148135.329861394, "kind": "OK", "payload": ""}
+{"t": 148135.330081891, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148135.330659637, "kind": "RAW", "payload": "\n"}
+{"t": 148135.33089501, "kind": "LOG", "payload": "80342\tI (80342) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148135.339275544, "kind": "RAW", "payload": "\n"}
+{"t": 148135.340253913, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148135.591290411, "kind": "RAW", "payload": "\n"}
+{"t": 148135.59182702, "kind": "LOG", "payload": "80594\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara frames=9 elapsed_us=5042447 render_us=4918644 convert_us=25211 updates=67 skipped=0 pos=78336,-1024,12800 yaw=0\u001b[0m"}
+{"t": 148135.592210391, "kind": "RAW", "payload": "\n"}
+{"t": 148135.592382207, "kind": "LOG", "payload": "80598\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara audio submitted=67200 rendered=66560 queued=0 flags=1 writes=210 blocked=0 nonzero=67071\u001b[0m"}
+{"t": 148136.345748723, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148136.354345982, "kind": "RAW", "payload": "\n"}
+{"t": 148136.3557446, "kind": "RAW", "payload": "\n"}
+{"t": 148136.356876765, "kind": "RAW", "payload": "\n"}
+{"t": 148136.358429807, "kind": "RAW", "payload": "\n"}
+{"t": 148136.359758582, "kind": "RAW", "payload": "\n"}
+{"t": 148136.362109378, "kind": "RAW", "payload": "\n"}
+{"t": 148136.362740764, "kind": "RAW", "payload": "\n"}
+{"t": 148136.362943101, "kind": "RAW", "payload": "\n"}
+{"t": 148136.363174981, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148136.363285125, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148136.363380461, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148136.363638324, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148136.363980348, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148136.364303514, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148136.364465202, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148136.364584844, "kind": "OK", "payload": ""}
+{"t": 148136.364748278, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148136.365392446, "kind": "RAW", "payload": "\n"}
+{"t": 148136.365674195, "kind": "LOG", "payload": "81376\tI (81376) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148136.37063784, "kind": "RAW", "payload": "\n"}
+{"t": 148136.371429797, "kind": "OK", "payload": "presentation_fps_x10=9"}
+{"t": 148137.378361873, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148137.386290448, "kind": "RAW", "payload": "\n"}
+{"t": 148137.387174738, "kind": "RAW", "payload": "\n"}
+{"t": 148137.388868655, "kind": "RAW", "payload": "\n"}
+{"t": 148137.389814826, "kind": "RAW", "payload": "\n"}
+{"t": 148137.391232302, "kind": "RAW", "payload": "\n"}
+{"t": 148137.392501081, "kind": "RAW", "payload": "\n"}
+{"t": 148137.393709026, "kind": "RAW", "payload": "\n"}
+{"t": 148137.394461451, "kind": "RAW", "payload": "\n"}
+{"t": 148137.394683274, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148137.394811577, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148137.394920463, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148137.395089345, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148137.395281834, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148137.395389602, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148137.395489618, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148137.395593406, "kind": "OK", "payload": ""}
+{"t": 148137.395736446, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148137.396253149, "kind": "RAW", "payload": "\n"}
+{"t": 148137.396475182, "kind": "LOG", "payload": "82408\tI (82408) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148137.401647729, "kind": "RAW", "payload": "\n"}
+{"t": 148137.402434377, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148138.412407328, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148138.420289108, "kind": "RAW", "payload": "\n"}
+{"t": 148138.421328869, "kind": "RAW", "payload": "\n"}
+{"t": 148138.422613014, "kind": "RAW", "payload": "\n"}
+{"t": 148138.423928308, "kind": "RAW", "payload": "\n"}
+{"t": 148138.425721962, "kind": "RAW", "payload": "\n"}
+{"t": 148138.426900572, "kind": "RAW", "payload": "\n"}
+{"t": 148138.428383841, "kind": "RAW", "payload": "\n"}
+{"t": 148138.429213233, "kind": "RAW", "payload": "\n"}
+{"t": 148138.429492398, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148138.429660791, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148138.429797824, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148138.429922775, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148138.430230645, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148138.43037578, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148138.43050555, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148138.430630989, "kind": "OK", "payload": ""}
+{"t": 148138.430801826, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148138.431477842, "kind": "RAW", "payload": "\n"}
+{"t": 148138.431754074, "kind": "LOG", "payload": "83442\tI (83442) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148138.43684651, "kind": "RAW", "payload": "\n"}
+{"t": 148138.437712082, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148139.443843379, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148139.45249288, "kind": "RAW", "payload": "\n"}
+{"t": 148139.455896568, "kind": "RAW", "payload": "\n"}
+{"t": 148139.456687407, "kind": "RAW", "payload": "\n"}
+{"t": 148139.461375449, "kind": "RAW", "payload": "\n"}
+{"t": 148139.46225429, "kind": "RAW", "payload": "\n"}
+{"t": 148139.462539602, "kind": "RAW", "payload": "\n"}
+{"t": 148139.462748015, "kind": "RAW", "payload": "\n"}
+{"t": 148139.462931145, "kind": "RAW", "payload": "\n"}
+{"t": 148139.468565218, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148139.468846757, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148139.468985397, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148139.469189201, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148139.469388953, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148139.469503776, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148139.469616504, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148139.469723714, "kind": "OK", "payload": ""}
+{"t": 148139.469916482, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148139.470569031, "kind": "RAW", "payload": "\n"}
+{"t": 148139.470849942, "kind": "LOG", "payload": "84475\tI (84475) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148139.476148626, "kind": "RAW", "payload": "\n"}
+{"t": 148139.476751586, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148140.08097047, "kind": "RAW", "payload": "\n"}
+{"t": 148140.081592288, "kind": "LOG", "payload": "85086\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara audio submitted=67200 rendered=66560 queued=0 flags=1 writes=210 blocked=0 nonzero=67071\u001b[0m"}
+{"t": 148140.48450719, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148140.492606812, "kind": "RAW", "payload": "\n"}
+{"t": 148140.493561364, "kind": "RAW", "payload": "\n"}
+{"t": 148140.49529132, "kind": "RAW", "payload": "\n"}
+{"t": 148140.496313551, "kind": "RAW", "payload": "\n"}
+{"t": 148140.498425132, "kind": "RAW", "payload": "\n"}
+{"t": 148140.502581873, "kind": "RAW", "payload": "\n"}
+{"t": 148140.503377462, "kind": "RAW", "payload": "\n"}
+{"t": 148140.503655649, "kind": "RAW", "payload": "\n"}
+{"t": 148140.505876046, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148140.506408254, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148140.50661576, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148140.506739732, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148140.506979226, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148140.507182121, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148140.507301275, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148140.507416586, "kind": "OK", "payload": ""}
+{"t": 148140.507601602, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148140.508108387, "kind": "RAW", "payload": "\n"}
+{"t": 148140.508367856, "kind": "LOG", "payload": "85515\tI (85514) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148140.514115774, "kind": "RAW", "payload": "\n"}
+{"t": 148140.514855557, "kind": "OK", "payload": "presentation_fps_x10=19"}
+{"t": 148140.639673457, "kind": "RAW", "payload": "\n"}
+{"t": 148140.640276347, "kind": "LOG", "payload": "85642\t\u001b[32m[PXA app=pxa-openlara-probe component=65537 level=INFO] OpenLara frames=9 elapsed_us=5047790 render_us=4919329 convert_us=25519 updates=68 skipped=0 pos=78336,-1024,12800 yaw=0\u001b[0m"}
+{"t": 148141.51590711, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 148141.523442046, "kind": "RAW", "payload": "\n"}
+{"t": 148141.524649781, "kind": "RAW", "payload": "\n"}
+{"t": 148141.525834189, "kind": "RAW", "payload": "\n"}
+{"t": 148141.527406438, "kind": "RAW", "payload": "\n"}
+{"t": 148141.528776559, "kind": "RAW", "payload": "\n"}
+{"t": 148141.530105892, "kind": "RAW", "payload": "\n"}
+{"t": 148141.531332276, "kind": "RAW", "payload": "\n"}
+{"t": 148141.532188418, "kind": "RAW", "payload": "\n"}
+{"t": 148141.532416458, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.12\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148141.532689965, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148141.532879172, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148141.532991131, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara-probe\tOpenLara interpreter probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 148141.533305427, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148141.533417247, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148141.533525504, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 148141.533633832, "kind": "OK", "payload": ""}
+{"t": 148141.533804669, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 148141.534597743, "kind": "RAW", "payload": "\n"}
+{"t": 148141.534848621, "kind": "LOG", "payload": "86545\tI (86545) Pxadb: Package list finished: stack_free=6928B"}
+{"t": 148141.539896008, "kind": "RAW", "payload": "\n"}
+{"t": 148141.540443162, "kind": "OK", "payload": "presentation_fps_x10=9"}
+{"t": 148141.540650668, "kind": "COMMAND", "payload": "SCREENSHOT JPEG"}
+{"t": 148141.606243993, "kind": "RAW", "payload": "\n"}
+{"t": 148141.608568598, "kind": "RAW", "payload": "\n"}
+{"t": 148141.619541235, "kind": "RAW", "payload": "\n"}
+{"t": 148141.629766825, "kind": "RAW", "payload": "\n"}
+{"t": 148141.640583152, "kind": "RAW", "payload": "\n"}
+{"t": 148141.651146855, "kind": "RAW", "payload": "\n"}
+{"t": 148141.661116468, "kind": "RAW", "payload": "\n"}
+{"t": 148141.67178787, "kind": "RAW", "payload": "\n"}
+{"t": 148141.682352062, "kind": "RAW", "payload": "\n"}
+{"t": 148141.69307417, "kind": "RAW", "payload": "\n"}
+{"t": 148141.703354588, "kind": "RAW", "payload": "\n"}
+{"t": 148141.713733415, "kind": "RAW", "payload": "\n"}
+{"t": 148141.723475478, "kind": "RAW", "payload": "\n"}
+{"t": 148141.725785694, "kind": "RAW", "payload": "\n"}
+{"t": 148141.726237442, "kind": "META", "payload": "format=jpeg;width=320;height=240;orientation=logical;frame_id=90;device_us=84894730;source=st7789-native-sw270-completed;bytes=11582;sha256=b304a8b491f8bcb67a2aa7db34545eee49aac04aa624a131e6e44ac92b4f8955"}
+{"t": 148141.726419804, "kind": "OK", "payload": ""}
+{"t": 148141.736147409, "kind": "RAW", "payload": "\n"}

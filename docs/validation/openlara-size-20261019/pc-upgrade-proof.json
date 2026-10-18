@@ -1,0 +1,13 @@
+{
+  "lara_entity_index": 91,
+  "bidirectional_restore": true,
+  "inventory_identical": true,
+  "saved_position": [
+    78336,
+    -1024,
+    14871
+  ],
+  "saved_rotation": 15843,
+  "roundtrip_rotation": 15843,
+  "yaw_tolerance_per_load_units": 1
+}

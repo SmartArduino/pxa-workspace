@@ -1,0 +1,15 @@
+{
+  "memory": [
+    "scope=heap;sram_total=656579;sram_free=160683;sram_min=119739;sram_largest=122880;psram_total=16741200;psram_free=1695016;psram_min=931248;psram_largest=1441792",
+    "scope=budget;internal=28500;external=24919;peak_internal=28500;peak_external=24919;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+    "scope=kind;name=raster;internal=0;external=0",
+    "scope=kind;name=image;internal=0;external=0",
+    "scope=kind;name=audio;internal=0;external=16400",
+    "scope=kind;name=temporary;internal=0;external=0",
+    "scope=kind;name=metadata;internal=28500;external=8519",
+    "scope=kind;name=frame;internal=0;external=0",
+    "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+  ],
+  "wasm_maximum_bytes": 11534336,
+  "pinned": true
+}

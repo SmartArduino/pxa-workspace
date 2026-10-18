@@ -56,3 +56,7 @@
 0.3.4 / sequence 19 的 S31 AOT 为 **2,697,568 B**，签名包 **1,851,582 B**；包 SHA-256 `86a15c0cb5e66af0c00ebf73d7f26971e7bc5100ba3c6b4bb41a58221495a86f`。[签名及安装规则检查通过](openlara-full-20261019/package-check.txt)，此检查在本机沙盒中完成，不代表真机安装成功。WASM、模拟器、S31 和源码散列见 [产物记录](openlara-full-20261019/artifacts.json)。
 
 候选包、源码、构建来源和 SHA256SUMS 位于工作区 `local/releases/openlara/0.3.4/`。源码和测试已提交，未推送。原版资源和真机空间确认仍是目标模式的未完成事项。
+
+存档验证更正与后续代码体积实验见 [补充审计](2026-10-19-openlara-size-save-audit.zh-CN.md)：早期实体字节断言取了机关记录；现已按真实 Lara 索引重新验证，原 SDL 玩家日志检查仍有效。
+
+补充审计另有 0.3.5 修正及独立 WASM 解释器包的 S31 硬件诊断，City 中位数 1.9 FPS；该数字不是常规 AOT 帧率，不能与旧 fixed alpha 的结果直接作优化收益比较。
