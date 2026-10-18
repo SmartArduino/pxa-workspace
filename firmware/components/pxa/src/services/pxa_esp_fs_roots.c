@@ -1,4 +1,5 @@
 #include "pxa_esp_fs_roots.h"
+#include "pxa_esp_storage_path_policy.h"
 #include "pxa/pxa_esp_storage.h"
 #include "pxa_esp_ui_shell.h"
 #include "pxa/pxa_esp_surface.h"
@@ -14,6 +15,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -127,6 +129,10 @@ bool pxa_esp_storage_debug_path(const char *relative,char *temporary,size_t capa
         if(strncmp(p,base,prefix) || p[prefix]!='/') continue;
         p+=prefix+1; size_t n=strlen(p);
         if(strncmp(relative,p,n) || relative[n]!='/' || !relative[n+1]) continue;
+        /* System resources on FAT are native-maintained. Compare ASCII
+         * without case: FAT names are not case-sensitive. Reject dot aliases
+         * and short names for all debug writes on removable storage. */
+        if(!pxa_esp_storage_debug_child_writable(relative+n+1)) return false;
         if(pxa_volume_get(g_volumes,g_mounts[i].mount_epoch,&v)!=PXA_STATUS_OK ||
             v.ambiguous || v.state!=PXA_VOLUME_READY) return false;
         if(temporary) {

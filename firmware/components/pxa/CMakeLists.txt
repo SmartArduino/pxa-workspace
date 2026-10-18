@@ -11,6 +11,7 @@ set(PXA_SRCS
     "src/services/pxa_esp_audio.c"
     "src/services/pxa_esp_assets.c"
     "src/services/pxa_esp_resource_memory.c"
+    "src/services/pxa_esp_system_font.c"
     "src/services/pxa_esp_net.c"
     "src/services/pxa_esp_services.c"
     "src/services/pxa_esp_fs_roots.c"

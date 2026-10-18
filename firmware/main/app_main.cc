@@ -8,12 +8,11 @@
 #include "pxa_board.h"
 #include "pxa_board_api.h"
 #include "pxa_integration.h"
+#include <pxa/pxa_esp_system_font.h>
 #include "sdkconfig.h"
 
 namespace {
 constexpr char kTag[] = "pxa_platform";
-constexpr char kPxaFontPath[] =
-    CONFIG_PXA_MOUNT_POINT "/system/fonts/noto_sans_cjk_common.ttf";
 }
 
 extern "C" void app_main(void) {
@@ -36,7 +35,7 @@ extern "C" void app_main(void) {
     pxa_product_profile_t profile;
     pxa_product_profile_init(&profile);
     profile.locale = "zh-CN";
-    profile.font_path = kPxaFontPath;
+    profile.font_path = pxa_esp_system_font_path();
     profile.display_scheme = PXSYS_COLOR_SCHEME_DARK;
     profile.mount_storage = true;
 

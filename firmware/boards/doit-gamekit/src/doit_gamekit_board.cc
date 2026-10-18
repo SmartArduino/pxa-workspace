@@ -33,6 +33,7 @@
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
 #include <pxa/pxa_esp_storage.h>
+#include <pxa/pxa_esp_system_font.h>
 #include <diskio_sdmmc.h>
 #include <pxa_board_api.h>
 #include <pxa_board_common/ledc_backlight.h>
@@ -545,6 +546,8 @@ bool Gamekit::InitializeSd() {
         const auto media = pxa_esp_storage_select_app_media(mount);
         if (media != PXA_STATUS_OK)
             ESP_LOGW(kTag, "Fixed app media volume: %ld", long(media));
+        if (pxa_esp_system_font_prepare(mount, true))
+            ESP_LOGI(kTag, "Verified system font: %s", pxa_esp_system_font_path());
     }
     return true;
 }

@@ -74,6 +74,7 @@
 #include "pxa_host_ui_event_text.h"
 #include "pxa_host_pointer_mailbox.h"
 #include "pxa_esp_store_policy.h"
+#include "pxa/pxa_esp_system_font.h"
 
 #define PXA_ESP_HOST_TAG "PxaHost"
 #define PXA_ESP_HOST_MAX_APP_ID PXA_HOST_COMMAND_MAX_IDENTITY_BYTES
@@ -97,8 +98,6 @@
 #define PXA_SYSTEM_CONFIGURATION_LOCALE UINT16_C(1)
 #define PXA_SYSTEM_CONFIGURATION_TEXT_DIRECTION UINT16_C(0x8002)
 #define PXA_SYSTEM_LOCALE_MAX_BYTES 63u
-#define PXA_ESP_HOST_CJK_FONT_PATH \
-    CONFIG_PXA_MOUNT_POINT "/system/fonts/noto_sans_cjk_common.ttf"
 #ifndef CONFIG_PXA_GUEST_STACK_SIZE
 #define CONFIG_PXA_GUEST_STACK_SIZE (128 * 1024)
 #endif
@@ -434,7 +433,7 @@ static lv_font_t *load_ui_font(uint16_t size,
     if (pixels < 1u) pixels = 1u;
     if (pixels > 256u) pixels = 256u;
     lv_font_t *font = lv_freetype_font_create(
-        PXA_ESP_HOST_CJK_FONT_PATH, LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
+        pxa_esp_system_font_path(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
         pixels, LV_FREETYPE_FONT_STYLE_NORMAL);
     if (font != NULL) {
         font->fallback = symbol_fallback;
@@ -4960,7 +4959,7 @@ bool pxa_esp_host_initialize(void) {
     ui_config.acquire_image = acquire_ui_image;
     ui_config.release_asset = pxa_esp_ui_asset_release;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
-    ui_config.sized_text_font_path = PXA_ESP_HOST_CJK_FONT_PATH;
+    ui_config.sized_text_font_path = pxa_esp_system_font_path();
 #endif
     ui_config.event_callback = on_ui_event;
     ui_config.text_input_focus = pxa_esp_ime_editor_focus;

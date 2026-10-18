@@ -2,6 +2,7 @@
 #include "pxa_esp_package_store.h"
 #include "pxa_esp_system_overlay.h"
 #include "pxa/pxa_esp_surface.h"
+#include "pxa/pxa_esp_system_font.h"
 #include "pxa/wasi.h"
 #include "pxa/wire.h"
 #include "pxa/service.h"
@@ -76,7 +77,7 @@ void pxa_esp_ime_initialize(uint64_t (*next_instance)(void),
     int (*post)(const pxa_esp_host_command_t *), void (*wake)(void)) {
     ime.next_instance=next_instance; ime.post=post; ime.wake=wake;
     ime.ui = (pxa_lvgl_ime_config_t){.struct_size=sizeof(ime.ui),.input=enqueue,.focus=focus_changed,
-        .sized_text_font_path=CONFIG_PXA_MOUNT_POINT "/system/fonts/noto_sans_cjk_common.ttf"};
+        .sized_text_font_path=pxa_esp_system_font_path()};
     nvs_handle_t handle; char selected[PXA_ESP_PACKAGE_ID_BYTES]; size_t size=sizeof(selected);
     if (nvs_open("pxa_ime",NVS_READONLY,&handle)==ESP_OK) {
         if (nvs_get_str(handle,"selected",selected,&size)==ESP_OK && *selected)
