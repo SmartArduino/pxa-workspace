@@ -87,7 +87,40 @@ static void test_pause_preserves_subscription_and_discards_stale_ticks(void) {
     assert(component == 42);
 }
 
+static void test_microsecond_deadlines_and_atomic_reject(void) {
+    pxa_host_clock_slots_t slots;
+    pxa_host_clock_tick_t tick;
+    uint32_t component;
+    pxa_host_clock_slots_init(&slots);
+    assert(pxa_host_clock_slots_next_due(&slots) == 0);
+    assert(pxa_host_clock_slots_set_us(&slots, 0, 42, 8000, 100));
+    assert(pxa_host_clock_slots_next_due(&slots) == 8100);
+    /* Legacy validation and u64 overflow cannot cancel the running timer. */
+    assert(!pxa_host_clock_slots_set(&slots, 0, 42, 8, 200));
+    assert(!pxa_host_clock_slots_set_us(&slots, 0, 42, 8000, UINT64_MAX - 7));
+    assert(pxa_host_clock_slots_next_due(&slots) == 8100);
+    assert(pxa_host_clock_slots_take_due(&slots, 8099, &tick, 1) == 0);
+    assert(pxa_host_clock_slots_take_due(&slots, 8100, &tick, 1) == 1);
+    assert(pxa_host_clock_slots_next_due(&slots) == 0); /* no wake-ups while pending */
+    assert(pxa_host_clock_slots_take_due(&slots, 100000000, &tick, 1) == 0);
+    assert(pxa_host_clock_slots_consume(&slots, tick.slot, tick.generation, &component));
+    assert(component == 42);
+    assert(pxa_host_clock_slots_take_due(&slots, 100000000, &tick, 1) == 1);
+    assert(pxa_host_clock_slots_set_us(&slots, 0, 42, 33000, 100000000));
+    assert(!pxa_host_clock_slots_consume(&slots, tick.slot, tick.generation, &component));
+    assert(pxa_host_clock_slots_next_due(&slots) == 100033000);
+    pxa_host_clock_slots_pause_component(&slots, 42, 1, 100000001);
+    assert(pxa_host_clock_slots_next_due(&slots) == 0);
+    pxa_host_clock_slots_pause_component(&slots, 42, 0, 200000000);
+    assert(pxa_host_clock_slots_next_due(&slots) == 200033000);
+    assert(pxa_host_clock_slots_set_us(&slots, 0, 42, 60000000, 200000000));
+    assert(pxa_host_clock_slots_next_due(&slots) == 260000000);
+    assert(pxa_host_clock_slots_set_us(&slots, 0, 42, 0, 200000001));
+    assert(pxa_host_clock_slots_next_due(&slots) == 0);
+}
+
 int main(void) {
+    test_microsecond_deadlines_and_atomic_reject();
     test_due_ticks_are_coalesced();
     test_reconfiguration_invalidates_queued_tick();
     test_failed_post_can_be_retried();

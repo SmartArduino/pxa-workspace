@@ -219,6 +219,7 @@ typedef struct {
     QueueHandle_t queue;
     TaskHandle_t runtime_task;
     esp_timer_handle_t clock_timer;
+    esp_timer_handle_t maintenance_timer;
     esp_timer_handle_t watchdog_timer;
     pthread_t thread;
 
@@ -631,6 +632,9 @@ static void post_system_event(pxa_host_system_event_t *event) {
 }
 static portMUX_TYPE g_pointer_mailbox_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE g_clock_slots_lock = portMUX_INITIALIZER_UNLOCKED;
+/* Serialize stop/start against both the runtime thread and esp_timer task. */
+static pthread_mutex_t g_clock_timer_lock = PTHREAD_MUTEX_INITIALIZER;
+static void rearm_clock_timer(void);
 static portMUX_TYPE g_public_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE g_process_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE g_net_completion_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -1895,6 +1899,7 @@ static void clear_component_timer_slots(pxa_component_t component) {
     portENTER_CRITICAL(&g_clock_slots_lock);
     pxa_host_clock_slots_clear_component(&g_host.clock_slots, component);
     portEXIT_CRITICAL(&g_clock_slots_lock);
+    rearm_clock_timer();
 }
 
 static int allocate_job_slots(uint16_t count) {
@@ -2523,20 +2528,46 @@ static void trace_guest_perf_marker(pxa_component_t component,
 }
 #endif
 
-static pxa_status_t host_set_timer(pxa_component_t component,
-                                  uint16_t period_ms) {
-    uint8_t slot;
-    int configured;
-    if (period_ms != 0 && (period_ms < 16 || period_ms > 1000)) {
-        return PXA_STATUS_INVALID_ARGUMENT;
-    }
-    slot = (uint8_t)(component % PXA_HOST_CLOCK_SLOT_COUNT);
+static void rearm_clock_timer(void) {
+    uint64_t due, now;
+    if (g_host.clock_timer == NULL) return;
+    pthread_mutex_lock(&g_clock_timer_lock);
     portENTER_CRITICAL(&g_clock_slots_lock);
-    configured = pxa_host_clock_slots_set(&g_host.clock_slots, slot,
-                                           component, period_ms,
-                                           host_now_us(NULL));
+    due = pxa_host_clock_slots_next_due(&g_host.clock_slots);
     portEXIT_CRITICAL(&g_clock_slots_lock);
-    return configured ? PXA_STATUS_OK : PXA_STATUS_INVALID_ARGUMENT;
+    (void)esp_timer_stop(g_host.clock_timer);
+    if (due != 0) {
+        now = host_now_us(NULL);
+        /* esp_timer is microsecond based. Never recurse/spin on an overdue tick. */
+        (void)esp_timer_start_once(g_host.clock_timer, due > now ? due - now : 1u);
+    }
+    pthread_mutex_unlock(&g_clock_timer_lock);
+}
+
+static pxa_status_t host_configure_timer(void *context, pxa_component_t component,
+                                        uint32_t period_us) {
+    int configured;
+    (void)context;
+    portENTER_CRITICAL(&g_clock_slots_lock);
+    configured = pxa_host_clock_slots_set_us(&g_host.clock_slots,
+        (uint8_t)(component % PXA_HOST_CLOCK_SLOT_COUNT), component, period_us,
+        host_now_us(NULL));
+    portEXIT_CRITICAL(&g_clock_slots_lock);
+    if (!configured) return PXA_STATUS_INVALID_ARGUMENT;
+    rearm_clock_timer();
+    return PXA_STATUS_OK;
+}
+
+static const pxa_clock_timing_backend_t host_clock_timing = {
+    {1000u, 60000000u, 1u, 1u,
+     PXA_CLOCK_TIMING_COALESCED | PXA_CLOCK_TIMING_FOREGROUND},
+    NULL, host_configure_timer
+};
+
+static pxa_status_t host_set_timer(pxa_component_t component, uint16_t period_ms) {
+    if (period_ms != 0 && (period_ms < 16 || period_ms > 1000))
+        return PXA_STATUS_INVALID_ARGUMENT;
+    return host_configure_timer(NULL, component, (uint32_t)period_ms * 1000u);
 }
 
 static pxa_status_t host_clock_control(void *context, pxa_runtime_t *runtime,
@@ -2549,6 +2580,8 @@ static pxa_status_t host_clock_control(void *context, pxa_runtime_t *runtime,
     uint16_t period_ms;
     uint64_t now_us;
     (void)context;
+    if (message->opcode == PXA_CLOCK_LIMITS || message->opcode == PXA_CLOCK_CONFIGURE)
+        return pxa_clock_timing_control(runtime, component, message, &host_clock_timing);
     if (message->opcode == PXA_CLOCK_WALL_TIME)
         return pxa_posix_clock_control(runtime, component, message, host_now_us(NULL));
     if (message->opcode == PXA_CLOCK_NOW) {
@@ -2761,6 +2794,7 @@ static pxa_status_t reset_runtime(uint16_t max_components) {
     operations.service_id = PXA_CLOCK_SERVICE_ID;
     operations.major = PXA_CLOCK_SERVICE_MAJOR;
     operations.minor = PXA_CLOCK_SERVICE_MINOR;
+    operations.features = PXA_CLOCK_FEATURE_TIMING;
     operations.control = host_clock_control;
     status = pxa_service_register(g_host.activation.runtime, &operations);
     if (status != PXA_STATUS_OK) goto failed;
@@ -2947,6 +2981,7 @@ static void stop_active(pxa_stop_reason_t reason) {
     portENTER_CRITICAL(&g_clock_slots_lock);
     pxa_host_clock_slots_cancel_all(&g_host.clock_slots);
     portEXIT_CRITICAL(&g_clock_slots_lock);
+    rearm_clock_timer();
     host_log_runtime_usage();
     host_log_wamr_usage();
     host_log_activation_memory_usage();
@@ -3241,6 +3276,8 @@ static int start_verified(const char *identity) {
                     PXA_WASI_FEATURE_CLOCKS | PXA_WASI_FEATURE_RANDOM;
             }
 #endif
+            if (service_capabilities[index].service == PXA_CLOCK_SERVICE_ID)
+                service_capabilities[index].features = PXA_CLOCK_FEATURE_TIMING;
             if (service_capabilities[index].service == PXA_ASSETS_SERVICE_ID)
                 service_capabilities[index].features = PXA_ASSETS_FEATURE_IMAGE_DECODE | PXA_ASSETS_FEATURE_IMAGE_FRAMES;
             if (service_capabilities[index].service == PXA_FS_SERVICE_ID)
@@ -3346,6 +3383,7 @@ static int start_verified(const char *identity) {
                                           g_host.activation.active_component,
                                           1, host_now_us(NULL));
     portEXIT_CRITICAL(&g_clock_slots_lock);
+    rearm_clock_timer();
     g_host.lifecycle_effective = 0;
     /* Startup is suspended until System foregrounds this instance. There is
      * no background transition to report before its first foreground. */
@@ -3376,13 +3414,9 @@ failed:
 
 #undef PXA_ESP_START_FAIL
 
-/* --- timer callback (5 ms: maintenance + clock slots) -------------------- */
+/* --- independent system maintenance and deadline-driven Clock ---------- */
 
-static void on_clock_timer(void *arg) {
-    pxa_host_clock_tick_t ticks[PXA_HOST_CLOCK_SLOT_COUNT];
-    pxa_esp_host_command_t command;
-    size_t count;
-    size_t index;
+static void on_maintenance_timer(void *arg) {
     uint64_t now_us;
     (void)arg;
     now_us = host_now_us(NULL);
@@ -3401,6 +3435,14 @@ static void on_clock_timer(void *arg) {
         (void)post_maintenance(PXA_ESP_HOST_CMD_LEASE_MAINTENANCE);
         mark_scheduler_maintenance_due();
     }
+}
+
+static void on_clock_timer(void *arg) {
+    pxa_host_clock_tick_t ticks[PXA_HOST_CLOCK_SLOT_COUNT];
+    pxa_esp_host_command_t command;
+    size_t count, index;
+    uint64_t now_us = host_now_us(NULL);
+    (void)arg;
     portENTER_CRITICAL(&g_clock_slots_lock);
     count = pxa_host_clock_slots_take_due(
         &g_host.clock_slots, now_us, ticks, PXA_HOST_CLOCK_SLOT_COUNT);
@@ -3418,6 +3460,7 @@ static void on_clock_timer(void *arg) {
             portEXIT_CRITICAL(&g_clock_slots_lock);
         }
     }
+    rearm_clock_timer();
 }
 
 /* --- watchdog: ask before terminating overdue guest calls ---------------- */
@@ -3704,6 +3747,7 @@ static void post_tick(uint8_t slot, uint32_t generation,
         return;
     }
     portEXIT_CRITICAL(&g_clock_slots_lock);
+    rearm_clock_timer();
     component = (pxa_component_t)component_value;
     pxa_write_u64(payload, timestamp_us);
     (void)pxa_event_post_message(g_host.activation.runtime, component,
@@ -4205,6 +4249,7 @@ static void sync_ui_lifecycle(void) {
         pxa_host_clock_slots_pause_component(&g_host.clock_slots, component,
                                               !effective, host_now_us(NULL));
         portEXIT_CRITICAL(&g_clock_slots_lock);
+        rearm_clock_timer();
         pxa_esp_audio_set_suspended(!effective);
         if (!effective) pxa_esp_ime_suspend();
         g_host.lifecycle_effective = effective;
@@ -4606,7 +4651,7 @@ static int start_runtime_services(void) {
     g_host.runtime_starting = 1;
     portEXIT_CRITICAL(&g_process_state_lock);
 
-    if (esp_timer_start_periodic(g_host.clock_timer,
+    if (esp_timer_start_periodic(g_host.maintenance_timer,
                                  PXA_ESP_HOST_CLOCK_PERIOD_US) != ESP_OK) {
         ESP_LOGE(PXA_ESP_HOST_TAG, "Clock timer start failed");
         portENTER_CRITICAL(&g_process_state_lock);
@@ -4617,7 +4662,7 @@ static int start_runtime_services(void) {
     if (esp_timer_start_periodic(g_host.watchdog_timer,
                                  PXA_ESP_HOST_WATCHDOG_PERIOD_US) != ESP_OK) {
         ESP_LOGE(PXA_ESP_HOST_TAG, "Watchdog timer start failed");
-        (void)esp_timer_stop(g_host.clock_timer);
+        (void)esp_timer_stop(g_host.maintenance_timer);
         portENTER_CRITICAL(&g_process_state_lock);
         g_host.runtime_starting = 0;
         portEXIT_CRITICAL(&g_process_state_lock);
@@ -4625,7 +4670,7 @@ static int start_runtime_services(void) {
     }
     if (!start_runtime_thread()) {
         (void)esp_timer_stop(g_host.watchdog_timer);
-        (void)esp_timer_stop(g_host.clock_timer);
+        (void)esp_timer_stop(g_host.maintenance_timer);
         portENTER_CRITICAL(&g_process_state_lock);
         g_host.runtime_starting = 0;
         portEXIT_CRITICAL(&g_process_state_lock);
@@ -4805,6 +4850,10 @@ static void rollback_host_initialization(void) {
         (void)esp_timer_delete(g_host.watchdog_timer);
         g_host.watchdog_timer = NULL;
     }
+    if (g_host.maintenance_timer != NULL) {
+        (void)esp_timer_delete(g_host.maintenance_timer);
+        g_host.maintenance_timer = NULL;
+    }
     if (g_host.clock_timer != NULL) {
         (void)esp_timer_delete(g_host.clock_timer);
         g_host.clock_timer = NULL;
@@ -4968,6 +5017,13 @@ bool pxa_esp_host_initialize(void) {
              (unsigned)sizeof(g_host.pointer_mailbox));
     /* Timers are created now and started with the deferred runtime thread. */
     memset(&timer_args, 0, sizeof(timer_args));
+    timer_args.callback = on_maintenance_timer;
+    timer_args.arg = NULL;
+    timer_args.name = "pxa-maintenance";
+    if (esp_timer_create(&timer_args, &g_host.maintenance_timer) != ESP_OK) {
+        failed_stage = "create-maintenance-timer";
+        goto failed;
+    }
     timer_args.callback = on_clock_timer;
     timer_args.name = "pxa_clock";
     timer_args.skip_unhandled_events = true;

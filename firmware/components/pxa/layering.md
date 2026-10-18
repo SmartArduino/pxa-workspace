@@ -120,7 +120,13 @@ timer bridge. It advances deadlines without drift, allows at most one queued
 Tick per Component slot, and uses a generation value so queued work from a
 stopped or reconfigured Component cannot target its successor. The ESP Host
 holds its clock lock only while changing this metadata; FreeRTOS queue calls
-and Core event delivery remain outside the lock.
+and Core event delivery remain outside the lock. Clock 0.3 stores microsecond
+periods, and the nearest runnable deadline drives a separate one-shot
+`esp_timer`. A pthread mutex serializes rearming by the runtime and timer task;
+paused/pending slots do not wake it. The existing 5ms pointer/system maintenance
+timer remains independent. Service registration and package activation both
+advertise the timing feature; Guest configuration reserves its completion
+before mutating the subscription.
 
 `src/runtime/pxa_host_command.h` gives every owner-thread command a type-specific union
 payload instead of carrying fields for every command kind. The command is

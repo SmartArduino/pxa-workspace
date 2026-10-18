@@ -14,7 +14,7 @@ typedef struct {
     uint64_t next_due_us;
     uint32_t component;
     uint32_t generation;
-    uint16_t period_ms;
+    uint32_t period_us;
     uint8_t pending;
 } pxa_host_clock_slot_t;
 
@@ -34,6 +34,12 @@ void pxa_host_clock_slots_init(pxa_host_clock_slots_t *slots);
 int pxa_host_clock_slots_set(pxa_host_clock_slots_t *slots, uint8_t slot,
                              uint32_t component, uint16_t period_ms,
                              uint64_t now_us);
+
+/* Microsecond profile. The Host validates advertised device limits first. */
+int pxa_host_clock_slots_set_us(pxa_host_clock_slots_t *slots, uint8_t slot,
+    uint32_t component, uint32_t period_us, uint64_t now_us);
+/* Zero means no runnable timer. Pending and paused slots need no wake-up. */
+uint64_t pxa_host_clock_slots_next_due(const pxa_host_clock_slots_t *slots);
 
 void pxa_host_clock_slots_clear_component(pxa_host_clock_slots_t *slots,
                                           uint32_t component);

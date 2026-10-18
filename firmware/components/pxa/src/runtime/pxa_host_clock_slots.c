@@ -4,7 +4,7 @@
 #include <string.h>
 
 static void invalidate(pxa_host_clock_slot_t *slot) {
-    slot->period_ms = 0;
+    slot->period_us = 0;
     slot->pending = 0;
     slot->next_due_us = 0;
     slot->component = 0;
@@ -19,21 +19,37 @@ void pxa_host_clock_slots_init(pxa_host_clock_slots_t *slots) {
 int pxa_host_clock_slots_set(pxa_host_clock_slots_t *slots, uint8_t slot,
                              uint32_t component, uint16_t period_ms,
                              uint64_t now_us) {
+    if (period_ms != 0 && (period_ms < 16 || period_ms > 1000)) return 0;
+    return pxa_host_clock_slots_set_us(slots, slot, component,
+                                       (uint32_t)period_ms * 1000u, now_us);
+}
+
+int pxa_host_clock_slots_set_us(pxa_host_clock_slots_t *slots, uint8_t slot,
+    uint32_t component, uint32_t period_us, uint64_t now_us) {
     pxa_host_clock_slot_t *entry;
-    uint64_t period_us;
     if (slots == NULL || slot >= PXA_HOST_CLOCK_SLOT_COUNT ||
-        (period_ms != 0 && (period_ms < 16 || period_ms > 1000))) {
-        return 0;
-    }
+        now_us > UINT64_MAX - period_us) return 0;
     entry = &slots->slots[slot];
     invalidate(entry);
-    if (period_ms == 0) return 1;
-    period_us = (uint64_t)period_ms * UINT64_C(1000);
-    if (now_us > UINT64_MAX - period_us) return 0;
+    if (period_us == 0) return 1;
     entry->component = component;
-    entry->period_ms = period_ms;
+    entry->period_us = period_us;
     entry->next_due_us = now_us + period_us;
     return 1;
+}
+
+uint64_t pxa_host_clock_slots_next_due(const pxa_host_clock_slots_t *slots) {
+    uint64_t due = 0;
+    uint8_t index;
+    if (slots == NULL) return 0;
+    for (index = 0; index < PXA_HOST_CLOCK_SLOT_COUNT; ++index) {
+        const pxa_host_clock_slot_t *entry = &slots->slots[index];
+        if (!entry->period_us || entry->pending ||
+            (slots->component_paused && entry->component == slots->paused_component))
+            continue;
+        if (!due || entry->next_due_us < due) due = entry->next_due_us;
+    }
+    return due;
 }
 
 void pxa_host_clock_slots_clear_component(pxa_host_clock_slots_t *slots,
@@ -42,7 +58,7 @@ void pxa_host_clock_slots_clear_component(pxa_host_clock_slots_t *slots,
     if (slots == NULL) return;
     for (index = 0; index < PXA_HOST_CLOCK_SLOT_COUNT; ++index) {
         pxa_host_clock_slot_t *entry = &slots->slots[index];
-        if (entry->period_ms != 0 && entry->component == component) {
+        if (entry->period_us != 0 && entry->component == component) {
             invalidate(entry);
         }
     }
@@ -70,10 +86,10 @@ void pxa_host_clock_slots_pause_component(pxa_host_clock_slots_t *slots,
     slots->component_paused = paused != 0;
     for (index = 0; index < PXA_HOST_CLOCK_SLOT_COUNT; ++index) {
         pxa_host_clock_slot_t *entry = &slots->slots[index];
-        if (entry->period_ms == 0 || entry->component != component) continue;
+        if (entry->period_us == 0 || entry->component != component) continue;
         entry->generation++;
         entry->pending = 0;
-        entry->next_due_us = now_us + (uint64_t)entry->period_ms * UINT64_C(1000);
+        entry->next_due_us = (now_us > UINT64_MAX - entry->period_us ? UINT64_MAX : now_us + entry->period_us);
     }
 }
 
@@ -90,13 +106,13 @@ size_t pxa_host_clock_slots_take_due(pxa_host_clock_slots_t *slots,
         uint64_t elapsed_us;
         uint64_t period_us;
         uint64_t periods;
-        if (entry->period_ms == 0 || entry->pending ||
+        if (entry->period_us == 0 || entry->pending ||
             (slots->component_paused &&
              entry->component == slots->paused_component) ||
             now_us < entry->next_due_us) {
             continue;
         }
-        period_us = (uint64_t)entry->period_ms * UINT64_C(1000);
+        period_us = entry->period_us;
         elapsed_us = now_us - entry->next_due_us;
         periods = elapsed_us / period_us + 1u;
         if (periods > (UINT64_MAX - entry->next_due_us) / period_us) {
@@ -125,7 +141,7 @@ int pxa_host_clock_slots_consume(pxa_host_clock_slots_t *slots, uint8_t slot,
         (slots->component_paused &&
          entry->component == slots->paused_component)) return 0;
     entry->pending = 0;
-    if (entry->period_ms == 0) return 0;
+    if (entry->period_us == 0) return 0;
     *component = entry->component;
     return 1;
 }
