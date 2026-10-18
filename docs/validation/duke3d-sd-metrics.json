@@ -136,5 +136,38 @@
     "source": "duke-light-active.log",
     "valid_scene_sample": true,
     "startup_stability_pass": false
+  },
+  "candidate_0_1_7": {
+    "status": "built; protocol and sanitizer tests pass; not installed or measured on device",
+    "package": "local/storage-paged-final/pxa-duke3d-sd.pxa",
+    "bytes": 2176693,
+    "sha256": "cdcb1d55efbd3cf33334fd8b16e87fb68a81644f41e7ea50df23a7aa1f96dca4",
+    "aot_bytes": 2981060,
+    "device_fps": null,
+    "device_startup_passed": null,
+    "device_blocker": "shared /dev/ttyACM0 occupied by separate OpenLara uploads, installs and measurements",
+    "linear_max_bytes": 4194304,
+    "protocol_linear_bytes": 4063232,
+    "protocol_nvm_pages": 17,
+    "protocol_nvm_page_bytes": 8208,
+    "protocol_nvm_total_page_bytes": 139536,
+    "protocol_migration_source_bytes": 2064,
+    "source_retained": true,
+    "power_loss_qualified": false,
+    "host_tests": {
+      "asan_ubsan_configurations": 3,
+      "slow_io_callback_boundaries": 63,
+      "real_engine_roof_first_entry": true,
+      "real_engine_roof_reopen": true
+    },
+    "prior_device_trace": {
+      "app_version": "0.1.6",
+      "duration_seconds": 165,
+      "info_polled": false,
+      "level_reached": false,
+      "new_timeout_observed": false,
+      "max_observed_seek_us": 2622272
+    },
+    "game_source_commit": "d79a2a6a08d756a8bb2245f083fbfddbf0e812c9"
   }
 }
