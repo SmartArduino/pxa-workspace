@@ -1,0 +1,648 @@
+{"t": 132504.279595349, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 132504.293148291, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132504.293276169, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132504.29331989, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132504.29335467, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132504.293387775, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132504.293420181, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132504.293452587, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.1.5\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132504.293545545, "kind": "OK", "payload": ""}
+{"t": 132504.293738375, "kind": "RAW", "payload": "I (6505815) Pxadb: Package list finished: stack_free=6892B\r\n"}
+{"t": 132504.299099489, "kind": "RAW", "payload": "\n"}
+{"t": 132504.29930056, "kind": "LOG", "payload": "6449716\tI (6449716) PxaHost: pointer delivered id=0 phase=2 x=70 y=170"}
+{"t": 132504.299994707, "kind": "RAW", "payload": "\n"}
+{"t": 132504.300498469, "kind": "LOG", "payload": "6454478\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=193 elapsed_us=5003618 render_us=2290454 convert_us=1057441 updates=150 skipped=5 pos=75264,3072,3584 yaw=0\u001b[0m"}
+{"t": 132504.301138838, "kind": "RAW", "payload": "\n"}
+{"t": 132504.301266228, "kind": "LOG", "payload": "6454689\tI (6454689) PxaHost: pointer queued id=0 phase=0 x=70 y=170"}
+{"t": 132504.301794154, "kind": "RAW", "payload": "\n"}
+{"t": 132504.301921124, "kind": "LOG", "payload": "6454718\tI (6454718) PxaHost: pointer queued id=0 phase=2 x=70 y=170"}
+{"t": 132504.302480339, "kind": "RAW", "payload": "\n"}
+{"t": 132504.302611849, "kind": "LOG", "payload": "6454719\tI (6454719) PxaHost: pointer delivered id=0 phase=0 x=70 y=170"}
+{"t": 132504.303133839, "kind": "RAW", "payload": "\n"}
+{"t": 132504.303252288, "kind": "LOG", "payload": "6454825\tI (6454825) PxaHost: pointer delivered id=0 phase=2 x=70 y=170"}
+{"t": 132504.303971159, "kind": "RAW", "payload": "\n"}
+{"t": 132504.304699318, "kind": "LOG", "payload": "6459483\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=193 elapsed_us=5006279 render_us=2288025 convert_us=1054907 updates=150 skipped=4 pos=75264,3072,3584 yaw=0\u001b[0m"}
+{"t": 132504.305326139, "kind": "RAW", "payload": "\n"}
+{"t": 132504.305450106, "kind": "LOG", "payload": "6459789\tI (6459789) PxaHost: pointer queued id=0 phase=0 x=120 y=170"}
+{"t": 132504.306024197, "kind": "RAW", "payload": "\n"}
+{"t": 132504.306166951, "kind": "LOG", "payload": "6459832\tI (6459832) PxaHost: pointer delivered id=0 phase=0 x=120 y=170"}
+{"t": 132504.306636141, "kind": "RAW", "payload": "\n"}
+{"t": 132504.306745512, "kind": "LOG", "payload": "6461015\tI (6461015) PxaHost: pointer queued id=0 phase=2 x=120 y=170"}
+{"t": 132504.30737799, "kind": "RAW", "payload": "\n"}
+{"t": 132504.307514528, "kind": "LOG", "payload": "6461089\tI (6461089) PxaHost: pointer delivered id=0 phase=2 x=120 y=170"}
+{"t": 132504.307961299, "kind": "RAW", "payload": "\n"}
+{"t": 132504.308102308, "kind": "LOG", "payload": "6461576\tI (6461576) PxaHost: pointer queued id=0 phase=0 x=70 y=115"}
+{"t": 132504.308687154, "kind": "RAW", "payload": "\n"}
+{"t": 132504.30883361, "kind": "LOG", "payload": "6461577\tI (6461577) PxaHost: pointer delivered id=0 phase=0 x=70 y=115"}
+{"t": 132504.309335416, "kind": "RAW", "payload": "\n"}
+{"t": 132504.309456869, "kind": "LOG", "payload": "6462798\tI (6462798) PxaHost: pointer queued id=0 phase=2 x=70 y=115"}
+{"t": 132504.310045137, "kind": "RAW", "payload": "\n"}
+{"t": 132504.310173923, "kind": "LOG", "payload": "6462849\tI (6462849) PxaHost: pointer delivered id=0 phase=2 x=70 y=115"}
+{"t": 132504.310623348, "kind": "RAW", "payload": "\n"}
+{"t": 132504.310730554, "kind": "LOG", "payload": "6463359\tI (6463358) Pxadb: Package list finished: stack_free=6892B"}
+{"t": 132504.310848305, "kind": "RAW", "payload": "\n"}
+{"t": 132504.310933092, "kind": "COMMAND", "payload": "INPUT KEY HOME"}
+{"t": 132504.317031235, "kind": "RAW", "payload": "\n"}
+{"t": 132504.317233214, "kind": "OK", "payload": "event=223;device_us=6504524762;status=processed"}
+{"t": 132504.621925183, "kind": "COMMAND", "payload": "INPUT POINTER DOWN 160 185 0"}
+{"t": 132504.628311768, "kind": "RAW", "payload": "\n"}
+{"t": 132504.628544547, "kind": "OK", "payload": "event=224;device_us=6504835805;status=processed"}
+{"t": 132504.628596578, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132504.633979412, "kind": "RAW", "payload": "\n"}
+{"t": 132504.634219246, "kind": "OK", "payload": "event=225;device_us=6504841653;status=processed"}
+{"t": 132504.756080486, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 163 0"}
+{"t": 132504.762391783, "kind": "RAW", "payload": "\n"}
+{"t": 132504.762627286, "kind": "OK", "payload": "event=226;device_us=6504969836;status=processed"}
+{"t": 132504.762679876, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132504.768898005, "kind": "RAW", "payload": "\n"}
+{"t": 132504.769140073, "kind": "OK", "payload": "event=227;device_us=6504976632;status=processed"}
+{"t": 132504.890930705, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 139 0"}
+{"t": 132504.897172231, "kind": "RAW", "payload": "\n"}
+{"t": 132504.897355773, "kind": "OK", "payload": "event=228;device_us=6505104769;status=processed"}
+{"t": 132504.897398585, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132504.902940935, "kind": "RAW", "payload": "\n"}
+{"t": 132504.903139004, "kind": "OK", "payload": "event=229;device_us=6505110663;status=processed"}
+{"t": 132505.024811186, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 115 0"}
+{"t": 132505.031193022, "kind": "RAW", "payload": "\n"}
+{"t": 132505.031337033, "kind": "OK", "payload": "event=230;device_us=6505238784;status=processed"}
+{"t": 132505.031369439, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132505.03683273, "kind": "RAW", "payload": "\n"}
+{"t": 132505.036990989, "kind": "OK", "payload": "event=231;device_us=6505244654;status=processed"}
+{"t": 132505.15852754, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 91 0"}
+{"t": 132505.164224029, "kind": "RAW", "payload": "\n"}
+{"t": 132505.16440785, "kind": "OK", "payload": "event=232;device_us=6505371781;status=processed"}
+{"t": 132505.164449754, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132505.169914442, "kind": "RAW", "payload": "\n"}
+{"t": 132505.170061736, "kind": "OK", "payload": "event=233;device_us=6505377672;status=processed"}
+{"t": 132505.291596192, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 67 0"}
+{"t": 132505.296998233, "kind": "RAW", "payload": "\n"}
+{"t": 132505.297199863, "kind": "OK", "payload": "event=234;device_us=6505504690;status=processed"}
+{"t": 132505.297239951, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132505.302803324, "kind": "RAW", "payload": "\n"}
+{"t": 132505.302954948, "kind": "OK", "payload": "event=235;device_us=6505510609;status=processed"}
+{"t": 132505.424570978, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 53 0"}
+{"t": 132505.431130209, "kind": "RAW", "payload": "\n"}
+{"t": 132505.431377655, "kind": "OK", "payload": "event=236;device_us=6505638698;status=processed"}
+{"t": 132505.431427172, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132505.436845555, "kind": "RAW", "payload": "\n"}
+{"t": 132505.437107527, "kind": "OK", "payload": "event=237;device_us=6505644617;status=processed"}
+{"t": 132505.559092595, "kind": "COMMAND", "payload": "INPUT POINTER UP 160 53 0"}
+{"t": 132505.565274966, "kind": "RAW", "payload": "\n"}
+{"t": 132505.565589948, "kind": "OK", "payload": "event=238;device_us=6505772773;status=processed"}
+{"t": 132505.565665515, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132505.571058616, "kind": "RAW", "payload": "\n"}
+{"t": 132505.57135523, "kind": "OK", "payload": "event=239;device_us=6505778649;status=processed"}
+{"t": 132505.978344095, "kind": "COMMAND", "payload": "SCREENSHOT JPEG"}
+{"t": 132506.029627022, "kind": "RAW", "payload": "\n"}
+{"t": 132506.032036247, "kind": "RAW", "payload": "\n"}
+{"t": 132506.042198352, "kind": "RAW", "payload": "\n"}
+{"t": 132506.052542602, "kind": "RAW", "payload": "\n"}
+{"t": 132506.062623272, "kind": "RAW", "payload": "\n"}
+{"t": 132506.072800114, "kind": "RAW", "payload": "\n"}
+{"t": 132506.082896428, "kind": "RAW", "payload": "\n"}
+{"t": 132506.093377566, "kind": "RAW", "payload": "\n"}
+{"t": 132506.10354882, "kind": "RAW", "payload": "\n"}
+{"t": 132506.113755832, "kind": "RAW", "payload": "\n"}
+{"t": 132506.123940286, "kind": "RAW", "payload": "\n"}
+{"t": 132506.133396232, "kind": "RAW", "payload": "\n"}
+{"t": 132506.134803243, "kind": "RAW", "payload": "\n"}
+{"t": 132506.134877553, "kind": "META", "payload": "format=jpeg;width=320;height=240;orientation=logical;frame_id=7981;device_us=6464342983;source=st7789-native-sw270-completed;bytes=10441;sha256=02587ba2bba39c1de08baa215f588d6dc06408b6ba0d6d6573944b1be6cc50e5"}
+{"t": 132506.134921483, "kind": "OK", "payload": ""}
+{"t": 132506.13560683, "kind": "COMMAND", "payload": "MEMORY START"}
+{"t": 132506.1407506, "kind": "RAW", "payload": "\n"}
+{"t": 132506.140912071, "kind": "OK", "payload": "minimum_scope=local"}
+{"t": 132506.140952998, "kind": "COMMAND", "payload": "PACKAGE run pxa-openlara"}
+{"t": 132506.147343424, "kind": "RAW", "payload": "\n"}
+{"t": 132506.147527036, "kind": "OK", "payload": "launch_queued"}
+{"t": 132506.168033111, "kind": "RAW", "payload": "\n"}
+{"t": 132506.168160919, "kind": "LOG", "payload": "6507678\tI (6507677) PxaHost: Queueing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara"}
+{"t": 132506.178411862, "kind": "RAW", "payload": "\n"}
+{"t": 132506.17853094, "kind": "LOG", "payload": "6507688\tI (6507688) PxaHost: Processing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara"}
+{"t": 132506.320703888, "kind": "RAW", "payload": "\n"}
+{"t": 132506.321595824, "kind": "LOG", "payload": "6507836\tI (6507836) PxaHost: Audio: active=0 queued=0/12 peak_queued=4 submitted=13399 rendered=13396 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=19 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=8592 stack=4096"}
+{"t": 132506.352033041, "kind": "COMMAND", "payload": "PING"}
+{"t": 132506.352252969, "kind": "RAW", "payload": "\n"}
+{"t": 132506.352307585, "kind": "LOG", "payload": "6507866\tI (6507865) PxaHost: Heap[launch-begin]: SRAM used=501396 free=155183 total=656579 min_free=142367 largest=81920 exec_free=15400932 exec_largest=11272192; PSRAM used=1340268 free=15400932 total=16741200 min_free=15070788 largest=11272192"}
+{"t": 132506.358044302, "kind": "RAW", "payload": "\n"}
+{"t": 132506.358241323, "kind": "OK", "payload": "pong"}
+{"t": 132506.562090336, "kind": "COMMAND", "payload": "PING"}
+{"t": 132506.568495428, "kind": "RAW", "payload": "\n"}
+{"t": 132506.568683649, "kind": "OK", "payload": "pong"}
+{"t": 132506.751228936, "kind": "RAW", "payload": "\n"}
+{"t": 132506.751311977, "kind": "LOG", "payload": "6508269\tI (6508269) PxaWamr: AOT streamed: file=551692 source_buffer=0"}
+{"t": 132506.771549444, "kind": "COMMAND", "payload": "PING"}
+{"t": 132506.776526225, "kind": "RAW", "payload": "\n"}
+{"t": 132506.776734909, "kind": "OK", "payload": "pong"}
+{"t": 132506.837629665, "kind": "RAW", "payload": "\n"}
+{"t": 132506.837756985, "kind": "LOG", "payload": "6508347\tI (6508347) PxaSurface: Created: 320x240 format=1 buffers=2 flags=0x06 mapped=1"}
+{"t": 132506.837833251, "kind": "RAW", "payload": "\n"}
+{"t": 132506.837910914, "kind": "LOG", "payload": "6508350\tI (6508348) PxaHost: Component memory: id=main status=0 sram_delta=31536 free_sram=131407 largest_sram=81920 psram_delta=5420936 free_psram=9913164 largest_psram=6946816 wamr_delta=82408 wamr_current=82824"}
+{"t": 132506.888805177, "kind": "RAW", "payload": "\n"}
+{"t": 132506.888927189, "kind": "LOG", "payload": "6508400\tI (6508400) PxaSurface: Guest buffers registered: frame_bytes=153600 count=2 total=307200"}
+{"t": 132506.970516591, "kind": "RAW", "payload": "\n"}
+{"t": 132506.97064419, "kind": "LOG", "payload": "6508478\tI (6508478) PxaBridge: Application foregrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara"}
+{"t": 132506.970695243, "kind": "RAW", "payload": "\n"}
+{"t": 132506.970742875, "kind": "LOG", "payload": "6508478\tI (6508478) PxaBridge: Launch completion: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara intent=0 status=0"}
+{"t": 132506.980908821, "kind": "COMMAND", "payload": "PING"}
+{"t": 132506.981184482, "kind": "RAW", "payload": "\n"}
+{"t": 132506.981256558, "kind": "LOG", "payload": "6508487\tI (6508477) PxaHost: Heap[launch-ready]: SRAM used=508772 free=147807 total=656579 min_free=128811 largest=81920 exec_free=10457024 exec_largest=6946816; PSRAM used=6284176 free=10457024 total=16741200 min_free=9912516 largest=6946816"}
+{"t": 132506.981298951, "kind": "RAW", "payload": "\n"}
+{"t": 132506.981340436, "kind": "LOG", "payload": "6508490\tI (6508490) PxaHost: WAMR dynamic: peak=311977 current=82824 linear=3604480 linear_peak=3604480 artifact=0 events=64"}
+{"t": 132506.981375776, "kind": "RAW", "payload": "\n"}
+{"t": 132506.981414258, "kind": "LOG", "payload": "6508491\tI (6508491) PxaHost: Started verified Package 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara"}
+{"t": 132506.986650916, "kind": "RAW", "payload": "\n"}
+{"t": 132506.986784311, "kind": "OK", "payload": "pong"}
+{"t": 132506.997051038, "kind": "RAW", "payload": "\n"}
+{"t": 132506.997140713, "kind": "LOG", "payload": "6508506\tI (6508505) PxaHost: UI lifecycle: component=65537 foreground=1 requested=1 display_interactive=1"}
+{"t": 132507.192189096, "kind": "COMMAND", "payload": "PING"}
+{"t": 132507.197799751, "kind": "RAW", "payload": "\n"}
+{"t": 132507.197970302, "kind": "OK", "payload": "pong"}
+{"t": 132507.40106699, "kind": "COMMAND", "payload": "PING"}
+{"t": 132507.406668915, "kind": "RAW", "payload": "\n"}
+{"t": 132507.406843586, "kind": "OK", "payload": "pong"}
+{"t": 132507.609741787, "kind": "COMMAND", "payload": "PING"}
+{"t": 132507.615735239, "kind": "RAW", "payload": "\n"}
+{"t": 132507.615902856, "kind": "OK", "payload": "pong"}
+{"t": 132507.818428527, "kind": "COMMAND", "payload": "PING"}
+{"t": 132507.82367992, "kind": "RAW", "payload": "\n"}
+{"t": 132507.82385969, "kind": "OK", "payload": "pong"}
+{"t": 132508.026709282, "kind": "COMMAND", "payload": "PING"}
+{"t": 132508.031959209, "kind": "RAW", "payload": "\n"}
+{"t": 132508.032169989, "kind": "OK", "payload": "pong"}
+{"t": 132508.234878851, "kind": "COMMAND", "payload": "PING"}
+{"t": 132508.240753154, "kind": "RAW", "payload": "\n"}
+{"t": 132508.240982162, "kind": "OK", "payload": "pong"}
+{"t": 132508.444108252, "kind": "COMMAND", "payload": "PING"}
+{"t": 132508.449737764, "kind": "RAW", "payload": "\n"}
+{"t": 132508.449944073, "kind": "OK", "payload": "pong"}
+{"t": 132508.652927269, "kind": "COMMAND", "payload": "PING"}
+{"t": 132508.658987908, "kind": "RAW", "payload": "\n"}
+{"t": 132508.659198338, "kind": "OK", "payload": "pong"}
+{"t": 132508.861716395, "kind": "COMMAND", "payload": "PING"}
+{"t": 132508.86667334, "kind": "RAW", "payload": "\n"}
+{"t": 132508.866842285, "kind": "OK", "payload": "pong"}
+{"t": 132509.069683844, "kind": "COMMAND", "payload": "PING"}
+{"t": 132509.074817696, "kind": "RAW", "payload": "\n"}
+{"t": 132509.074986152, "kind": "OK", "payload": "pong"}
+{"t": 132509.27767029, "kind": "COMMAND", "payload": "PING"}
+{"t": 132509.283772064, "kind": "RAW", "payload": "\n"}
+{"t": 132509.283946037, "kind": "OK", "payload": "pong"}
+{"t": 132509.48663206, "kind": "COMMAND", "payload": "PING"}
+{"t": 132509.491599133, "kind": "RAW", "payload": "\n"}
+{"t": 132509.491724078, "kind": "OK", "payload": "pong"}
+{"t": 132509.694630448, "kind": "COMMAND", "payload": "PING"}
+{"t": 132509.699829531, "kind": "RAW", "payload": "\n"}
+{"t": 132509.700094717, "kind": "OK", "payload": "pong"}
+{"t": 132509.902668086, "kind": "COMMAND", "payload": "PING"}
+{"t": 132509.907657997, "kind": "RAW", "payload": "\n"}
+{"t": 132509.907803335, "kind": "OK", "payload": "pong"}
+{"t": 132510.110600195, "kind": "COMMAND", "payload": "PING"}
+{"t": 132510.115775114, "kind": "RAW", "payload": "\n"}
+{"t": 132510.11597409, "kind": "OK", "payload": "pong"}
+{"t": 132510.318786455, "kind": "COMMAND", "payload": "PING"}
+{"t": 132510.324650491, "kind": "RAW", "payload": "\n"}
+{"t": 132510.324788078, "kind": "OK", "payload": "pong"}
+{"t": 132510.527485973, "kind": "COMMAND", "payload": "PING"}
+{"t": 132510.532660193, "kind": "RAW", "payload": "\n"}
+{"t": 132510.532815588, "kind": "OK", "payload": "pong"}
+{"t": 132510.735432747, "kind": "COMMAND", "payload": "PING"}
+{"t": 132510.740771023, "kind": "RAW", "payload": "\n"}
+{"t": 132510.740890311, "kind": "OK", "payload": "pong"}
+{"t": 132510.943404386, "kind": "COMMAND", "payload": "PING"}
+{"t": 132510.948635595, "kind": "RAW", "payload": "\n"}
+{"t": 132510.94876948, "kind": "OK", "payload": "pong"}
+{"t": 132511.151167549, "kind": "COMMAND", "payload": "PING"}
+{"t": 132511.156565399, "kind": "RAW", "payload": "\n"}
+{"t": 132511.156672674, "kind": "OK", "payload": "pong"}
+{"t": 132511.156699353, "kind": "COMMAND", "payload": "INPUT TAP 70 170"}
+{"t": 132511.167039901, "kind": "RAW", "payload": "\n"}
+{"t": 132511.167198719, "kind": "LOG", "payload": "6512686\tI (6512686) PxaHost: pointer queued id=0 phase=0 x=70 y=170"}
+{"t": 132511.167629497, "kind": "RAW", "payload": "\n"}
+{"t": 132511.167720499, "kind": "LOG", "payload": "6512687\tI (6512687) PxaHost: pointer delivered id=0 phase=0 x=70 y=170"}
+{"t": 132511.196887173, "kind": "RAW", "payload": "\n"}
+{"t": 132511.197036771, "kind": "OK", "payload": "event=240;device_us=6511404572;status=processed"}
+{"t": 132511.207250628, "kind": "RAW", "payload": "\n"}
+{"t": 132511.207337929, "kind": "LOG", "payload": "6512719\tI (6512719) PxaHost: pointer queued id=0 phase=2 x=70 y=170"}
+{"t": 132511.207368519, "kind": "RAW", "payload": "\n"}
+{"t": 132511.207398062, "kind": "LOG", "payload": "6512724\tI (6512724) PxaHost: pointer delivered id=0 phase=2 x=70 y=170"}
+{"t": 132511.399790958, "kind": "COMMAND", "payload": "PING"}
+{"t": 132511.405751724, "kind": "RAW", "payload": "\n"}
+{"t": 132511.405886726, "kind": "OK", "payload": "pong"}
+{"t": 132511.608657674, "kind": "COMMAND", "payload": "PING"}
+{"t": 132511.613703945, "kind": "RAW", "payload": "\n"}
+{"t": 132511.613883227, "kind": "OK", "payload": "pong"}
+{"t": 132511.816697057, "kind": "COMMAND", "payload": "PING"}
+{"t": 132511.82167698, "kind": "RAW", "payload": "\n"}
+{"t": 132511.821831188, "kind": "OK", "payload": "pong"}
+{"t": 132512.024643132, "kind": "COMMAND", "payload": "PING"}
+{"t": 132512.030646501, "kind": "RAW", "payload": "\n"}
+{"t": 132512.030922791, "kind": "OK", "payload": "pong"}
+{"t": 132512.233654977, "kind": "COMMAND", "payload": "PING"}
+{"t": 132512.239864516, "kind": "RAW", "payload": "\n"}
+{"t": 132512.240060698, "kind": "OK", "payload": "pong"}
+{"t": 132512.442692174, "kind": "COMMAND", "payload": "PING"}
+{"t": 132512.447835384, "kind": "RAW", "payload": "\n"}
+{"t": 132512.448031427, "kind": "OK", "payload": "pong"}
+{"t": 132512.650682597, "kind": "COMMAND", "payload": "PING"}
+{"t": 132512.655683333, "kind": "RAW", "payload": "\n"}
+{"t": 132512.655831325, "kind": "OK", "payload": "pong"}
+{"t": 132512.858339881, "kind": "COMMAND", "payload": "PING"}
+{"t": 132512.86366796, "kind": "RAW", "payload": "\n"}
+{"t": 132512.863808409, "kind": "OK", "payload": "pong"}
+{"t": 132513.066358869, "kind": "COMMAND", "payload": "PING"}
+{"t": 132513.071765659, "kind": "RAW", "payload": "\n"}
+{"t": 132513.071921613, "kind": "OK", "payload": "pong"}
+{"t": 132513.274401115, "kind": "COMMAND", "payload": "PING"}
+{"t": 132513.279865872, "kind": "RAW", "payload": "\n"}
+{"t": 132513.280068759, "kind": "OK", "payload": "pong"}
+{"t": 132513.48273243, "kind": "COMMAND", "payload": "PING"}
+{"t": 132513.487681833, "kind": "RAW", "payload": "\n"}
+{"t": 132513.487797768, "kind": "OK", "payload": "pong"}
+{"t": 132513.690148832, "kind": "COMMAND", "payload": "PING"}
+{"t": 132513.695634961, "kind": "RAW", "payload": "\n"}
+{"t": 132513.695755576, "kind": "OK", "payload": "pong"}
+{"t": 132513.898068786, "kind": "COMMAND", "payload": "PING"}
+{"t": 132513.903693199, "kind": "RAW", "payload": "\n"}
+{"t": 132513.903816957, "kind": "OK", "payload": "pong"}
+{"t": 132514.106363575, "kind": "COMMAND", "payload": "PING"}
+{"t": 132514.111811011, "kind": "RAW", "payload": "\n"}
+{"t": 132514.111979258, "kind": "OK", "payload": "pong"}
+{"t": 132514.31474762, "kind": "COMMAND", "payload": "PING"}
+{"t": 132514.319846691, "kind": "RAW", "payload": "\n"}
+{"t": 132514.320050975, "kind": "OK", "payload": "pong"}
+{"t": 132514.522718696, "kind": "COMMAND", "payload": "PING"}
+{"t": 132514.527880484, "kind": "RAW", "payload": "\n"}
+{"t": 132514.528104673, "kind": "OK", "payload": "pong"}
+{"t": 132514.730605614, "kind": "COMMAND", "payload": "PING"}
+{"t": 132514.735814196, "kind": "RAW", "payload": "\n"}
+{"t": 132514.735973293, "kind": "OK", "payload": "pong"}
+{"t": 132514.938400203, "kind": "COMMAND", "payload": "PING"}
+{"t": 132514.943856928, "kind": "RAW", "payload": "\n"}
+{"t": 132514.944083701, "kind": "OK", "payload": "pong"}
+{"t": 132515.146703023, "kind": "COMMAND", "payload": "PING"}
+{"t": 132515.151818436, "kind": "RAW", "payload": "\n"}
+{"t": 132515.151978302, "kind": "OK", "payload": "pong"}
+{"t": 132515.354480011, "kind": "COMMAND", "payload": "PING"}
+{"t": 132515.35982108, "kind": "RAW", "payload": "\n"}
+{"t": 132515.359943302, "kind": "OK", "payload": "pong"}
+{"t": 132515.562482305, "kind": "COMMAND", "payload": "PING"}
+{"t": 132515.567862346, "kind": "RAW", "payload": "\n"}
+{"t": 132515.568051824, "kind": "OK", "payload": "pong"}
+{"t": 132515.770662484, "kind": "COMMAND", "payload": "PING"}
+{"t": 132515.775720209, "kind": "RAW", "payload": "\n"}
+{"t": 132515.775885103, "kind": "OK", "payload": "pong"}
+{"t": 132515.978351473, "kind": "COMMAND", "payload": "PING"}
+{"t": 132515.983789202, "kind": "RAW", "payload": "\n"}
+{"t": 132515.983906045, "kind": "OK", "payload": "pong"}
+{"t": 132516.186374719, "kind": "COMMAND", "payload": "PING"}
+{"t": 132516.191698957, "kind": "RAW", "payload": "\n"}
+{"t": 132516.191863362, "kind": "OK", "payload": "pong"}
+{"t": 132516.252796808, "kind": "RAW", "payload": "\n"}
+{"t": 132516.252926084, "kind": "LOG", "payload": "6517764\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara ready level=2 bytes=2356992 linear_bytes=3604480\u001b[0m"}
+{"t": 132516.283517438, "kind": "RAW", "payload": "\n"}
+{"t": 132516.283638262, "kind": "LOG", "payload": "6517795\tI (6517795) PxaSurface: First frame submitted: id=1 buffer=0"}
+{"t": 132516.395114741, "kind": "COMMAND", "payload": "PING"}
+{"t": 132516.400967812, "kind": "RAW", "payload": "\n"}
+{"t": 132516.401169163, "kind": "OK", "payload": "pong"}
+{"t": 132516.401212185, "kind": "COMMAND", "payload": "INPUT TAP 70 170"}
+{"t": 132516.412190727, "kind": "RAW", "payload": "\n"}
+{"t": 132516.412433634, "kind": "LOG", "payload": "6517930\tI (6517930) PxaHost: pointer queued id=0 phase=0 x=70 y=170"}
+{"t": 132516.412769009, "kind": "RAW", "payload": "\n"}
+{"t": 132516.41290003, "kind": "LOG", "payload": "6517931\tI (6517931) PxaHost: pointer delivered id=0 phase=0 x=70 y=170"}
+{"t": 132516.442150093, "kind": "RAW", "payload": "\n"}
+{"t": 132516.442320923, "kind": "OK", "payload": "event=241;device_us=6516649608;status=processed"}
+{"t": 132516.452622709, "kind": "RAW", "payload": "\n"}
+{"t": 132516.452776219, "kind": "LOG", "payload": "6517969\tI (6517969) PxaHost: pointer queued id=0 phase=2 x=70 y=170"}
+{"t": 132516.523773993, "kind": "RAW", "payload": "\n"}
+{"t": 132516.523861503, "kind": "LOG", "payload": "6518040\tI (6518040) PxaHost: pointer delivered id=0 phase=2 x=70 y=170"}
+{"t": 132519.450049685, "kind": "COMMAND", "payload": "MEMORY STOP"}
+{"t": 132519.45804575, "kind": "RAW", "payload": "\n"}
+{"t": 132519.459358895, "kind": "RAW", "payload": "\n"}
+{"t": 132519.460504003, "kind": "RAW", "payload": "\n"}
+{"t": 132519.460958247, "kind": "RAW", "payload": "\n"}
+{"t": 132519.461434142, "kind": "RAW", "payload": "\n"}
+{"t": 132519.461900888, "kind": "RAW", "payload": "\n"}
+{"t": 132519.462444528, "kind": "RAW", "payload": "\n"}
+{"t": 132519.462879426, "kind": "RAW", "payload": "\n"}
+{"t": 132519.463551852, "kind": "RAW", "payload": "\n"}
+{"t": 132519.463861875, "kind": "RAW", "payload": "\n"}
+{"t": 132519.463945475, "kind": "DATA", "payload": "scope=heap;sram_total=656579;sram_free=131407;sram_min=128811;sram_largest=81920;psram_total=16741200;psram_free=10691588;psram_min=9912516;psram_largest=6946816"}
+{"t": 132519.463978859, "kind": "DATA", "payload": "scope=budget;internal=28500;external=24913;peak_internal=28500;peak_external=24913;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"}
+{"t": 132519.464024604, "kind": "DATA", "payload": "scope=kind;name=raster;internal=0;external=0"}
+{"t": 132519.464051353, "kind": "DATA", "payload": "scope=kind;name=image;internal=0;external=0"}
+{"t": 132519.464076217, "kind": "DATA", "payload": "scope=kind;name=audio;internal=0;external=16400"}
+{"t": 132519.46410108, "kind": "DATA", "payload": "scope=kind;name=temporary;internal=0;external=0"}
+{"t": 132519.464126223, "kind": "DATA", "payload": "scope=kind;name=metadata;internal=28500;external=8513"}
+{"t": 132519.46415388, "kind": "DATA", "payload": "scope=kind;name=frame;internal=0;external=0"}
+{"t": 132519.46418014, "kind": "DATA", "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"}
+{"t": 132519.464205841, "kind": "OK", "payload": "minimum_scope=boot"}
+{"t": 132519.464246418, "kind": "COMMAND", "payload": "SCREENSHOT JPEG"}
+{"t": 132519.543125647, "kind": "RAW", "payload": "\n"}
+{"t": 132519.545988907, "kind": "RAW", "payload": "\n"}
+{"t": 132519.556497282, "kind": "RAW", "payload": "\n"}
+{"t": 132519.566730973, "kind": "RAW", "payload": "\n"}
+{"t": 132519.577283696, "kind": "RAW", "payload": "\n"}
+{"t": 132519.58777943, "kind": "RAW", "payload": "\n"}
+{"t": 132519.597975197, "kind": "RAW", "payload": "\n"}
+{"t": 132519.609340727, "kind": "RAW", "payload": "\n"}
+{"t": 132519.619811947, "kind": "RAW", "payload": "\n"}
+{"t": 132519.630337293, "kind": "RAW", "payload": "\n"}
+{"t": 132519.640852512, "kind": "RAW", "payload": "\n"}
+{"t": 132519.65106106, "kind": "RAW", "payload": "\n"}
+{"t": 132519.661566152, "kind": "RAW", "payload": "\n"}
+{"t": 132519.671756263, "kind": "RAW", "payload": "\n"}
+{"t": 132519.682342789, "kind": "RAW", "payload": "\n"}
+{"t": 132519.692881265, "kind": "RAW", "payload": "\n"}
+{"t": 132519.70266183, "kind": "RAW", "payload": "\n"}
+{"t": 132519.70677007, "kind": "RAW", "payload": "\n"}
+{"t": 132519.706856952, "kind": "META", "payload": "format=jpeg;width=320;height=240;orientation=logical;frame_id=8115;device_us=6519698473;source=st7789-native-sw270-completed;bytes=15850;sha256=04953069cb55dc0468c9c2ba87fc51c2738ff5f0af073fc4e7be02546e8f8adb"}
+{"t": 132519.706881536, "kind": "OK", "payload": ""}
+{"t": 132519.707342695, "kind": "COMMAND", "payload": "MEMORY START"}
+{"t": 132519.713088421, "kind": "RAW", "payload": "\n"}
+{"t": 132519.713191017, "kind": "OK", "payload": "minimum_scope=local"}
+{"t": 132520.717025955, "kind": "COMMAND", "payload": "INPUT TAP 70 170"}
+{"t": 132520.728504488, "kind": "RAW", "payload": "\n"}
+{"t": 132520.728675248, "kind": "LOG", "payload": "6522248\tI (6522248) PxaHost: pointer queued id=0 phase=0 x=70 y=170"}
+{"t": 132520.754552981, "kind": "RAW", "payload": "\n"}
+{"t": 132520.75474637, "kind": "LOG", "payload": "6522273\tI (6522273) PxaHost: pointer delivered id=0 phase=0 x=70 y=170"}
+{"t": 132520.758090763, "kind": "RAW", "payload": "\n"}
+{"t": 132520.758292114, "kind": "OK", "payload": "event=242;device_us=6520965621;status=processed"}
+{"t": 132520.768581538, "kind": "RAW", "payload": "\n"}
+{"t": 132520.768701105, "kind": "LOG", "payload": "6522283\tI (6522283) PxaHost: pointer queued id=0 phase=2 x=70 y=170"}
+{"t": 132520.870265508, "kind": "RAW", "payload": "\n"}
+{"t": 132520.870458687, "kind": "LOG", "payload": "6522380\tI (6522380) PxaHost: pointer delivered id=0 phase=2 x=70 y=170"}
+{"t": 132521.255777909, "kind": "RAW", "payload": "\n"}
+{"t": 132521.255874708, "kind": "LOG", "payload": "6522772\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=191 elapsed_us=5001285 render_us=2270331 convert_us=1052212 updates=149 skipped=8 pos=75264,3072,3584 yaw=0\u001b[0m"}
+{"t": 132521.762513128, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 132521.770055298, "kind": "RAW", "payload": "\n"}
+{"t": 132521.770175982, "kind": "OK", "payload": "presentation_fps_x10=379"}
+{"t": 132522.773316068, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 132522.779325723, "kind": "RAW", "payload": "\n"}
+{"t": 132522.779504166, "kind": "OK", "payload": "presentation_fps_x10=388"}
+{"t": 132523.781954501, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 132523.78860236, "kind": "RAW", "payload": "\n"}
+{"t": 132523.788769907, "kind": "OK", "payload": "presentation_fps_x10=387"}
+{"t": 132524.791457488, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 132524.797248611, "kind": "RAW", "payload": "\n"}
+{"t": 132524.797374603, "kind": "OK", "payload": "presentation_fps_x10=389"}
+{"t": 132525.799367893, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 132525.805186952, "kind": "RAW", "payload": "\n"}
+{"t": 132525.805304494, "kind": "OK", "payload": "presentation_fps_x10=378"}
+{"t": 132525.805336412, "kind": "COMMAND", "payload": "INPUT TAP 70 170"}
+{"t": 132525.821406063, "kind": "RAW", "payload": "\n"}
+{"t": 132525.821574798, "kind": "LOG", "payload": "6527337\tI (6527337) PxaHost: pointer queued id=0 phase=0 x=70 y=170"}
+{"t": 132525.846135544, "kind": "RAW", "payload": "\n"}
+{"t": 132525.846283886, "kind": "OK", "payload": "event=243;device_us=6526053581;status=processed"}
+{"t": 132525.856527075, "kind": "RAW", "payload": "\n"}
+{"t": 132525.856640497, "kind": "LOG", "payload": "6527366\tI (6527366) PxaHost: pointer delivered id=0 phase=0 x=70 y=170"}
+{"t": 132525.856684985, "kind": "RAW", "payload": "\n"}
+{"t": 132525.85672675, "kind": "LOG", "payload": "6527372\tI (6527372) PxaHost: pointer queued id=0 phase=2 x=70 y=170"}
+{"t": 132525.958059698, "kind": "RAW", "payload": "\n"}
+{"t": 132525.958220472, "kind": "LOG", "payload": "6527474\tI (6527474) PxaHost: pointer delivered id=0 phase=2 x=70 y=170"}
+{"t": 132526.272205004, "kind": "RAW", "payload": "\n"}
+{"t": 132526.27229007, "kind": "LOG", "payload": "6527786\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=193 elapsed_us=5013377 render_us=2287367 convert_us=1054629 updates=150 skipped=4 pos=75264,3072,3584 yaw=0\u001b[0m"}
+{"t": 132526.849958588, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 132526.856219669, "kind": "RAW", "payload": "\n"}
+{"t": 132526.856383166, "kind": "OK", "payload": "presentation_fps_x10=388"}
+{"t": 132527.859568141, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 132527.865241721, "kind": "RAW", "payload": "\n"}
+{"t": 132527.865359543, "kind": "OK", "payload": "presentation_fps_x10=378"}
+{"t": 132528.867811396, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 132528.873238159, "kind": "RAW", "payload": "\n"}
+{"t": 132528.87339551, "kind": "OK", "payload": "presentation_fps_x10=386"}
+{"t": 132529.876284912, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 132529.882301271, "kind": "RAW", "payload": "\n"}
+{"t": 132529.88242461, "kind": "OK", "payload": "presentation_fps_x10=389"}
+{"t": 132530.884530395, "kind": "COMMAND", "payload": "PERF FPS"}
+{"t": 132530.890352108, "kind": "RAW", "payload": "\n"}
+{"t": 132530.890492767, "kind": "OK", "payload": "presentation_fps_x10=378"}
+{"t": 132530.89056191, "kind": "COMMAND", "payload": "MEMORY STOP"}
+{"t": 132530.897848531, "kind": "RAW", "payload": "\n"}
+{"t": 132530.899043785, "kind": "RAW", "payload": "\n"}
+{"t": 132530.900119193, "kind": "RAW", "payload": "\n"}
+{"t": 132530.900556396, "kind": "RAW", "payload": "\n"}
+{"t": 132530.901048424, "kind": "RAW", "payload": "\n"}
+{"t": 132530.901566502, "kind": "RAW", "payload": "\n"}
+{"t": 132530.90259337, "kind": "RAW", "payload": "\n"}
+{"t": 132530.90315901, "kind": "RAW", "payload": "\n"}
+{"t": 132530.903829132, "kind": "RAW", "payload": "\n"}
+{"t": 132530.904123441, "kind": "RAW", "payload": "\n"}
+{"t": 132530.904248386, "kind": "DATA", "payload": "scope=heap;sram_total=656579;sram_free=147807;sram_min=131371;sram_largest=81920;psram_total=16741200;psram_free=10691588;psram_min=10687756;psram_largest=6946816"}
+{"t": 132530.904285541, "kind": "DATA", "payload": "scope=budget;internal=28500;external=24913;peak_internal=28500;peak_external=24913;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"}
+{"t": 132530.904312639, "kind": "DATA", "payload": "scope=kind;name=raster;internal=0;external=0"}
+{"t": 132530.904337083, "kind": "DATA", "payload": "scope=kind;name=image;internal=0;external=0"}
+{"t": 132530.904360271, "kind": "DATA", "payload": "scope=kind;name=audio;internal=0;external=16400"}
+{"t": 132530.904383388, "kind": "DATA", "payload": "scope=kind;name=temporary;internal=0;external=0"}
+{"t": 132530.904406854, "kind": "DATA", "payload": "scope=kind;name=metadata;internal=28500;external=8513"}
+{"t": 132530.904429762, "kind": "DATA", "payload": "scope=kind;name=frame;internal=0;external=0"}
+{"t": 132530.904453019, "kind": "DATA", "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"}
+{"t": 132530.904476346, "kind": "OK", "payload": "minimum_scope=boot"}
+{"t": 132530.904725957, "kind": "COMMAND", "payload": "INPUT POINTER DOWN 120 170 0"}
+{"t": 132530.910650056, "kind": "RAW", "payload": "\n"}
+{"t": 132530.910824797, "kind": "OK", "payload": "event=244;device_us=6531117894;status=processed"}
+{"t": 132530.910863908, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132530.916317002, "kind": "RAW", "payload": "\n"}
+{"t": 132530.916432937, "kind": "OK", "payload": "event=245;device_us=6531123765;status=processed"}
+{"t": 132530.92666565, "kind": "RAW", "payload": "\n"}
+{"t": 132530.926779421, "kind": "LOG", "payload": "6532437\tI (6532437) PxaHost: pointer queued id=0 phase=0 x=120 y=170"}
+{"t": 132530.967421271, "kind": "RAW", "payload": "\n"}
+{"t": 132530.967589727, "kind": "LOG", "payload": "6532481\tI (6532481) PxaHost: pointer delivered id=0 phase=0 x=120 y=170"}
+{"t": 132531.301863751, "kind": "RAW", "payload": "\n"}
+{"t": 132531.301990442, "kind": "LOG", "payload": "6532814\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=193 elapsed_us=5028093 render_us=2298505 convert_us=1059590 updates=151 skipped=4 pos=75264,3072,3584 yaw=1620\u001b[0m"}
+{"t": 132532.122886655, "kind": "COMMAND", "payload": "INPUT POINTER UP 120 170 0"}
+{"t": 132532.129945527, "kind": "RAW", "payload": "\n"}
+{"t": 132532.130133957, "kind": "OK", "payload": "event=246;device_us=6532336918;status=processed"}
+{"t": 132532.130173626, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132532.136524871, "kind": "RAW", "payload": "\n"}
+{"t": 132532.136669372, "kind": "OK", "payload": "event=247;device_us=6532343888;status=processed"}
+{"t": 132532.14691731, "kind": "RAW", "payload": "\n"}
+{"t": 132532.147054687, "kind": "LOG", "payload": "6533653\tI (6533653) PxaHost: pointer queued id=0 phase=2 x=120 y=170"}
+{"t": 132532.228135152, "kind": "RAW", "payload": "\n"}
+{"t": 132532.228228668, "kind": "LOG", "payload": "6533744\tI (6533744) PxaHost: pointer delivered id=0 phase=2 x=120 y=170"}
+{"t": 132532.440584751, "kind": "COMMAND", "payload": "SCREENSHOT JPEG"}
+{"t": 132532.49644196, "kind": "RAW", "payload": "\n"}
+{"t": 132532.497717322, "kind": "RAW", "payload": "\n"}
+{"t": 132532.508422507, "kind": "RAW", "payload": "\n"}
+{"t": 132532.519503924, "kind": "RAW", "payload": "\n"}
+{"t": 132532.529863747, "kind": "RAW", "payload": "\n"}
+{"t": 132532.540372541, "kind": "RAW", "payload": "\n"}
+{"t": 132532.550677678, "kind": "RAW", "payload": "\n"}
+{"t": 132532.561419739, "kind": "RAW", "payload": "\n"}
+{"t": 132532.571787594, "kind": "RAW", "payload": "\n"}
+{"t": 132532.58211997, "kind": "RAW", "payload": "\n"}
+{"t": 132532.592578687, "kind": "RAW", "payload": "\n"}
+{"t": 132532.602838708, "kind": "RAW", "payload": "\n"}
+{"t": 132532.613964613, "kind": "RAW", "payload": "\n"}
+{"t": 132532.62466491, "kind": "RAW", "payload": "\n"}
+{"t": 132532.635035977, "kind": "RAW", "payload": "\n"}
+{"t": 132532.645564885, "kind": "RAW", "payload": "\n"}
+{"t": 132532.655992313, "kind": "RAW", "payload": "\n"}
+{"t": 132532.666450332, "kind": "RAW", "payload": "\n"}
+{"t": 132532.674145313, "kind": "RAW", "payload": "\n"}
+{"t": 132532.674240296, "kind": "META", "payload": "format=jpeg;width=320;height=240;orientation=logical;frame_id=8610;device_us=6532654073;source=st7789-native-sw270-completed;bytes=17293;sha256=ff23110d92d66c793c5b7911865f41c92da6f046f44ea63ef9bc026dd359cf6c"}
+{"t": 132532.674278429, "kind": "OK", "payload": ""}
+{"t": 132532.674819625, "kind": "COMMAND", "payload": "INPUT POINTER DOWN 70 115 0"}
+{"t": 132532.680488247, "kind": "RAW", "payload": "\n"}
+{"t": 132532.680648252, "kind": "OK", "payload": "event=248;device_us=6532887862;status=processed"}
+{"t": 132532.680685337, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132532.686326512, "kind": "RAW", "payload": "\n"}
+{"t": 132532.68648945, "kind": "OK", "payload": "event=249;device_us=6532893725;status=processed"}
+{"t": 132532.696753731, "kind": "RAW", "payload": "\n"}
+{"t": 132532.696871064, "kind": "LOG", "payload": "6534203\tI (6534203) PxaHost: pointer queued id=0 phase=0 x=70 y=115"}
+{"t": 132532.707113275, "kind": "RAW", "payload": "\n"}
+{"t": 132532.707210214, "kind": "LOG", "payload": "6534218\tI (6534218) PxaHost: pointer delivered id=0 phase=0 x=70 y=115"}
+{"t": 132533.891612066, "kind": "COMMAND", "payload": "INPUT POINTER UP 70 115 0"}
+{"t": 132533.897848074, "kind": "RAW", "payload": "\n"}
+{"t": 132533.897944245, "kind": "OK", "payload": "event=250;device_us=6534104884;status=processed"}
+{"t": 132533.897960308, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132533.903747939, "kind": "RAW", "payload": "\n"}
+{"t": 132533.903954318, "kind": "OK", "payload": "event=251;device_us=6534110782;status=processed"}
+{"t": 132533.90407207, "kind": "RAW", "payload": "\n"}
+{"t": 132533.904113695, "kind": "LOG", "payload": "6535424\tI (6535424) PxaHost: pointer queued id=0 phase=2 x=70 y=115"}
+{"t": 132533.985121804, "kind": "RAW", "payload": "\n"}
+{"t": 132533.985197721, "kind": "LOG", "payload": "6535495\tI (6535495) PxaHost: pointer delivered id=0 phase=2 x=70 y=115"}
+{"t": 132534.20760458, "kind": "COMMAND", "payload": "SCREENSHOT JPEG"}
+{"t": 132534.269712953, "kind": "RAW", "payload": "\n"}
+{"t": 132534.270935445, "kind": "RAW", "payload": "\n"}
+{"t": 132534.281567297, "kind": "RAW", "payload": "\n"}
+{"t": 132534.291847641, "kind": "RAW", "payload": "\n"}
+{"t": 132534.302233864, "kind": "RAW", "payload": "\n"}
+{"t": 132534.312541586, "kind": "RAW", "payload": "\n"}
+{"t": 132534.323096334, "kind": "RAW", "payload": "\n"}
+{"t": 132534.333514614, "kind": "RAW", "payload": "\n"}
+{"t": 132534.343773098, "kind": "RAW", "payload": "\n"}
+{"t": 132534.35447947, "kind": "RAW", "payload": "\n"}
+{"t": 132534.365650493, "kind": "RAW", "payload": "\n"}
+{"t": 132534.376330326, "kind": "RAW", "payload": "\n"}
+{"t": 132534.386851551, "kind": "RAW", "payload": "\n"}
+{"t": 132534.397170238, "kind": "RAW", "payload": "\n"}
+{"t": 132534.407742935, "kind": "RAW", "payload": "\n"}
+{"t": 132534.418047863, "kind": "RAW", "payload": "\n"}
+{"t": 132534.428738801, "kind": "RAW", "payload": "\n"}
+{"t": 132534.439227201, "kind": "RAW", "payload": "\n"}
+{"t": 132534.448428855, "kind": "RAW", "payload": "\n"}
+{"t": 132534.448588161, "kind": "RAW", "payload": "\n"}
+{"t": 132534.448635374, "kind": "META", "payload": "format=jpeg;width=320;height=240;orientation=logical;frame_id=8675;device_us=6534419116;source=st7789-native-sw270-completed;bytes=17446;sha256=e60bb2b50cba4fb6eccad41d1659742fb216c19acc313e737498b92e2bab8d85"}
+{"t": 132534.448663031, "kind": "OK", "payload": ""}
+{"t": 132534.448920394, "kind": "COMMAND", "payload": "INPUT POINTER DOWN 200 20 0"}
+{"t": 132534.454564292, "kind": "RAW", "payload": "\n"}
+{"t": 132534.454702367, "kind": "OK", "payload": "event=252;device_us=6534661947;status=processed"}
+{"t": 132534.454737637, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132534.460907505, "kind": "RAW", "payload": "\n"}
+{"t": 132534.461130297, "kind": "OK", "payload": "event=253;device_us=6534667818;status=processed"}
+{"t": 132534.47141581, "kind": "RAW", "payload": "\n"}
+{"t": 132534.471533771, "kind": "LOG", "payload": "6535979\tI (6535979) PxaHost: pointer queued id=0 phase=0 x=200 y=20"}
+{"t": 132534.522197624, "kind": "RAW", "payload": "\n"}
+{"t": 132534.522299592, "kind": "LOG", "payload": "6536029\tI (6536029) PxaHost: pointer delivered id=0 phase=0 x=200 y=20"}
+{"t": 132534.613372935, "kind": "COMMAND", "payload": "INPUT POINTER UP 200 20 0"}
+{"t": 132534.619570042, "kind": "RAW", "payload": "\n"}
+{"t": 132534.619761406, "kind": "OK", "payload": "event=254;device_us=6534826831;status=processed"}
+{"t": 132534.61980757, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132534.62543331, "kind": "RAW", "payload": "\n"}
+{"t": 132534.625517259, "kind": "OK", "payload": "event=255;device_us=6534832829;status=processed"}
+{"t": 132534.635850542, "kind": "RAW", "payload": "\n"}
+{"t": 132534.635973811, "kind": "LOG", "payload": "6536142\tI (6536142) PxaHost: pointer queued id=0 phase=2 x=200 y=20"}
+{"t": 132534.686697937, "kind": "RAW", "payload": "\n"}
+{"t": 132534.686817155, "kind": "LOG", "payload": "6536203\tI (6536203) PxaHost: pointer delivered id=0 phase=2 x=200 y=20"}
+{"t": 132535.427375931, "kind": "COMMAND", "payload": "SCREENSHOT JPEG"}
+{"t": 132535.508709358, "kind": "RAW", "payload": "\n"}
+{"t": 132535.509897488, "kind": "RAW", "payload": "\n"}
+{"t": 132535.520570826, "kind": "RAW", "payload": "\n"}
+{"t": 132535.531425889, "kind": "RAW", "payload": "\n"}
+{"t": 132535.541977634, "kind": "RAW", "payload": "\n"}
+{"t": 132535.552774311, "kind": "RAW", "payload": "\n"}
+{"t": 132535.563433471, "kind": "RAW", "payload": "\n"}
+{"t": 132535.57349661, "kind": "RAW", "payload": "\n"}
+{"t": 132535.584094241, "kind": "RAW", "payload": "\n"}
+{"t": 132535.595360736, "kind": "RAW", "payload": "\n"}
+{"t": 132535.605922119, "kind": "RAW", "payload": "\n"}
+{"t": 132535.616572549, "kind": "RAW", "payload": "\n"}
+{"t": 132535.627223119, "kind": "RAW", "payload": "\n"}
+{"t": 132535.637670103, "kind": "RAW", "payload": "\n"}
+{"t": 132535.648227156, "kind": "RAW", "payload": "\n"}
+{"t": 132535.658099002, "kind": "RAW", "payload": "\n"}
+{"t": 132535.663197235, "kind": "RAW", "payload": "\n"}
+{"t": 132535.663373303, "kind": "META", "payload": "format=jpeg;width=320;height=240;orientation=logical;frame_id=8733;device_us=6535662982;source=st7789-native-sw270-completed;bytes=14940;sha256=d1f7952b85c7e82567113aebf996fd3127fd3636b93c53ae7137eb04a909eced"}
+{"t": 132535.663415696, "kind": "OK", "payload": ""}
+{"t": 132535.664075132, "kind": "COMMAND", "payload": "INPUT POINTER DOWN 200 20 0"}
+{"t": 132535.670522618, "kind": "RAW", "payload": "\n"}
+{"t": 132535.67060077, "kind": "OK", "payload": "event=256;device_us=6535877952;status=processed"}
+{"t": 132535.670617811, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132535.676353899, "kind": "RAW", "payload": "\n"}
+{"t": 132535.676444482, "kind": "OK", "payload": "event=257;device_us=6535883718;status=processed"}
+{"t": 132535.686623208, "kind": "RAW", "payload": "\n"}
+{"t": 132535.686691792, "kind": "LOG", "payload": "6537200\tI (6537200) PxaHost: pointer queued id=0 phase=0 x=200 y=20"}
+{"t": 132535.707104068, "kind": "RAW", "payload": "\n"}
+{"t": 132535.707231947, "kind": "LOG", "payload": "6537223\tI (6537223) PxaHost: pointer delivered id=0 phase=0 x=200 y=20"}
+{"t": 132535.828863188, "kind": "COMMAND", "payload": "INPUT POINTER UP 200 20 0"}
+{"t": 132535.834525804, "kind": "RAW", "payload": "\n"}
+{"t": 132535.834686787, "kind": "OK", "payload": "event=258;device_us=6536041771;status=processed"}
+{"t": 132535.834717307, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"t": 132535.84040751, "kind": "RAW", "payload": "\n"}
+{"t": 132535.840544048, "kind": "OK", "payload": "event=259;device_us=6536047694;status=processed"}
+{"t": 132535.85082537, "kind": "RAW", "payload": "\n"}
+{"t": 132535.851102987, "kind": "LOG", "payload": "6537357\tI (6537357) PxaHost: pointer queued id=0 phase=2 x=200 y=20"}
+{"t": 132535.911844856, "kind": "RAW", "payload": "\n"}
+{"t": 132535.91196163, "kind": "LOG", "payload": "6537425\tI (6537425) PxaHost: pointer delivered id=0 phase=2 x=200 y=20"}
+{"t": 132536.306359566, "kind": "RAW", "payload": "\n"}
+{"t": 132536.306454968, "kind": "LOG", "payload": "6537819\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=206 elapsed_us=5004753 render_us=1894202 convert_us=1219166 updates=150 skipped=3 pos=75292,3072,3345 yaw=31404\u001b[0m"}
+{"t": 132536.640998011, "kind": "COMMAND", "payload": "SCREENSHOT JPEG"}
+{"t": 132536.715383333, "kind": "RAW", "payload": "\n"}
+{"t": 132536.716632085, "kind": "RAW", "payload": "\n"}
+{"t": 132536.727340693, "kind": "RAW", "payload": "\n"}
+{"t": 132536.737836286, "kind": "RAW", "payload": "\n"}
+{"t": 132536.748448792, "kind": "RAW", "payload": "\n"}
+{"t": 132536.758684299, "kind": "RAW", "payload": "\n"}
+{"t": 132536.769041328, "kind": "RAW", "payload": "\n"}
+{"t": 132536.779482096, "kind": "RAW", "payload": "\n"}
+{"t": 132536.789912947, "kind": "RAW", "payload": "\n"}
+{"t": 132536.80043508, "kind": "RAW", "payload": "\n"}
+{"t": 132536.811350765, "kind": "RAW", "payload": "\n"}
+{"t": 132536.822163016, "kind": "RAW", "payload": "\n"}
+{"t": 132536.832660914, "kind": "RAW", "payload": "\n"}
+{"t": 132536.843126336, "kind": "RAW", "payload": "\n"}
+{"t": 132536.853659643, "kind": "RAW", "payload": "\n"}
+{"t": 132536.863896057, "kind": "RAW", "payload": "\n"}
+{"t": 132536.874441656, "kind": "RAW", "payload": "\n"}
+{"t": 132536.88474847, "kind": "RAW", "payload": "\n"}
+{"t": 132536.893939229, "kind": "RAW", "payload": "\n"}
+{"t": 132536.894085406, "kind": "RAW", "payload": "\n"}
+{"t": 132536.894124027, "kind": "META", "payload": "format=jpeg;width=320;height=240;orientation=logical;frame_id=8788;device_us=6536868855;source=st7789-native-sw270-completed;bytes=17437;sha256=13cb31f2c8670a6eabfdf43011b154c56fb1ef5b02f6fd2b8b078fb7a973c231"}
+{"t": 132536.894147424, "kind": "OK", "payload": ""}
+{"t": 132536.894660963, "kind": "COMMAND", "payload": "PACKAGES"}
+{"t": 132536.901210276, "kind": "RAW", "payload": "\n"}
+{"t": 132536.902391911, "kind": "RAW", "payload": "\n"}
+{"t": 132536.903702682, "kind": "RAW", "payload": "\n"}
+{"t": 132536.905257057, "kind": "RAW", "payload": "\n"}
+{"t": 132536.906469701, "kind": "RAW", "payload": "\n"}
+{"t": 132536.907659019, "kind": "RAW", "payload": "\n"}
+{"t": 132536.908871174, "kind": "RAW", "payload": "\n"}
+{"t": 132536.909396167, "kind": "RAW", "payload": "\n"}
+{"t": 132536.909462027, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132536.909485354, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132536.909504979, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132536.909525302, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132536.909546045, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132536.90957894, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"t": 132536.909608064, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.1.5\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"t": 132536.909643333, "kind": "OK", "payload": ""}
+{"t": 132536.909679581, "kind": "COMMAND", "payload": "INPUT CANCEL"}
+{"t": 132536.910446432, "kind": "RAW", "payload": "\n"}
+{"t": 132536.910509847, "kind": "LOG", "payload": "6538432\tI (6538431) Pxadb: Package list finished: stack_free=6892B"}
+{"t": 132536.91551156, "kind": "RAW", "payload": "\n"}
+{"t": 132536.915650683, "kind": "OK", "payload": "event=260;device_us=6537122808;status=processed"}
+{"t": 132536.915690701, "kind": "COMMAND", "payload": "MEMORY STOP"}
+{"t": 132536.924283205, "kind": "RAW", "payload": "\n"}
+{"t": 132536.925707886, "kind": "RAW", "payload": "\n"}
+{"t": 132536.927224547, "kind": "RAW", "payload": "\n"}
+{"t": 132536.927659584, "kind": "RAW", "payload": "\n"}
+{"t": 132536.928140438, "kind": "RAW", "payload": "\n"}
+{"t": 132536.92861731, "kind": "RAW", "payload": "\n"}
+{"t": 132536.929212772, "kind": "RAW", "payload": "\n"}
+{"t": 132536.929807326, "kind": "RAW", "payload": "\n"}
+{"t": 132536.930427372, "kind": "RAW", "payload": "\n"}
+{"t": 132536.930758487, "kind": "RAW", "payload": "\n"}
+{"t": 132536.93084907, "kind": "COMMAND", "payload": "PACKAGE stop pxa-openlara"}
+{"t": 132536.936749912, "kind": "RAW", "payload": "\n"}
+{"t": 132536.936915435, "kind": "OK", "payload": "stop_queued"}
+{"t": 132536.943083488, "kind": "RAW", "payload": "\n"}

@@ -1,0 +1,22 @@
+{
+  "package": {
+    "path": "local/openlara-original-compare/controller-release/pxa-openlara.pxa",
+    "bytes": 450206,
+    "sha256": "8cb41966f9c182b9dfc861d5da1c49d625983096713b40d60528a2b703daa00d"
+  },
+  "aot": {
+    "path": "local/openlara-original-compare/controller-release/pxa-openlara/artifacts/main.esp32-s31.aot",
+    "bytes": 620184,
+    "sha256": "0fbd8135800e8a0ef25781dfe48f632300cbade0fe0536ccdda1e987499064cc"
+  },
+  "validation_wasm": {
+    "path": "local/openlara-original-compare/controller-release/validation/main.wasm",
+    "bytes": 223245,
+    "sha256": "ece805740bbc663ab4c80bd352780e56237ffd470407754879d11a688b0801f6"
+  },
+  "version": "0.2.7",
+  "release_sequence": 14,
+  "upstream_commit": "3b268ca4bf986c380f44a26ffd9218bf6d376249",
+  "sdk_head": "6f4db4621fbd4550fe5f6e85dd65a0720635a6e6",
+  "sdk_dirty": true
+}

@@ -1,0 +1,173 @@
+{
+  "package_sha256": "3cdebffc1c211ac20c77cc23b5605584e509e32bc579b645695105b0dd123166",
+  "samples": [
+    {
+      "index": 0,
+      "properties": {
+        "presentation_fps_x10": "339"
+      }
+    },
+    {
+      "index": 1,
+      "properties": {
+        "presentation_fps_x10": "339"
+      }
+    },
+    {
+      "index": 2,
+      "properties": {
+        "presentation_fps_x10": "329"
+      }
+    },
+    {
+      "index": 3,
+      "properties": {
+        "presentation_fps_x10": "338"
+      }
+    },
+    {
+      "index": 4,
+      "properties": {
+        "presentation_fps_x10": "338"
+      }
+    },
+    {
+      "index": 5,
+      "properties": {
+        "presentation_fps_x10": "339"
+      }
+    },
+    {
+      "index": 6,
+      "properties": {
+        "presentation_fps_x10": "329"
+      }
+    },
+    {
+      "index": 7,
+      "properties": {
+        "presentation_fps_x10": "338"
+      }
+    },
+    {
+      "index": 8,
+      "properties": {
+        "presentation_fps_x10": "336"
+      }
+    },
+    {
+      "index": 9,
+      "properties": {
+        "presentation_fps_x10": "337"
+      }
+    },
+    {
+      "index": 10,
+      "properties": {
+        "presentation_fps_x10": "338"
+      }
+    },
+    {
+      "index": 11,
+      "properties": {
+        "presentation_fps_x10": "329"
+      }
+    },
+    {
+      "index": 12,
+      "properties": {
+        "presentation_fps_x10": "337"
+      }
+    },
+    {
+      "index": 13,
+      "properties": {
+        "presentation_fps_x10": "337"
+      }
+    },
+    {
+      "index": 14,
+      "properties": {
+        "presentation_fps_x10": "339"
+      }
+    },
+    {
+      "index": 15,
+      "properties": {
+        "presentation_fps_x10": "328"
+      }
+    },
+    {
+      "index": 16,
+      "properties": {
+        "presentation_fps_x10": "336"
+      }
+    },
+    {
+      "index": 17,
+      "properties": {
+        "presentation_fps_x10": "336"
+      }
+    },
+    {
+      "index": 18,
+      "properties": {
+        "presentation_fps_x10": "337"
+      }
+    },
+    {
+      "index": 19,
+      "properties": {
+        "presentation_fps_x10": "338"
+      }
+    }
+  ],
+  "passed": true,
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0",
+  "packages_before": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+  ],
+  "startup_memory": [
+    "scope=heap;sram_total=656579;sram_free=147807;sram_min=128575;sram_largest=81920;psram_total=16741200;psram_free=10641504;psram_min=9862568;psram_largest=6946816",
+    "scope=budget;internal=28500;external=24869;peak_internal=28500;peak_external=24869;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+    "scope=kind;name=raster;internal=0;external=0",
+    "scope=kind;name=image;internal=0;external=0",
+    "scope=kind;name=audio;internal=0;external=16400",
+    "scope=kind;name=temporary;internal=0;external=0",
+    "scope=kind;name=metadata;internal=28500;external=8469",
+    "scope=kind;name=frame;internal=0;external=0",
+    "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+  ],
+  "steady_memory": [
+    "scope=heap;sram_total=656579;sram_free=135507;sram_min=131323;sram_largest=81920;psram_total=16741200;psram_free=10641504;psram_min=10635744;psram_largest=6946816",
+    "scope=budget;internal=28500;external=24869;peak_internal=28500;peak_external=24869;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+    "scope=kind;name=raster;internal=0;external=0",
+    "scope=kind;name=image;internal=0;external=0",
+    "scope=kind;name=audio;internal=0;external=16400",
+    "scope=kind;name=temporary;internal=0;external=0",
+    "scope=kind;name=metadata;internal=28500;external=8469",
+    "scope=kind;name=frame;internal=0;external=0",
+    "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+  ],
+  "fps": {
+    "min": 32.8,
+    "median": 33.7,
+    "max": 33.9,
+    "mean": 33.585
+  },
+  "packages_active": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"
+  ]
+}

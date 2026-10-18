@@ -1,0 +1,1 @@
+target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15774171;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.0;storage_total=11468800;storage_used=10391552;storage_free=1077248;presentation_fps_x10=0

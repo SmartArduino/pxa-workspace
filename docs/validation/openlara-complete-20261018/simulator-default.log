@@ -1,0 +1,203 @@
+[dev] log file: /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/dev-logs/sim/openlara.log
+
+$ /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/simulator.sh service start --profile doit-gamekit
+PXADB2 service already running: socket=/tmp/pxa-simulator-1000/doit-gamekit.sock state=/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/simulator/doit-gamekit log=/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/simulator/doit-gamekit/pxadb.log
+
+[dev] building openlara for sim
+
+$ /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/app.sh build openlara --board doit-gamekit --target simulator --aot-only --source-root /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/pxa-apps
+-- PXA optional C++ library features: inplace_vector=; function_ref=
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/app-build-cache/openlara-wasm-25a308aa1bbd60cc/cmake-build
+ninja: no work to do.
+Verified bounded linear memory: min=102 max=128 pages
+Create AoT compiler with:
+  target:        x86_64
+  target cpu:    
+  target triple: x86_64-pc-linux-gnu
+  cpu features:  
+  opt level:     3
+  size level:    3
+  output format: AoT file
+Compile success, file /tmp/pxa-openlara-simulator.iCd9uW/package/artifacts/main.linux-x86_64.aot was generated.
+pxa-openlara publisher=17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171 files=10
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/app-output/doit-gamekit/pxa-openlara.pxa files=10 packed=7580187 unpacked=10193856
+Package directory: /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/app-output/doit-gamekit/pxa-openlara
+Container for pxadb: /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/app-output/doit-gamekit/pxa-openlara.pxa
+Architecture artifacts in /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/app-output/doit-gamekit/pxa-openlara/artifacts:
+main.linux-x86_64.aot
+
+$ /usr/bin/python3 /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/pxadb/pxadb.py package install /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/app-output/doit-gamekit/pxa-openlara.pxa --yes --simulator doit-gamekit
+staging: pxa-openlara
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/app-output/doit-gamekit/pxa-openlara.pxa -> PXA storage/pxa-state/inbox/pxa-openlara.pxa (7580187 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+verifying and installing: pxa-openlara
+installed: pxa-openlara
+
+$ /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/simulator.sh ui run --profile doit-gamekit -- --launch pxa-openlara
+[dev] running pxa-openlara
+[dev] simulator is running; press Ctrl-C to stop
+[simulator] PXADB2 service already running: socket=/tmp/pxa-simulator-1000/doit-gamekit.sock state=/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/simulator/doit-gamekit log=/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/simulator/doit-gamekit/pxadb.log
+[simulator] -- /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/deps/pxa-system/simulator/desktop/lv_conf.h
+[simulator] -- Using configuration: /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/deps/pxa-system/simulator/desktop/lv_conf.h
+[simulator] -- WAMR version: 2.4.3
+[simulator] -- Build Configurations:
+[simulator]      Build as target X86_64
+[simulator]      Build for platform linux
+[simulator]      CMAKE_BUILD_TYPE Release
+[simulator]      BUILD_SHARED_LIBS OFF
+[simulator]      WAMR Interpreter enabled
+[simulator]      Fast interpreter enabled
+[simulator]      WAMR AOT enabled
+[simulator]      WAMR Fast JIT disabled
+[simulator]      WAMR LLVM ORC JIT disabled
+[simulator]      Libc builtin enabled
+[simulator]      Libc WASI enabled
+[simulator]      Multiple modules disabled
+[simulator]      Wakeup of blocking operations enabled
+[simulator]      GC performance profiling disabled
+[simulator]      Module instance context enabled
+[simulator]      Write linear memory base addr to x86 GS register enabled
+[simulator]      Quick AOT/JIT entries enabled
+[simulator]      AOT intrinsics enabled
+[simulator]      Shrunk memory enabled
+[simulator]      Extended constant expression disabled
+[simulator] -- About Wasm Proposals:
+[simulator]      Always-on:
+[simulator]        "Import/Export of Mutable Globals"
+[simulator]        "Multi-value"
+[simulator]        "Non-trapping float-to-int Conversions"
+[simulator]        "Sign-extension Operators"
+[simulator]        "WebAssembly C and C++ API"
+[simulator]      Configurable. 0 is OFF. 1 is ON:
+[simulator]        "Branch Hinting" via WAMR_BUILD_BRANCH_HINTS: 
+[simulator]        "Bulk Memory Operation" via WAMR_BUILD_BULK_MEMORY: 1
+[simulator]        "Bulk-memory-opt" via WAMR_BUILD_BULK_MEMORY_OPT: 1
+[simulator]        "Call-indirect-overlong" via WAMR_BUILD_CALL_INDIRECT_OVERLONG: 1
+[simulator]        "Extended Constant Expressions" via WAMR_BUILD_EXTENDED_CONST_EXPR: 0
+[simulator]        "Fixed-width SIMD" via WAMR_BUILD_SIMD: 0
+[simulator]        "Garbage Collection" via WAMR_BUILD_GC: 0
+[simulator]        "Legacy Exception Handling" via WAMR_BUILD_EXCE_HANDLING: 0
+[simulator]        "Memory64" via WAMR_BUILD_MEMORY64: 0
+[simulator]        "Multiple Memories" via WAMR_BUILD_MULTI_MEMORY: 0
+[simulator]        "Reference Types" via WAMR_BUILD_REF_TYPES: 1
+[simulator]        "Reference-Typed Strings" via WAMR_BUILD_STRINGREF: 0
+[simulator]        "Tail Call" via WAMR_BUILD_TAIL_CALL: 0
+[simulator]        "Threads" via WAMR_BUILD_SHARED_MEMORY: 0
+[simulator]        "Typed Function References" via WAMR_BUILD_GC: 0
+[simulator]      Unsupported (>= Phase4):
+[simulator]        "Custom Annotation Syntax in the Text Format"
+[simulator]        "Exception Handling"
+[simulator]        "JS String Builtins"
+[simulator]        "Relaxed SIMD"
+[simulator] 
+[simulator] -- Configuring done (25.0s)
+[simulator] -- Generating done (6.0s)
+[simulator] -- Build files have been written to: /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/simulator/doit-gamekit
+[simulator] [  2%] Built target pxa_system_core
+[simulator] [  2%] Built target pxa_system_reference_layout
+[simulator] [ 74%] Built target lvgl
+[simulator] [ 82%] Built target pxa
+[simulator] [ 82%] Built target pxa_adapters_image
+[simulator] [ 83%] Built target pxa_adapters_lvgl
+[simulator] [ 84%] Built target pxa_system_native
+[simulator] [ 84%] Built target pxa_system_standard
+[simulator] [ 84%] Built target pxa_system_reference_lvgl
+[simulator] [ 85%] Built target pxa_adapters_image_posix
+[simulator] [ 85%] Built target pxa_adapters_openssl
+[simulator] [ 87%] Built target pxa_adapters_posix
+[simulator] [ 87%] Building C object pxa-system/libpxa/wamr/CMakeFiles/vmlib.dir/__/pxa-wamr-loader/core/iwasm/aot/aot_loader.c.o
+[simulator] [ 88%] Linking C static library libiwasm.a
+[simulator] [ 95%] Built target vmlib
+[simulator] [ 96%] Built target pxa_adapters_wamr
+[simulator] [ 97%] Built target pxa_system_pxa
+[simulator] [ 98%] Built target pxa_system_renderer_lvgl
+[simulator] [ 98%] Linking C executable pxsys_desktop_simulator
+[simulator] [100%] Built target pxsys_desktop_simulator
+[simulator] [  2%] Built target pxa_system_core
+[simulator] [ 76%] Built target lvgl
+[simulator] [ 85%] Built target pxa
+[simulator] [ 85%] Built target pxa_adapters_image
+[simulator] [ 86%] Built target pxa_adapters_image_posix
+[simulator] [ 86%] Built target pxa_adapters_openssl
+[simulator] [ 87%] Built target pxa_adapters_posix
+[simulator] [ 89%] Built target pxa_adapters_lvgl
+[simulator] [ 97%] Built target vmlib
+[simulator] [ 98%] Built target pxa_adapters_wamr
+[simulator] [ 98%] Linking C executable pxsys_product_simulator
+[simulator] [100%] Built target pxsys_product_simulator
+[simulator] Simulator ready: profile=doit-gamekit mode=ui
+[simulator] PXADB2 local endpoint: unix:/tmp/pxa-simulator-1000/doit-gamekit.sock
+[simulator] PXADB2 debug control: unix:/tmp/pxa-simulator-1000/doit-gamekit.control.sock
+[simulator] PXADB command: pxadb --simulator doit-gamekit <command>
+[simulator] PXA SIM app-media-root=/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/simulator/doit-gamekit/media/78670e6ca3833ee694be1ba9443f4d04b9e6ffc7617c7fbd7fe4a5363419135c
+[simulator] PXA STORAGE CONFIG bytes_per_second=0 latency_us=0 max_read=4096
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio ready rate=16000 channels=1[0m
+[simulator] PXA controller: arrows=direction Z=A X=B A=X S=Y Q=L W=R Enter=Start Tab=Select; SDL gamepad/left stick enabled
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara ready level=0 bytes=313700 linear_bytes=6684672[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1280 rendered=0 queued=1280 flags=1 writes=4 blocked=0 nonzero=927[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=252 elapsed_us=5024136 render_us=70710 convert_us=96818 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=81600 rendered=80384 queued=1216 flags=1 writes=255 blocked=259 nonzero=81110[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=161280 rendered=160256 queued=1024 flags=1 writes=504 blocked=512 nonzero=160686[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=244 elapsed_us=5021707 render_us=71977 convert_us=95886 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=252 elapsed_us=5002957 render_us=70546 convert_us=94099 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=241920 rendered=240640 queued=1280 flags=1 writes=756 blocked=774 nonzero=241234[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=212 elapsed_us=5023675 render_us=77633 convert_us=99033 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=322240 rendered=321024 queued=1216 flags=1 writes=1007 blocked=986 nonzero=321449[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=229 elapsed_us=5014228 render_us=71076 convert_us=98328 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=402560 rendered=401408 queued=1152 flags=1 writes=1258 blocked=1217 nonzero=401690[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=254 elapsed_us=5021903 render_us=72155 convert_us=98264 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=482880 rendered=481792 queued=1088 flags=1 writes=1509 blocked=1478 nonzero=481801[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=250 elapsed_us=5015496 render_us=73937 convert_us=96144 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=562880 rendered=561664 queued=1216 flags=1 writes=1759 blocked=1738 nonzero=561542[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=245 elapsed_us=5013492 render_us=75432 convert_us=99813 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=643200 rendered=642048 queued=1152 flags=1 writes=2010 blocked=1984 nonzero=640920[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=230 elapsed_us=5011635 render_us=73828 convert_us=99157 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=723520 rendered=722432 queued=1088 flags=1 writes=2261 blocked=2215 nonzero=720739[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=240 elapsed_us=5016501 render_us=74827 convert_us=99949 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=803840 rendered=802816 queued=1024 flags=1 writes=2512 blocked=2458 nonzero=800640[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=236 elapsed_us=5013175 render_us=75844 convert_us=97288 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=883840 rendered=882688 queued=1152 flags=1 writes=2762 blocked=2698 nonzero=880166[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=152 elapsed_us=5051503 render_us=61590 convert_us=90784 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=963200 rendered=961984 queued=1216 flags=1 writes=3010 blocked=2843 nonzero=959212[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=188 elapsed_us=5017441 render_us=70656 convert_us=92513 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1043520 rendered=1042368 queued=1152 flags=1 writes=3261 blocked=3031 nonzero=1039260[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=165 elapsed_us=5033954 render_us=57500 convert_us=97158 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1123520 rendered=1122496 queued=1024 flags=1 writes=3511 blocked=3191 nonzero=1119074[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=172 elapsed_us=5028403 render_us=62317 convert_us=96740 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1203520 rendered=1202368 queued=1152 flags=1 writes=3761 blocked=3361 nonzero=1198908[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=183 elapsed_us=5011176 render_us=67167 convert_us=98397 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1281920 rendered=1280768 queued=1152 flags=1 writes=4006 blocked=3539 nonzero=1277191[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=209 elapsed_us=5021054 render_us=73211 convert_us=98586 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1362240 rendered=1361152 queued=1088 flags=1 writes=4257 blocked=3747 nonzero=1357294[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=210 elapsed_us=5013739 render_us=70391 convert_us=102729 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1442560 rendered=1441536 queued=1024 flags=1 writes=4508 blocked=3957 nonzero=1437471[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=201 elapsed_us=5013344 render_us=65579 convert_us=100816 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1522560 rendered=1521408 queued=1152 flags=1 writes=4758 blocked=4155 nonzero=1517337[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=188 elapsed_us=5003031 render_us=65927 convert_us=96443 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1602560 rendered=1601280 queued=1280 flags=1 writes=5008 blocked=4342 nonzero=1597224[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=230 elapsed_us=5015515 render_us=73839 convert_us=99152 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1682880 rendered=1681664 queued=1216 flags=1 writes=5259 blocked=4572 nonzero=1676612[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=229 elapsed_us=5029026 render_us=74423 convert_us=102004 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1763200 rendered=1762048 queued=1152 flags=1 writes=5510 blocked=4801 nonzero=1751704[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=226 elapsed_us=5004082 render_us=74956 convert_us=98686 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1843520 rendered=1842432 queued=1088 flags=1 writes=5761 blocked=5028 nonzero=1810668[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=196 elapsed_us=5047265 render_us=81388 convert_us=96064 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1923840 rendered=1922816 queued=1024 flags=1 writes=6012 blocked=5224 nonzero=1849306[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2004480 rendered=2003200 queued=1280 flags=1 writes=6264 blocked=5448 nonzero=1876036[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=224 elapsed_us=5021916 render_us=73516 convert_us=97913 updates=151 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2084160 rendered=2083072 queued=1088 flags=1 writes=6513 blocked=5635 nonzero=1955554[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=187 elapsed_us=5002856 render_us=71088 convert_us=95915 updates=150 skipped=0 pos=0,0,0 yaw=0[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2164160 rendered=2162944 queued=1216 flags=1 writes=6763 blocked=5854 nonzero=2035460[0m
+[simulator] [32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=219 elapsed_us=5026329 render_us=72674 convert_us=93570 updates=151 skipped=0 pos=0,0,0 yaw=0[0m

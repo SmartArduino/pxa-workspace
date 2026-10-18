@@ -1,0 +1,226 @@
+{
+  "passed": true,
+  "runs": {
+    "baseline": {
+      "package_sha256": "67dc91c682276042ca2688fb2defeccfca3d5208228443012a9e0f89419b4192",
+      "samples": [
+        34.9,
+        34.6,
+        34.8,
+        34.9,
+        34.9,
+        34.8,
+        34.8,
+        35.9,
+        34.8,
+        34.7,
+        34.7,
+        34.8,
+        35.8,
+        34.8,
+        34.7,
+        34.7,
+        34.8,
+        34.9,
+        35.9,
+        34.6
+      ],
+      "fps": {
+        "min": 34.6,
+        "median": 34.8,
+        "max": 35.9,
+        "mean": 34.94
+      },
+      "startup_memory": [
+        "scope=heap;sram_total=656579;sram_free=133251;sram_min=91019;sram_largest=102400;psram_total=16741200;psram_free=6316172;psram_min=5546536;psram_largest=5767168",
+        "scope=budget;internal=28500;external=24913;peak_internal=28500;peak_external=24913;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+        "scope=kind;name=raster;internal=0;external=0",
+        "scope=kind;name=image;internal=0;external=0",
+        "scope=kind;name=audio;internal=0;external=16400",
+        "scope=kind;name=temporary;internal=0;external=0",
+        "scope=kind;name=metadata;internal=28500;external=8513",
+        "scope=kind;name=frame;internal=0;external=0",
+        "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+      ],
+      "steady_memory": [
+        "scope=heap;sram_total=656579;sram_free=147731;sram_min=130875;sram_largest=118784;psram_total=16741200;psram_free=6316256;psram_min=6310608;psram_largest=5767168",
+        "scope=budget;internal=28500;external=24913;peak_internal=28500;peak_external=24913;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+        "scope=kind;name=raster;internal=0;external=0",
+        "scope=kind;name=image;internal=0;external=0",
+        "scope=kind;name=audio;internal=0;external=16400",
+        "scope=kind;name=temporary;internal=0;external=0",
+        "scope=kind;name=metadata;internal=28500;external=8513",
+        "scope=kind;name=frame;internal=0;external=0",
+        "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+      ],
+      "saved_position": [
+        75315,
+        3072,
+        3345,
+        30312
+      ],
+      "restored_position": [
+        75315,
+        3072,
+        3345,
+        30312
+      ]
+    },
+    "candidate": {
+      "package_sha256": "d86e4f22fde4699fab5b0b19cc3316e783d6e931d8cb724b2f483051dcaf762e",
+      "samples": [
+        35.9,
+        36.9,
+        37.9,
+        36.9,
+        35.9,
+        36.6,
+        36.9,
+        36.9,
+        36.7,
+        36.8,
+        36.9,
+        36.9,
+        36.9,
+        35.9,
+        36.9,
+        36.9,
+        36.8,
+        36.6,
+        36.9,
+        36.8,
+        36.9,
+        36.9,
+        36.8,
+        36.7,
+        36.7,
+        35.9,
+        36.9,
+        36.8,
+        36.6,
+        36.8,
+        35.8,
+        36.9,
+        36.5,
+        36.8,
+        36.7,
+        36.8,
+        35.9,
+        36.8,
+        36.9,
+        36.9,
+        36.8,
+        36.7,
+        36.8,
+        36.9,
+        37.9,
+        35.7,
+        36.9,
+        36.8,
+        36.8,
+        36.9,
+        36.8,
+        36.9,
+        36.7,
+        36.8,
+        36.8,
+        35.9,
+        36.9,
+        36.9,
+        36.8,
+        36.8
+      ],
+      "fps": {
+        "min": 35.7,
+        "median": 36.8,
+        "max": 37.9,
+        "mean": 36.72333333333333
+      },
+      "startup_memory": [
+        "scope=heap;sram_total=656579;sram_free=131559;sram_min=91119;sram_largest=102400;psram_total=16741200;psram_free=6316188;psram_min=5544580;psram_largest=5767168",
+        "scope=budget;internal=28500;external=24913;peak_internal=28500;peak_external=24913;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+        "scope=kind;name=raster;internal=0;external=0",
+        "scope=kind;name=image;internal=0;external=0",
+        "scope=kind;name=audio;internal=0;external=16400",
+        "scope=kind;name=temporary;internal=0;external=0",
+        "scope=kind;name=metadata;internal=28500;external=8513",
+        "scope=kind;name=frame;internal=0;external=0",
+        "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+      ],
+      "steady_memory": [
+        "scope=heap;sram_total=656579;sram_free=147735;sram_min=130879;sram_largest=118784;psram_total=16741200;psram_free=6316120;psram_min=6312204;psram_largest=5767168",
+        "scope=budget;internal=28500;external=24913;peak_internal=28500;peak_external=24913;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+        "scope=kind;name=raster;internal=0;external=0",
+        "scope=kind;name=image;internal=0;external=0",
+        "scope=kind;name=audio;internal=0;external=16400",
+        "scope=kind;name=temporary;internal=0;external=0",
+        "scope=kind;name=metadata;internal=28500;external=8513",
+        "scope=kind;name=frame;internal=0;external=0",
+        "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+      ],
+      "saved_position": [
+        75315,
+        3072,
+        3345,
+        30312
+      ],
+      "restored_position": [
+        75315,
+        3072,
+        3345,
+        30312
+      ]
+    }
+  },
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0",
+  "packages_before": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.2.4\tbuiltin=0;installed=1;staged=0;enabled=1;active=1",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+  ],
+  "firmware_record": {
+    "image": "local/storage-device/firmware-read-at.bin",
+    "bytes": 3921472,
+    "sha256": "c85967b052eb23b2a79c9b89ca0ed4de1295478e7f782492a9b48d4c0837831f",
+    "partition_table_matches_original": true,
+    "flash_offset": "0x10000",
+    "revision": "19-read-at"
+  },
+  "upgrade_restored_position": [
+    75315,
+    3072,
+    3345,
+    30312
+  ],
+  "resume_hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0",
+  "packages_before_resume": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.11\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.2.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=1",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+  ],
+  "reboot_restored_position": [
+    75315,
+    3072,
+    3345,
+    30312
+  ],
+  "packages_after": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd\tDuke Nukem 3D SD\t0.1.11\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files\tFixed SD Files Test\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.2.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=1",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files\tSD Files Test\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+  ],
+  "gain_percent": 5.747126436781613,
+  "audit_note": "Initial inventory recovered from first acquire phase in append-only serial log; reboot HELLO timeout and lockscreen retries are preserved in raw logs. Another task changed Duke 0.1.10 to 0.1.11 after the exclusive A/B window; firmware image stayed revision19-read-at."
+}

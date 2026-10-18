@@ -1,0 +1,2 @@
+id=pxa-openlara;root=/tmp/pxa-publish-a1nuxaz0/state/packages/pxa-openlara;disposition=installed
+{"app_id": "pxa-openlara", "sha256": "8cb41966f9c182b9dfc861d5da1c49d625983096713b40d60528a2b703daa00d", "size": 450206, "verified": true}

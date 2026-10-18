@@ -1,0 +1,18 @@
+{
+  "title.pkd": {
+    "sha256": "556fce53180036d2660a149370d9da89d8a94228f82109b703d6bbb8bfca368b",
+    "bytes": "313700"
+  },
+  "gym.pkd": {
+    "sha256": "c9b32008bc976f4049962d0df61e75b818dc487b18da7d4fb1de5129ff45d715",
+    "bytes": "1465004"
+  },
+  "level1.pkd": {
+    "sha256": "511bbc9dc65f71a7aa85307faf6f8e100ff42e04b4f561fc9a036afe5ae14d77",
+    "bytes": "2356992"
+  },
+  "level2.pkd": {
+    "sha256": "8d63f2a161a229b802befcf6f026c534a08dcea617ba38afa64727007b7b552d",
+    "bytes": "2616756"
+  }
+}

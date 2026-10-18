@@ -1,0 +1,8 @@
+ID	NAME	VERSION	STATE
+17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-duke3d-sd	Duke Nukem 3D SD	0.1.6	builtin=0;installed=1;staged=0;enabled=1;active=0
+17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-fixed-files	Fixed SD Files Test	0.1.0	builtin=0;installed=1;staged=0;enabled=1;active=0
+17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d	Jump Jump 3D	0.1.7	builtin=0;installed=1;staged=0;enabled=1;active=0
+17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-scoped-files	SD Files Test	0.1.0	builtin=0;installed=1;staged=0;enabled=1;active=0
+17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store	App Store	0.8.8	builtin=0;installed=1;staged=0;enabled=1;active=0
+17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft	Voxel Craft	0.12.8	builtin=0;installed=1;staged=0;enabled=1;active=0
+17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara	OpenLara	0.1.5	builtin=0;installed=1;staged=0;enabled=1;active=0

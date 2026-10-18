@@ -1,0 +1,8 @@
+{
+  "image": "local/storage-device/firmware-read-at.bin",
+  "bytes": 3921472,
+  "sha256": "c85967b052eb23b2a79c9b89ca0ed4de1295478e7f782492a9b48d4c0837831f",
+  "partition_table_matches_original": true,
+  "flash_offset": "0x10000",
+  "revision": "19-read-at"
+}
