@@ -27,3 +27,11 @@ Host 根据已验证身份和板级明确指定的 SD 卷，自动打开卡内 `
 加入 pinned memory 修复及慢 Host 调用计时后，再次在 GameKit 启动同一固定根示例，直接通过全部读取与隔离检查，未选目录。本次固件 3,920,432 B，SHA-256 `fcb884f09f2eebf181429c591960de82706de4a10ab10acb01bde0bf5a4a231e`；刷写仍只涉及应用固件分区。
 
 ![最新固件复验](images/sd-fixed-root-current-pass.png)
+
+## 有界同步随机读取复验
+
+后续签名示例 0.1.1 在固件 19 上通过 `read-at` 真机检查，日志包含 `SD TEST positional=1 cursor_unchanged=1 eof=1 cancel=1` 和完整 `SD TEST PASS`。单次最多 4096 B，数据直接写入调用方包缓冲；指定偏移读取不改变顺序游标，验证 EOF 短读、取消 cookie 以及拒绝重用 cookie。原有内容、只读隔离、父子生命周期和失效句柄检查同时通过。此次新增随机读取检查为正常启动验证；上述重启记录属于较早版本。
+
+当前固件 3,921,472 B，SHA-256 `c85967b052eb23b2a79c9b89ca0ed4de1295478e7f782492a9b48d4c0837831f`；仅刷 0x10000 应用分区，刷前分区表与备份逐字节一致。C SDK 全套检查、C++ roots 测试及 ASan/UBSan Core/作用域 FS/包测试均通过。旧 backend 的可选尾字段按 `struct_size` 识别，不要求旧 provider 扩大结构才保留固定媒体根能力。
+
+这是同步有界 profile，没有 pending worker，也没有宣称取消正在执行的磁盘操作。异步读取、可写外部私有根、整应用 SD 安装和 SD 系统盘仍需后续实现。

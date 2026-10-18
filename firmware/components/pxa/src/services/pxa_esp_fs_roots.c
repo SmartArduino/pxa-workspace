@@ -447,6 +447,7 @@ void pxa_esp_fs_roots_bind(pxa_esp_fs_roots_t *r,pxa_fs_service_t *service) {
 uint64_t pxa_esp_fs_roots_features(const pxa_esp_fs_roots_t *r) {
     if(!r) return 0;
     return PXA_FS_FEATURE_SCOPED_ROOTS | r->api.features |
+        (r->api.read_at?PXA_FS_FEATURE_READ_AT:0) |
         (r->api.request_access?PXA_FS_FEATURE_USER_DIRECTORY_GRANTS:0);
 }
 void pxa_esp_fs_roots_destroy(pxa_esp_fs_roots_t *r) {

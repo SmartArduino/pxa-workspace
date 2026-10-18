@@ -394,8 +394,17 @@
         "rule": "Invalidate matching lane synchronously; release late completion without delivery; cookie cannot be reused"
       }
     ],
-    "waiting": "Existing Core wait-resource READ readiness and PXA_IO_POLL; tolerate spurious wakeups; file close cancels lane",
-    "retry_safety": "Validate destination before consuming a completed result; invalid destination cannot publish partial ownership or write outside Guest memory"
+    "waiting": "Future asynchronous lane only: Existing Core wait-resource READ readiness and PXA_IO_POLL; tolerate spurious wakeups; file close cancels lane",
+    "retry_safety": "Validate destination before consuming a completed result; invalid destination cannot publish partial ownership or write outside Guest memory",
+    "implemented_profile": {
+      "kind": "bounded synchronous scoped read-at",
+      "max_data_bytes": 4096,
+      "cookie": "strictly increasing per FILE; completed calls retire; cancelled/reused returns cancelled",
+      "cancel": "idempotently retire cookies through supplied nonzero value",
+      "memory": "caller header+data borrowed only for current call; no retained pointer, worker, pending lane or WOULD_BLOCK",
+      "normative": "../../deps/pxa-system/spec/draft/pxa-fs.json"
+    },
+    "asynchronous_lane_status": "proposal only; requires additional opt-in capability before enabling the pending/readiness rules below"
   },
   "permission_integration": {
     "service": 11,

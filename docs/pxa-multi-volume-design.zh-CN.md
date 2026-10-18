@@ -1,6 +1,6 @@
 # PXA 多卷存储、资源访问与安装位置设计
 
-状态：2026-10-18，分阶段实施。**FS 0.3 的授权只读根、C/C++ SDK、GameKit 目录选择器已先行实现并在真机验证；外部安装、READ_AT、分页、热插拔及下文其余提案尚未实现**。对应的[机器可读接口草案](design/pxa-multi-volume-abi.draft.json)标记实现子集，不替代 `deps/pxa-system/spec` 中的现行规范。
+状态：2026-10-18，分阶段实施。**FS 0.3 的授权只读根、固定媒体根、C/C++ SDK、GameKit 目录选择器及有界同步 READ_AT 已实现并通过真机检查；外部安装、异步读取、目录分页、热插拔及下文其余提案尚未实现**。对应的[机器可读接口草案](design/pxa-multi-volume-abi.draft.json)标记实现子集，不替代 `deps/pxa-system/spec` 中的现行规范。
 
 核心决定：Host 统一管理卷；应用通过授权目录句柄访问文件；安装器管理包的位置。系统控制数据由合格的 SystemRoot 后端管理，可以在内部卷，也可以全部在 SD；不要求存在 Flash 文件分区。应用身份、文件访问权和安装位置彼此独立。
 
@@ -137,6 +137,10 @@ Host 管理的 `.pxa-*` 树不可由普通应用直接遍历、创建或修改�
 
 它适用于反复随机读取的 PAK/GRP/MIX，避免每次读取重复解析路径；小型一次性资源仍使用原接口。若压缩布局不支持低成本随机访问，构建工具需输出未压缩 blob 或可独立寻址的资源布局，不能在运行中为一次读取展开整个大包。
 
+现行只读后端已经实现同步 profile：单次最多 4096 B，C/C++ SDK 借用调用方的头部和数据缓冲，cookie 在每个 FILE 上严格递增；完成或错误后退役，取消幂等退役到指定 cookie，游标不变。真机已验证跨 EOF 短读、取消和游标保持。该 profile 没有 worker、pending lane 或 would-block。规范以 `deps/pxa-system/spec/draft/pxa-fs.json` 为准。
+
+以下异步 lane、ReadBuffer/Task API 和 Assets open-blob 仍是后续提案，须额外协商后才可启用，不能据同步 read-at feature 推断已实现。
+
 FILE 新增可选 I/O 操作 `READ_AT=16` 和 `CANCEL_READ_AT=17`，按 FILE 能力协商；避开现有通用 `READ=1 / WRITE=2 / POLL=3`。`READ_AT` 使用一块调用者提供的缓冲：
 
 ```text
@@ -161,7 +165,7 @@ if (!root) co_return show_storage_error(root.error());
 auto file = co_await root->open("duke3d.grp");
 ```
 
-参见[无选择器的 SDK 示例](../deps/pxa-system/sdk/guest-cpp/examples/fixed-files/README.zh-CN.md)。主动导入其他目录可用已实现的 request_directory/open_grant；下例包含尚未实现的 READ_AT 等目标 API，**不能作为完整可编译示例**。C SDK 不要求协程。
+参见[无选择器的 SDK 示例](../deps/pxa-system/sdk/guest-cpp/examples/fixed-files/README.zh-CN.md)。主动导入其他目录可用已实现的 request_directory/open_grant；下例包含尚未实现的异步 READ_AT 等目标 API，**不能作为完整可编译示例**。C SDK 不要求协程。
 
 ```cpp
 // 仅用户主动导入其他目录时选择，保存 GrantId。
@@ -319,7 +323,7 @@ SD 增加的是存储容量，不是 PSRAM。AOT 从 SD 加载也不等于在 SD
 
 后续固定根示例通过首次启动及重启后的无选择器读取；Duke3D 已自动读取 SD 资源并进入 Hollywood Holocaust 屋顶关卡，线性内存上限仍为 4 MiB。早先的 INFO 帧率采样带入存储扫描干扰，不能用来量化优化收益；测量状态详见[真机验证记录](validation/2026-10-18-duke3d-sd.zh-CN.md)。其余游戏、完整存档及长期稳定性仍待设备验收，整应用安装与 SD 系统盘尚未实现。
 
-先行实现已完成：FS 0.3 已接入 scoped-roots、可选 user-directory-grants 及无需选择器的 app-media-root，原有操作兼容；ASan/UBSan 的 Host Core、作用域目录和包测试通过，C SDK 测试、C++ FS/roots 测试通过，PXADB 78 项测试通过。app-media-root 的签名 SDK 示例已在真机首次启动和重启后通过，manifest 无文件权限声明，全程无选择器。未实现功能不发布 feature。更完整的随机读取、整应用后端、系统盘引导和掉电恢复仍属于后续验收。
+先行实现已完成：FS 0.3 已接入 scoped-roots、可选 user-directory-grants 及无需选择器的 app-media-root，原有操作兼容；ASan/UBSan 的 Host Core、作用域目录和包测试通过，C SDK 测试、C++ FS/roots 测试通过，PXADB 78 项测试通过。app-media-root 的签名 SDK 示例已在真机首次启动和重启后通过，manifest 无文件权限声明，全程无选择器。未实现功能不发布 feature。异步随机读取、整应用后端、系统盘引导和掉电恢复仍属于后续验收。
 
 已完成链路的固件摘要、可复现夹具与截图见[授权 SD 读取真机记录](validation/2026-10-18-sd-roots.zh-CN.md)。
 默认固定目录且无权限/选择弹窗的验证见[固定根真机记录](validation/2026-10-18-sd-fixed-root.zh-CN.md)。
