@@ -349,6 +349,29 @@ static pxa_status_t initialize_fs(
     service_config.max_open_resources =
         CONFIG_PXA_PRIVATE_FS_MAX_OPEN_HANDLES;
     service_config.backend = services->fs_backend;
+    uint8_t user_directories=0, fixed_media=0;
+    for(uint16_t i=0;i<host->manifest->component_count;++i) {
+        const pxa_package_component_t *component=&host->manifest->components[i];
+        for(uint16_t j=0;j<component->service_count;++j) {
+            const pxa_package_service_requirement_t *requirement=&component->services[j];
+            if(requirement->service==PXA_FS_SERVICE_ID &&
+                (requirement->required_features & PXA_FS_FEATURE_APP_MEDIA_ROOT)) fixed_media=1;
+        }
+    }
+    for (uint16_t i=0;i<services->declaration_count;++i) {
+        pxa_bytes_t name=services->declarations[i].name;
+        if(name.size==17 && !memcmp(name.data,"fs.user-directory",17)) user_directories=1;
+    }
+    if(user_directories || fixed_media) {
+        pxa_fs_roots_backend_t *roots=NULL;
+        status=pxa_esp_fs_roots_create(host->allocator_context,host->allocate,
+            host->identity,host->identity,user_directories,host->assets_notify_context,
+            host->assets_notify,&services->fs_roots,&roots);
+        if(status!=PXA_STATUS_OK && status!=PXA_STATUS_UNAVAILABLE)
+            return fail(result,"initialize-app-directories",status,PXA_ESP_SERVICES_ISSUE_NONE);
+        service_config.roots=roots;
+        service_config.permissions=services->permission;
+    }
     workspace_size = pxa_fs_service_workspace_size(&service_config);
     status = allocate_workspace(host, workspace_size, &services->fs_workspace,
                                 result, "allocate-fs-service");
@@ -356,6 +379,7 @@ static pxa_status_t initialize_fs(
     status = pxa_fs_service_init(services->fs_workspace, workspace_size,
                                  host->runtime, &service_config,
                                  &services->fs);
+    if(status==PXA_STATUS_OK) pxa_esp_fs_roots_bind(services->fs_roots,services->fs);
     return status == PXA_STATUS_OK
                ? status
                : fail(result, "initialize-fs-service", status,
@@ -1040,6 +1064,7 @@ pxa_status_t pxa_esp_services_initialize(
 
 void pxa_esp_services_destroy(pxa_esp_services_t *services) {
     if (services == NULL) return;
+    pxa_esp_fs_roots_destroy(services->fs_roots);
     if (services->ui != NULL) pxa_ui_service_deinit(services->ui);
     if (services->scheduler_store != NULL) {
         pxa_posix_scheduler_store_deinit(services->scheduler_store);

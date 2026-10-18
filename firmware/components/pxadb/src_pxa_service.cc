@@ -55,6 +55,7 @@
 #if CONFIG_PXA_ENABLED
 #include "pxa/pxa_host.h"
 #include "pxa/pxa_esp_surface.h"
+#include "pxa/pxa_esp_storage.h"
 #include "pxa/version.h"
 #include "pxa/wire.h"
 #endif
@@ -479,6 +480,9 @@ bool IsSystemWriteUnlocked() {
 
 bool IsWritableFsPath(const char* relative) {
     if (relative == nullptr) return false;
+#if CONFIG_PXA_ENABLED
+    if (pxa_esp_storage_debug_path(relative, nullptr, 0)) return true;
+#endif
     if (strcmp(relative, ".pxadb-upload") == 0) return false;
     if (strcmp(relative, kPxaStateRoot) == 0 ||
         (strncmp(relative, kPxaInboxRoot, sizeof(kPxaInboxRoot) - 1) == 0 &&
@@ -811,8 +815,13 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
         return;
     }
     AbortFileUpload();
-    const int temporary_length = snprintf(s_file_upload.temporary,
-                                          sizeof(s_file_upload.temporary), "%s", kFsUploadTemporary);
+    bool external = false;
+#if CONFIG_PXA_ENABLED
+    external = pxa_esp_storage_debug_path(relative, s_file_upload.temporary,
+                                         sizeof(s_file_upload.temporary));
+#endif
+    const int temporary_length = external ? static_cast<int>(strlen(s_file_upload.temporary)) :
+        snprintf(s_file_upload.temporary, sizeof(s_file_upload.temporary), "%s", kFsUploadTemporary);
     if (temporary_length < 0 ||
         static_cast<size_t>(temporary_length) >= sizeof(s_file_upload.temporary)) {
         AbortFileUpload();
@@ -945,6 +954,40 @@ void MakeFsDirectory(unsigned long sequence, const char* encoded_path) {
     } else {
         SendFrame(sequence, "ERR", "mkdir_failed");
     }
+}
+
+/* Same external volume, regular files only, no overwrite. Native FAT rename
+ * avoids copying large game archives through the serial link or RAM. */
+void MoveExternalFile(unsigned long sequence, const char* encoded_source,
+                      const char* encoded_destination) {
+#if CONFIG_PXA_ENABLED
+    char source_relative[kFsPathLength] = {}, destination_relative[kFsPathLength] = {};
+    char source[kFsAbsolutePathLength] = {}, destination[kFsAbsolutePathLength] = {};
+    char source_volume[PXA_ESP_STORAGE_PATH_BYTES + 32] = {};
+    char destination_volume[PXA_ESP_STORAGE_PATH_BYTES + 32] = {};
+    if (!DecodeFsPath(encoded_source, source_relative, sizeof(source_relative), source, sizeof(source)) ||
+        !DecodeFsPath(encoded_destination, destination_relative, sizeof(destination_relative), destination, sizeof(destination)) ||
+        !pxa_esp_storage_debug_path(source_relative, source_volume, sizeof(source_volume)) ||
+        !pxa_esp_storage_debug_path(destination_relative, destination_volume, sizeof(destination_volume))) {
+        SendFrame(sequence, "ERR", "invalid_path"); return;
+    }
+    if (strcmp(source_volume, destination_volume) != 0) {
+        SendFrame(sequence, "ERR", "cross_volume_unsupported"); return;
+    }
+    struct stat metadata = {};
+    if (stat(source, &metadata) != 0 || !S_ISREG(metadata.st_mode)) {
+        SendFrame(sequence, "ERR", "source_not_regular_file"); return;
+    }
+    if (stat(destination, &metadata) == 0) {
+        SendFrame(sequence, "ERR", "destination_exists"); return;
+    }
+    if (errno != ENOENT) { SendFrame(sequence, "ERR", "destination_stat_failed"); return; }
+    const bool moved = rename(source, destination) == 0;
+    SendFrame(sequence, moved ? "OK" : "ERR", moved ? "" : "move_failed");
+#else
+    (void)encoded_source; (void)encoded_destination;
+    SendFrame(sequence, "ERR", "unsupported");
+#endif
 }
 
 void RemoveFsPath(unsigned long sequence, const char* encoded_path) {
@@ -1163,11 +1206,12 @@ int PxaLogVprintf(const char* format, va_list arguments) {
 
 void SendHello(unsigned long sequence) {
     const esp_app_desc_t* app = esp_app_get_description();
-    char payload[kMaxFramePayload] = {};
+    // Keep complete capability and version fields without enlarging log records.
+    char payload[384] = {};
     const char* kTestCapabilities =
 #if CONFIG_PXADB_TEST_CONTROL
         TestControlAvailable()
-            ? ",input-v2,screenshot-rgb565,screenshot-jpeg"
+             ? ",input-v2,screenshot-rgb565,screenshot-jpeg"
             : "";
 #else
         "";
@@ -1180,9 +1224,16 @@ void SendHello(unsigned long sequence) {
 #else
         "";
 #endif
+    const char* kFpsCapability =
+#if CONFIG_PXA_ENABLED && CONFIG_PXADB_TEST_CONTROL
+        TestControlAvailable() && s_test_control.presentation_fps_x10 != nullptr
+            ? ",perf-fps" : "";
+#else
+        "";
+#endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;target=%s;serial=%s;version=%s",
-             kTestCapabilities, kPowerCapabilities, kPerfCapabilities,
+             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;target=%s;serial=%s;version=%s",
+             kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
              CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version);
     SendFrame(sequence, "OK", payload);
@@ -1214,6 +1265,13 @@ void SendInfo(unsigned long sequence) {
         snprintf(payload+used,sizeof(payload)-used,";storage_total=%u;storage_used=%u;storage_free=%u",
                  static_cast<unsigned>(storage_total),static_cast<unsigned>(storage_used),
                  static_cast<unsigned>(storage_total>=storage_used?storage_total-storage_used:0));
+    }
+#endif
+#if CONFIG_PXADB_TEST_CONTROL
+    if (TestControlAvailable() && s_test_control.presentation_fps_x10 != nullptr) {
+        const size_t used = strlen(payload);
+        snprintf(payload + used, sizeof(payload) - used, ";presentation_fps_x10=%u",
+                 static_cast<unsigned>(s_test_control.presentation_fps_x10(s_test_control.context)));
     }
 #endif
     SendFrame(sequence, "OK", payload);
@@ -1294,6 +1352,19 @@ bool ParseUnsigned(const char* text, uint32_t maximum, uint32_t* value) {
 #if CONFIG_PXA_ENABLED
 void HandlePerf(unsigned long sequence, char* const* arguments,
                 size_t argument_count) {
+    if (argument_count == 1 && strcmp(arguments[0], "FPS") == 0) {
+#if CONFIG_PXADB_TEST_CONTROL
+        if (TestControlAvailable() && s_test_control.presentation_fps_x10 != nullptr) {
+            char payload[64] = {};
+            snprintf(payload,sizeof(payload),"presentation_fps_x10=%u",
+                     static_cast<unsigned>(s_test_control.presentation_fps_x10(s_test_control.context)));
+            SendFrame(sequence,"OK",payload);
+            return;
+        }
+#endif
+        SendFrame(sequence,"ERR","presentation_fps_unavailable");
+        return;
+    }
     if (argument_count == 1 && strcmp(arguments[0], "INPUT") == 0) {
         // Drain the existing counters at explicit test-window boundaries.
         // This does not enable display logging, change settings or allocate.
@@ -2099,6 +2170,8 @@ void HandleCommand(char* line) {
         WriteFsUpload(sequence, argument, second_argument);
     } else if (strcmp(command, "FSMKDIR") == 0 && argument != nullptr) {
         MakeFsDirectory(sequence, argument);
+    } else if (strcmp(command, "FSMOVE") == 0 && argument != nullptr && second_argument != nullptr) {
+        MoveExternalFile(sequence, argument, second_argument);
     } else if (strcmp(command, "FSRM") == 0 && argument != nullptr) {
         RemoveFsPath(sequence, argument);
     } else if (strcmp(command, "FSRMTREE") == 0 && argument != nullptr) {
@@ -2450,7 +2523,8 @@ esp_err_t ConfigureTestControl(const TestControlAdapter* adapter) {
         s_test_control = {};
         return ESP_OK;
     }
-    if (adapter->struct_size < sizeof(TestControlAdapter) ||
+    constexpr size_t base_size = offsetof(TestControlAdapter, presentation_fps_x10);
+    if (adapter->struct_size < base_size ||
         adapter->width == 0 || adapter->height == 0 ||
         adapter->max_pointers == 0 ||
         adapter->max_pointers > PointerState::kMaximumPointers ||
@@ -2460,7 +2534,20 @@ esp_err_t ConfigureTestControl(const TestControlAdapter* adapter) {
         adapter->capture_rgb565 == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
-    s_test_control = *adapter;
+    s_test_control = {};
+    s_test_control.struct_size = sizeof(TestControlAdapter);
+    s_test_control.max_pointers = adapter->max_pointers;
+    s_test_control.context = adapter->context;
+    s_test_control.width = adapter->width;
+    s_test_control.height = adapter->height;
+    s_test_control.route_pointer_down = adapter->route_pointer_down;
+    s_test_control.inject_pointer = adapter->inject_pointer;
+    s_test_control.cancel_pointer = adapter->cancel_pointer;
+    s_test_control.route_key = adapter->route_key;
+    s_test_control.capture_rgb565 = adapter->capture_rgb565;
+    s_test_control.set_input_takeover_callback = adapter->set_input_takeover_callback;
+    if (adapter->struct_size >= sizeof(TestControlAdapter))
+        s_test_control.presentation_fps_x10 = adapter->presentation_fps_x10;
     return ESP_OK;
 #else
     (void)adapter;

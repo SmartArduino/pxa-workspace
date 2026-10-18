@@ -26,6 +26,7 @@
 #include "pxa/window.h"
 
 #include "pxa_esp_net.h"
+#include "pxa_esp_fs_roots.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,6 +48,7 @@ typedef struct {
     pxa_posix_fs_t *posix_fs;
     void *posix_fs_workspace;
     pxa_fs_backend_t fs_backend;
+    pxa_esp_fs_roots_t *fs_roots;
 
     pxa_storage_service_t *storage;
     void *storage_workspace;

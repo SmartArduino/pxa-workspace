@@ -1,0 +1,140 @@
+{
+  "baseline_0_1_2": {
+    "samples": [
+      0.9,
+      1.9,
+      1.9,
+      0.9,
+      0.9,
+      0.9,
+      0.9
+    ],
+    "count": 7,
+    "minimum": 0.9,
+    "median": 0.9,
+    "maximum": 1.9,
+    "source": "duke-level-live.log",
+    "excluded_zero_samples": 1,
+    "measurement_status": "perturbed by INFO filesystem scan"
+  },
+  "optimized_0_1_3": {
+    "samples": [
+      13.9,
+      8.9,
+      8.9,
+      9.9,
+      6.9,
+      12.9,
+      6.9,
+      10.9,
+      8.9,
+      9.9,
+      10.9,
+      6.9,
+      12.8,
+      5.9,
+      11.8
+    ],
+    "count": 15,
+    "minimum": 5.9,
+    "median": 9.9,
+    "maximum": 13.9,
+    "source": "duke-cache-live.log",
+    "measurement_status": "perturbed by INFO filesystem scan"
+  },
+  "package": {
+    "path": "local/storage-device/duke3d-sd-0.1.3.pxa",
+    "bytes": 2164869,
+    "sha256": "512ed3ca29155488ea85e8090234d53127f69517c42abf47bf34b8a0a9c0ec5e"
+  },
+  "board": "doit-gamekit / ESP32-S31",
+  "scene": "Hollywood Holocaust rooftop, 320x240; after loading; stationary except periodic USE taps",
+  "metric": "INFO.presentation_fps_x10 / 10; completed LCD content presentation; short samples of unequal count",
+  "linear_memory": {
+    "maximum_bytes": 4194304,
+    "optimized_committed_bytes": 4063232,
+    "optimized_rom_cache_bytes": 393216,
+    "baseline_rom_cache_bytes": 131072
+  },
+  "optimized_active_memory": {
+    "sram_free_bytes": 123731,
+    "sram_largest_bytes": 81920,
+    "psram_free_bytes": 8425892,
+    "psram_largest_bytes": 7733248,
+    "budget_denied": 0,
+    "budget_allocation_failures": 0
+  },
+  "firmware": {
+    "bytes": 3920032,
+    "sha256": "d5ae23d18864453809795d36cd98d8b6fb41e7863a8700355c6d8462b8392cf8"
+  },
+  "controls_fix_0_1_4": {
+    "bytes": 2163362,
+    "sha256": "6060cca36c308c080beb8da9fd0ca5c228c3e0770060a3f5a586dbe7f192db10",
+    "status": "turn/look and fire visually verified on hardware; one loading callback timeout recovered after Wait; not stable acceptance"
+  },
+  "hot_cache_fix_0_1_5": {
+    "status": "installed and device tested; hot-loop cooperation did not eliminate loading timeout; stopped for follow-up",
+    "bytes": 2163582,
+    "sha256": "93c047d59f7cf60253cce3b043f6e04852b3b3ec7e683c09927cf4025986af46"
+  },
+  "io_boundary_fix_0_1_6": {
+    "status": "installed and running on firmware18; roof/turn/fire code works; loading timeout still requires Wait; not stable acceptance",
+    "implementation": "yield after synchronous file read/write returns when callback budget is consumed",
+    "slow_host_imports_us": {
+      "read_8192_observed": 1958477,
+      "seek_observed": 2505384
+    },
+    "firmware_bytes": 3920672,
+    "firmware_sha256": "6bd85ed8a0d925b9817e6ee18cdf3df7d202f74fbe251665c218aa418711746a",
+    "bytes": 2167677,
+    "sha256": "45783deb884b19a6f8d0226bdd1daa8cd0e25d0090915fee3f9cfdc34059437c"
+  },
+  "comparative_conclusion_valid": false,
+  "measurement_issue": "Historical INFO samples call esp_littlefs_info -> locked lfs_fs_size traversal. Polling contends with game I/O; historical ranges are perturbed observations, not isolated performance comparisons. New measurement uses PERF FPS only.",
+  "optimized_0_1_6_lightweight": {
+    "samples": [
+      10.9,
+      11.9,
+      11.9,
+      11.9,
+      10.8,
+      11.9,
+      11.9,
+      11.9,
+      11.9,
+      11.9,
+      11.9,
+      11.9,
+      10.9,
+      11.9,
+      11.9
+    ],
+    "count": 15,
+    "minimum": 10.8,
+    "median": 11.9,
+    "maximum": 11.9,
+    "metric": "PERF FPS / 10, no INFO polling",
+    "condition": "Hollywood Holocaust rooftop after manually dismissing loading timeout; foreground and periodic USE; excludes locked-screen samples",
+    "round_trip_ms": [
+      6.2,
+      6.73,
+      7.1,
+      7.11,
+      6.21,
+      6.91,
+      7.16,
+      6.34,
+      6.87,
+      6.91,
+      7.02,
+      7.39,
+      6.54,
+      9.27,
+      7.17
+    ],
+    "source": "duke-light-active.log",
+    "valid_scene_sample": true,
+    "startup_stability_pass": false
+  }
+}

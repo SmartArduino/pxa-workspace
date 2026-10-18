@@ -710,6 +710,21 @@ def command_info(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def command_perf(arguments: argparse.Namespace) -> int:
+    with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
+                     arguments.timeout, arguments.logcat) as client:
+        frames = client.request("PERF FPS")
+    try:
+        fps_x10 = int(info_properties(frames[-1].payload)["presentation_fps_x10"])
+        if fps_x10 < 0 or fps_x10 > 0xFFFFFFFF:
+            raise ValueError("out of range")
+    except (ValueError, KeyError, IndexError) as error:
+        raise PxaDbError("device returned malformed presentation FPS") from error
+    print(json.dumps({"presentation_fps_x10": fps_x10,
+                      "presentation_fps": fps_x10 / 10}, sort_keys=True))
+    return 0
+
+
 def command_memory(arguments: argparse.Namespace) -> int:
     with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
                      arguments.timeout) as client:
@@ -1087,6 +1102,11 @@ class NormalFsClient:
             chunk_size = 192
         last_progress = -1
         recoveries = 0
+        last_recovery_offset = 0
+        # FSPUT can validate an already-present file; the final data reply
+        # follows the device's full SHA-256 pass. Budget that pass for large
+        # removable-media files without relaxing ordinary data acknowledgements.
+        verify_timeout = max(10.0, min(120.0, 5.0 + total / (512 * 1024)))
 
         def report_progress(done: int) -> None:
             nonlocal last_progress
@@ -1106,7 +1126,7 @@ class NormalFsClient:
                     frames = self.client.request_until(
                         f"FSPUT {client_encode_path(remote_path)} {total} {digest}",
                         {"READY", "OK"},
-                        timeout=10.0,
+                        timeout=verify_timeout,
                     )
                     return frames[-1]
                 except PxaDbRejectedError:
@@ -1142,7 +1162,8 @@ class NormalFsClient:
                         command = (f"FSDATA {offset} {encoded}" if offset_transfer
                                    else f"FSDATA {encoded}")
                         frames = self.client.request_until(
-                            command, {"READY", "OK"}, timeout=10.0
+                            command, {"READY", "OK"},
+                            timeout=verify_timeout if len(chunk) == remaining else 10.0
                         )
                     terminal = frames[-1]
                 except PxaDbError as error:
@@ -1151,13 +1172,20 @@ class NormalFsClient:
                         "invalid_offset", "offset_mismatch", "invalid_file_chunk"
                     }:
                         raise
+                    # Count failures without meaningful confirmed progress.
+                    # An isolated lost UART reply every few MiB must not make
+                    # a large resumable transfer exhaust a file-wide budget.
+                    if offset_transfer and offset >= last_recovery_offset + 64 * 1024:
+                        recoveries = 0
+                    last_recovery_offset = offset
                     recoveries += 1
                     if recoveries >= 3:
                         raise
-                    if reason == "invalid_file_chunk" and not binary_transfer:
-                        # A corrupted/truncated base64 line aborts the device
-                        # upload. Restart with smaller UART bursts; the full
-                        # file digest still gates acceptance of every retry.
+                    if not binary_transfer and (reason == "invalid_file_chunk" or
+                                                not isinstance(error, PxaDbRejectedError)):
+                        # Corrupted lines or lost replies suggest smaller UART
+                        # bursts. Resume at the confirmed offset; the full file
+                        # digest still gates acceptance of every retry.
                         chunk_size = max(1, chunk_size // 2)
                     print(f"upload recovery {recoveries}/2: {reason}; "
                           f"confirming offset, chunk={chunk_size}",
@@ -1176,6 +1204,12 @@ class NormalFsClient:
 
     def mkdir(self, remote_path: str) -> None:
         self.client.request(f"FSMKDIR {client_encode_path(remote_path)}", timeout=10.0)
+
+    def move(self, source: str, destination: str) -> None:
+        self.client.request(
+            f"FSMOVE {client_encode_path(source)} {client_encode_path(destination)}",
+            timeout=10.0,
+        )
 
     def remove(self, remote_path: str) -> None:
         self.client.request(f"FSRM {client_encode_path(remote_path)}", timeout=30.0)
@@ -1212,6 +1246,8 @@ def command_fs(arguments: argparse.Namespace) -> int:
             fs_remove_tree(client, arguments.remote, arguments.timeout)
         elif arguments.fs_action == "mkdir":
             fs_mkdir(client, arguments.remote)
+        elif arguments.fs_action == "move":
+            client.move(arguments.source, arguments.destination)
         elif arguments.fs_action == "unlock":
             frames = client.client.request(
                 f"FSUNLOCK {arguments.minutes}", timeout=10.0
@@ -1909,6 +1945,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_connection_arguments(info)
     info.set_defaults(handler=command_info)
 
+    perf = subcommands.add_parser("perf", help="read presentation FPS without scanning storage")
+    add_connection_arguments(perf)
+    perf.set_defaults(handler=command_perf)
+
     memory = subcommands.add_parser("memory", help="read ESP heap and PXA resource memory statistics")
     add_connection_arguments(memory, allow_logcat=False)
     memory.set_defaults(handler=command_memory)
@@ -2092,6 +2132,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_connection_arguments(fs_mkdir)
     fs_mkdir.add_argument("remote")
     fs_mkdir.set_defaults(handler=command_fs)
+    fs_move = fs_commands.add_parser(
+        "move", help="move a regular file within one external volume, without replacing a destination")
+    add_connection_arguments(fs_move)
+    fs_move.add_argument("source")
+    fs_move.add_argument("destination")
+    fs_move.set_defaults(handler=command_fs)
     return parser
 
 

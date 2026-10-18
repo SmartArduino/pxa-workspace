@@ -24,6 +24,14 @@ typedef struct {
 typedef struct {
     uint32_t prompt_id;
     char app_name[PXA_ESP_UI_SHELL_APP_NAME_BYTES];
+    char purpose[257];
+} pxa_esp_ui_directory_prompt_t;
+int pxa_esp_ui_shell_post_directory_prompt(const pxa_esp_ui_directory_prompt_t *prompt);
+void pxa_esp_ui_shell_dismiss_directory_prompt(uint32_t prompt_id);
+
+typedef struct {
+    uint32_t prompt_id;
+    char app_name[PXA_ESP_UI_SHELL_APP_NAME_BYTES];
 } pxa_esp_ui_unresponsive_prompt_t;
 
 typedef struct {

@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cerrno>
 #include <cstring>
+#include <cstdio>
 #include <ctime>
 #include <sys/stat.h>
 
@@ -31,6 +32,8 @@
 #include <freertos/queue.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
+#include <pxa/pxa_esp_storage.h>
+#include <diskio_sdmmc.h>
 #include <pxa_board_api.h>
 #include <pxa_board_common/ledc_backlight.h>
 #include <pxadb/pxadb_service.h>
@@ -525,6 +528,24 @@ bool Gamekit::InitializeSd() {
     }
     ESP_LOGI(kTag, "SD mounted at %s: %llu MiB, SPI3 20 MHz", mount,
              static_cast<unsigned long long>(card->csd.capacity) * card->csd.sector_size / (1024 * 1024));
+    DWORD serial = 0;
+    bool serial_known = false;
+#if CONFIG_FATFS_USE_LABEL
+    char drive[8];
+    std::snprintf(drive, sizeof(drive), "%u:", unsigned(ff_diskio_get_pdrv_card(card)));
+    serial_known = f_getlabel(drive, nullptr, &serial) == FR_OK;
+#endif
+    uint64_t total = 0, free = 0;
+    const bool space_known = esp_vfs_fat_info(mount, &total, &free) == ESP_OK;
+    const auto storage = pxa_esp_storage_register_fat(mount, "SD card", &card->cid,
+        sizeof(card->cid), serial, serial_known, total, free, space_known ? 3 : 0);
+    if (storage != PXA_STATUS_OK)
+        ESP_LOGW(kTag, "SD data volume registration: %ld", long(storage));
+    else {
+        const auto media = pxa_esp_storage_select_app_media(mount);
+        if (media != PXA_STATUS_OK)
+            ESP_LOGW(kTag, "Fixed app media volume: %ld", long(media));
+    }
     return true;
 }
 
@@ -789,6 +810,9 @@ bool Gamekit::ConfigureDiagnostics() {
             }
         }
         return self->Capture(pixels, count, info);
+    };
+    adapter.presentation_fps_x10 = [](void*) {
+        return pxa_board_performance_refresh();
     };
     const auto result = pxadb::ConfigureTestControl(&adapter);
     return result == ESP_OK || result == ESP_ERR_NOT_SUPPORTED;

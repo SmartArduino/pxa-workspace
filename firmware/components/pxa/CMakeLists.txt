@@ -13,6 +13,7 @@ set(PXA_SRCS
     "src/services/pxa_esp_resource_memory.c"
     "src/services/pxa_esp_net.c"
     "src/services/pxa_esp_services.c"
+    "src/services/pxa_esp_fs_roots.c"
     "src/services/pxa_esp_surface.c"
     "src/package/pxa_development_trust.c"
     "src/package/pxa_package_disabled_policy.c"
@@ -23,6 +24,7 @@ set(PXA_SRCS
     "src/package/pxa_esp_permission_store.c"
     "src/ui/pxa_esp_ui_assets.c"
     "src/ui/pxa_esp_system_overlay.c"
+    "src/ui/pxa_esp_directory_picker.c"
     "src/ui/pxa_esp_store_result.c")
 
 # Native products can supply the existing audio sinks without linking the
@@ -69,6 +71,7 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/esp/pxa_esp_mbedtls.c"
     "${PXA_C_CORE_ROOT}/adapters/esp/pxa_esp_posix_shim.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_fs.c"
+    "${PXA_C_CORE_ROOT}/adapters/posix/pxa_scoped_fs.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_clock.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_scheduler_store.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_storage.c"

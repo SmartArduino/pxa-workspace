@@ -1,0 +1,503 @@
+{
+  "schema": "pxa-multi-volume-design-proposal-1",
+  "status": "implemented-read-only-fs-subset-and-proposal",
+  "date": "2026-10-18",
+  "normative": false,
+  "design": "../pxa-multi-volume-design.zh-CN.md",
+  "scope": "Semantic ABI allocation proposal; not a complete wire specification or an SDK manifest",
+  "transport": {
+    "core": "2.0",
+    "imports": [
+      "pxa_call",
+      "pxa_io"
+    ],
+    "byte_order": "little-endian",
+    "control_message_max_bytes": 4096,
+    "control_payload_max_bytes": 4076,
+    "error_result": "existing status:i32 only; no appended diagnostic bytes",
+    "serialization": "No native structs, pointers, padding, implicit strings or unchecked trailing bytes",
+    "cancellation": "Core request cancellation for control requests; resource close for handles; explicit FILE lane cancellation for read-at",
+    "compatibility": "Existing service opcodes and payloads remain unchanged; every extension requires version and feature negotiation"
+  },
+  "identifiers": {
+    "volume_id": "opaque bytes[16]; persistent Host binding; labels and mount paths are not identity",
+    "mount_epoch": "u64; unique mount instance within this Host; not a persistent file capability",
+    "grant_id": "opaque bytes[16]; scoped to lineage-root and app-id; not transferable authority",
+    "plan_id": "opaque bytes[16]; bounded lifetime; bound to caller, target epoch and source revision",
+    "operation_id": "opaque bytes[16]; queryable independently of client transport",
+    "idempotency_key": "opaque bytes[16]; caller-scoped retry key, persisted with accepted operations",
+    "handle": "existing component-owned generation-checked u64; never persisted"
+  },
+  "resource_types": {
+    "file": 3,
+    "directory_and_root": 4,
+    "root_watch_lease": 1
+  },
+  "rights": [
+    {
+      "name": "read",
+      "bit": 0
+    },
+    {
+      "name": "enumerate",
+      "bit": 1
+    },
+    {
+      "name": "write",
+      "bit": 2
+    },
+    {
+      "name": "create",
+      "bit": 3
+    },
+    {
+      "name": "remove",
+      "bit": 4
+    }
+  ],
+  "rights_rules": [
+    "Unknown bits are invalid; permissions are intersected with caller, grant and volume capabilities",
+    "File create needs create and write; truncate needs write; directory mutation needs the matching right",
+    "Rename needs remove on the source and create on the destination; replacement additionally needs destination remove",
+    "A read-only directory picker request maps to read plus enumerate; returned rights are explicit",
+    "Closing a directory does not revoke independently held children; revoking its grant invalidates all children",
+    "Managed .pxa-* aliases and volume-relative /PXA/system, /PXA/app, /PXA/data and /PXA/.pxa-control remain excluded according to native filesystem name equivalence; /PXA/media may be granted"
+  ],
+  "services": [
+    {
+      "name": "fs",
+      "id": 5,
+      "current_version": "0.3.0",
+      "proposed_version": "0.3.0",
+      "current_spec": "../../deps/pxa-system/spec/draft/pxa-fs.json",
+      "preserve_opcodes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "features": [
+        {
+          "name": "scoped-roots",
+          "bit": 0
+        },
+        {
+          "name": "read-at",
+          "bit": 1
+        },
+        {
+          "name": "directory-pages",
+          "bit": 2
+        },
+        {
+          "name": "root-watch",
+          "bit": 3
+        },
+        {
+          "name": "user-directory-grants",
+          "bit": 4
+        },
+        {
+          "name": "file-sync",
+          "bit": 5
+        },
+        {
+          "name": "app-media-root",
+          "bit": 6
+        }
+      ],
+      "opcodes": [
+        {
+          "id": 9,
+          "name": "open-root",
+          "feature": "scoped-roots",
+          "request": "kind:u8|reserved:bytes[3]=0|permission:u64|grant_id:bytes[16]",
+          "success": "directory:u64|granted_rights:u32",
+          "rule": "kind private=1/cache=2/temporary=3/grant=4/app-media=5; permission and grant_id zero except kind=4; kind=4 resolves exact declared user-directory authority; kind=5 requires app-media-root and Host identity/placement binding without picker"
+        },
+        {
+          "id": 10,
+          "name": "request-access",
+          "feature": "user-directory-grants",
+          "request": "permission:u64|requested_rights:u32|flags:u32|purpose:utf8-u16",
+          "success": "directory:u64|granted_rights:u32|grant_id:bytes[16]",
+          "rule": "flags bit0=persistent; unknown flags invalid; purpose <=256 bytes; all-zero grant_id for session-only access; exact Permission authority plus trusted Host picker required"
+        },
+        {
+          "id": 11,
+          "name": "open-at",
+          "feature": "scoped-roots",
+          "request": "directory:u64|open_flags:u32|path:utf8-u16",
+          "success": "handle:u64|kind:u8|reserved:bytes[3]=0|file_features:u64|size:u64",
+          "rule": "Existing FS open flags; directory handle if directory requested, FILE otherwise; features and size describe the opened object"
+        },
+        {
+          "id": 12,
+          "name": "mkdir-at",
+          "feature": "scoped-roots",
+          "request": "directory:u64|path:utf8-u16",
+          "success": "empty"
+        },
+        {
+          "id": 13,
+          "name": "remove-at",
+          "feature": "scoped-roots",
+          "request": "directory:u64|path:utf8-u16",
+          "success": "empty",
+          "rule": "No recursive deletion"
+        },
+        {
+          "id": 14,
+          "name": "rename-at",
+          "feature": "scoped-roots",
+          "request": "source_dir:u64|destination_dir:u64|source:utf8-u16|destination:utf8-u16",
+          "success": "empty",
+          "rule": "Same volume and compatible authority; destination absent; cross-volume unsupported"
+        },
+        {
+          "id": 15,
+          "name": "replace-at",
+          "feature": "scoped-roots",
+          "request": "source_dir:u64|destination_dir:u64|source:utf8-u16|destination:utf8-u16",
+          "success": "empty",
+          "rule": "Same volume and compatible authority; atomic closed-regular-file replacement only; failure preserves old destination; unsupported without backend guarantee"
+        },
+        {
+          "id": 16,
+          "name": "stat-at",
+          "feature": "scoped-roots",
+          "request": "directory:u64|path:utf8-u16",
+          "success": "kind:u8|reserved:bytes[7]=0|size:u64"
+        },
+        {
+          "id": 17,
+          "name": "query-root",
+          "feature": "scoped-roots",
+          "request": "directory:u64",
+          "success": "RootInfo",
+          "rule": "Caller-visible root only; quota-scoped free space where applicable"
+        },
+        {
+          "id": 18,
+          "name": "sync",
+          "feature": "file-sync",
+          "request": "file:u64",
+          "success": "empty",
+          "rule": "Async control operation; flush does not invent stronger media durability"
+        },
+        {
+          "id": 19,
+          "name": "read-directory-page",
+          "feature": "directory-pages",
+          "request": "directory:u64|max_entries:u16|max_result_bytes:u16",
+          "success": "DirectoryPage",
+          "rule": "Bounded result <=4076 bytes including status; live iterator, no snapshot promise; no silent name truncation"
+        },
+        {
+          "id": 20,
+          "name": "watch-roots",
+          "feature": "root-watch",
+          "request": "empty",
+          "success": "watch_lease:u64|revision:u64",
+          "rule": "One bounded component-visible subscription; closing LEASE ends it"
+        }
+      ],
+      "events": [
+        {
+          "id": 32769,
+          "name": "roots-changed",
+          "payload": "watch_lease:u64|revision:u64",
+          "delivery": "coalescible per component and watch lease; requery visible roots"
+        }
+      ],
+      "limits": {
+        "legacy_path_bytes": 255,
+        "legacy_segment_bytes": 64,
+        "new_path_bytes_max": 1024,
+        "new_segment_bytes_max": 255,
+        "purpose_bytes_max": 256,
+        "backend_may_reduce_limits": true
+      }
+    },
+    {
+      "name": "assets",
+      "id": 21,
+      "current_version": "2.3.0",
+      "proposed_version": "2.4.0",
+      "current_spec": "../../deps/pxa-system/spec/draft/pxa-assets.json",
+      "preserve_opcodes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "preserve_feature_bits": [
+        0,
+        1
+      ],
+      "features": [
+        {
+          "name": "open-blob",
+          "bit": 2
+        }
+      ],
+      "opcodes": [
+        {
+          "id": 8,
+          "name": "open-blob",
+          "feature": "open-blob",
+          "request": "path:utf8-u16",
+          "success": "file:u64|file_features:u64|size:u64",
+          "rule": "Read-only declared package blob; retain package generation until final FILE and in-flight references close; report random-read capability explicitly"
+        }
+      ],
+      "verification_policy": "Verify during installation; trust installed content at runtime; no new read-time, launch-time or remount hash scan"
+    },
+    {
+      "name": "store-installer",
+      "id": 20,
+      "current_version": "0.5.0",
+      "proposed_version": "0.6.0",
+      "current_spec": "../../deps/pxa-system/spec/draft/pxa-store-installer.json",
+      "authorization": "Trusted system management components only; never grants arbitrary applications global volume or installer access",
+      "preserve_opcodes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        32769
+      ],
+      "features": [
+        {
+          "name": "volume-locations",
+          "bit": 0
+        },
+        {
+          "name": "planned-operations",
+          "bit": 1
+        },
+        {
+          "name": "package-move",
+          "bit": 2
+        },
+        {
+          "name": "private-data-move",
+          "bit": 3
+        }
+      ],
+      "opcodes": [
+        {
+          "id": 9,
+          "name": "volumes",
+          "feature": "volume-locations",
+          "request": "PageRequest",
+          "success": "Page<VolumeInfo>"
+        },
+        {
+          "id": 10,
+          "name": "prepare-operation",
+          "feature": "planned-operations",
+          "request": "OperationIntent",
+          "success": "OperationPlan"
+        },
+        {
+          "id": 11,
+          "name": "execute-operation",
+          "feature": "planned-operations",
+          "request": "plan_id:bytes[16]|idempotency_key:bytes[16]|InstallSource",
+          "success": "operation_id:bytes[16]",
+          "rule": "Accepted is not committed; repeat of same authorized plan and key returns same operation; never duplicates activation"
+        },
+        {
+          "id": 12,
+          "name": "query-operation",
+          "feature": "planned-operations",
+          "request": "operation_id:bytes[16]",
+          "success": "OperationState"
+        },
+        {
+          "id": 13,
+          "name": "locations",
+          "feature": "volume-locations",
+          "request": "PageRequest",
+          "success": "Page<InstalledLocation>"
+        },
+        {
+          "id": 14,
+          "name": "cancel-operation",
+          "feature": "planned-operations",
+          "request": "operation_id:bytes[16]",
+          "success": "OperationState",
+          "rule": "Before commit cancel candidate; after commit return committed state, do not report rolled-back install"
+        },
+        {
+          "id": 15,
+          "name": "set-default-volume",
+          "feature": "volume-locations",
+          "request": "volume_id:bytes[16]|expected_policy_revision:u64",
+          "success": "policy_revision:u64",
+          "rule": "Preference only; cannot relocate installed content or silently fall back while chosen volume is offline"
+        }
+      ],
+      "events": [
+        {
+          "id": 32770,
+          "name": "operation-changed",
+          "payload": "operation_id:bytes[16]|revision:u64",
+          "delivery": "coalescible hint; query durable operation state"
+        }
+      ]
+    }
+  ],
+  "file_io_extension": {
+    "resource_type": 3,
+    "preserve_operations": {
+      "read": 1,
+      "write": 2,
+      "poll": 3
+    },
+    "file_features": [
+      {
+        "name": "read-at",
+        "bit": 0
+      },
+      {
+        "name": "sync",
+        "bit": 1
+      }
+    ],
+    "operations": [
+      {
+        "id": 16,
+        "name": "read-at",
+        "buffer": "offset:u64|cookie:u64|requested:u32|reserved:u32=0|data:bytes[requested]",
+        "header_bytes": 24,
+        "return": "actual data byte count, zero at or beyond EOF, or existing negative PXA status",
+        "rule": "Nonzero unique cookie; no cursor mutation; repeat same tuple retrieves pending result; one lane per FILE; different in-flight tuple is busy; max bytes negotiated; no retained Guest pointer"
+      },
+      {
+        "id": 17,
+        "name": "cancel-read-at",
+        "buffer": "cookie:u64",
+        "return": "0 on idempotent cancellation or existing negative PXA status",
+        "rule": "Invalidate matching lane synchronously; release late completion without delivery; cookie cannot be reused"
+      }
+    ],
+    "waiting": "Existing Core wait-resource READ readiness and PXA_IO_POLL; tolerate spurious wakeups; file close cancels lane",
+    "retry_safety": "Validate destination before consuming a completed result; invalid destination cannot publish partial ownership or write outside Guest memory"
+  },
+  "permission_integration": {
+    "service": 11,
+    "proposed_declaration": "fs.user-directory",
+    "exact_scopes": [
+      "read",
+      "read-write"
+    ],
+    "scope_rights": {
+      "read": [
+        "read",
+        "enumerate"
+      ],
+      "read-write": [
+        "read",
+        "enumerate",
+        "write",
+        "create",
+        "remove"
+      ]
+    },
+    "rule": "Resolve supplied Permission handle against an exact signed declaration, intersect its rights with grant and volume; no wildcard scope matching; propagate authority to descendants and requests",
+    "revocation": "Existing Permission authority revocation closes all bound resources; individual GrantId revocation additionally invalidates only that grant subtree",
+    "sdk_lifetime": "Keep permission lease alive through all dependent root and file references; closing root alone must not revoke independently owned children"
+  },
+  "semantic_records_to_finalize_in_wire_spec": {
+    "utf8-u16": "byte_length:u16 followed by exactly that many UTF-8 bytes; per-field limits checked; no NUL",
+    "RootInfo": "volume_id, mount_epoch, current_state, naming_semantics, granted_rights, root_capabilities, max_path_bytes, max_segment_bytes, max_read_at_bytes, quota_or_space_info with known flags",
+    "DirectoryPage": "iterator state, explicit EOF, bounded count and variable-length name/kind/size entries; no hidden overflow",
+    "PageRequest": "snapshot revision plus opaque continuation cursor and result budget; initial cursor zero; stale revisions require rescan; no unbounded lists",
+    "VolumeInfo": "volume_id, mount_epoch, state, identity_strength, display_name, filesystem, removable, hotplug, read_only, capabilities, install_backend_grade, space_known_flags, total/free/reserved u64, allocation_unit, file_size_limit",
+    "OperationIntent": "action install/whole-app-move/package-move/data-move, app identity, expected source placement revision, layout_version, placement_policy, package/data/app-media target volumes and epochs, selected SystemRoot, source metadata and validated-or-estimated sizing",
+    "OperationPlan": "plan_id, deadline, target binding, source revision, reservations on each volume and control store, sizing confidence, negotiated upload and expansion limits, user-visible consequences",
+    "InstallSource": "authorized Store ticket or existing installed source; PXADB candidate/upload lease is Host-only; never Guest-selected native path",
+    "OperationState": "operation_id, revision, stage, bytes_done/total with known flags, committed flag, result status, resulting location revision; bounded durable retention",
+    "InstalledLocation": "identity, version, location_revision, layout_version, placement_policy, SystemId, StoreId, package volume/release, data volume/DataId, backend kinds, online state; publisher identity independent of location"
+  },
+  "status_mapping": {
+    "malformed_path_flags_or_lengths": "invalid-argument",
+    "reopen_revoked_grant_or_live_permission_denied": "denied",
+    "closed_generation_mismatch_or_wrong_component_handle": "not-found under existing Core handle lookup; malformed encoding remains invalid-argument",
+    "write_to_read_only_root": "denied",
+    "valid_scope_missing_entry": "not-found",
+    "offline_or_removed_media": "unavailable",
+    "unsupported_cross_volume_atomic_operation_or_backend_semantics": "unsupported",
+    "space_quota_or_reservation_exhausted": "quota-exceeded",
+    "host_queue_handle_or_memory_limit": "resource-limit",
+    "protocol_size_limit": "limit-exceeded",
+    "transient_read_pending": "would-block",
+    "conflicting_inflight_lane_or_identity_operation": "busy",
+    "stale_plan_revision_or_mount_binding": "bad-state",
+    "filesystem_or_device_failure": "io-error",
+    "picker_or_precommit_operation_cancelled": "cancelled"
+  },
+  "implementation_gates": [
+    "Finalize referenced record encodings, feature manifests and golden wire vectors before generating SDK headers",
+    "Validate permission manifest integration, trusted picker and revocation on every returned descendant handle",
+    "Keep original FS byte-exact private semantics and old installer slot recovery unchanged",
+    "Qualify backend sync and crash recovery before advertising removable volume installation",
+    "Keep selected SystemRoot placement metadata authoritative, whether on internal storage or SD; never activate a removable generation by directory scan alone",
+    "Measure device RAM, read latency, frame times and audio underruns; storage space is not execution memory"
+  ],
+  "storage_layout": "pxa-storage-layout.draft.json",
+  "implementation_status": {
+    "fs_version": "0.3.0",
+    "fs_implemented_opcodes": [
+      9,
+      10,
+      11,
+      16,
+      17
+    ],
+    "fs_implemented_features": [
+      "scoped-roots",
+      "user-directory-grants",
+      "app-media-root"
+    ],
+    "fs_open_root_implemented_kinds": [
+      4,
+      5
+    ],
+    "fs_rights": "read and enumerate only",
+    "host_volume_registry": "implemented; bounded caller-owned workspace",
+    "gamekit": "one registered FAT volume, trusted picker, persistent grants; hardware SD read test passed",
+    "not_implemented": [
+      "whole-app-install",
+      "removable-system-bootstrap",
+      "private-filesystem-images",
+      "read-at",
+      "file-sync",
+      "directory-pages",
+      "root-watch",
+      "external-package-installer"
+    ],
+    "current_contract": "../../deps/pxa-system/spec/draft/pxa-fs.json",
+    "gamekit_fixed_media": "Hardware first launch and reboot PASS with signed pxa-fixed-files and no file permission declaration or directory picker"
+  },
+  "control_store": {
+    "location": "Selected SystemRoot on a qualified internal or SD volume",
+    "flash_file_partition_required": false,
+    "recovery": "Compiled firmware UI must work without external fonts or control data",
+    "activation": "Control-store commit only; never volume directory scan",
+    "removal": "Stop dependent system instances and use firmware recovery"
+  }
+}

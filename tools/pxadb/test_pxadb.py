@@ -357,6 +357,39 @@ class PxaDbLogStreamingTest(unittest.TestCase):
                     pxadb.NormalFsClient(client).put(source, "pxa-state/inbox/payload.bin")
                 self.assertEqual(request.call_count, 6)
 
+    def test_resumable_upload_budget_resets_after_confirmed_progress(self) -> None:
+        client = fake_client([])
+        client.device_info = "max_chunk=1024;fs_offset=1"
+        payload = bytes(256 * 1024)
+        position = 0
+        failure_at = 64 * 1024
+        failures = 0
+        begins = 0
+
+        def respond(command, terminal_kinds, timeout):
+            nonlocal position, failure_at, failures, begins
+            if command.startswith("FSPUT "):
+                begins += 1
+                return [pxadb.Frame(1, "READY", str(len(payload) - position))]
+            _, offset, encoded = command.split(" ")
+            self.assertEqual(int(offset), position)
+            if position >= failure_at and failures < 3:
+                failures += 1
+                failure_at += 64 * 1024
+                raise pxadb.PxaDbRejectedError("offset_mismatch")
+            chunk = base64.b64decode(encoded)
+            self.assertEqual(chunk, payload[position:position + len(chunk)])
+            position += len(chunk)
+            return [pxadb.Frame(1, "OK", "") if position == len(payload)
+                    else pxadb.Frame(1, "READY", str(len(payload) - position))]
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "payload.bin"
+            source.write_bytes(payload)
+            with mock.patch.object(client, "request_until", side_effect=respond):
+                pxadb.NormalFsClient(client).put(source, "sdcard/game.pak")
+        self.assertEqual((position, failures, begins), (len(payload), 3, 4))
+
     def test_uart_upload_chunk_override(self) -> None:
         payload = b"abcdef"
         client = fake_client([
@@ -715,6 +748,31 @@ class PxaDbLogStreamingTest(unittest.TestCase):
                 self.assertRaisesRegex(pxadb.PxaDbError,
                                        "does not support software power-off"):
             pxadb.command_poweroff(arguments)
+
+    def test_perf_uses_lightweight_command_without_info(self) -> None:
+        arguments = pxadb.build_parser().parse_args(["perf", "--port", "/dev/ttyACM0"])
+        client = mock.MagicMock()
+        client.__enter__().request.return_value = [
+            pxadb.Frame(1, "OK", "presentation_fps_x10=104")]
+        output = io.StringIO()
+        with mock.patch.object(pxadb, "open_client", return_value=client), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(pxadb.command_perf(arguments), 0)
+        client.__enter__().request.assert_called_once_with("PERF FPS")
+        self.assertEqual(json.loads(output.getvalue()), {
+            "presentation_fps_x10": 104, "presentation_fps": 10.4})
+
+    def test_perf_rejects_malformed_counters(self) -> None:
+        arguments = pxadb.build_parser().parse_args(["perf", "--port", "/dev/ttyACM0"])
+        for payload in ("", "presentation_fps_x10=-1", "presentation_fps_x10=nan",
+                        "presentation_fps_x10=4294967296"):
+            client = mock.MagicMock()
+            client.__enter__().request.return_value = [pxadb.Frame(1,"OK",payload)]
+            with self.subTest(payload=payload), \
+                    mock.patch.object(pxadb,"open_client",return_value=client), \
+                    self.assertRaisesRegex(pxadb.PxaDbError,"malformed presentation FPS"):
+                pxadb.command_perf(arguments)
+            client.__enter__().request.assert_called_once_with("PERF FPS")
 
     def test_memory_command_parses_scoped_device_counters(self) -> None:
         arguments = pxadb.build_parser().parse_args([
@@ -1203,6 +1261,16 @@ class PxaDbFileTransferTest(unittest.TestCase):
             command,
             "FSRMTREE " + pxadb.client_encode_path("system/pxa/builtin"),
         )
+
+    def test_external_move_rejection_does_not_copy_or_delete(self) -> None:
+        transport = mock.MagicMock()
+        transport.request.side_effect = pxadb.PxaDbRejectedError("destination_exists")
+        client = pxadb.NormalFsClient(transport)
+        with self.assertRaisesRegex(pxadb.PxaDbRejectedError, "destination_exists"):
+            client.move("sdcard/游戏.grp", "sdcard/PXA/media/data.grp")
+        transport.request.assert_called_once_with(
+            "FSMOVE " + pxadb.client_encode_path("sdcard/游戏.grp") + " " +
+            pxadb.client_encode_path("sdcard/PXA/media/data.grp"), timeout=10.0)
 
 
 if __name__ == "__main__":

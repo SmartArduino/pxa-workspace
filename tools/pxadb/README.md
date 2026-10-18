@@ -81,6 +81,12 @@ after stop. `tools/compare-device-voxel-memory.py` validates and compares an
 old/new/old sequence; its heap deltas are sampled steady-state differences,
 not independent per-app peak measurements.
 
+Firmware advertising `perf-fps` supports `pxadb perf` (`PERF FPS` on the wire),
+which reads completed presentation FPS without scanning storage or enabling a
+per-frame probe. Use it for live sampling. `INFO` also reports filesystem
+capacity and can traverse LittleFS under its lock; polling it changes the I/O
+workload and is unsuitable for gameplay FPS measurements.
+
 Restart a connected device with `pxadb reboot --port /dev/ttyACM0`. Boards that
 register a controllable power latch also advertise `poweroff` and accept
 `pxadb poweroff --port /dev/ttyACM0`; unsupported boards report that software

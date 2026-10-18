@@ -45,6 +45,9 @@ struct TestControlAdapter {
     void (*set_input_takeover_callback)(
         void* context, TestControlTakeoverCallback callback,
         void* callback_context) = nullptr;
+    /* Optional actual completed-content FPS x10; diagnostic refreshes must
+     * not count. A null callback means this metric is unavailable. */
+    uint32_t (*presentation_fps_x10)(void* context) = nullptr;
 };
 
 esp_err_t ConfigureTestControl(const TestControlAdapter* adapter);

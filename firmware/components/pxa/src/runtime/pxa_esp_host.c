@@ -2113,6 +2113,7 @@ static int drain_active_events(void) {
          * established three-round batch. */
         if (!delivered || host_now_us(NULL) - started_us >= 8000) break;
     }
+    pxa_esp_fs_roots_poll(g_host.activation.services.fs_roots);
     /* Guest callbacks can start/cancel decoding even on the final drain round.
      * A ready file needs another owner turn; a blocked stream waits for its
      * native I/O wake. No Guest timer or image-specific worker is required. */
@@ -3242,6 +3243,9 @@ static int start_verified(const char *identity) {
 #endif
             if (service_capabilities[index].service == PXA_ASSETS_SERVICE_ID)
                 service_capabilities[index].features = PXA_ASSETS_FEATURE_IMAGE_DECODE | PXA_ASSETS_FEATURE_IMAGE_FRAMES;
+            if (service_capabilities[index].service == PXA_FS_SERVICE_ID)
+                service_capabilities[index].features = pxa_esp_fs_roots_features(
+                    g_host.activation.services.fs_roots);
             if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
                 service_capabilities[index].features = PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS;
             if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {

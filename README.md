@@ -101,6 +101,16 @@ idf.py -C firmware -B build/firmware/pai-touch -DPXA_BOARD=pai-touch build
 详见 [PXA 应用交付](docs/zh-CN/pxa-app-delivery.md)。
 目录职责与日常流程见 [工作区结构](docs/zh-CN/workspace-layout.md)。
 
+SD 资源访问、多分区、安装位置选择及跨卷迁移的现状与拟议 ABI/SDK，见
+[多卷存储设计](docs/pxa-multi-volume-design.zh-CN.md)。授权 SD 只读接口已有先行实现；
+整应用安装的统一 `/PXA` 布局，以及无需 Flash 文件分区的 SD 系统盘，见
+[固定目录与 SD 系统盘设计](docs/pxa-storage-layout.zh-CN.md)（安装及系统盘后端尚未实现）。
+默认资源根已支持无需选目录的 `fs.app_media()`，见
+[SDK 示例](deps/pxa-system/sdk/guest-cpp/examples/fixed-files/README.zh-CN.md)与
+[GameKit 首次启动/重启验证](docs/validation/2026-10-18-sd-fixed-root.zh-CN.md)。
+Duke3D 已从固定 SD 目录自动读取资源并进入关卡，实测与边界见
+[游戏真机验证](docs/validation/2026-10-18-duke3d-sd.zh-CN.md)。
+
 ## PXA 快速开发
 
 `tools/dev.sh` 将应用的增量打包、PXADB 覆盖安装和启动串为一个开发循环。App 源码根目录是
