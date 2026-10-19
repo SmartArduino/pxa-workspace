@@ -1,0 +1,7 @@
+{
+  "slow_frame_disarms_then_rearms_at_1ms": true,
+  "background_resume": true,
+  "unsupported_timing_keeps_legacy_clock": true,
+  "configuration_error_keeps_legacy_clock": true,
+  "fast_frames_remain_bounded": true
+}

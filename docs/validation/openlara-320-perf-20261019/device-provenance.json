@@ -1,0 +1,55 @@
+{
+  "artifact": {
+    "manifest_sha256": "2a278aed932aa7ce9a52ae48ce6772dd382467d5f4707abf91e11f2f7c50e768",
+    "path": "pxa-openlara.pxa",
+    "sha256": "f67cf75b1351f6dd5711a4bfdd44da3ecad16e6aff342043320d55799292ecf0",
+    "size": 1878047
+  },
+  "inputs": {
+    "compile_sdk": [
+      2,
+      0
+    ],
+    "files": [
+      {
+        "path": "artifacts/main.esp32-s31.aot",
+        "sha256": "d5e59cc573475e98e5ea27a2fee821a1aaba65cceb8cf0a9861e6e6cdc3eaa3d",
+        "size": 2719760
+      },
+      {
+        "path": "assets/.keep",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 0
+      },
+      {
+        "path": "assets/NOTICE.txt",
+        "sha256": "86e09e2de241c90b8ea2a818df9ef94cc31830ea5e0c514e39819095570eb517",
+        "size": 1381
+      },
+      {
+        "path": "assets/resources.pxi",
+        "sha256": "8fa79f3132c364c8c5aff84d1258d2fdf55c015cb14b0f991be110868faa79ff",
+        "size": 96
+      }
+    ],
+    "i18n_catalogs": [],
+    "package_json_sha256": "1c13f92c6888e8eb1af5290aea617ffd5f86e28cafc97e25690b4ac293f1bb90"
+  },
+  "package": {
+    "app_id": "pxa-openlara",
+    "engine_abi": "wamr-pxa-aot-v6-core-1",
+    "manifest_format": "0.7",
+    "min_sdk": "2.0",
+    "publisher_key_id": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171",
+    "release_sequence": 38,
+    "target": "esp32-s31",
+    "target_sdk": "2.0"
+  },
+  "schema": "pxa-provenance-1",
+  "tools": {
+    "clang": "clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141)",
+    "python": "3.14.8",
+    "wamrc": "wamrc 2.4.3",
+    "wasi_sdk_dir": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/deps/pxa-system/.pxa/wasi-sdk-34.0-x86_64-linux"
+  }
+}

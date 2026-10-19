@@ -1,0 +1,16 @@
+{
+  "identical": true,
+  "baseline_commit": "672b5ff1faa58b1fa642acf4b5358665f5519cd9",
+  "scope": "gameplay, enemy, collision, campaign, save and PHD-parser source; visibility constants unchanged; resolution changes rendering only",
+  "sha256": {
+    "game.h": "4c0d8db85bfa914143496ee27c1943dcc2e1ae4d56bafb1012c07815dc7b24d8",
+    "gameflow.h": "5bf5886abe58cbaff9d0933600569f92ac982bacbaa7dcb35cc5f1006334d532",
+    "controller.h": "8e60e14050e904dedefbfd8e86d88b0c2deaa8a83c4b0b92196b3f409543998a",
+    "character.h": "6d5c3814792ac34b92edc641dc36304b72a47d09e32e53786eba671f520b0646",
+    "enemy.h": "aa72ed373bba6a4a36c3d267c03a839e0007e5f73f3824063f7fa39d62b7ffae",
+    "lara.h": "0063bbfc6dd0b073a57cca6900050bc8c4899faa433931fd297e8810f2c6a8fa",
+    "collision.h": "7ce6f7b23e83e2e45400d23e1beb789e10d55160cee7fd15737cc658a6d6e4a2",
+    "savegame.h": "de7fc014078eeadb8b71b91f15d11078f46b71739d0b8ce2bb0438e46402cc3f",
+    "format.h": "3a7090f768f9793dd37087587cb49da600a522118b68932504d1b0bce8535144"
+  }
+}

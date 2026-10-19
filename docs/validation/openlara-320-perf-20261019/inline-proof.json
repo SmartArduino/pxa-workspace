@@ -1,0 +1,12 @@
+{
+  "scope": "WASM classic-raster.cpp object relocation table; pixel kernels inlined into edge walk",
+  "remaining_calls": [
+    "00000ef6:  R_WASM_FUNCTION_INDEX_LEB\t_ZN12_GLOBAL__N_111RasterBatch8drawPartERK14OlRasterVertexS3_S3_S3_+0",
+    "00000f39:  R_WASM_FUNCTION_INDEX_LEB\t_ZN12_GLOBAL__N_111RasterBatch8drawPartERK14OlRasterVertexS3_S3_S3_+0",
+    "00000f5b:  R_WASM_FUNCTION_INDEX_LEB\t_ZN12_GLOBAL__N_111RasterBatch8drawPartERK14OlRasterVertexS3_S3_S3_+0",
+    "000011a2:  R_WASM_FUNCTION_INDEX_LEB\t_ZN12_GLOBAL__N_111RasterBatch8drawPartERK14OlRasterVertexS3_S3_S3_+0",
+    "000011d0:  R_WASM_FUNCTION_INDEX_LEB\t_ZN12_GLOBAL__N_111RasterBatch8drawPartERK14OlRasterVertexS3_S3_S3_+0"
+  ],
+  "span_kernel_calls": 0,
+  "object_sha256": "bb18a2b72738ce6df67e8c668721bcdcca35c62da8efc21bb4d85229ee768a80"
+}
