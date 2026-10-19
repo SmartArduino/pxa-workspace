@@ -40,7 +40,7 @@ DOIT GameKit / ESP32-S31，串号`1c:29:04:d0:af:5e`，原生RISC-V32 ILP32F AOT
 
 真机完成完整60秒中立计时、转向/行走、存档恢复和原版背包。随后20次短按测试中USB重新枚举并消失，未完成短按和物理重启复验，也未验证本版320×240设置的物理重启恢复。0.5.1曾完整通过，但不把它当作0.5.2的重启验收。实际SDL键盘手柄路径通过移动、存档、背包、交换A/B及设置重启，见[simulator.json](openlara-320-perf-20261019/simulator.json)。
 
-[native320-timing.json](openlara-320-perf-20261019/native320-timing.json)仅声明已完整完成的60秒静止计时通过，来源进程的整轮控制验收仍是失败，原始`passed:false`及USB异常保留于[native320-interrupted-controls.json](openlara-320-perf-20261019/native320-interrupted-controls.json)。另一次上传与首次不完整计时也遇到USB重新枚举，不完整计时未纳入统计。内核日志确认USB桥断开，重连时设备uptime继续增长；最后USB节点完全消失。用户恢复连接后可补做短按和重启检查。
+[native320-timing.json](openlara-320-perf-20261019/native320-timing.json)仅声明已完整完成的60秒静止计时通过，来源进程的整轮控制验收仍是失败，原始`passed:false`及USB异常保留于[native320-interrupted-controls.json](openlara-320-perf-20261019/native320-interrupted-controls.json)。另一次上传与首次不完整计时也遇到USB重新枚举，不完整计时未纳入统计。内核日志确认USB桥断开，重连时设备uptime继续增长；USB节点一度完全消失。随后重连确认0.5.2仍已安装并在前台，并成功清除调试输入接管。补测又遇到VS Code独占串口和再次掉线，短按/重启验收仍未完成，见[native-functional-interrupted.json](openlara-320-perf-20261019/native-functional-interrupted.json)。
 
 全流程只测公开City演示关，完整商业DATA未提供，不将此结果当作15关验收。
 

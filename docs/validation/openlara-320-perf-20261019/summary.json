@@ -40,5 +40,11 @@
   "scope": "Native S31 AOT; same neutral City demo start; original gameplay/enemies/distance; full retail campaign data absent",
   "passed_scope": "Completed320x240 FPS measurement and pixel/audio/state regressions; native turn/walk/checkpoint/inventory",
   "complete_native_controller_reboot_suite_passed": false,
-  "apps_commit": "21e4ec4b2224f291050483fddd891ab30b1c16ae"
+  "apps_commit": "21e4ec4b2224f291050483fddd891ab30b1c16ae",
+  "reconnect_check": {
+    "installed_version": "0.5.2",
+    "active": true,
+    "debug_input_cancel": "processed",
+    "functional_retry": "interrupted by serial link loss;20 pulses/reboot remain unverified"
+  }
 }
