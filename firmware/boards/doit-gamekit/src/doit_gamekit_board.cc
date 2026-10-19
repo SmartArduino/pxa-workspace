@@ -152,6 +152,9 @@ private:
     lv_indev_t* remote_pointer_ = nullptr;
     RemotePoint remote_state_{};
     std::atomic<bool> physical_active_{false}, wake_requested_{false};
+    // Bits 16/17 mark a diagnostic override and its connection state.
+    std::atomic<uint32_t> remote_controller_{0};
+    bool reported_connected_ = true;
     pxadb::TestControlTakeoverCallback takeover_ = nullptr;
     void* takeover_context_ = nullptr;
     uint32_t previous_raw_ = 0;
@@ -634,6 +637,7 @@ void Gamekit::PollInput() {
         if (!gpio_get_level(gpio_num_t(kButtonPins[i]))) raw |= 1u << i;
     physical_active_.store(raw != 0);
     if (raw && !previous_raw_) {
+        remote_controller_.store(0);
         xQueueReset(remote_points_);
         remote_state_ = {};
         lv_indev_reset(remote_pointer_, nullptr);
@@ -751,11 +755,19 @@ void Gamekit::Back() {
 }
 
 void Gamekit::ReportController(uint32_t report, uint32_t now) {
+    const uint32_t remote = remote_controller_.load();
+    bool connected = true;
+    if (remote & (1u << 16)) {
+        connected = (remote & (1u << 17)) != 0;
+        report = remote & 4095u;
+    }
     // Retry failed queue submissions and periodically refresh complete state,
     // including zero, so app startup/resume never inherits stale held keys.
-    if (report != reported_buttons_ || now - report_tick_ >= 50) {
-        if (pxa_host_post_controller_state(0, true, report)) {
+    if (report != reported_buttons_ || connected != reported_connected_ ||
+        now - report_tick_ >= 50) {
+        if (pxa_host_post_controller_state(0, connected, report)) {
             reported_buttons_ = report;
+            reported_connected_ = connected;
             report_tick_ = now;
         }
     }
@@ -786,6 +798,18 @@ bool Gamekit::ConfigureDiagnostics() {
     adapter.route_key = [](void* context, pxadb::TestControlKey key) {
         auto* self = static_cast<Gamekit*>(context);
         return xQueueSend(self->remote_keys_, &key, 0) == pdTRUE;
+    };
+    adapter.inject_controller = [](void* context, uint8_t controller,
+                                    bool connected, uint32_t buttons) {
+        auto* self = static_cast<Gamekit*>(context);
+        if (controller || buttons > 4095 || self->physical_active_.load()) return false;
+        self->remote_controller_.store((1u << 16) |
+            (connected ? (1u << 17) : 0) | buttons);
+        self->wake_requested_.store(true);
+        return true;
+    };
+    adapter.cancel_controller = [](void* context) {
+        static_cast<Gamekit*>(context)->remote_controller_.store(0);
     };
     adapter.set_input_takeover_callback = [](void* context, pxadb::TestControlTakeoverCallback callback, void* argument) {
         auto* self = static_cast<Gamekit*>(context);

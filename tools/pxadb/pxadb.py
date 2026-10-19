@@ -375,7 +375,9 @@ class PxaDbClient:
         payload = f"{PROTOCOL} {sequence} {command}\n".encode("ascii")
         paced = (command.startswith(("FSDATA ", "FSDATA2 "))
                  and getattr(self, "upload_profile", "unknown") != "usb")
-        burst_size = 128 if paced else len(payload)
+        burst_size = len(payload)
+        if paced:
+            burst_size = 128
         # Non-blocking serial writes can accept only part of a large upload
         # command; keep writing until the whole line left the host.
         offset = 0
@@ -1669,6 +1671,27 @@ def command_input_key(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def command_input_controller(arguments: argparse.Namespace) -> int:
+    if not 0 <= arguments.buttons <= 0xfff or not 0 <= arguments.hold_ms <= 60000:
+        raise PxaDbError("controller buttons must be 0..4095 and hold-ms 0..60000")
+    with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
+                     arguments.timeout, arguments.logcat) as client:
+        try:
+            end = time.monotonic() + arguments.hold_ms / 1000
+            while True:
+                frames = client.request(f"INPUT CONTROLLER 0 1 {arguments.buttons}")
+                if any("status=rejected" in frame.payload for frame in frames):
+                    raise PxaDbError("controller injection rejected by board")
+                remaining = end - time.monotonic()
+                if remaining <= 0:
+                    print_input_ack(frames)
+                    break
+                time.sleep(min(remaining, 0.2))
+        finally:
+            client.request("INPUT CANCEL")
+    return 0
+
+
 def command_input_control(arguments: argparse.Namespace) -> int:
     with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
                      arguments.timeout, arguments.logcat) as client:
@@ -2051,6 +2074,12 @@ def build_parser() -> argparse.ArgumentParser:
         "key", choices=("back", "home", "volume-up", "volume-down")
     )
     input_key.set_defaults(handler=command_input_key)
+    input_controller = input_commands.add_parser(
+        "controller", help="hold controller-0 buttons, then release (GameKit)")
+    add_connection_arguments(input_controller)
+    input_controller.add_argument("buttons", type=lambda value: int(value, 0))
+    input_controller.add_argument("--hold-ms", type=int, default=200)
+    input_controller.set_defaults(handler=command_input_controller)
     for action in ("cancel", "sync"):
         input_control = input_commands.add_parser(action)
         add_connection_arguments(input_control)

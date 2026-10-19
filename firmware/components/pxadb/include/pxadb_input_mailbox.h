@@ -12,6 +12,7 @@ enum class InputCommandKind : uint8_t {
     kKey,
     kCancel,
     kSync,
+    kController,
 };
 
 enum class PointerAction : uint8_t {
@@ -41,6 +42,9 @@ struct InputCommand {
     uint16_t duration_ms = 0;
     uint8_t steps = 0;
     uint8_t pointer_id = 0;
+    uint8_t controller = 0;
+    bool connected = false;
+    uint32_t buttons = 0;
 };
 
 inline bool CoordinateInBounds(uint16_t x, uint16_t y, uint16_t width,

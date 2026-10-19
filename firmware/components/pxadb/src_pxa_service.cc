@@ -24,6 +24,7 @@
 #if CONFIG_PXADB_TRANSPORT_UART
 #include <driver/gpio.h>
 #include <driver/uart.h>
+extern "C" unsigned pxadb_uart_rx_buffer_capacity(void);
 #elif CONFIG_PXADB_TRANSPORT_USB_CDC
 #include <tinyusb_cdc_acm.h>
 #else
@@ -142,8 +143,7 @@ constexpr uart_port_t kTransportPort =
     static_cast<uart_port_t>(CONFIG_PXADB_UART_PORT);
 constexpr size_t kTransportRxBufferSize = 4096;
 constexpr size_t kTransportTxBufferSize = 4096;
-/* The console UART is installed with a 256-byte RX ring buffer, so poll it
- * often enough to drain a full command line without overflowing. */
+/* Keep control latency low while sharing the console's buffered driver. */
 constexpr uint32_t kTransportReadPollMs = 5;
 constexpr size_t kTransportWriteChunk = 1024;
 
@@ -1235,7 +1235,12 @@ int PxaLogVprintf(const char* format, va_list arguments) {
 void SendHello(unsigned long sequence) {
     const esp_app_desc_t* app = esp_app_get_description();
     // Keep complete capability and version fields without enlarging log records.
-    char payload[384] = {};
+    char payload[512] = {};
+    char transport_info[40] = {};
+#if CONFIG_PXADB_TRANSPORT_UART
+    snprintf(transport_info, sizeof(transport_info), ";uart_rx_buffer=%u",
+             pxadb_uart_rx_buffer_capacity());
+#endif
     const char* kTestCapabilities =
 #if CONFIG_PXADB_TEST_CONTROL
         TestControlAvailable()
@@ -1260,10 +1265,11 @@ void SendHello(unsigned long sequence) {
         "";
 #endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=%s;serial=%s;version=%s",
+             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=%s;serial=%s;version=%s%s",
              kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
-             CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version);
+             CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version,
+             transport_info);
     SendFrame(sequence, "OK", payload);
 }
 
@@ -1589,12 +1595,13 @@ void SendInputCapabilities(unsigned long sequence) {
         SendFrame(sequence, "ERR", "input_unavailable");
         return;
     }
-    char payload[160] = {};
+    char payload[192] = {};
     snprintf(payload, sizeof(payload),
-             "protocol=1;width=%d;height=%d;max_pointers=%u;keys=back,home,volume-up,volume-down;coordinates=logical",
+             "protocol=1;width=%d;height=%d;max_pointers=%u;keys=back,home,volume-up,volume-down;coordinates=logical;controller_mask=%u",
              static_cast<int>(s_test_control.width),
              static_cast<int>(s_test_control.height),
-             static_cast<unsigned>(s_test_control.max_pointers));
+             static_cast<unsigned>(s_test_control.max_pointers),
+             s_test_control.inject_controller ? 4095u : 0u);
     SendFrame(sequence, "OK", payload);
 }
 
@@ -1697,6 +1704,20 @@ void HandleInput(unsigned long sequence, char* const* arguments,
             SendFrame(sequence, "ERR", "invalid_key");
             return;
         }
+    } else if (strcmp(arguments[0], "CONTROLLER") == 0) {
+        uint32_t controller = 0, connected = 0, buttons = 0;
+        if (!s_test_control.inject_controller || argument_count != 4 ||
+            !ParseUnsigned(arguments[1], 0, &controller) ||
+            !ParseUnsigned(arguments[2], 1, &connected) ||
+            !ParseUnsigned(arguments[3], 4095, &buttons) ||
+            (!connected && buttons)) {
+            SendFrame(sequence, "ERR", "invalid_controller_state");
+            return;
+        }
+        command.kind = InputCommandKind::kController;
+        command.controller = static_cast<uint8_t>(controller);
+        command.connected = connected != 0;
+        command.buttons = buttons;
     } else if (strcmp(arguments[0], "CANCEL") == 0) {
         command.kind = InputCommandKind::kCancel;
     } else if (strcmp(arguments[0], "SYNC") == 0) {
@@ -2329,9 +2350,18 @@ bool ExecuteInput(const InputCommand& command, PointerState* pointer,
                               command.pointer_id);
     }
     if (command.kind == InputCommandKind::kCancel) {
+        if (s_test_control.cancel_controller)
+            s_test_control.cancel_controller(s_test_control.context);
         return CancelPointers(pointer, delivered);
     }
+    if (command.kind == InputCommandKind::kController) {
+        return s_test_control.inject_controller &&
+            s_test_control.inject_controller(s_test_control.context,
+                command.controller, command.connected, command.buttons);
+    }
     if (command.kind == InputCommandKind::kKey) {
+        if (s_test_control.cancel_controller)
+            s_test_control.cancel_controller(s_test_control.context);
         if (!CancelPointers(pointer, delivered)) {
             return false;
         }
@@ -2387,6 +2417,7 @@ bool ExecuteInput(const InputCommand& command, PointerState* pointer,
 
 void PxadbInputTask(void*) {
     PointerState pointer;
+    bool controller_active = false;
     uint16_t delivered = 0;
     uint64_t last_activity_us = static_cast<uint64_t>(esp_timer_get_time());
     while (s_running.load()) {
@@ -2394,25 +2425,37 @@ void PxadbInputTask(void*) {
         InputCommand command;
         while (s_running.load() && TakeInput(&command)) {
             const bool success = ExecuteInput(command, &pointer, &delivered);
+            if (success && command.kind == InputCommandKind::kController)
+                controller_active = true;
+            if (command.kind == InputCommandKind::kCancel ||
+                command.kind == InputCommandKind::kKey) controller_active = false;
             last_activity_us = static_cast<uint64_t>(esp_timer_get_time());
             SendInputAck(command, success ? "processed" : "rejected");
             if (!success) {
+                if (s_test_control.cancel_controller)
+                    s_test_control.cancel_controller(s_test_control.context);
+                controller_active = false;
                 (void)CancelPointers(&pointer, &delivered);
                 ResetAcceptedPointer();
             }
         }
         const uint64_t now_us = static_cast<uint64_t>(esp_timer_get_time());
-        if (pointer.pressed() &&
+        if ((pointer.pressed() || controller_active) &&
             now_us - last_activity_us >=
                 static_cast<uint64_t>(kInputTimeoutMs) * 1000u) {
             (void)CancelPointers(&pointer, &delivered);
+            if (s_test_control.cancel_controller)
+                s_test_control.cancel_controller(s_test_control.context);
+            controller_active = false;
             ResetAcceptedPointer();
-            ESP_LOGW(kTag, "Synthetic pointer cancelled after input timeout");
+            ESP_LOGW(kTag, "Synthetic input cancelled after input timeout");
         }
     }
     if (pointer.pressed()) {
         (void)CancelPointers(&pointer, &delivered);
     }
+    if (s_test_control.cancel_controller)
+        s_test_control.cancel_controller(s_test_control.context);
     ResetAcceptedPointer();
     s_input_task_active.store(false);
     vTaskDelete(nullptr);
@@ -2579,8 +2622,15 @@ esp_err_t ConfigureTestControl(const TestControlAdapter* adapter) {
     s_test_control.route_key = adapter->route_key;
     s_test_control.capture_rgb565 = adapter->capture_rgb565;
     s_test_control.set_input_takeover_callback = adapter->set_input_takeover_callback;
-    if (adapter->struct_size >= sizeof(TestControlAdapter))
+    if (adapter->struct_size >= offsetof(TestControlAdapter, presentation_fps_x10)
+                               + sizeof(adapter->presentation_fps_x10))
         s_test_control.presentation_fps_x10 = adapter->presentation_fps_x10;
+    if (adapter->struct_size >= sizeof(TestControlAdapter)) {
+        if (!!adapter->inject_controller != !!adapter->cancel_controller)
+            return ESP_ERR_INVALID_ARG;
+        s_test_control.inject_controller = adapter->inject_controller;
+        s_test_control.cancel_controller = adapter->cancel_controller;
+    }
     return ESP_OK;
 #else
     (void)adapter;

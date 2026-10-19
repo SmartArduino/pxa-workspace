@@ -127,4 +127,15 @@ int main() {
     assert(mailbox.Take(&event) && event.pointer_id == 1 &&
            event.pointer_action == PointerAction::kMove);
     assert(mailbox.Take(&event) && event.pointer_action == PointerAction::kCancel);
+    // Complete controller states carry reliable press/release edges. They
+    // must neither coalesce with pointer motion nor cross a SYNC barrier.
+    event.kind = InputCommandKind::kController;
+    event.connected = true; event.buttons = 16;
+    assert(mailbox.Push(event) == MailboxPushResult::kQueued);
+    assert(mailbox.Push(barrier) == MailboxPushResult::kQueued);
+    event.buttons = 0;
+    assert(mailbox.Push(event) == MailboxPushResult::kQueued);
+    assert(mailbox.Take(&event) && event.buttons == 16 && event.connected);
+    assert(mailbox.Take(&event) && event.kind == InputCommandKind::kSync);
+    assert(mailbox.Take(&event) && event.kind == InputCommandKind::kController && !event.buttons);
 }

@@ -48,6 +48,11 @@ struct TestControlAdapter {
     /* Optional actual completed-content FPS x10; diagnostic refreshes must
      * not count. A null callback means this metric is unavailable. */
     uint32_t (*presentation_fps_x10)(void* context) = nullptr;
+    // Optional full controller-state injection. CANCEL/session close and any
+    // physical input revoke this test state through cancel_controller.
+    bool (*inject_controller)(void* context, uint8_t controller, bool connected,
+                              uint32_t buttons) = nullptr;
+    void (*cancel_controller)(void* context) = nullptr;
 };
 
 esp_err_t ConfigureTestControl(const TestControlAdapter* adapter);

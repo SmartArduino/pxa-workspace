@@ -166,6 +166,18 @@ KEY 在切换界面前也取消所有注入手势。CANCEL 不应触发点击或
 连续手势应复用一个 `PxaDbClient` 连接；每指必须先 DOWN，独立 MOVE，最后 UP
 或 CANCEL。设备编号不合法、重复 DOWN 或没有 DOWN 的 MOVE 会被拒绝。
 
+GameKit 的 `input capabilities` 另外报告 `controller_mask=4095`。
+`INPUT CONTROLLER 0 connected buttons` 注入完整12位手柄状态，connected 为0或1，
+断开时 buttons 必须为0。按钮位与 PXA SDK 的 `PXA_CONTROLLER_*` 相同。
+板卡在正常50ms上报路径中交付这些状态；实体按键优先，实体接管、CANCEL、KEY、
+连接关闭或5秒无输入都会撤销注入。长按测试应复用连接并每200ms刷新状态。
+未实现此回调的板卡报告 mask=0，不能据此假设支持蓝牙或USB手柄驱动。
+
+```sh
+# 按住 A 半秒，结束时自动释放；0x10 是 A。
+PXADB_BAUD=2000000 pxadb input controller 0x10 --hold-ms 500 --port /dev/ttyACM0
+```
+
 模拟器控制 socket 的内部命令为 `TOUCH phase id x y` 和 `TOUCH CANCEL_ALL`，
 两根手指对应独立 LVGL 输入设备。`POINTER phase x y` 保留单鼠标 SDL 测试路径。
 pai-touch 的注入复用两个物理触点设备，调试期间暂停控制器采样，最后释放被 LVGL

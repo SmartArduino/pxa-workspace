@@ -246,6 +246,25 @@ class PxaDbLogStreamingTest(unittest.TestCase):
                          [f"PXADB1 7 {command}\n".encode("ascii")])
         sleep.assert_not_called()
 
+    def test_buffered_uart_keeps_fifo_safe_pacing(self) -> None:
+        for info, expected_burst in (
+            ("fs_chunk_crc32=1;uart_rx_buffer=4096", 128),
+            ("fs_chunk_crc32=1;uart_rx_buffer=8192", 128),
+            ("fs_chunk_crc32=1;uart_rx_buffer=256", 128),
+            ("fs_chunk_crc32=1;uart_rx_buffer=bad", 128),
+            ("uart_rx_buffer=4096", 128),
+        ):
+            with self.subTest(info=info):
+                client = fake_client([])
+                client.upload_profile = "uart"
+                client.device_info = info
+                command = "FSDATA2 0 cbf43926 " + "a" * 1400
+                with mock.patch.object(pxadb.time, "sleep"):
+                    client._write_command(7, command)
+                self.assertEqual(b"".join(client.serial.writes),
+                                 f"PXADB1 7 {command}\n".encode())
+                self.assertEqual(len(client.serial.writes[0]), expected_burst)
+
     def test_paced_upload_handles_partial_serial_writes(self) -> None:
         class PartialSerial(FakeSerial):
             def write(self, value: bytes) -> int:
@@ -852,6 +871,28 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         ])
         self.assertEqual((screenshot.output, screenshot.after_present),
                          ("capture.png", True))
+
+    def test_controller_hold_releases_after_error(self) -> None:
+        args = pxadb.build_parser().parse_args([
+            "input", "controller", "0x810", "--hold-ms", "0", "--port", "/dev/ttyACM0"])
+        self.assertEqual(args.buttons, 2064)
+        client = mock.MagicMock()
+        client.__enter__.return_value.request.side_effect = [
+            pxadb.PxaDbError("lost acknowledgement"), []]
+        with mock.patch.object(pxadb, "open_client", return_value=client):
+            with self.assertRaisesRegex(pxadb.PxaDbError, "lost acknowledgement"):
+                pxadb.command_input_controller(args)
+        self.assertEqual(client.__enter__.return_value.request.call_args_list,
+                         [mock.call("INPUT CONTROLLER 0 1 2064"), mock.call("INPUT CANCEL")])
+
+    def test_controller_rejects_invalid_mask_before_opening_port(self) -> None:
+        for buttons, duration in [(4096, 200), (-1, 200), (0, -1), (0, 60001)]:
+            args = pxadb.build_parser().parse_args([
+                "input", "controller", str(buttons), "--hold-ms", str(duration)])
+            with mock.patch.object(pxadb, "open_client") as connection:
+                with self.assertRaises(pxadb.PxaDbError):
+                    pxadb.command_input_controller(args)
+                connection.assert_not_called()
 
     def test_device_capabilities_parses_the_hello_list(self) -> None:
         info = ("protocol=1;capabilities=info,fs,reboot,input-v2,"

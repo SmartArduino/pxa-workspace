@@ -19,6 +19,9 @@ set(PXADB_PRIV_REQUIRES
     pxa)
 
 set(PXADB_SRCS "src_pxa_service.cc" "pxadb_jpeg_encode.cc")
+if(CONFIG_PXADB_ENABLED AND CONFIG_PXADB_TRANSPORT_UART)
+    list(APPEND PXADB_SRCS "pxadb_uart_buffer.cc")
+endif()
 if(CONFIG_PXADB_JPEG_PSRAM_WORKSPACE)
     list(APPEND PXADB_SRCS "pxadb_jpeg_memory.cc")
 endif()
@@ -27,6 +30,11 @@ idf_component_register(
     SRCS ${PXADB_SRCS}
     INCLUDE_DIRS "include"
     PRIV_REQUIRES ${PXADB_PRIV_REQUIRES})
+
+if(CONFIG_PXADB_ENABLED AND CONFIG_PXADB_TRANSPORT_UART)
+    target_link_libraries(${COMPONENT_LIB} INTERFACE
+        "-Wl,--wrap=uart_driver_install")
+endif()
 
 if(CONFIG_PXADB_JPEG_PSRAM_WORKSPACE)
     target_link_libraries(${COMPONENT_LIB} INTERFACE
