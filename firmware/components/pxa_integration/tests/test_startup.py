@@ -35,10 +35,14 @@ FIXTURE = r'''
 #define CONFIG_LV_USE_FREETYPE 1
 #define CONFIG_PXADB_AUTOSTART 0
 #define PXA_ESP_HOST_CJK_FONT_PATH "/font.ttf"
+#define PXA_ESP_HOST_TAG "host-test"
 #define LV_FREETYPE_FONT_RENDER_MODE_BITMAP 0
 #define LV_FREETYPE_FONT_STYLE_NORMAL 0
 const char* pxa_esp_system_font_path() { return PXA_ESP_HOST_CJK_FONT_PATH; }
-#define ESP_LOGI(...) ((void)0)
+const char* kTag = "startup-test";
+uint32_t esp_log_timestamp() { return 0; }
+template <typename... Args> void IgnoreLog(Args&&...) {}
+#define ESP_LOGI(...) IgnoreLog(__VA_ARGS__)
 #define ESP_LOGW(...) ((void)0)
 #define ESP_LOGE(...) ((void)0)
 struct lv_font_t { const lv_font_t* fallback; unsigned line_height; };

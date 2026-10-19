@@ -7,6 +7,13 @@ triple-buffer scanout, two LVGL software renderers, Wi-Fi and volume controls.
 The measured active display area is 9.5 x 5.5 cm. Its diagonal pixel density
 is approximately 216 DPI; both the board and simulator publish this density
 to the system UI and PXA apps (1.35 pixels per 160-DPI reference unit).
+Display setup holds the LVGL port lock until a dark, built-in-font
+`PXA / Starting...` screen is installed. The first frame is presented before
+touch, audio, Wi-Fi and storage initialization. System UI creation removes
+the boot content and explicitly refreshes the display. Early console markers
+`Boot frame visible` and `Startup ... ready` report milliseconds since boot.
+This panel has no backlight control; software cannot hide panel behavior
+before LCD initialization.
 The DAC uses three 320-frame I2S DMA blocks at 16 kHz, paced by the device;
 the unused microphone channel is not allocated. Audio diagnostics report actual
 nonzero DMA completions and the first PCM-to-DMA-block completion interval.

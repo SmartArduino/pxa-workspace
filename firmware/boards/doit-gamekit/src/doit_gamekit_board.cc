@@ -37,6 +37,7 @@
 #include <diskio_sdmmc.h>
 #include <pxa_board_api.h>
 #include <pxa_board_common/ledc_backlight.h>
+#include <pxa_board_common/boot_screen.h>
 #include <pxadb/pxadb_service.h>
 #include <sdmmc_cmd.h>
 #include <wifi_manager.h>
@@ -75,6 +76,7 @@ public:
     }
     void UnlockDisplay() { xSemaphoreGiveRecursive(display_mutex_); }
     void AttachSystem(pxsys_standard_system_t* system, pxsys_reference_lvgl_t* ui);
+    void ShowInitialFrame();
     bool SetWifi(bool enabled);
     void SetVolume(uint8_t value);
     void SetBrightness(uint8_t value) { backlight_.SetPercent(value); ApplyBacklight(); }
@@ -115,6 +117,7 @@ private:
     std::atomic<bool> wifi_enabled_{true};
     bool screen_on_ = true, swallow_until_release_ = false, backlight_started_ = false;
     pxa_board_common::LedcBacklight backlight_;
+    pxa_board_common::BootScreen boot_screen_;
     esp_lcd_panel_handle_t panel_ = nullptr;
     esp_lcd_panel_io_handle_t io_ = nullptr;
     esp_lv_decoder_handle_t decoder_ = nullptr;
@@ -170,7 +173,9 @@ private:
 };
 
 bool Gamekit::Initialize() {
-    if (!InitializeDisplay() || !InitializeButtons()) return false;
+    if (!InitializeDisplay()) return false;
+    ShowInitialFrame();
+    if (!InitializeButtons()) return false;
     // Own the LVGL clock and timer loop for the custom SPI display. The
     // monotonic clock also keeps input timestamps and idle policy in one domain.
     if (xTaskCreatePinnedToCore([](void* context) {
@@ -290,6 +295,7 @@ bool Gamekit::InitializeDisplay() {
             return false;
         }
         lv_display_set_flush_cb(display_, Flush);
+        boot_screen_.Show(display_);
         lv_display_add_event_cb(display_, [](lv_event_t* event) {
             auto* self = static_cast<Gamekit*>(lv_event_get_user_data(event));
             if (lv_event_get_code(event) == LV_EVENT_INVALIDATE_AREA) {
@@ -326,6 +332,26 @@ bool Gamekit::InitializeDisplay() {
              kRotation == LandscapeRotation::Deg270 ? 270 : 90, CONFIG_PXA_DOIT_LCD_CLOCK_HZ / 1000000);
     // The backlight stays off until a complete frame has reached the panel.
     return ready;
+}
+
+void Gamekit::ShowInitialFrame() {
+    if (!display_ || !LockDisplay(2000)) return;
+    lv_lock();
+    if (backlight_started_) boot_screen_.Hide();
+    lv_obj_invalidate(lv_display_get_screen_active(display_));
+    lv_refr_now(display_);
+    lv_unlock();
+    // The SPI worker owns the output buffers and does not need the UI lock.
+    // Enable the backlight only once the entire first frame has reached GRAM.
+    while (pending_outputs_.load(std::memory_order_acquire)) {
+        if (xSemaphoreTake(dma_done_, pdMS_TO_TICKS(1000)) != pdTRUE) break;
+    }
+    if (!backlight_started_ && frame_ready_.load(std::memory_order_acquire)) {
+        backlight_started_ = true;
+        ApplyBacklight();
+        ESP_LOGI(kTag, "Boot frame visible at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
+    }
+    UnlockDisplay();
 }
 
 void Gamekit::Flush(lv_display_t* display, const lv_area_t* area, uint8_t* bytes) {
@@ -549,6 +575,7 @@ bool Gamekit::InitializeSd() {
         const auto media = pxa_esp_storage_select_app_media(mount);
         if (media != PXA_STATUS_OK)
             ESP_LOGW(kTag, "Fixed app media volume: %ld", long(media));
+        ESP_LOGI(kTag, "SD metadata ready at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
         if (pxa_esp_system_font_prepare(mount, true))
             ESP_LOGI(kTag, "Verified system font: %s", pxa_esp_system_font_path());
     }
@@ -874,6 +901,7 @@ bool Gamekit::SetWifi(bool enabled) {
 void Gamekit::AttachSystem(pxsys_standard_system_t* system, pxsys_reference_lvgl_t* ui) {
     system_ = system;
     ui_ = ui;
+    boot_screen_.Hide();
     if (ui_) {
         (void)pxsys_reference_lvgl_set_lock_changed_callback(ui_, this, [](void* context, bool locked) {
             auto* self = static_cast<Gamekit*>(context);
@@ -959,6 +987,7 @@ const pxa_board_port_t kPort = {
     .system_ready = [](void*, pxsys_standard_system_t* system, pxsys_reference_lvgl_t* ui) {
         g_board.AttachSystem(system, ui);
     },
+    .show_initial_frame = [](void*) { g_board.ShowInitialFrame(); },
     .configure_diagnostics = [](void*) { return g_board.ConfigureDiagnostics(); },
     .capture_displayed_rgb565 = [](void*, uint16_t* pixels, size_t count) { return g_board.Capture(pixels, count); },
     .set_idle_dim = [](void*, bool enabled, uint8_t percent) { g_board.SetIdleDim(enabled, percent); },

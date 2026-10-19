@@ -1,0 +1,44 @@
+{
+  "serial": "1c:29:04:d0:af:5e",
+  "boots": [
+    {
+      "markers_ms": {
+        "Startup storage ready": 1448,
+        "Boot frame visible": 1633,
+        "SD metadata ready": 2028,
+        "Startup board ready": 4534,
+        "Startup Host ready": 5635
+      },
+      "round": 0
+    },
+    {
+      "markers_ms": {
+        "Startup storage ready": 1449,
+        "Boot frame visible": 1634,
+        "SD metadata ready": 2029,
+        "Startup board ready": 4534
+      },
+      "round": 1
+    },
+    {
+      "markers_ms": {
+        "Startup storage ready": 1449,
+        "Boot frame visible": 1633,
+        "SD metadata ready": 2028,
+        "Startup board ready": 4533,
+        "Startup Host ready": 5722,
+        "Startup UI ready": 8769
+      },
+      "round": 2
+    }
+  ],
+  "packages_preserved": true,
+  "nvs_and_partitions_preserved": true,
+  "flash_verification": "esptool write-flash MD5 verified",
+  "restored_volume_percent_observed": 70,
+  "cold_power_cycle_tested": false,
+  "ui_ready_samples_ms": [
+    8769
+  ],
+  "capture_note": "UART 115200 -> 2M transition loses some late markers; missing fields are not boot failures. All three rounds answered HELLO and returned a home screenshot."
+}

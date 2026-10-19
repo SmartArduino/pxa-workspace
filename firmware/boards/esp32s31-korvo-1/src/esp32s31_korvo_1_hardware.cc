@@ -84,6 +84,7 @@ uint8_t ReadKorvoAdcButton(button_driver_t* driver) {
 
 bool Esp32S31Korvo1Hardware::Initialize() {
     if (!InitializeI2c() || !InitializeDisplay()) return false;
+    ShowInitialFrame();
     if (!InitializeTouch()) ESP_LOGW(kTag, "Continuing without GT1151 touch");
     if (!InitializeButtons()) ESP_LOGW(kTag, "Continuing without ADC buttons");
     audio_initialized_.store(audio_.Initialize(i2c_bus_));
@@ -108,6 +109,7 @@ void Esp32S31Korvo1Hardware::AttachSystem(
     pxsys_standard_system_t* system, pxsys_reference_lvgl_t* reference_ui) {
     system_ = system;
     reference_ui_ = reference_ui;
+    boot_screen_.Hide();
     if (reference_ui_ != nullptr) {
         (void)pxsys_reference_lvgl_set_lock_changed_callback(
             reference_ui_, this,
@@ -341,6 +343,13 @@ bool Esp32S31Korvo1Hardware::InitializeDisplay() {
         .timer_period_ms = 2,
     };
     if (lvgl_port_init(&port_config) != ESP_OK) return false;
+    // The port task is already running. Keep it out until the display has
+    // its flush callbacks and dark boot content, rather than flushing white.
+    if (!lvgl_port_lock(2000)) return false;
+    lv_lock();
+    struct DisplaySetupGuard {
+        ~DisplaySetupGuard() { lv_unlock(); lvgl_port_unlock(); }
+    } display_setup_guard;
     constexpr size_t kDrawBufferBytes =
         KORVO_DISPLAY_WIDTH * KORVO_DISPLAY_HEIGHT * sizeof(uint16_t);
     display_ = lv_display_create(KORVO_DISPLAY_WIDTH, KORVO_DISPLAY_HEIGHT);
@@ -386,7 +395,23 @@ bool Esp32S31Korvo1Hardware::InitializeDisplay() {
                                     OnDirectScanoutTransition, this)) {
         ESP_LOGW(kTag, "Continuing without PXA Surface presentation");
     }
+    boot_screen_.Show(display_);
     return display_ != nullptr;
+}
+
+void Esp32S31Korvo1Hardware::ShowInitialFrame() {
+    if (!display_ || !lvgl_port_lock(2000)) return;
+    lv_lock();
+    if (boot_frame_visible_) boot_screen_.Hide();
+    lv_obj_invalidate(lv_display_get_screen_active(display_));
+    lv_refr_now(display_);
+    const bool presented = WaitForPendingFrame();
+    if (!boot_frame_visible_ && presented) {
+        boot_frame_visible_ = true;
+        ESP_LOGI(kTag, "Boot frame visible at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
+    }
+    lv_unlock();
+    lvgl_port_unlock();
 }
 
 void Esp32S31Korvo1Hardware::RecordRenderTime(uint32_t duration_us) {

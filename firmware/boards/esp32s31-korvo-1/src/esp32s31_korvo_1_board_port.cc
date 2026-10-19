@@ -65,9 +65,10 @@ const pxa_board_port_t kPort = {
     .performance_get = PerformanceGet,
     .performance_set = PerformanceSet,
     .system_ready = SystemReady,
-    .show_initial_frame = nullptr,
+    .show_initial_frame = [](void*) { g_hardware.ShowInitialFrame(); },
     .configure_diagnostics = ConfigureDiagnostics,
     .capture_displayed_rgb565 = CaptureDisplayedRgb565,
+    .initialize_before_storage = true,
 };
 }
 

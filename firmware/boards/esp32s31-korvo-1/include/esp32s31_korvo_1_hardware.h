@@ -17,6 +17,7 @@
 #include <lvgl.h>
 #include <iot_button.h>
 #include <pxadb/pxadb_service.h>
+#include <pxa_board_common/boot_screen.h>
 
 #include "esp32s31_korvo_1_audio.h"
 #include "esp32s31_korvo_1_touch_state.h"
@@ -29,6 +30,7 @@ typedef struct pxsys_reference_lvgl pxsys_reference_lvgl_t;
 class Esp32S31Korvo1Hardware {
 public:
     bool Initialize();
+    void ShowInitialFrame();
     void AttachSystem(pxsys_standard_system_t* system,
                       pxsys_reference_lvgl_t* reference_ui);
     void SetWifiEnabled(bool enabled);
@@ -101,6 +103,8 @@ private:
     int64_t touch_last_poll_us_ = 0;
     esp_lv_decoder_handle_t image_decoder_ = nullptr;
     lv_display_t* display_ = nullptr;
+    pxa_board_common::BootScreen boot_screen_;
+    bool boot_frame_visible_ = false;
     void* frame_buffers_[3] = {};
     lv_draw_buf_t draw_buffers_[3] = {};
     void* latest_frame_buffer_ = nullptr;

@@ -1390,7 +1390,9 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
         return false;
     if (board->initialize_before_storage && !board->initialize(board->context)) return false;
     if (profile->mount_storage && !MountPxaStorage()) return false;
+    ESP_LOGI(kTag, "Startup storage ready at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
     if (!board->initialize_before_storage && !board->initialize(board->context)) return false;
+    ESP_LOGI(kTag, "Startup board ready at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
     // Host semantic fonts are created during initialization, before CreateSystem.
     // Publish density now and pass the same profile to the shell; a later DPI
     // update changes dp layout but cannot resize already-created font objects.
@@ -1413,6 +1415,7 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
         ShowStartupRecovery(board);
         return false;
     }
+    ESP_LOGI(kTag, "Startup Host ready at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
     LoadUserPreferences();
     if (board->set_level != nullptr) {
         if (g_preferences.has_volume)
@@ -1438,6 +1441,7 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     }
     if (board->show_initial_frame != nullptr)
         board->show_initial_frame(board->context);
+    const uint32_t ui_ready_ms = esp_log_timestamp();
     if (board->configure_diagnostics != nullptr &&
         !board->configure_diagnostics(board->context))
         ESP_LOGW(kTag, "Board diagnostics are unavailable");
@@ -1455,6 +1459,9 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
                          MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
     }
 #endif
+    // Report the saved presentation time after diagnostics switches the UART
+    // rate, so the final marker is not interrupted by the baud-rate change.
+    ESP_LOGI(kTag, "Startup UI ready at %lu ms", static_cast<unsigned long>(ui_ready_ms));
     if (!pxa_host_start_runtime()) {
         pxadb::Stop();
         return false;

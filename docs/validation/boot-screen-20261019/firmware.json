@@ -1,0 +1,40 @@
+{
+  "root_source_base": "ef53428328ec386e9a15bf3de86421884826997e",
+  "source_binding": "base plus firmware source hashes below; font buffer experiment reverted",
+  "sdk_head": "dc9365e2da4a4187991a22b40e1276f26a2cc448",
+  "sdk_root": "local/volume-firmware/deps/pxa-system",
+  "idf": "ESP-IDF 6.2, local esp-idf-main",
+  "firmware_source_sha256": {
+    "firmware/boards/doit-gamekit/src/doit_gamekit_board.cc": "c03e0c8dfdabb043e5da592e30f748bf0db2482b4e19ef06d2418b3f1449cb95",
+    "firmware/boards/esp32s31-korvo-1/include/esp32s31_korvo_1_hardware.h": "48be72bc0bed15d6a9ecb4692588fcb1d5fe20aa6b0cc2f350bb8613d5e3021e",
+    "firmware/boards/esp32s31-korvo-1/src/esp32s31_korvo_1_board_port.cc": "cc007582fc664d94a6a2502f44d70ea9eefecbfa6c15eba08bc9107099f87f5d",
+    "firmware/boards/esp32s31-korvo-1/src/esp32s31_korvo_1_hardware.cc": "96d7f78fac194b3b9b383263d1a3a9774edd555166e7f78dc65268c4e8194b9b",
+    "firmware/components/pxa_board_common/CMakeLists.txt": "de60d275788a4cbd6ddc619d78f41ff7f158b903309b7029dd6b2173636b01a0",
+    "firmware/components/pxa_board_common/include/pxa_board_common/boot_screen.h": "b9a676a43416d2efdf794e3cd676206a4efacd72eef5d641e3163e019d9a1803",
+    "firmware/components/pxa_board_common/src/boot_screen.cc": "aa35448d0d06268543419304bb4725fe3653e13c2ab7b8e32628dcb34e6e6232",
+    "firmware/components/pxa_integration/pxa_integration.cc": "5f1ce006fd25cccdc217be5aef9a55a826463b42ada2f63de449aada35a5e1a1",
+    "firmware/components/pxa/src/services/pxa_esp_system_font.c": "dcab12453812396242582e5ca13f99fa2412176c8cbec0fcb2c3d987fcad3a15"
+  },
+  "boards": {
+    "doit-gamekit": {
+      "image": "local/releases/firmware/boot-screen-20261019/doit-gamekit/firmware.bin",
+      "sha256": "f27da8b4b4b3e49c33c1dbb3ce431bb89c89408f97bbd2c174266f93e1129a9c",
+      "bytes": 3926736,
+      "flash_offset": "0x10000",
+      "sdkconfig_sha256": "c7eed13e2bc8dfda195a1b462d147f6f9a64c134d5f9fd4b1f5a8de2c2e430d8",
+      "partition_table_sha256": "4d89b45cabfbb8d61a369847571cd5beda3aa6c4ec1c4278db654662a1531c50",
+      "codec_memory_audit": "passed",
+      "physical_validation": "3 software reboots + displayed-home capture; not a cold power-cycle measurement"
+    },
+    "esp32s31-korvo-1": {
+      "image": "local/releases/firmware/boot-screen-20261019/esp32s31-korvo-1/firmware.bin",
+      "sha256": "037445edc811da67366c5be3f965794c648129357a27bd6b57698601e93fb2f3",
+      "bytes": 3940096,
+      "flash_offset": "0x10000",
+      "sdkconfig_sha256": "39f9ce534815f107aeff97e1e5169fc984a224affb4642ac4aff0995c02f9f0e",
+      "partition_table_sha256": "b037cdfb42ee6e6725b154ff617609a197444912f86fa76e234de48aefc03254",
+      "codec_memory_audit": "passed",
+      "physical_validation": "not connected; build and host rendering tests only"
+    }
+  }
+}
