@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(pxa_quake_projected C CXX)
+set(PXA_QUAKE_HOST_SPANS OFF CACHE BOOL "" FORCE)
+set(PXA_QUAKE_PROJECTED_SPANS ON CACHE BOOL "" FORCE)
+set(PXA_QUAKE_STATIC_GLOBALS ON CACHE BOOL "" FORCE)
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../../../local/pxa-apps/quake-sd" engine)

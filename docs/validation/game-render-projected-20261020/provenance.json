@@ -1,0 +1,15 @@
+{
+  "root_base": "118481e291eea62e1705437131ef19890c412c02",
+  "sdk_commit": "5bda4991ab4041278bfb9c99e8ee5c5bc8b3e9bd",
+  "apps_commit": "a4703ac28a2eed9784e28e91f2cdb80bae0728b7",
+  "candidate_version": "0.3.0",
+  "candidate_release_sequence": 110,
+  "public_version": "0.3.1",
+  "public_release_sequence": 111,
+  "public_native_artifact_rebuilt": false,
+  "host_spans_default": false,
+  "projected_spans_default": false,
+  "physical_device_serial": "1c:29:04:d0:af:5e",
+  "firmware_sha256": "2cef426df22134c11bcaf130940bebb90ce100e2960ade1e52bd32cc34d3d781",
+  "goal_achieved": false
+}

@@ -140,10 +140,11 @@ idf_component_register(
 # without changing Guest/debug policy or unmeasured boards.
 if(CONFIG_COMPILER_OPTIMIZATION_PERF AND
    (CONFIG_IDF_TARGET_ESP32S31 OR PXA_BOARD STREQUAL "sensecap-watcher"))
-    set_source_files_properties(
+    set_property(SOURCE
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster.c"
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster_spans.c"
-        PROPERTIES COMPILE_OPTIONS "-O3")
+        "${PXA_C_CORE_ROOT}/src/services/game_render/raster_projected_spans.c"
+        APPEND PROPERTY COMPILE_OPTIONS "-O3")
 endif()
 if(CONFIG_WAMR_ENABLE_LIBC_WASI)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_WAMR_LIBC_WASI=1)

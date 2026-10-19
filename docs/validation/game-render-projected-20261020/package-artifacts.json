@@ -1,0 +1,217 @@
+{
+  "q2": {
+    "path": "local/game-render-q2-final/pxa-quake2-sd",
+    "artifacts": [
+      {
+        "name": "artifacts/main.esp32-s31.aot",
+        "bytes": 4478376,
+        "sha256": "9ad5e1226c032e43f567f30de035f10e4d505a6636cb5c444d1f6348ac9da015"
+      },
+      {
+        "name": "manifest.pxm",
+        "bytes": 913,
+        "sha256": "31e746158827dbf86e38b663e4b3b42791a2e94f52af69bdaca61571549f9980"
+      },
+      {
+        "name": "signature.pxs",
+        "bytes": 108,
+        "sha256": "24ee3c183f0478b8a381aeb31bb50f55d26582963e8f3ebf425441b67d10aa4a"
+      }
+    ]
+  },
+  "jump": {
+    "path": "local/game-render-migration-final/pxa-jump-jump-3d",
+    "artifacts": [
+      {
+        "name": "artifacts/main.esp32-s31.aot",
+        "bytes": 593020,
+        "sha256": "247a35af905fcf3f95db3e8d8808aa3f5f55a43bb1fbd634343a94b4f0d9cf22"
+      },
+      {
+        "name": "assets/audio/combo1.s16",
+        "bytes": 18880,
+        "sha256": "e1bba6d8d49b11f59d027a8ee4372382931748d0f19cd24652e2164e784b82cf"
+      },
+      {
+        "name": "assets/audio/combo2.s16",
+        "bytes": 16960,
+        "sha256": "a80e84615b1021ac63903fe37559579f93fd3dd2b5626c70bc3cd11f2b3aa839"
+      },
+      {
+        "name": "assets/audio/combo3.s16",
+        "bytes": 17600,
+        "sha256": "16da1f3b044aac1b12d1f6b1f94549e287078fc511965daca25d5a69b903703a"
+      },
+      {
+        "name": "assets/audio/combo4.s16",
+        "bytes": 17600,
+        "sha256": "d9ef93032bf5597c233bb57713c42a1c428f28c50d8362fc82a29994b676f574"
+      },
+      {
+        "name": "assets/audio/combo5.s16",
+        "bytes": 16960,
+        "sha256": "4d93388f9394bfad0be3de32a1c7d65ccfd0a38956642ccf5e1f66ac2c0c773b"
+      },
+      {
+        "name": "assets/audio/combo6.s16",
+        "bytes": 16960,
+        "sha256": "560c2d5f6468fe74bca3466239ee7d75ea6b27176408bb585a830415424ba8b2"
+      },
+      {
+        "name": "assets/audio/combo7.s16",
+        "bytes": 16320,
+        "sha256": "d1f697d373c4148409500c6f1702b17f50aa2182a99d838325f6f49c1d937d0a"
+      },
+      {
+        "name": "assets/audio/combo8.s16",
+        "bytes": 15040,
+        "sha256": "343a59e701d2728f4f78cce8e4ef0359f57dfca6d827fa09559b9d8393fad578"
+      },
+      {
+        "name": "assets/audio/fall.s16",
+        "bytes": 22720,
+        "sha256": "c5c0c6018e5ac89db6b109eed2409c66cd5db8e5e68f6e152f52df0073fcb8d8"
+      },
+      {
+        "name": "assets/audio/fall_2.s16",
+        "bytes": 52800,
+        "sha256": "a1996505a0de19660e78127ef5188257f5093795c8ba13cf8590fadf1137959f"
+      },
+      {
+        "name": "assets/audio/icon.ogg",
+        "bytes": 13599,
+        "sha256": "c7565aad78801f5f36bc4d3a788893f4ea0f0935fe74905e75e8261d13f8ae82"
+      },
+      {
+        "name": "assets/audio/pop.s16",
+        "bytes": 4930,
+        "sha256": "ae99d6b3bbb78dbc7d5ef3c2347eea2fd2aa615a1b6091a2e45a4da4fdc86899"
+      },
+      {
+        "name": "assets/audio/scale_intro.s16",
+        "bytes": 70734,
+        "sha256": "aa89d2e8c855e9b8d4a5feccc3b9a0103bb794a1f06facb4e9db92a6fbbf72bf"
+      },
+      {
+        "name": "assets/audio/scale_loop.s16",
+        "bytes": 40000,
+        "sha256": "6508665ee500c238c4303973eff965e2d23a1f7b53040332ef21966ecb271e3b"
+      },
+      {
+        "name": "assets/audio/sing.s16",
+        "bytes": 430400,
+        "sha256": "a7782a6a989d1bf5f55520cbf8a23c37e71c87dd0d8480181efee04ce1d5f3f3"
+      },
+      {
+        "name": "assets/audio/start.s16",
+        "bytes": 21440,
+        "sha256": "da36783408502d85fcd57b677ba767d435a7df5eb8411471506ce6170f394fe3"
+      },
+      {
+        "name": "assets/audio/store.s16",
+        "bytes": 148160,
+        "sha256": "aaf14b8ae9c6870a7151f7916cff0a2af95555d5c83ccefb984c06addae222a8"
+      },
+      {
+        "name": "assets/audio/success.s16",
+        "bytes": 6080,
+        "sha256": "08df92fb9d8c844896f4615e8d50f62b072cf4456f84f23b6a9f826f25dbf6b4"
+      },
+      {
+        "name": "assets/audio/water.s16",
+        "bytes": 140480,
+        "sha256": "3ac76ce0955ffb60d2ba35150d505c4fc0e8188e5d452a3083a626272a7bbbf5"
+      },
+      {
+        "name": "assets/fonts/j3_font_big_t0.pxr",
+        "bytes": 1832,
+        "sha256": "fca17f04379cc54d15820a17752dab860638436c403e02b24075fd16efbbe364"
+      },
+      {
+        "name": "assets/fonts/j3_font_big_t1.pxr",
+        "bytes": 7232,
+        "sha256": "fdf1580e2110d1b6b30ac93925aaf12c8011196be6fd6347f097d63eeddcf66f"
+      },
+      {
+        "name": "assets/fonts/j3_font_big_t2.pxr",
+        "bytes": 19958,
+        "sha256": "1a0e989e9bf3ea32211ea5cc59f3362877b7bf99fb6d5f4f303fa865e5ed7796"
+      },
+      {
+        "name": "assets/fonts/j3_font_cjk_t0.pxr",
+        "bytes": 1904,
+        "sha256": "dcf92e49d124cfb8a8df8b990b70f623cf99aa8e84df1c2dafc09833e52e9769"
+      },
+      {
+        "name": "assets/fonts/j3_font_cjk_t1.pxr",
+        "bytes": 3360,
+        "sha256": "8d1931b86d949c42c2071dd999e16fa118f5823b46f3d38c0e0caa9eb5d169ac"
+      },
+      {
+        "name": "assets/fonts/j3_font_cjk_t2.pxr",
+        "bytes": 10680,
+        "sha256": "563de3d5895322d7fe5dfeefc7e4679d22127c1fbc3775a70f6369355d5b930b"
+      },
+      {
+        "name": "assets/fonts/j3_font_small_t0.pxr",
+        "bytes": 1502,
+        "sha256": "f0ee15eda2d0cad4eccb98abffd532e0c963f1cfb141ebccf7fdf918f644f509"
+      },
+      {
+        "name": "assets/fonts/j3_font_small_t1.pxr",
+        "bytes": 5664,
+        "sha256": "a6112977bb73a754666258019b1aff4f38de9d5c6e6c2ff64b5246ebceabeebd"
+      },
+      {
+        "name": "assets/fonts/j3_font_small_t2.pxr",
+        "bytes": 7622,
+        "sha256": "4611defbfedce85b5ac897d58ae7e624500cb19ea31236dc39ce6723b9ae1d86"
+      },
+      {
+        "name": "assets/icon.png",
+        "bytes": 3751,
+        "sha256": "47626b5420bd2ac053eeb3179eb5cf3d7300b870b3cc18b96b4ba6dc64c02936"
+      },
+      {
+        "name": "assets/icon.svg",
+        "bytes": 1284,
+        "sha256": "0302bc9f82daba649d1270a405afa78a66ea41978c005967f1ab7a9902427c97"
+      },
+      {
+        "name": "assets/resources.pxi",
+        "bytes": 1528,
+        "sha256": "8fb1cd8003fb1bf24c936da9624fd18e3f9cda4d0a27b336757041a88cfc7c38"
+      },
+      {
+        "name": "manifest.pxm",
+        "bytes": 3530,
+        "sha256": "6b4ba7f82dbe64e087ca2ad5f0b4b2dc7191da8b41ab365ebd25011a5d642f75"
+      },
+      {
+        "name": "signature.pxs",
+        "bytes": 108,
+        "sha256": "7ced24ab3550428ada729eabfcb029fd229b2a6574883e0b9b7035317d42cb9a"
+      }
+    ]
+  },
+  "quake": {
+    "path": "local/game-render-projected-s31/pxa-quake-projected",
+    "artifacts": [
+      {
+        "name": "artifacts/main.esp32-s31.aot",
+        "bytes": 5895180,
+        "sha256": "c34c1b031de1eea46ceddd275b3031b2a569af511fc1c5fb24a0f2585f32f1d4"
+      },
+      {
+        "name": "manifest.pxm",
+        "bytes": 908,
+        "sha256": "508e7e5e94551c418b01322cc5ec2fe1c120f1f3f15e6ab6c0398eb8ae928316"
+      },
+      {
+        "name": "signature.pxs",
+        "bytes": 108,
+        "sha256": "bc3e1f4c5af2420dcb575b3bd547b140170b3c8de80c80a8c07bcde24436177c"
+      }
+    ]
+  }
+}
