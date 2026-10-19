@@ -319,6 +319,8 @@ typedef struct {
     uint16_t row_begin;
     uint16_t row_end;
     uint32_t elapsed_us;
+    const pxa_raster_spans_t *indexed_spans;
+    uint32_t byte_begin, byte_end;
 } pxa_esp_raster_worker_job_t;
 
 static TaskHandle_t g_raster_worker_task;
@@ -340,7 +342,10 @@ static void raster_worker_task(void *context) {
         started_us = (uint64_t)esp_timer_get_time();
         memset(&g_raster_worker_job.telemetry, 0,
                sizeof(g_raster_worker_job.telemetry));
-        pxa_raster_execute_draw_list_rows(
+        if (g_raster_worker_job.indexed_spans) {
+            pxa_raster_spans_execute_range(g_raster_worker_job.indexed_spans,
+                g_raster_worker_job.byte_begin, g_raster_worker_job.byte_end);
+        } else pxa_raster_execute_draw_list_rows(
             g_raster_worker_job.bytes, &g_raster_worker_job.list,
             &g_raster_worker_job.target, &g_raster_worker_job.resources,
             g_raster_worker_job.row_begin, g_raster_worker_job.row_end,
@@ -1556,6 +1561,46 @@ static pxa_status_t create_game_render_context(
     return PXA_STATUS_OK;
 }
 
+pxa_status_t pxa_esp_game_render_execute_spans(void *context,
+    const pxa_raster_spans_t *batch) {
+    (void)context;
+    taskENTER_CRITICAL(&g_surface_lock);
+    if (g_materialize_active) {
+        taskEXIT_CRITICAL(&g_surface_lock);
+        return PXA_STATUS_WOULD_BLOCK;
+    }
+    g_materialize_active = true;
+    taskEXIT_CRITICAL(&g_surface_lock);
+#if CONFIG_PXA_PARALLEL_RASTER
+    ensure_raster_worker();
+    /* Avoid waking the second core for very small surfaces. The split is a
+     * cache-line boundary in native memory, preventing false sharing. */
+    if (g_raster_worker_task && batch->pixels >= 2048) {
+        uintptr_t base = (uintptr_t)batch->target;
+        uint32_t midpoint = batch->first_pixel +
+            (batch->end_pixel - batch->first_pixel) / 2u;
+        uint32_t split = (uint32_t)(((base + midpoint) &
+                                     ~(uintptr_t)63u) - base);
+        if (split && split < batch->target_bytes) {
+            memset(&g_raster_worker_job, 0, sizeof(g_raster_worker_job));
+            g_raster_worker_job.indexed_spans = batch;
+            g_raster_worker_job.byte_begin = split;
+            g_raster_worker_job.byte_end = batch->target_bytes;
+            (void)xSemaphoreTake(g_raster_worker_done, 0);
+            xTaskNotifyGive(g_raster_worker_task);
+            pxa_raster_spans_execute_range(batch, 0, split);
+            (void)xSemaphoreTake(g_raster_worker_done, portMAX_DELAY);
+            g_raster_worker_job.indexed_spans = NULL;
+        } else pxa_raster_spans_execute_range(batch, 0, batch->target_bytes);
+    } else
+#endif
+        pxa_raster_spans_execute_range(batch, 0, batch->target_bytes);
+    taskENTER_CRITICAL(&g_surface_lock);
+    g_materialize_active = false;
+    taskEXIT_CRITICAL(&g_surface_lock);
+    return PXA_STATUS_OK;
+}
+
 void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend) {
     if (backend == NULL) return;
     memset(backend, 0, sizeof(*backend));
@@ -2502,6 +2547,12 @@ void pxa_esp_surface_release_frame(uint64_t lease) {
 
 void pxa_esp_surface_backend(pxa_surface_backend_t *backend) {
     if (backend != NULL) backend->struct_size = 0;
+}
+pxa_status_t pxa_esp_game_render_execute_spans(void *context,
+    const pxa_raster_spans_t *batch) {
+    (void)context; (void)batch;
+    pxa_raster_spans_execute_range(batch, 0, batch->target_bytes);
+    return PXA_STATUS_OK;
 }
 void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend) {
     if (backend != NULL) backend->struct_size = 0;

@@ -141,7 +141,8 @@ idf_component_register(
 if(CONFIG_COMPILER_OPTIMIZATION_PERF AND
    (CONFIG_IDF_TARGET_ESP32S31 OR PXA_BOARD STREQUAL "sensecap-watcher"))
     set_source_files_properties(
-        "${PXA_C_CORE_ROOT}/src/services/surface/raster.c"
+        "${PXA_C_CORE_ROOT}/src/services/game_render/raster.c"
+        "${PXA_C_CORE_ROOT}/src/services/game_render/raster_spans.c"
         PROPERTIES COMPILE_OPTIONS "-O3")
 endif()
 if(CONFIG_WAMR_ENABLE_LIBC_WASI)

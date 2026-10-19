@@ -3297,7 +3297,9 @@ static int start_verified(const char *identity) {
                 service_capabilities[index].features = pxa_esp_fs_roots_features(
                     g_host.activation.services.fs_roots);
             if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
-                service_capabilities[index].features = PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS;
+                service_capabilities[index].features =
+                    PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS |
+                    PXA_GAME_RENDER_FEATURE_BORROWED_INDEXED_SPANS;
             if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {
                 service_capabilities[index].features =
                     PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |

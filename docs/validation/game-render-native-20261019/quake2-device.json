@@ -1,0 +1,519 @@
+{
+  "scope": "Quake II base1 actual gameplay, 320x240; no loading/menu FPS",
+  "version": "0.1.13",
+  "seconds": 60,
+  "fps_samples": [
+    {
+      "seconds": 1.0160158459984814,
+      "fps": 6.9
+    },
+    {
+      "seconds": 2.0148689499983448,
+      "fps": 7.9
+    },
+    {
+      "seconds": 3.012805424998078,
+      "fps": 7.9
+    },
+    {
+      "seconds": 4.012903095997899,
+      "fps": 6.9
+    },
+    {
+      "seconds": 5.017838732997916,
+      "fps": 7.9
+    },
+    {
+      "seconds": 6.016903977000766,
+      "fps": 6.9
+    },
+    {
+      "seconds": 7.016252154997346,
+      "fps": 7.9
+    },
+    {
+      "seconds": 8.01818912499948,
+      "fps": 6.9
+    },
+    {
+      "seconds": 9.016113187000883,
+      "fps": 7.9
+    },
+    {
+      "seconds": 10.017065088999516,
+      "fps": 6.9
+    },
+    {
+      "seconds": 11.019264675000159,
+      "fps": 7.9
+    },
+    {
+      "seconds": 12.019046880999667,
+      "fps": 6.9
+    },
+    {
+      "seconds": 13.0150891029989,
+      "fps": 7.9
+    },
+    {
+      "seconds": 14.014133718999801,
+      "fps": 6.9
+    },
+    {
+      "seconds": 15.013341652000236,
+      "fps": 7.9
+    },
+    {
+      "seconds": 16.012152085000707,
+      "fps": 6.9
+    },
+    {
+      "seconds": 17.01926866500071,
+      "fps": 7.9
+    },
+    {
+      "seconds": 18.019301093998365,
+      "fps": 6.9
+    },
+    {
+      "seconds": 19.02061541999865,
+      "fps": 7.9
+    },
+    {
+      "seconds": 20.02140209099889,
+      "fps": 6.9
+    },
+    {
+      "seconds": 21.015782477999892,
+      "fps": 7.9
+    },
+    {
+      "seconds": 22.020423930000106,
+      "fps": 6.9
+    },
+    {
+      "seconds": 23.021459089999553,
+      "fps": 7.9
+    },
+    {
+      "seconds": 24.012610616999154,
+      "fps": 6.9
+    },
+    {
+      "seconds": 25.01550015400062,
+      "fps": 7.9
+    },
+    {
+      "seconds": 26.01458453399755,
+      "fps": 6.9
+    },
+    {
+      "seconds": 27.017798343000322,
+      "fps": 7.9
+    },
+    {
+      "seconds": 28.02085054700001,
+      "fps": 6.9
+    },
+    {
+      "seconds": 29.021584949998214,
+      "fps": 7.9
+    },
+    {
+      "seconds": 30.019815939998807,
+      "fps": 6.9
+    },
+    {
+      "seconds": 31.021782816998893,
+      "fps": 6.9
+    },
+    {
+      "seconds": 32.01179966400014,
+      "fps": 7.9
+    },
+    {
+      "seconds": 33.01179512299859,
+      "fps": 7.9
+    },
+    {
+      "seconds": 34.017783305000194,
+      "fps": 6.9
+    },
+    {
+      "seconds": 35.017838535997726,
+      "fps": 6.9
+    },
+    {
+      "seconds": 36.02012307199766,
+      "fps": 7.9
+    },
+    {
+      "seconds": 37.021771227999125,
+      "fps": 6.9
+    },
+    {
+      "seconds": 38.02093704199797,
+      "fps": 7.9
+    },
+    {
+      "seconds": 39.01706929399734,
+      "fps": 6.9
+    },
+    {
+      "seconds": 40.01587251299861,
+      "fps": 7.9
+    },
+    {
+      "seconds": 41.01493291799852,
+      "fps": 6.9
+    },
+    {
+      "seconds": 42.01511141199808,
+      "fps": 7.9
+    },
+    {
+      "seconds": 43.02008889799981,
+      "fps": 7.9
+    },
+    {
+      "seconds": 44.021234995998384,
+      "fps": 6.9
+    },
+    {
+      "seconds": 45.019119993998174,
+      "fps": 7.9
+    },
+    {
+      "seconds": 46.01827321399833,
+      "fps": 6.9
+    },
+    {
+      "seconds": 47.01315928599797,
+      "fps": 7.9
+    },
+    {
+      "seconds": 48.01321294399895,
+      "fps": 6.9
+    },
+    {
+      "seconds": 49.01324738599942,
+      "fps": 7.9
+    },
+    {
+      "seconds": 50.012269848997676,
+      "fps": 6.9
+    },
+    {
+      "seconds": 51.01935709399913,
+      "fps": 6.9
+    },
+    {
+      "seconds": 52.01932295699953,
+      "fps": 7.9
+    },
+    {
+      "seconds": 53.01941639999859,
+      "fps": 6.9
+    },
+    {
+      "seconds": 54.01836816099967,
+      "fps": 7.9
+    },
+    {
+      "seconds": 55.01747499299745,
+      "fps": 6.9
+    },
+    {
+      "seconds": 56.01334713399774,
+      "fps": 7.9
+    },
+    {
+      "seconds": 57.012501056000474,
+      "fps": 6.9
+    },
+    {
+      "seconds": 58.02152922099776,
+      "fps": 7.9
+    },
+    {
+      "seconds": 59.019594438999775,
+      "fps": 6.9
+    },
+    {
+      "seconds": 60.0136053799979,
+      "fps": 7.9
+    }
+  ],
+  "fps": {
+    "median": 7.4,
+    "mean": 7.4,
+    "min": 6.9,
+    "max": 7.9
+  },
+  "target_fps": 20,
+  "target_met": false,
+  "ready_records": [
+    {
+      "time": 24719.869020602,
+      "payload": "1533984\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 STATE connection=2 destination=0 attract=0 server=3 prepped=0 loading=0 arena_total=7864320 used=1576208 peak=1576208 largest=6288096\u001b[0m"
+    },
+    {
+      "time": 24719.876050913,
+      "payload": "1655436\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 STATE connection=3 destination=0 attract=0 server=2 prepped=0 loading=0 arena_total=7864320 used=7150720 peak=7150720 largest=712432\u001b[0m"
+    },
+    {
+      "time": 24719.881026558,
+      "payload": "1661009\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 STATE connection=3 destination=0 attract=0 server=2 prepped=0 loading=0 arena_total=7864320 used=7432464 peak=7432464 largest=430688\u001b[0m"
+    },
+    {
+      "time": 24722.997864785,
+      "payload": "1709572\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6943488 peak=7850704 largest=656080 frames=38 frame_us=5022527\u001b[0m"
+    },
+    {
+      "time": 24728.075769993,
+      "payload": "1714654\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6943488 peak=7850704 largest=656080 frames=38 frame_us=4752258\u001b[0m"
+    },
+    {
+      "time": 24733.180959915,
+      "payload": "1719759\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=36 frame_us=4794672\u001b[0m"
+    },
+    {
+      "time": 24736.729743333,
+      "payload": "1661009\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 STATE connection=3 destination=0 attract=0 server=2 prepped=0 loading=0 arena_total=7864320 used=7432464 peak=7432464 largest=430688\u001b[0m"
+    },
+    {
+      "time": 24736.734807706,
+      "payload": "1709572\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6943488 peak=7850704 largest=656080 frames=38 frame_us=5022527\u001b[0m"
+    },
+    {
+      "time": 24736.739838364,
+      "payload": "1714654\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6943488 peak=7850704 largest=656080 frames=38 frame_us=4752258\u001b[0m"
+    },
+    {
+      "time": 24736.744949835,
+      "payload": "1719759\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=36 frame_us=4794672\u001b[0m"
+    },
+    {
+      "time": 24738.512569421,
+      "payload": "1661009\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 STATE connection=3 destination=0 attract=0 server=2 prepped=0 loading=0 arena_total=7864320 used=7432464 peak=7432464 largest=430688\u001b[0m"
+    },
+    {
+      "time": 24738.517579281,
+      "payload": "1709572\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6943488 peak=7850704 largest=656080 frames=38 frame_us=5022527\u001b[0m"
+    },
+    {
+      "time": 24738.522987441,
+      "payload": "1714654\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6943488 peak=7850704 largest=656080 frames=38 frame_us=4752258\u001b[0m"
+    },
+    {
+      "time": 24738.528079886,
+      "payload": "1719759\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=36 frame_us=4794672\u001b[0m"
+    },
+    {
+      "time": 24743.403416987,
+      "payload": "1729971\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4769801\u001b[0m"
+    },
+    {
+      "time": 24748.482737515,
+      "payload": "1735057\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4750881\u001b[0m"
+    },
+    {
+      "time": 24753.530567375,
+      "payload": "1740105\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4723501\u001b[0m"
+    },
+    {
+      "time": 24758.631325618,
+      "payload": "1745205\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4762561\u001b[0m"
+    },
+    {
+      "time": 24763.692594637,
+      "payload": "1750264\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4725588\u001b[0m"
+    },
+    {
+      "time": 24768.801814019,
+      "payload": "1755375\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4791157\u001b[0m"
+    },
+    {
+      "time": 24773.870593754,
+      "payload": "1760448\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4746094\u001b[0m"
+    },
+    {
+      "time": 24778.969300147,
+      "payload": "1765546\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4772241\u001b[0m"
+    },
+    {
+      "time": 24784.019108108,
+      "payload": "1770592\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4721474\u001b[0m"
+    },
+    {
+      "time": 24789.124233688,
+      "payload": "1775698\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4768895\u001b[0m"
+    },
+    {
+      "time": 24794.199664439,
+      "payload": "1780770\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4744432\u001b[0m"
+    },
+    {
+      "time": 24800.250188599,
+      "payload": "1765546\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4772241\u001b[0m"
+    },
+    {
+      "time": 24800.255646072,
+      "payload": "1770592\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4721474\u001b[0m"
+    },
+    {
+      "time": 24800.260975465,
+      "payload": "1775698\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4768895\u001b[0m"
+    },
+    {
+      "time": 24800.266153361,
+      "payload": "1780770\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4744432\u001b[0m"
+    },
+    {
+      "time": 24805.548621398,
+      "payload": "1765546\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4772241\u001b[0m"
+    },
+    {
+      "time": 24805.553714585,
+      "payload": "1770592\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4721474\u001b[0m"
+    },
+    {
+      "time": 24805.558728402,
+      "payload": "1775698\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4768895\u001b[0m"
+    },
+    {
+      "time": 24805.563867415,
+      "payload": "1780770\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4744432\u001b[0m"
+    },
+    {
+      "time": 24810.84996055,
+      "payload": "1770592\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4721474\u001b[0m"
+    },
+    {
+      "time": 24810.85509784,
+      "payload": "1775698\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4768895\u001b[0m"
+    },
+    {
+      "time": 24810.860974033,
+      "payload": "1780770\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4744432\u001b[0m"
+    },
+    {
+      "time": 24810.898050957,
+      "payload": "1770592\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4721474\u001b[0m"
+    },
+    {
+      "time": 24810.90312123,
+      "payload": "1775698\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4768895\u001b[0m"
+    },
+    {
+      "time": 24810.908473415,
+      "payload": "1780770\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4744432\u001b[0m"
+    },
+    {
+      "time": 24810.93482017,
+      "payload": "1770592\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4721474\u001b[0m"
+    },
+    {
+      "time": 24810.939999759,
+      "payload": "1775698\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4768895\u001b[0m"
+    },
+    {
+      "time": 24810.94504748,
+      "payload": "1780770\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4744432\u001b[0m"
+    },
+    {
+      "time": 24810.974904445,
+      "payload": "1770592\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4721474\u001b[0m"
+    },
+    {
+      "time": 24810.98015558,
+      "payload": "1775698\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4768895\u001b[0m"
+    },
+    {
+      "time": 24810.985236814,
+      "payload": "1780770\t\u001b[32m[PXA app=pxa-quake2-sd component=65537 level=INFO] PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6957712 peak=7850704 largest=641856 frames=38 frame_us=4744432\u001b[0m"
+    }
+  ],
+  "memory": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=652419;sram_free=110775;sram_min=10472;sram_largest=43008;psram_total=16741200;psram_free=343604;psram_min=111676;psram_largest=233472"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=28500;external=16683;peak_internal=28500;peak_external=16697;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=16400"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=28500;external=283"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "controller_captures": {
+    "ready": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "7210",
+      "device_us": "1721976790",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "9d9d254f6afa3679ab8b8e69148cc85b16e3637907adb3db2d9093bb576b9bf7"
+    },
+    "forward": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "7702",
+      "device_us": "1789060632",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "87e8dfbd3ad627d90408b99f01e2055c94d44876bdbcc26f8eea35d07284a234"
+    },
+    "backward": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "7739",
+      "device_us": "1794416181",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "b516a564b768e1abaabb3b5d2afbb30d75707451b466677cb470bde6bbb09ec2"
+    }
+  },
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "aot_sha256": "9ad5e1226c032e43f567f30de035f10e4d505a6636cb5c444d1f6348ac9da015"
+}

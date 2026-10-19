@@ -1,0 +1,297 @@
+{
+  "scope": "actual start map, idle spawn view; Host spans OFF, direct globals ON, stock AOT compiler",
+  "seconds": 60,
+  "fps_samples": [
+    {
+      "seconds": 1.0138924210004916,
+      "fps": 6.9
+    },
+    {
+      "seconds": 2.0177713939992827,
+      "fps": 6.9
+    },
+    {
+      "seconds": 3.020894651999697,
+      "fps": 6.9
+    },
+    {
+      "seconds": 4.0146920699990005,
+      "fps": 6.9
+    },
+    {
+      "seconds": 5.018794564999553,
+      "fps": 6.9
+    },
+    {
+      "seconds": 6.021725099999458,
+      "fps": 6.9
+    },
+    {
+      "seconds": 7.015027114000986,
+      "fps": 6.9
+    },
+    {
+      "seconds": 8.018000519001362,
+      "fps": 6.9
+    },
+    {
+      "seconds": 9.021853713999008,
+      "fps": 6.9
+    },
+    {
+      "seconds": 10.014891389000695,
+      "fps": 6.9
+    },
+    {
+      "seconds": 11.018165320998378,
+      "fps": 6.9
+    },
+    {
+      "seconds": 12.02126651800063,
+      "fps": 6.9
+    },
+    {
+      "seconds": 13.014575795001292,
+      "fps": 6.9
+    },
+    {
+      "seconds": 14.017033036998328,
+      "fps": 6.9
+    },
+    {
+      "seconds": 15.02220230400053,
+      "fps": 6.9
+    },
+    {
+      "seconds": 16.015172773000813,
+      "fps": 6.9
+    },
+    {
+      "seconds": 17.01904086599825,
+      "fps": 6.9
+    },
+    {
+      "seconds": 18.01299077099975,
+      "fps": 6.9
+    },
+    {
+      "seconds": 19.01722248999795,
+      "fps": 6.9
+    },
+    {
+      "seconds": 20.020622850999644,
+      "fps": 6.9
+    },
+    {
+      "seconds": 21.01459803399848,
+      "fps": 6.9
+    },
+    {
+      "seconds": 22.018356890999712,
+      "fps": 6.9
+    },
+    {
+      "seconds": 23.022460067000793,
+      "fps": 6.9
+    },
+    {
+      "seconds": 24.01736807999987,
+      "fps": 6.9
+    },
+    {
+      "seconds": 25.020647212000767,
+      "fps": 7.9
+    },
+    {
+      "seconds": 26.01336285999787,
+      "fps": 6.9
+    },
+    {
+      "seconds": 27.017685670998617,
+      "fps": 6.9
+    },
+    {
+      "seconds": 28.013558172999183,
+      "fps": 6.9
+    },
+    {
+      "seconds": 29.016521107998415,
+      "fps": 5.9
+    },
+    {
+      "seconds": 30.019392261001485,
+      "fps": 6.9
+    },
+    {
+      "seconds": 31.013858120000805,
+      "fps": 6.9
+    },
+    {
+      "seconds": 32.01661677000084,
+      "fps": 7.9
+    },
+    {
+      "seconds": 33.020727360999444,
+      "fps": 5.9
+    },
+    {
+      "seconds": 34.01405497199812,
+      "fps": 7.9
+    },
+    {
+      "seconds": 35.01673796999967,
+      "fps": 5.9
+    },
+    {
+      "seconds": 36.02080333499907,
+      "fps": 6.9
+    },
+    {
+      "seconds": 37.013836330999766,
+      "fps": 7.9
+    },
+    {
+      "seconds": 38.01792651299911,
+      "fps": 6.9
+    },
+    {
+      "seconds": 39.0208037170014,
+      "fps": 6.9
+    },
+    {
+      "seconds": 40.015940641998895,
+      "fps": 6.9
+    },
+    {
+      "seconds": 41.019916107001336,
+      "fps": 5.9
+    },
+    {
+      "seconds": 42.01942589999817,
+      "fps": 7.9
+    },
+    {
+      "seconds": 43.024205541998526,
+      "fps": 6.9
+    },
+    {
+      "seconds": 44.02448733100027,
+      "fps": 6.9
+    },
+    {
+      "seconds": 45.02400896600011,
+      "fps": 6.9
+    },
+    {
+      "seconds": 46.023035846999846,
+      "fps": 6.9
+    },
+    {
+      "seconds": 47.026022177000414,
+      "fps": 6.9
+    },
+    {
+      "seconds": 48.01957837000009,
+      "fps": 6.9
+    },
+    {
+      "seconds": 49.02052886000092,
+      "fps": 6.9
+    },
+    {
+      "seconds": 50.01816248400064,
+      "fps": 6.9
+    },
+    {
+      "seconds": 51.03110652599935,
+      "fps": 6.9
+    },
+    {
+      "seconds": 52.02726170100141,
+      "fps": 6.9
+    },
+    {
+      "seconds": 53.021043619999546,
+      "fps": 6.9
+    },
+    {
+      "seconds": 54.01699097299934,
+      "fps": 6.9
+    },
+    {
+      "seconds": 55.02013071200054,
+      "fps": 6.9
+    },
+    {
+      "seconds": 56.0189270990013,
+      "fps": 7.9
+    },
+    {
+      "seconds": 57.01709551100066,
+      "fps": 5.9
+    },
+    {
+      "seconds": 58.026963570999214,
+      "fps": 6.9
+    },
+    {
+      "seconds": 59.021816420001414,
+      "fps": 6.9
+    },
+    {
+      "seconds": 60.02272587200059,
+      "fps": 6.9
+    }
+  ],
+  "fps": {
+    "median": 6.9,
+    "mean": 6.916666666666667,
+    "min": 5.9,
+    "max": 7.9
+  },
+  "target_met": false,
+  "memory": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=652419;sram_free=93143;sram_min=31980;sram_largest=43008;psram_total=16741200;psram_free=6411840;psram_min=5637872;psram_largest=6160384"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=28500;external=16682;peak_internal=28500;peak_external=16697;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=16400"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=28500;external=282"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "engine_artifact": "local/game-render-direct-s31/pxa-quake-direct/artifacts/main.esp32-s31.aot"
+}

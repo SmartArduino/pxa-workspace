@@ -1,0 +1,2 @@
+PASS: 200000 upstream comparisons, 400000 spans; split/ordered overlap, negative coordinates, 8 kernels and output guards
+validated_batch_bytes=104 scratch_bytes=0 heap_allocations=0

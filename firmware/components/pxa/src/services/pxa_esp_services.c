@@ -685,19 +685,26 @@ static pxa_status_t initialize_bounded_services(
     pxa_esp_game_render_backend(&game_render_backend);
     memset(&game_render_config, 0, sizeof(game_render_config));
     game_render_config.struct_size = sizeof(game_render_config);
-    game_render_config.max_contexts = 1;
-    game_render_config.max_contexts_per_component = 1;
+    /* A game may combine a compute context with one display context. Only
+     * metadata is reserved here; the display backend still owns admission. */
+    game_render_config.max_contexts = 2;
+    game_render_config.max_contexts_per_component = 2;
     game_render_config.min_buffer_count = 2;
     game_render_config.max_buffer_count = 3;
-    pxa_esp_game_render_get_scale_profile(
-        &game_render_config.auto_target_profile);
-    game_render_config.auto_target_profile.display_width =
-        host->primary_width == 0 || host->primary_width > UINT16_MAX
-            ? 320u : (uint16_t)host->primary_width;
-    game_render_config.auto_target_profile.display_height =
-        host->primary_height == 0 || host->primary_height > UINT16_MAX
-            ? 240u : (uint16_t)host->primary_height;
+    if (game_render_backend.create) {
+        pxa_esp_game_render_get_scale_profile(
+            &game_render_config.auto_target_profile);
+        game_render_config.auto_target_profile.display_width =
+            host->primary_width == 0 || host->primary_width > UINT16_MAX
+                ? 320u : (uint16_t)host->primary_width;
+        game_render_config.auto_target_profile.display_height =
+            host->primary_height == 0 || host->primary_height > UINT16_MAX
+                ? 240u : (uint16_t)host->primary_height;
+    }
     game_render_config.backend = game_render_backend;
+    game_render_config.execute_spans = pxa_esp_game_render_execute_spans;
+    game_render_config.now_us = now_us;
+    game_render_config.clock_context = NULL;
     workspace_size =
         pxa_game_render_service_workspace_size(&game_render_config);
     status = allocate_workspace(host, workspace_size,

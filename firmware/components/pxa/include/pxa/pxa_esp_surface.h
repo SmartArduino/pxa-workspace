@@ -173,6 +173,8 @@ void pxa_esp_surface_perf_clear(void);
 
 void pxa_esp_surface_backend(pxa_surface_backend_t *backend);
 void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend);
+pxa_status_t pxa_esp_game_render_execute_spans(void *context,
+    const pxa_raster_spans_t *batch);
 /* Board presenters register their supported integer scale set before an app
  * launches. The profile applies to subsequently initialized GameRender
  * services; the default is native 1x. */

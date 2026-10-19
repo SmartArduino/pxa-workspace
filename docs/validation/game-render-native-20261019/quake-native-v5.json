@@ -1,0 +1,178 @@
+{
+  "scope": "actual Quake start map, 320x200 game in 320x240 panel, idle spawn view",
+  "seconds": 30,
+  "fps_samples": [
+    {
+      "seconds": 1.015333659001044,
+      "fps": 3.9
+    },
+    {
+      "seconds": 2.01937707199977,
+      "fps": 3.9
+    },
+    {
+      "seconds": 3.013462013001117,
+      "fps": 3.9
+    },
+    {
+      "seconds": 4.016060301000834,
+      "fps": 3.9
+    },
+    {
+      "seconds": 5.019630270999187,
+      "fps": 3.9
+    },
+    {
+      "seconds": 6.023392213999614,
+      "fps": 3.9
+    },
+    {
+      "seconds": 7.017395430000761,
+      "fps": 3.9
+    },
+    {
+      "seconds": 8.021438533000037,
+      "fps": 3.9
+    },
+    {
+      "seconds": 9.014394724999875,
+      "fps": 3.9
+    },
+    {
+      "seconds": 10.01632749700002,
+      "fps": 3.9
+    },
+    {
+      "seconds": 11.020520162001048,
+      "fps": 3.9
+    },
+    {
+      "seconds": 12.014667691000795,
+      "fps": 3.9
+    },
+    {
+      "seconds": 13.018585076999443,
+      "fps": 3.9
+    },
+    {
+      "seconds": 14.02261136800007,
+      "fps": 3.9
+    },
+    {
+      "seconds": 15.015936415002216,
+      "fps": 3.9
+    },
+    {
+      "seconds": 16.022944840999116,
+      "fps": 3.9
+    },
+    {
+      "seconds": 17.02270432500154,
+      "fps": 3.9
+    },
+    {
+      "seconds": 18.022926130000997,
+      "fps": 3.9
+    },
+    {
+      "seconds": 19.02238847300032,
+      "fps": 3.9
+    },
+    {
+      "seconds": 20.01912318200266,
+      "fps": 3.9
+    },
+    {
+      "seconds": 21.013344278999284,
+      "fps": 3.9
+    },
+    {
+      "seconds": 22.01717334800196,
+      "fps": 2.9
+    },
+    {
+      "seconds": 23.020584239002346,
+      "fps": 3.9
+    },
+    {
+      "seconds": 24.021334610999475,
+      "fps": 3.9
+    },
+    {
+      "seconds": 25.01854604899927,
+      "fps": 3.9
+    },
+    {
+      "seconds": 26.02469345099962,
+      "fps": 3.9
+    },
+    {
+      "seconds": 27.022584680002183,
+      "fps": 3.9
+    },
+    {
+      "seconds": 28.021141205001186,
+      "fps": 3.9
+    },
+    {
+      "seconds": 29.019161308002367,
+      "fps": 3.9
+    },
+    {
+      "seconds": 30.021032033000665,
+      "fps": 3.9
+    }
+  ],
+  "fps": {
+    "median": 3.9,
+    "mean": 3.8666666666666667,
+    "min": 2.9,
+    "max": 3.9
+  },
+  "target_fps": 20,
+  "target_met": false,
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "memory": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=652419;sram_free=93131;sram_min=31980;sram_largest=40960;psram_total=16741200;psram_free=6418656;psram_min=5644820;psram_largest=6160384"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=28500;external=16682;peak_internal=28500;peak_external=16697;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=16400"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=28500;external=282"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "firmware_sha256": "d5d63d4f207a0eedfd76d662c8468b99dd7601ad745b43d167959270fd65eb78"
+}

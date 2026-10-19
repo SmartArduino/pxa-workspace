@@ -1,0 +1,7 @@
+Bounded libc++ diagnostics: fatal checks, readable context, truncation and unsupported formats OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.005s
+
+OK
+PXA C++ Guest host tests OK

@@ -100,6 +100,32 @@ void pxa_esp_game_render_backend(pxa_game_render_backend_t *output) {
     memset(output, 0, sizeof(*output));
 }
 
+pxa_status_t pxa_esp_game_render_execute_spans(void *context,
+    const pxa_raster_spans_t *batch) {
+    (void)context; (void)batch;
+    assert(!"storage fixture must not rasterize");
+    return PXA_STATUS_UNSUPPORTED;
+}
+
+pxa_status_t pxa_esp_fs_roots_create(void *context,
+    void *(*allocate)(void *, size_t), const char *identity, const char *name,
+    uint8_t user_directories, void *notify_context, void (*notify)(void *),
+    pxa_esp_fs_roots_t **output, pxa_fs_roots_backend_t **backend) {
+    (void)context; (void)allocate; (void)identity; (void)name;
+    (void)user_directories; (void)notify_context; (void)notify;
+    *output = NULL; *backend = NULL;
+    assert(!"storage fixture declares no scoped directories");
+    return PXA_STATUS_UNSUPPORTED;
+}
+
+void pxa_esp_fs_roots_bind(pxa_esp_fs_roots_t *roots, pxa_fs_service_t *service) {
+    (void)service; assert(roots == NULL);
+}
+
+void pxa_esp_fs_roots_destroy(pxa_esp_fs_roots_t *roots) {
+    assert(roots == NULL);
+}
+
 void pxa_esp_game_render_get_scale_profile(
     pxa_game_render_target_profile_t *profile) {
     *profile = (pxa_game_render_target_profile_t){

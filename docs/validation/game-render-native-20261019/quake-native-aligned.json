@@ -1,0 +1,336 @@
+{
+  "scope": "actual Quake start map, 320x200 game in 320x240 panel, idle spawn view",
+  "seconds": 60,
+  "fps_samples": [
+    {
+      "seconds": 1.0127878670027712,
+      "fps": 3.9
+    },
+    {
+      "seconds": 2.015720847000921,
+      "fps": 3.9
+    },
+    {
+      "seconds": 3.0177972100027546,
+      "fps": 2.9
+    },
+    {
+      "seconds": 4.019758867001656,
+      "fps": 3.9
+    },
+    {
+      "seconds": 5.012734034000459,
+      "fps": 3.9
+    },
+    {
+      "seconds": 6.016765486001532,
+      "fps": 3.9
+    },
+    {
+      "seconds": 7.013406016001682,
+      "fps": 2.9
+    },
+    {
+      "seconds": 8.015083367001353,
+      "fps": 3.9
+    },
+    {
+      "seconds": 9.017997010003455,
+      "fps": 3.9
+    },
+    {
+      "seconds": 10.012086719001672,
+      "fps": 3.9
+    },
+    {
+      "seconds": 11.014975294001488,
+      "fps": 3.9
+    },
+    {
+      "seconds": 12.01510833300199,
+      "fps": 2.9
+    },
+    {
+      "seconds": 13.012061002002156,
+      "fps": 3.9
+    },
+    {
+      "seconds": 14.015260133000993,
+      "fps": 3.9
+    },
+    {
+      "seconds": 15.018211998001789,
+      "fps": 3.9
+    },
+    {
+      "seconds": 16.02025220300129,
+      "fps": 2.9
+    },
+    {
+      "seconds": 17.013325305000762,
+      "fps": 3.9
+    },
+    {
+      "seconds": 18.015213584003504,
+      "fps": 3.9
+    },
+    {
+      "seconds": 19.01541229600116,
+      "fps": 3.9
+    },
+    {
+      "seconds": 20.018283498000528,
+      "fps": 2.9
+    },
+    {
+      "seconds": 21.017433372002415,
+      "fps": 3.9
+    },
+    {
+      "seconds": 22.016554982001253,
+      "fps": 3.9
+    },
+    {
+      "seconds": 23.015654761002224,
+      "fps": 3.9
+    },
+    {
+      "seconds": 24.012583816002007,
+      "fps": 3.9
+    },
+    {
+      "seconds": 25.022961327002122,
+      "fps": 3.9
+    },
+    {
+      "seconds": 26.017496677002782,
+      "fps": 2.9
+    },
+    {
+      "seconds": 27.020711568002298,
+      "fps": 3.9
+    },
+    {
+      "seconds": 28.01553040300132,
+      "fps": 3.9
+    },
+    {
+      "seconds": 29.019590528001572,
+      "fps": 3.9
+    },
+    {
+      "seconds": 30.01270308400126,
+      "fps": 3.9
+    },
+    {
+      "seconds": 31.015675788003136,
+      "fps": 2.9
+    },
+    {
+      "seconds": 32.018708566003625,
+      "fps": 3.9
+    },
+    {
+      "seconds": 33.02167078000275,
+      "fps": 3.9
+    },
+    {
+      "seconds": 34.013867388002836,
+      "fps": 3.9
+    },
+    {
+      "seconds": 35.01688870400176,
+      "fps": 3.9
+    },
+    {
+      "seconds": 36.01983323500099,
+      "fps": 2.9
+    },
+    {
+      "seconds": 37.012891619000584,
+      "fps": 3.9
+    },
+    {
+      "seconds": 38.01597783800025,
+      "fps": 3.9
+    },
+    {
+      "seconds": 39.018923501000245,
+      "fps": 3.9
+    },
+    {
+      "seconds": 40.01189918900127,
+      "fps": 3.9
+    },
+    {
+      "seconds": 41.01504430800196,
+      "fps": 3.9
+    },
+    {
+      "seconds": 42.01696265300052,
+      "fps": 2.9
+    },
+    {
+      "seconds": 43.019156879003276,
+      "fps": 3.9
+    },
+    {
+      "seconds": 44.01215671300088,
+      "fps": 3.9
+    },
+    {
+      "seconds": 45.016148349001014,
+      "fps": 3.9
+    },
+    {
+      "seconds": 46.020160784002655,
+      "fps": 3.9
+    },
+    {
+      "seconds": 47.01324603900139,
+      "fps": 2.9
+    },
+    {
+      "seconds": 48.01729863000219,
+      "fps": 3.9
+    },
+    {
+      "seconds": 49.02038207300211,
+      "fps": 3.9
+    },
+    {
+      "seconds": 50.014499294000416,
+      "fps": 3.9
+    },
+    {
+      "seconds": 51.01838227500048,
+      "fps": 2.9
+    },
+    {
+      "seconds": 52.02134312700218,
+      "fps": 3.9
+    },
+    {
+      "seconds": 53.013437773002806,
+      "fps": 3.9
+    },
+    {
+      "seconds": 54.01557825800046,
+      "fps": 3.9
+    },
+    {
+      "seconds": 55.02365008000197,
+      "fps": 3.9
+    },
+    {
+      "seconds": 56.01479504500094,
+      "fps": 2.9
+    },
+    {
+      "seconds": 57.02065343200229,
+      "fps": 3.9
+    },
+    {
+      "seconds": 58.022430521003116,
+      "fps": 3.9
+    },
+    {
+      "seconds": 59.01793897600146,
+      "fps": 3.9
+    },
+    {
+      "seconds": 60.02301683100086,
+      "fps": 2.9
+    }
+  ],
+  "fps": {
+    "median": 3.9,
+    "mean": 3.683333333333333,
+    "min": 2.9,
+    "max": 3.9
+  },
+  "target_fps": 20,
+  "target_met": false,
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "memory": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=652419;sram_free=93395;sram_min=31980;sram_largest=49152;psram_total=16741200;psram_free=6408296;psram_min=5499464;psram_largest=6160384"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=28500;external=16682;peak_internal=28500;peak_external=16682;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=16400"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=28500;external=282"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "firmware_sha256": "ab7ee518f3ec1b33d7e24f44068bb1eec94079f938a287a204bd0b2c529db6bf",
+  "controller_captures": {
+    "measure-before": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "2784",
+      "device_us": "1699993433",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "466381d1542df3d4e79c2ef50779f2b4f7a25cd968d35a63dc1df48fbf6047df"
+    },
+    "walk-forward": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3056",
+      "device_us": "1770402906",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "6a0a4d4c22da393b1cff5ba1b2ebbad02d80109d5039f28bd1edc7a14f686b4a"
+    },
+    "walk-back": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3079",
+      "device_us": "1775050917",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "cd66d32a99c0fe899f271d24ba06bf3192c06cc07d6903a3db46deaf6121fe71"
+    }
+  }
+}

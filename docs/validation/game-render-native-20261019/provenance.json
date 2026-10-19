@@ -1,0 +1,53 @@
+{
+  "root_source_base": "10f44c177b54cae032ad4f088212f49a8484b04e",
+  "sdk_commit": "1fee5ae7c08a7480d9ead1d36ba845df5df7f165",
+  "apps_commit": "7cd7bb9",
+  "firmware": {
+    "path": "local/game-render-firmware-v5.bin",
+    "sha256": "d5d63d4f207a0eedfd76d662c8468b99dd7601ad745b43d167959270fd65eb78",
+    "bytes": 3933744,
+    "partition_table_sha256": "4d89b45cabfbb8d61a369847571cd5beda3aa6c4ec1c4278db654662a1531c50"
+  },
+  "packages": {
+    "quake-sd": {
+      "path": "local/game-render-quake-final/pxa-quake-sd",
+      "manifest_sha256": "1721632e10cb72a5ec7e215e4cf1248174d1e29f26143ac1bbf56e18ec4c0a56",
+      "files": {
+        "artifacts/main.esp32-s31.aot": {
+          "bytes": 5888788,
+          "sha256": "1c6a037fe0c872b8116dfc2880ce982be66c66ed339983df24209539c9641c96"
+        }
+      }
+    },
+    "quake2-sd": {
+      "path": "local/game-render-q2-final/pxa-quake2-sd",
+      "manifest_sha256": "31e746158827dbf86e38b663e4b3b42791a2e94f52af69bdaca61571549f9980",
+      "files": {
+        "artifacts/main.esp32-s31.aot": {
+          "bytes": 4478376,
+          "sha256": "9ad5e1226c032e43f567f30de035f10e4d505a6636cb5c444d1f6348ac9da015"
+        }
+      }
+    },
+    "jump": {
+      "path": "local/game-render-migration-final/pxa-jump-jump-3d",
+      "manifest_sha256": "6b4ba7f82dbe64e087ca2ad5f0b4b2dc7191da8b41ab365ebd25011a5d642f75",
+      "files": {
+        "artifacts/main.esp32-s31.aot": {
+          "bytes": 593020,
+          "sha256": "247a35af905fcf3f95db3e8d8808aa3f5f55a43bb1fbd634343a94b4f0d9cf22"
+        }
+      }
+    },
+    "voxel": {
+      "path": "local/game-render-migration-final/pxa-voxel-craft",
+      "manifest_sha256": "03dee5874ac4e18a29f51d1c7dcf9b128391ca7050bf112de0f04017b316982c",
+      "files": {
+        "artifacts/main.esp32-s31.aot": {
+          "bytes": 710564,
+          "sha256": "510d0731307c8c2437f5cf28e20efe70167bc64fb71faf0bb75a9d1760e5bc8f"
+        }
+      }
+    }
+  }
+}

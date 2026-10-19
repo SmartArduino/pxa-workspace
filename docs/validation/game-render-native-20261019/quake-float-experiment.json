@@ -1,0 +1,298 @@
+{
+  "scope": "Quake start actual gameplay, direct globals ON, Host spans OFF; renderer + mathlib single-precision constants experiment",
+  "selected_as_default": false,
+  "seconds": 60,
+  "fps_samples": [
+    {
+      "seconds": 1.0176649070017447,
+      "fps": 6.9
+    },
+    {
+      "seconds": 2.022309234002023,
+      "fps": 6.9
+    },
+    {
+      "seconds": 3.023776527999871,
+      "fps": 6.9
+    },
+    {
+      "seconds": 4.018949700999656,
+      "fps": 6.9
+    },
+    {
+      "seconds": 5.016234606999205,
+      "fps": 6.9
+    },
+    {
+      "seconds": 6.015576844001771,
+      "fps": 6.9
+    },
+    {
+      "seconds": 7.017836122002336,
+      "fps": 6.9
+    },
+    {
+      "seconds": 8.022857871001179,
+      "fps": 6.9
+    },
+    {
+      "seconds": 9.020246964002581,
+      "fps": 7.9
+    },
+    {
+      "seconds": 10.017907989000378,
+      "fps": 6.9
+    },
+    {
+      "seconds": 11.018021150001005,
+      "fps": 6.9
+    },
+    {
+      "seconds": 12.020277522999095,
+      "fps": 6.9
+    },
+    {
+      "seconds": 13.017267361999984,
+      "fps": 6.9
+    },
+    {
+      "seconds": 14.020447568000236,
+      "fps": 6.9
+    },
+    {
+      "seconds": 15.018562359000498,
+      "fps": 6.9
+    },
+    {
+      "seconds": 16.017475415999797,
+      "fps": 7.9
+    },
+    {
+      "seconds": 17.023074603999703,
+      "fps": 6.9
+    },
+    {
+      "seconds": 18.019809843000985,
+      "fps": 6.9
+    },
+    {
+      "seconds": 19.01624676999927,
+      "fps": 6.9
+    },
+    {
+      "seconds": 20.021463146000315,
+      "fps": 7.9
+    },
+    {
+      "seconds": 21.023406699001498,
+      "fps": 6.9
+    },
+    {
+      "seconds": 22.01628392100247,
+      "fps": 6.9
+    },
+    {
+      "seconds": 23.016431797001133,
+      "fps": 6.9
+    },
+    {
+      "seconds": 24.02215171300122,
+      "fps": 6.9
+    },
+    {
+      "seconds": 25.01544829699924,
+      "fps": 6.9
+    },
+    {
+      "seconds": 26.021128237000084,
+      "fps": 6.9
+    },
+    {
+      "seconds": 27.014191490001394,
+      "fps": 7.9
+    },
+    {
+      "seconds": 28.018586486999993,
+      "fps": 6.9
+    },
+    {
+      "seconds": 29.02149328700034,
+      "fps": 6.9
+    },
+    {
+      "seconds": 30.01525361500171,
+      "fps": 6.9
+    },
+    {
+      "seconds": 31.020703872000013,
+      "fps": 6.9
+    },
+    {
+      "seconds": 32.01549458400041,
+      "fps": 6.9
+    },
+    {
+      "seconds": 33.02261450000151,
+      "fps": 6.9
+    },
+    {
+      "seconds": 34.02961491099995,
+      "fps": 6.9
+    },
+    {
+      "seconds": 35.02261090799948,
+      "fps": 6.9
+    },
+    {
+      "seconds": 36.026118481000594,
+      "fps": 6.9
+    },
+    {
+      "seconds": 37.023408486002154,
+      "fps": 7.9
+    },
+    {
+      "seconds": 38.025040892000106,
+      "fps": 6.9
+    },
+    {
+      "seconds": 39.01885111500087,
+      "fps": 6.9
+    },
+    {
+      "seconds": 40.046240954001405,
+      "fps": 6.9
+    },
+    {
+      "seconds": 41.01416253500065,
+      "fps": 7.9
+    },
+    {
+      "seconds": 42.02021469800093,
+      "fps": 6.9
+    },
+    {
+      "seconds": 43.02702391799903,
+      "fps": 6.9
+    },
+    {
+      "seconds": 44.02414887300256,
+      "fps": 6.9
+    },
+    {
+      "seconds": 45.016232378002314,
+      "fps": 6.9
+    },
+    {
+      "seconds": 46.041090852002526,
+      "fps": 6.9
+    },
+    {
+      "seconds": 47.026913989000604,
+      "fps": 7.9
+    },
+    {
+      "seconds": 48.016298234000715,
+      "fps": 6.9
+    },
+    {
+      "seconds": 49.02070937100143,
+      "fps": 6.9
+    },
+    {
+      "seconds": 50.04579856000055,
+      "fps": 6.9
+    },
+    {
+      "seconds": 51.01418534000186,
+      "fps": 6.9
+    },
+    {
+      "seconds": 52.024854521001544,
+      "fps": 6.9
+    },
+    {
+      "seconds": 53.02185150399964,
+      "fps": 7.9
+    },
+    {
+      "seconds": 54.01522478200059,
+      "fps": 6.9
+    },
+    {
+      "seconds": 55.01733045000219,
+      "fps": 6.9
+    },
+    {
+      "seconds": 56.02711509300207,
+      "fps": 6.9
+    },
+    {
+      "seconds": 57.0195618329999,
+      "fps": 6.9
+    },
+    {
+      "seconds": 58.020214281001245,
+      "fps": 6.9
+    },
+    {
+      "seconds": 59.02250491900122,
+      "fps": 6.9
+    },
+    {
+      "seconds": 60.02431696400163,
+      "fps": 7.9
+    }
+  ],
+  "fps": {
+    "median": 6.9,
+    "mean": 7.050000000000001,
+    "min": 6.9,
+    "max": 7.9
+  },
+  "target_fps": 20,
+  "target_met": false,
+  "reason": "no material median-FPS improvement; keep original Quake precision",
+  "memory": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=652419;sram_free=93367;sram_min=10472;sram_largest=43008;psram_total=16741200;psram_free=6408908;psram_min=111676;psram_largest=6160384"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=28500;external=16682;peak_internal=28500;peak_external=16697;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=16400"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=28500;external=282"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ]
+}
