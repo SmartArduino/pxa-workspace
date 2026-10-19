@@ -703,7 +703,14 @@ static void *esp_wamr_alloc(void *context, size_t size) {
     if (allocation_size == 0) return NULL;
     raw_memory = heap_caps_malloc(allocation_size,
                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (raw_memory == NULL) return NULL;
+    if (raw_memory == NULL) {
+        ESP_LOGE(PXA_ESP_HOST_TAG,
+                 "WAMR allocation failed: bytes=%u free_psram=%u largest_psram=%u",
+                 (unsigned)size,
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+        return NULL;
+    }
     {
         void *memory = esp_wamr_aligned_memory(raw_memory);
         pxa_esp_wamr_allocation_header_t *header =
@@ -740,7 +747,14 @@ static void *esp_wamr_realloc(void *context, void *memory, size_t size) {
     resized_raw = heap_caps_realloc(previous_header->raw_memory,
                                     allocation_size,
                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (resized_raw == NULL) return NULL;
+    if (resized_raw == NULL) {
+        ESP_LOGE(PXA_ESP_HOST_TAG,
+                 "WAMR reallocation failed: previous=%u bytes=%u free_psram=%u largest_psram=%u",
+                 (unsigned)previous_header->size, (unsigned)size,
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+        return NULL;
+    }
     resized_memory = esp_wamr_aligned_memory(resized_raw);
     resized_header =
         (pxa_esp_wamr_allocation_header_t *)resized_memory - 1;
