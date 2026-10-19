@@ -50,6 +50,14 @@ same bounded retry limit; storage failures and package validation failures are
 reported immediately. On a noisy high-speed UART, `PXADB_UART_UPLOAD_CHUNK=256`
 can also select smaller bursts from the start.
 
+Firmware advertising `fs_chunk_crc32=1` also accepts
+`FSDATA2 OFFSET CRC32_HEX BASE64`. The client selects it automatically for
+offset serial uploads. CRC32 uses the IEEE variant, encoded as eight hex
+digits, and is checked before writing each decoded block. Rejected or
+truncated blocks leave the confirmed prefix intact for a bounded retry.
+The full-file SHA-256 still gates publication. Older firmware keeps `FSDATA`,
+and the binary transport keeps its existing frame integrity checks.
+
 Firmware with the `memory` capability provides an on-demand diagnostic
 snapshot: `pxadb memory --port /dev/ttyACM0` (add `--baud 2000000` for Korvo).
 The JSON separates ESP heap-capability totals/free/minimum free from PXA's

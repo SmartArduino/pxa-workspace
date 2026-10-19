@@ -373,7 +373,7 @@ class PxaDbClient:
                                               command.encode("utf-8"))
             return
         payload = f"{PROTOCOL} {sequence} {command}\n".encode("ascii")
-        paced = (command.startswith("FSDATA ")
+        paced = (command.startswith(("FSDATA ", "FSDATA2 "))
                  and getattr(self, "upload_profile", "unknown") != "usb")
         burst_size = 128 if paced else len(payload)
         # Non-blocking serial writes can accept only part of a large upload
@@ -1080,6 +1080,7 @@ class NormalFsClient:
         digest = file_sha256(source)
         properties = info_properties(self.client.device_info)
         offset_transfer = properties.get("fs_offset") == "1"
+        chunk_crc32 = offset_transfer and properties.get("fs_chunk_crc32") == "1"
         binary_transfer = getattr(self.client, "binary_transport", None) is not None
         try:
             chunk_size = int(properties.get("max_chunk", "192"))
@@ -1159,8 +1160,12 @@ class NormalFsClient:
                     if binary_transfer:
                         frames = self.client.send_binary_upload(offset, chunk)
                     else:
-                        command = (f"FSDATA {offset} {encoded}" if offset_transfer
-                                   else f"FSDATA {encoded}")
+                        if chunk_crc32:
+                            checksum = zlib.crc32(chunk) & 0xffffffff
+                            command = f"FSDATA2 {offset} {checksum:08x} {encoded}"
+                        else:
+                            command = (f"FSDATA {offset} {encoded}" if offset_transfer
+                                       else f"FSDATA {encoded}")
                         frames = self.client.request_until(
                             command, {"READY", "OK"},
                             timeout=verify_timeout if len(chunk) == remaining else 10.0
@@ -1169,7 +1174,8 @@ class NormalFsClient:
                 except PxaDbError as error:
                     reason = str(error)
                     if isinstance(error, PxaDbRejectedError) and reason not in {
-                        "invalid_offset", "offset_mismatch", "invalid_file_chunk"
+                        "invalid_offset", "offset_mismatch", "invalid_file_chunk",
+                        "chunk_checksum_mismatch", "invalid_chunk_checksum"
                     }:
                         raise
                     # Count failures without meaningful confirmed progress.

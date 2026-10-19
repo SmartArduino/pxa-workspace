@@ -868,7 +868,8 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
     SendFsUploadReady(sequence);
 }
 
-void WriteFsUpload(unsigned long sequence, const char* offset_text, const char* encoded_data) {
+void WriteFsUpload(unsigned long sequence, const char* offset_text,
+                   const char* encoded_data, const char* checksum = nullptr) {
     if (s_file_upload.file == nullptr) {
         SendFrame(sequence, "ERR", "no_upload_in_progress");
         return;
@@ -894,10 +895,37 @@ void WriteFsUpload(unsigned long sequence, const char* offset_text, const char* 
     }
     uint8_t bytes[kFsUploadChunkSize] = {};
     size_t length = 0;
+    uint32_t expected_crc = 0;
+    if (checksum != nullptr) {
+        if (strlen(checksum) != 8) {
+            SendFrame(sequence, "ERR", "invalid_chunk_checksum");
+            return;
+        }
+        for (unsigned i = 0; i < 8; ++i) {
+            const unsigned char c = static_cast<unsigned char>(checksum[i]);
+            unsigned digit;
+            if (c >= '0' && c <= '9') digit = c - '0';
+            else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+            else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+            else {
+                SendFrame(sequence, "ERR", "invalid_chunk_checksum");
+                return;
+            }
+            expected_crc = (expected_crc << 4) | digit;
+        }
+    }
     if (!DecodeFileChunk(encoded_data, bytes, sizeof(bytes), &length) || length == 0 ||
         length > s_file_upload.remaining) {
-        AbortFileUpload();
+        if (checksum == nullptr) AbortFileUpload();
         SendFrame(sequence, "ERR", "invalid_file_chunk");
+        return;
+    }
+    // Validate before fwrite: preserve the confirmed prefix for a retry even
+    // when a shortened Base64 line still decodes successfully. The final
+    // SHA-256 check continues to gate publication of the complete file.
+    if (checksum != nullptr && esp_rom_crc32_le(
+            0, bytes, static_cast<uint32_t>(length)) != expected_crc) {
+        SendFrame(sequence, "ERR", "chunk_checksum_mismatch");
         return;
     }
     errno = 0;
@@ -1232,7 +1260,7 @@ void SendHello(unsigned long sequence) {
         "";
 #endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;target=%s;serial=%s;version=%s",
+             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=%s;serial=%s;version=%s",
              kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
              CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version);
@@ -2168,6 +2196,11 @@ void HandleCommand(char* line) {
         StartFsUpload(sequence, argument, second_argument, third_argument);
     } else if (strcmp(command, "FSDATA") == 0 && argument != nullptr) {
         WriteFsUpload(sequence, argument, second_argument);
+    } else if (strcmp(command, "FSDATA2") == 0) {
+        if (argument != nullptr && second_argument != nullptr && third_argument != nullptr)
+            WriteFsUpload(sequence, argument, third_argument, second_argument);
+        else
+            SendFrame(sequence, "ERR", "invalid_file_chunk");
     } else if (strcmp(command, "FSMKDIR") == 0 && argument != nullptr) {
         MakeFsDirectory(sequence, argument);
     } else if (strcmp(command, "FSMOVE") == 0 && argument != nullptr && second_argument != nullptr) {

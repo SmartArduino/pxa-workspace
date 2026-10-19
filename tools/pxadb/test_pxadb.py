@@ -224,15 +224,17 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         self.assertEqual(client.serial.writes, [b"PXADB1 7 PING\n"])
 
     def test_uart_upload_command_is_paced(self) -> None:
-        client = fake_client([])
-        client.upload_profile = "uart"
-        command = "FSDATA 0 " + "a" * 512
-        with mock.patch.object(pxadb.time, "sleep") as sleep:
-            client._write_command(7, command)
-        self.assertEqual(b"".join(client.serial.writes),
-                         f"PXADB1 7 {command}\n".encode("ascii"))
-        self.assertTrue(all(len(part) <= 128 for part in client.serial.writes))
-        self.assertEqual(sleep.call_count, len(client.serial.writes) - 1)
+        for prefix in ("FSDATA 0 ", "FSDATA2 0 cbf43926 "):
+            with self.subTest(prefix=prefix):
+                client = fake_client([])
+                client.upload_profile = "uart"
+                command = prefix + "a" * 512
+                with mock.patch.object(pxadb.time, "sleep") as sleep:
+                    client._write_command(7, command)
+                self.assertEqual(b"".join(client.serial.writes),
+                                 f"PXADB1 7 {command}\n".encode("ascii"))
+                self.assertTrue(all(len(part) <= 128 for part in client.serial.writes))
+                self.assertEqual(sleep.call_count, len(client.serial.writes) - 1)
 
     def test_native_usb_upload_command_is_not_paced(self) -> None:
         client = fake_client([])
@@ -329,6 +331,36 @@ class PxaDbLogStreamingTest(unittest.TestCase):
                     source.write_bytes(b"abc")
                     pxadb.NormalFsClient(client).put(source, "pxa-state/inbox/payload.bin")
                 self.assertIn(b"FSDATA 2 Yw==", client.serial.writes[-1])
+
+    def test_checked_upload_retries_without_skipping_rejected_bytes(self) -> None:
+        for reason in ("chunk_checksum_mismatch", "invalid_chunk_checksum"):
+            with self.subTest(reason=reason):
+                client = fake_client([
+                    encoded_frame(1, "READY", "6"),
+                    encoded_frame(2, "READY", "4"),
+                    encoded_frame(3, "ERR", reason),
+                    encoded_frame(4, "READY", "4"),
+                    encoded_frame(5, "READY", "2"),
+                    encoded_frame(6, "OK", ""),
+                ])
+                client.device_info = "max_chunk=2;fs_offset=1;fs_chunk_crc32=1"
+                with tempfile.TemporaryDirectory() as directory:
+                    source = pathlib.Path(directory) / "payload.bin"
+                    source.write_bytes(b"abcdef")
+                    pxadb.NormalFsClient(client).put(source, "payload.bin")
+                commands = b"".join(client.serial.writes).decode().splitlines()
+                data = [c.split(" ", 2)[2] for c in commands if " FSDATA2 " in c]
+                # The rejected block is retried from the receiver's confirmed
+                # prefix. The same whole-file SHA remains on every FSPUT.
+                self.assertEqual(data, [
+                    f"FSDATA2 0 {zlib.crc32(b'ab'):08x} YWI=",
+                    f"FSDATA2 2 {zlib.crc32(b'cd'):08x} Y2Q=",
+                    f"FSDATA2 2 {zlib.crc32(b'cd'):08x} Y2Q=",
+                    f"FSDATA2 4 {zlib.crc32(b'ef'):08x} ZWY=",
+                ])
+                starts = [c.split(" ", 2)[2] for c in commands if " FSPUT " in c]
+                self.assertEqual(len(starts), 2)
+                self.assertEqual(starts[0], starts[1])
 
     def test_upload_write_rejection_is_not_retried(self) -> None:
         client = fake_client([
