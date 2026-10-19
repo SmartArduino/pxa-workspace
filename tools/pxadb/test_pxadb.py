@@ -1201,6 +1201,55 @@ class PackageReceiveTest(unittest.TestCase):
                                           "pxa-storage-test", 10)
 
 
+class FileVerificationBudgetTest(unittest.TestCase):
+    def test_resumed_large_file_waits_for_final_hash_without_slow_chunk_acks(self) -> None:
+        client = fake_client([])
+        client.device_info = "max_chunk=192;fs_offset=1;fs_chunk_crc32=1"
+        total = 50 * 1024 * 1024
+        calls = []
+        def respond(command, terminal_kinds, timeout):
+            calls.append((command, timeout))
+            if command.startswith("FSPUT "):
+                return [pxadb.Frame(1, "READY", "193")]
+            if len(calls) == 2:
+                self.assertLessEqual(timeout, 10)
+                self.assertTrue(command.startswith(f"FSDATA2 {total-193} "))
+                return [pxadb.Frame(1, "READY", "1")]
+            # The final byte still needs the whole 50 MiB hash budget.
+            if timeout < 400:
+                raise pxadb.PxaDbError("timed out hashing the SD card")
+            self.assertTrue(command.startswith(f"FSDATA2 {total-1} "))
+            return [pxadb.Frame(1, "OK", "")]
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / "large.pak"
+            with source.open("wb") as file:
+                file.truncate(total)
+            with mock.patch.object(client, "request_until", side_effect=respond):
+                pxadb.NormalFsClient(client).put(source, "sdcard/large.pak")
+        self.assertEqual(len(calls), 3)  # No retry or retransmission of the file.
+
+    def test_known_size_digest_allows_slow_sd_verification(self) -> None:
+        client = fake_client([])
+        client.device_info = "fs_sha256=1"
+        total = 50 * 1024 * 1024
+        sha = "a" * 64
+        def respond(command, timeout):
+            if timeout < 400:
+                raise pxadb.PxaDbError("timed out hashing the SD card")
+            return [pxadb.Frame(1, "OK", f"sha256={sha};bytes={total}")]
+        with mock.patch.object(client, "request", side_effect=respond) as request:
+            self.assertEqual(pxadb.NormalFsClient(client)._expected_digest("sdcard/large.pak", total), (sha, total))
+        self.assertEqual(request.call_count, 1)
+
+    def test_explicit_longer_digest_deadline_is_respected(self) -> None:
+        client = fake_client([])
+        client.device_info = "fs_sha256=1"
+        client.timeout = 1200.0
+        with mock.patch.object(client, "request", return_value=[pxadb.Frame(1, "OK", "sha256=abc;bytes=1")]) as request:
+            pxadb.NormalFsClient(client)._expected_digest("sdcard/file")
+        self.assertEqual(request.call_args.kwargs["timeout"], 1200.0)
+
+
 class PxaDbFileTransferTest(unittest.TestCase):
     class ScriptedClient:
         def __init__(self, responses: list[list[pxadb.Frame]]) -> None:

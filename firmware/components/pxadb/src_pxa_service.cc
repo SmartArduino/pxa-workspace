@@ -143,6 +143,11 @@ constexpr uart_port_t kTransportPort =
     static_cast<uart_port_t>(CONFIG_PXADB_UART_PORT);
 constexpr size_t kTransportRxBufferSize = 4096;
 constexpr size_t kTransportTxBufferSize = 4096;
+/* At 2 Mbaud the default 120/128 FIFO watermark leaves only 40 us for the
+ * ISR to start draining it. Leave three quarters of the FIFO available for
+ * interrupt latency; the larger software ring cannot recover a FIFO overrun.
+ * Derive the threshold from the selected port, including smaller LP FIFOs. */
+constexpr int kTransportRxFifoThreshold = UART_HW_FIFO_LEN(kTransportPort) / 4;
 /* Keep control latency low while sharing the console's buffered driver. */
 constexpr uint32_t kTransportReadPollMs = 5;
 constexpr size_t kTransportWriteChunk = 1024;
@@ -161,7 +166,10 @@ esp_err_t TransportStart() {
     if (uart_is_driver_installed(kTransportPort)) {
         /* Port 0 is normally owned by the console; adopt its driver and match
          * the configured baud rate instead of reinstalling it. */
-        return uart_set_baudrate(kTransportPort, CONFIG_PXADB_UART_BAUD);
+        esp_err_t err = uart_set_baudrate(kTransportPort, CONFIG_PXADB_UART_BAUD);
+        if (err != ESP_OK) return err;
+        return uart_set_rx_full_threshold(kTransportPort,
+                                          kTransportRxFifoThreshold);
     }
     esp_err_t err = uart_param_config(kTransportPort, &config);
     if (err != ESP_OK) return err;
@@ -178,8 +186,11 @@ esp_err_t TransportStart() {
                            UART_PIN_NO_CHANGE);
         if (err != ESP_OK) return err;
     }
-    return uart_driver_install(kTransportPort, kTransportRxBufferSize,
-                               kTransportTxBufferSize, 0, nullptr, 0);
+    err = uart_driver_install(kTransportPort, kTransportRxBufferSize,
+                              kTransportTxBufferSize, 0, nullptr, 0);
+    if (err != ESP_OK) return err;
+    return uart_set_rx_full_threshold(kTransportPort,
+                                      kTransportRxFifoThreshold);
 }
 
 int TransportWrite(const uint8_t* data, size_t length) {
@@ -546,7 +557,6 @@ bool IsSha256Hex(const char* value) {
 bool FileSha256Hex(const char* path, char output[65]) {
     FILE* file;
     psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
-    uint8_t bytes[512] = {};
     uint8_t digest[32] = {};
     size_t digest_length = 0;
     bool success;
@@ -555,10 +565,14 @@ bool FileSha256Hex(const char* path, char output[65]) {
     if (file == nullptr) return false;
     success = psa_hash_setup(&operation, PSA_ALG_SHA_256) == PSA_SUCCESS;
     while (success) {
-        const size_t read = fread(bytes, 1, sizeof(bytes), file);
+        // Commands run on one PXADB task. Reuse its bulk-read buffer so large
+        // SD files avoid one filesystem and crypto update per 512 bytes,
+        // without increasing the internal task stack or retaining more RAM.
+        const size_t read = fread(s_fs_read_buffer, 1,
+                                 sizeof(s_fs_read_buffer), file);
         if (read > 0)
-            success = psa_hash_update(&operation, bytes, read) == PSA_SUCCESS;
-        if (read < sizeof(bytes)) {
+            success = psa_hash_update(&operation, s_fs_read_buffer, read) == PSA_SUCCESS;
+        if (read < sizeof(s_fs_read_buffer)) {
             success = success && ferror(file) == 0;
             break;
         }
@@ -1236,10 +1250,11 @@ void SendHello(unsigned long sequence) {
     const esp_app_desc_t* app = esp_app_get_description();
     // Keep complete capability and version fields without enlarging log records.
     char payload[512] = {};
-    char transport_info[40] = {};
+    char transport_info[72] = {};
 #if CONFIG_PXADB_TRANSPORT_UART
-    snprintf(transport_info, sizeof(transport_info), ";uart_rx_buffer=%u",
-             pxadb_uart_rx_buffer_capacity());
+    snprintf(transport_info, sizeof(transport_info),
+             ";uart_rx_buffer=%u;uart_rx_fifo_threshold=%d",
+             pxadb_uart_rx_buffer_capacity(), kTransportRxFifoThreshold);
 #endif
     const char* kTestCapabilities =
 #if CONFIG_PXADB_TEST_CONTROL

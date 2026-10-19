@@ -58,6 +58,12 @@ truncated blocks leave the confirmed prefix intact for a bounded retry.
 The full-file SHA-256 still gates publication. Older firmware keeps `FSDATA`,
 and the binary transport keeps its existing frame integrity checks.
 
+Large-file verification has a separate deadline based on 128 KiB/s plus
+30 seconds, capped at 15 minutes; ordinary data chunks still use a short ACK
+deadline. An explicitly longer `--timeout` is respected. UART HELLO reports
+`uart_rx_buffer` and `uart_rx_fifo_threshold`: the software ring and the
+hardware FIFO interrupt watermark solve different receive-latency limits.
+
 Firmware with the `memory` capability provides an on-demand diagnostic
 snapshot: `pxadb memory --port /dev/ttyACM0` (add `--baud 2000000` for Korvo).
 The JSON separates ESP heap-capability totals/free/minimum free from PXA's

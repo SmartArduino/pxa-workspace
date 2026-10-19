@@ -202,6 +202,13 @@ def file_sha256(source: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
+def file_verification_timeout(size: int) -> float:
+    # A mounted SD card can hash much more slowly than UART transfers finish.
+    # Allow 128 KiB/s plus setup time, bounded to 15 minutes. Data chunks keep
+    # their short ACK deadline; only full-file verification uses this budget.
+    return min(900.0, 30.0 + max(0, size) / (128 * 1024))
+
+
 def decode_payload(value: str) -> str:
     if value == "-":
         return ""
@@ -893,13 +900,17 @@ class NormalFsClient:
             entries.append((kind, int(size), name))
         return entries
 
-    def _expected_digest(self, remote_path: str) -> tuple[str | None, int | None]:
+    def _expected_digest(self, remote_path: str,
+                         expected_size: int | None = None) -> tuple[str | None, int | None]:
         properties = info_properties(self.client.device_info)
         if properties.get("fs_sha256") != "1":
             return None, None
+        timeout = max(60.0, getattr(self.client, "timeout", 0.0))
+        if expected_size is not None:
+            timeout = max(timeout, file_verification_timeout(expected_size))
         try:
             frames = self.client.request(
-                f"FSSHA {client_encode_path(remote_path)}", timeout=60.0
+                f"FSSHA {client_encode_path(remote_path)}", timeout=timeout
             )
         except PxaDbError:
             return None, None
@@ -1109,7 +1120,8 @@ class NormalFsClient:
         # FSPUT can validate an already-present file; the final data reply
         # follows the device's full SHA-256 pass. Budget that pass for large
         # removable-media files without relaxing ordinary data acknowledgements.
-        verify_timeout = max(10.0, min(120.0, 5.0 + total / (512 * 1024)))
+        verify_timeout = max(getattr(self.client, "timeout", 0.0),
+                             file_verification_timeout(total))
 
         def report_progress(done: int) -> None:
             nonlocal last_progress
