@@ -23,5 +23,8 @@
 # Workspace locks and local tool state
 /.pxa/
 
+# Temporary stack-usage reports emitted by the AOT compiler.
+/wamrc-su-*.su
+
 # Python bytecode is local build state at any tool depth.
 **/__pycache__/
