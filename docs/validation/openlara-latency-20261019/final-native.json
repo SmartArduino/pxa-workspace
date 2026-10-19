@@ -1,0 +1,55 @@
+{
+  "passed": true,
+  "version": "0.4.3",
+  "apps_commit": "672b5ff1faa58b1fa642acf4b5358665f5519cd9",
+  "package_sha256": "1fc86f976a0bfd9258b205395d4376a137d5083fab8f291cde7782f057c511d1",
+  "firmware_sha256": "21c9d28c7a484873e2b46c782a965a60eec4f746886802ab85983332f5fb9b39",
+  "device_serial": "1c:29:04:d0:af:5e",
+  "stationary_phase_passed": true,
+  "stationary_report": "native-stationary-run.json",
+  "functional_report": "native-functional-run.json",
+  "validation_note": "60 stationary samples completed successfully. The original run subsequently lost its USB UART bridge during inventory testing and retains passed=false. The separate functional run passed all controller, inventory, short-pulse, save/load and physical reboot checks on the identical package and firmware; its single FPS sanity sample is excluded from the60-sample statistics. Reconnection telemetry confirmed continuing device uptime.",
+  "stationary_samples": 60,
+  "stationary_position": [
+    78336,
+    -1024,
+    12800,
+    0
+  ],
+  "fps": {
+    "median": 6.9,
+    "mean": 7.318333333333333,
+    "min": 6.9,
+    "max": 7.9
+  },
+  "input_latency": {
+    "samples": 40,
+    "mean_us": 184111.75,
+    "max_us": 272597,
+    "scope": "Host controller sample to Guest presentation; excludes mechanical switch debounce and LCD scanout",
+    "method": "20 injected120ms right presses;500ms neutral gap; GameKit controller-0 path"
+  },
+  "controller_turn": true,
+  "controller_walk": true,
+  "save_restore": true,
+  "physical_reboot_restore": true,
+  "saved_position": [
+    78747,
+    -1024,
+    12893,
+    13975
+  ],
+  "restored_position": [
+    78747,
+    -1024,
+    12893,
+    13975
+  ],
+  "menu_response_upper_bounds_ms": [
+    1121,
+    953,
+    1108,
+    1336,
+    1209
+  ]
+}

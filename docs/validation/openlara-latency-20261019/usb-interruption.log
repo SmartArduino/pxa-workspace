@@ -1,0 +1,23 @@
+Oct 19 13:12:33 lucinhu-code01 kernel: usb 1-4.1.4.3: USB disconnect, device number 77
+Oct 19 13:12:34 lucinhu-code01 kernel: usb 1-4.1.4.3: new full-speed USB device number 80 using xhci_hcd
+Oct 19 13:12:35 lucinhu-code01 kernel: usb 1-4.1.4.3: device descriptor read/64, error -32
+Oct 19 13:12:35 lucinhu-code01 kernel: usb 1-4.1.4.3: device descriptor read/64, error -32
+Oct 19 13:12:36 lucinhu-code01 kernel: usb 1-4.1.4.3: new full-speed USB device number 81 using xhci_hcd
+Oct 19 13:12:36 lucinhu-code01 kernel: usb 1-4.1.4.3: Device not responding to setup address.
+Oct 19 13:12:36 lucinhu-code01 kernel: usb 1-4.1.4.3: Device not responding to setup address.
+Oct 19 13:12:36 lucinhu-code01 kernel: usb 1-4.1.4.3: device not accepting address 81, error -71
+Oct 19 13:12:36 lucinhu-code01 kernel: usb 1-4.1.4.3: WARN: invalid context state for evaluate context command.
+Oct 19 13:12:36 lucinhu-code01 kernel: usb 1-4.1.4-port3: attempt power cycle
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: new full-speed USB device number 82 using xhci_hcd
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: New USB device found, idVendor=1a86, idProduct=55d3, bcdDevice= 4.45
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: New USB device strings: Mfr=0, Product=2, SerialNumber=3
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: Product: USB Single Serial
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: SerialNumber: 5CFF043509
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: can't set config #1, error -32
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: USB disconnect, device number 82
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: new full-speed USB device number 83 using xhci_hcd
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: New USB device found, idVendor=1a86, idProduct=55d3, bcdDevice= 4.45
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: New USB device strings: Mfr=0, Product=2, SerialNumber=3
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: Product: USB Single Serial
+Oct 19 13:12:37 lucinhu-code01 kernel: usb 1-4.1.4.3: SerialNumber: 5CFF043509
+Oct 19 13:12:38 lucinhu-code01 kernel: cdc_acm 1-4.1.4.3:1.0: ttyACM0: USB ACM device

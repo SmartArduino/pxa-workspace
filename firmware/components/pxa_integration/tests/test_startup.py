@@ -37,6 +37,7 @@ FIXTURE = r'''
 #define PXA_ESP_HOST_CJK_FONT_PATH "/font.ttf"
 #define LV_FREETYPE_FONT_RENDER_MODE_BITMAP 0
 #define LV_FREETYPE_FONT_STYLE_NORMAL 0
+const char* pxa_esp_system_font_path() { return PXA_ESP_HOST_CJK_FONT_PATH; }
 #define ESP_LOGI(...) ((void)0)
 #define ESP_LOGW(...) ((void)0)
 #define ESP_LOGE(...) ((void)0)

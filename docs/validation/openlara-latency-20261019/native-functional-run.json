@@ -1,0 +1,105 @@
+{
+  "passed": true,
+  "mode": "S31 native AOT; stationary public PC demo City; controller-0 injection",
+  "package_sha256": "1fc86f976a0bfd9258b205395d4376a137d5083fab8f291cde7782f057c511d1",
+  "samples": [
+    6.9
+  ],
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "packages_before": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.4.3\tbuiltin=0;installed=1;staged=0;enabled=1;active=1",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.9\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+  ],
+  "firmware": {
+    "image": "local/volume-firmware/build/pxa_esp_platform.bin",
+    "bytes": 3925344,
+    "sha256": "21c9d28c7a484873e2b46c782a965a60eec4f746886802ab85983332f5fb9b39",
+    "revision": "33-volume-persistence",
+    "flash_offset": "0x10000",
+    "root_source": "HEAD plus Gamekit::SetVolume immediate status publication and diagnostic log",
+    "sdk_head": "dc9365e2da4a4187991a22b40e1276f26a2cc448",
+    "flashed": true,
+    "partition_table_matches_original": true
+  },
+  "menu_response_upper_bounds_ms": [
+    1121,
+    953,
+    1108,
+    1336,
+    1209
+  ],
+  "stationary_position": [
+    78336,
+    -1024,
+    12800,
+    0
+  ],
+  "memory": [
+    "scope=heap;sram_total=652435;sram_free=103391;sram_min=84687;sram_largest=65536;psram_total=16741200;psram_free=1261748;psram_min=1257916;psram_largest=1032192",
+    "scope=budget;internal=28500;external=24913;peak_internal=28500;peak_external=24913;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+    "scope=kind;name=raster;internal=0;external=0",
+    "scope=kind;name=image;internal=0;external=0",
+    "scope=kind;name=audio;internal=0;external=16400",
+    "scope=kind;name=temporary;internal=0;external=0",
+    "scope=kind;name=metadata;internal=28500;external=8513",
+    "scope=kind;name=frame;internal=0;external=0",
+    "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+  ],
+  "fps": {
+    "median": 6.9,
+    "mean": 6.9,
+    "min": 6.9,
+    "max": 6.9
+  },
+  "stationary_throughout_timing": true,
+  "controller_turn": true,
+  "controller_walk": true,
+  "saved_position": [
+    78747,
+    -1024,
+    12893,
+    13975
+  ],
+  "restored_position": [
+    78747,
+    -1024,
+    12893,
+    13975
+  ],
+  "save_restore": true,
+  "pulse_input_reports": [
+    "1177939\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=2 avg_us=173727 max_us=189531 ingress_avg_us=110908 ingress_max_us=119730 frame_avg_us=62818 frame_max_us=69801\u001b[0m",
+    "1183007\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=16 avg_us=175401 max_us=224567 ingress_avg_us=110674 ingress_max_us=147756 frame_avg_us=64726 frame_max_us=76811\u001b[0m",
+    "1188055\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=16 avg_us=176263 max_us=224631 ingress_avg_us=109865 ingress_max_us=148320 frame_avg_us=66397 frame_max_us=78879\u001b[0m",
+    "1193110\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=6 avg_us=231732 max_us=272597 ingress_avg_us=118289 ingress_max_us=150746 frame_avg_us=113443 frame_max_us=122946\u001b[0m"
+  ],
+  "twenty_brief_controller_pulses": true,
+  "physical_reboot_restore": true,
+  "input_reports": [
+    "1098605\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=8 avg_us=112549 max_us=171038 ingress_avg_us=77286 ingress_max_us=147613 frame_avg_us=35263 frame_max_us=47097\u001b[0m",
+    "1122841\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=16 avg_us=118065 max_us=144154 ingress_avg_us=78026 ingress_max_us=109872 frame_avg_us=40039 frame_max_us=54325\u001b[0m",
+    "1127876\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=2 avg_us=217201 max_us=218736 ingress_avg_us=106386 ingress_max_us=121253 frame_avg_us=110814 frame_max_us=124146\u001b[0m",
+    "1132914\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=2 avg_us=194707 max_us=202531 ingress_avg_us=128790 ingress_max_us=143328 frame_avg_us=65917 frame_max_us=72632\u001b[0m",
+    "1143001\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=8 avg_us=173394 max_us=343119 ingress_avg_us=83329 ingress_max_us=129534 frame_avg_us=90064 frame_max_us=258605\u001b[0m",
+    "1167900\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=6 avg_us=118556 max_us=124390 ingress_avg_us=74363 ingress_max_us=101493 frame_avg_us=44193 frame_max_us=55077\u001b[0m",
+    "1172911\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=4 avg_us=174486 max_us=203808 ingress_avg_us=101262 ingress_max_us=129881 frame_avg_us=73223 frame_max_us=84395\u001b[0m",
+    "1177939\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=2 avg_us=173727 max_us=189531 ingress_avg_us=110908 ingress_max_us=119730 frame_avg_us=62818 frame_max_us=69801\u001b[0m",
+    "1183007\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=16 avg_us=175401 max_us=224567 ingress_avg_us=110674 ingress_max_us=147756 frame_avg_us=64726 frame_max_us=76811\u001b[0m",
+    "1188055\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=16 avg_us=176263 max_us=224631 ingress_avg_us=109865 ingress_max_us=148320 frame_avg_us=66397 frame_max_us=78879\u001b[0m",
+    "1193110\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=6 avg_us=231732 max_us=272597 ingress_avg_us=118289 ingress_max_us=150746 frame_avg_us=113443 frame_max_us=122946\u001b[0m",
+    "39844\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=6 avg_us=117415 max_us=135940 ingress_avg_us=73624 ingress_max_us=84307 frame_avg_us=43791 frame_max_us=54477\u001b[0m"
+  ],
+  "frame_clock_reports": [
+    "15489\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frame clock: paced timing available\u001b[0m"
+  ],
+  "packages_after": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.4.3\tbuiltin=0;installed=1;staged=0;enabled=1;active=1",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.9\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+  ]
+}

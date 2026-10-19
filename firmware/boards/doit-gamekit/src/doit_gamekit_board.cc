@@ -76,7 +76,7 @@ public:
     void UnlockDisplay() { xSemaphoreGiveRecursive(display_mutex_); }
     void AttachSystem(pxsys_standard_system_t* system, pxsys_reference_lvgl_t* ui);
     bool SetWifi(bool enabled);
-    void SetVolume(uint8_t value) { audio_.SetVolume(value); }
+    void SetVolume(uint8_t value);
     void SetBrightness(uint8_t value) { backlight_.SetPercent(value); ApplyBacklight(); }
     void SetIdleDim(bool enabled, uint8_t value) {
         backlight_.SetIdleDim(enabled, value); ApplyBacklight();
@@ -887,6 +887,14 @@ void Gamekit::AttachSystem(pxsys_standard_system_t* system, pxsys_reference_lvgl
         });
     }
     PublishStatus();
+}
+
+void Gamekit::SetVolume(uint8_t value) {
+    audio_.SetVolume(value);
+    // Persist through the integration status observer before another hotkey
+    // can restart/power off the board; the one-second poll is too late.
+    PublishStatus();
+    ESP_LOGI(kTag, "Volume applied: %u%%", unsigned(audio_.volume()));
 }
 
 void Gamekit::PublishStatus() {

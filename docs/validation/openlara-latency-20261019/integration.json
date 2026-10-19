@@ -1,0 +1,92 @@
+{
+  "title_art_palette": true,
+  "lara_entity_index": 91,
+  "saved_lara": {
+    "position": [
+      78336,
+      -1024,
+      14869
+    ],
+    "rotation": 0,
+    "room": 90
+  },
+  "displaced_lara": [
+    78336,
+    -1024,
+    14869,
+    16400
+  ],
+  "restored_lara": [
+    78336,
+    -1024,
+    14869,
+    0
+  ],
+  "same_instance_restore": true,
+  "run": {
+    "frames": 1078,
+    "submitted": 176960,
+    "accepted": 175828,
+    "nonzero": 172676,
+    "blocks": 311,
+    "denied": false,
+    "frame_sha256": "fcb3a3e4e2e245a8c28a2133d73e9144b0ffce81905484bd0ed61c110886307a",
+    "pcm_sha256": "083552ffcb0fb09ef2b7af9d2a74800909e312fc74d10bec27c5f5dcd7cfb3cf",
+    "linear_bytes": 7995392,
+    "clock_period_us": 16000
+  },
+  "cross_instance_restore": true,
+  "failed_replace_previous_kept": true,
+  "corrupt_save_rejected": true,
+  "forged_record_rejected": true,
+  "music_setting_persisted": true,
+  "sd_seek_and_short_reads": true,
+  "sd": {
+    "frames": 188,
+    "submitted": 38720,
+    "accepted": 37651,
+    "nonzero": 38596,
+    "blocks": 68,
+    "denied": false,
+    "frame_sha256": "a8337d2f2a2aca25a7e796e0a87dbd7510e2fdcb8043f1efad35d1421287af15",
+    "pcm_sha256": "5a1703f764e5f6a129513351851b2e52253bbefc44b8bef4702d2d88d5440a6f",
+    "linear_bytes": 7864320,
+    "clock_period_us": 16000
+  },
+  "short_asset_music_reads": true,
+  "level_catalog_missing_guard": true,
+  "final": {
+    "frames": 370,
+    "submitted": 129280,
+    "accepted": 128261,
+    "nonzero": 128999,
+    "blocks": 238,
+    "denied": false,
+    "frame_sha256": "d87d167cacd57840c07c3bffb57d962e5e6aef23422f609b9bf86026b3e9d7eb",
+    "pcm_sha256": "7f16ac174abcdada507c09f5dc4f448ab5e55826e15785addbf7eaeb2bd202aa",
+    "linear_bytes": 7929856,
+    "clock_period_us": 16000
+  },
+  "repeated_level_transition_memory": [
+    7864320,
+    7864320,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576,
+    9240576
+  ]
+}

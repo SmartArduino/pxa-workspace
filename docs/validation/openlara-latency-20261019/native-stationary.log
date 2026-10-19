@@ -1,0 +1,58 @@
+160764	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5069173 render_us=4229805 logic_us=507411 convert_us=125413 updates=152 skipped=0 pos=78336,-1024,12800 yaw=0
+160769	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1808960 rendered=1806080 queued=0 flags=1 writes=5653 blocked=3275 nonzero=1803627
+165769	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=37 elapsed_us=5005043 render_us=4177023 logic_us=528863 convert_us=122334 updates=150 skipped=0 pos=78336,-1024,13259 yaw=0
+165769	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=1 avg_us=245523 max_us=245523 ingress_avg_us=118423 ingress_max_us=118423 frame_avg_us=127100 frame_max_us=127100
+165785	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=1810240 rendered=1806400 queued=960 flags=1 writes=5657 blocked=3275 nonzero=1804583
+867960	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara ready level=0 bytes=316138 linear_bytes=7929856
+868108	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2472960 rendered=2469120 queued=960 flags=1 writes=7732 blocked=3562 nonzero=2432830
+883746	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara ready level=3 bytes=2873406 linear_bytes=7929856
+883968	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2538240 rendered=2534400 queued=0 flags=1 writes=7936 blocked=3678 nonzero=2498000
+888868	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=33 elapsed_us=5115674 render_us=3821001 logic_us=519710 convert_us=110073 updates=150 skipped=0 pos=78336,-1024,12800 yaw=0
+888868	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=22 avg_us=104253 max_us=135585 ingress_avg_us=70300 ingress_max_us=99554 frame_avg_us=33953 frame_max_us=55610
+888873	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+893937	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=37 elapsed_us=5069013 render_us=4223378 logic_us=546190 convert_us=126037 updates=151 skipped=0 pos=78336,-1024,12800 yaw=0
+893940	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+899066	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5129182 render_us=4287933 logic_us=530615 convert_us=125645 updates=154 skipped=0 pos=78336,-1024,12800 yaw=0
+899069	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+904165	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5098853 render_us=4255136 logic_us=526300 convert_us=124848 updates=153 skipped=0 pos=78336,-1024,12800 yaw=0
+904169	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+909286	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5121401 render_us=4258206 logic_us=524362 convert_us=125545 updates=154 skipped=0 pos=78336,-1024,12800 yaw=0
+909290	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+914376	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5089786 render_us=4249829 logic_us=511502 convert_us=124649 updates=153 skipped=0 pos=78336,-1024,12800 yaw=0
+914380	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+919494	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5117589 render_us=4268875 logic_us=527455 convert_us=123730 updates=153 skipped=0 pos=78336,-1024,12800 yaw=0
+919499	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+924583	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5089565 render_us=4237854 logic_us=519872 convert_us=124098 updates=153 skipped=0 pos=78336,-1024,12800 yaw=0
+924587	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+929682	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5098932 render_us=4249208 logic_us=518910 convert_us=126474 updates=153 skipped=0 pos=78336,-1024,12800 yaw=0
+929686	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+934776	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5094196 render_us=4251407 logic_us=526618 convert_us=126331 updates=153 skipped=0 pos=78336,-1024,12800 yaw=0
+934782	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+939784	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=37 elapsed_us=5007501 render_us=4180060 logic_us=525080 convert_us=125751 updates=150 skipped=0 pos=78336,-1024,12800 yaw=0
+939787	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+944919	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5134580 render_us=4293563 logic_us=544196 convert_us=126425 updates=154 skipped=0 pos=78336,-1024,12800 yaw=0
+944922	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+949867	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2571520 rendered=2567680 queued=0 flags=1 writes=8036 blocked=3693 nonzero=2529733
+949993	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=38 elapsed_us=5074903 render_us=4231792 logic_us=505901 convert_us=124651 updates=152 skipped=0 pos=78336,-1024,12800 yaw=0
+954959	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2583040 rendered=2579200 queued=0 flags=1 writes=8072 blocked=3697 nonzero=2540199
+955045	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=47 elapsed_us=5051896 render_us=3955371 logic_us=537594 convert_us=159632 updates=153 skipped=0 pos=78336,-1024,12800 yaw=12124
+955046	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=2 avg_us=254142 max_us=295297 ingress_avg_us=141793 ingress_max_us=178136 frame_avg_us=112348 frame_max_us=117161
+959975	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2592320 rendered=2588480 queued=0 flags=1 writes=8101 blocked=3702 nonzero=2548920
+960057	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=55 elapsed_us=5011154 render_us=3784856 logic_us=583713 convert_us=187764 updates=151 skipped=0 pos=78747,-1024,12964 yaw=12124
+960057	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=2 avg_us=188077 max_us=188980 ingress_avg_us=111030 ingress_max_us=113468 frame_avg_us=77047 frame_max_us=80388
+964981	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2592320 rendered=2588480 queued=0 flags=1 writes=8101 blocked=3702 nonzero=2548920
+965112	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=61 elapsed_us=5055567 render_us=3693884 logic_us=562248 convert_us=208328 updates=142 skipped=0 pos=78747,-1024,12964 yaw=12124
+965112	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=2 avg_us=119538 max_us=123708 ingress_avg_us=83669 ingress_max_us=97704 frame_avg_us=35869 frame_max_us=54074
+966719	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara save committed
+969992	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2602240 rendered=2598400 queued=0 flags=1 writes=8132 blocked=3710 nonzero=2557870
+970136	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=61 elapsed_us=5023738 render_us=2875940 logic_us=433061 convert_us=207211 updates=102 skipped=0 pos=78747,-1024,12964 yaw=25624
+970136	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=6 avg_us=195817 max_us=280433 ingress_avg_us=112271 ingress_max_us=138246 frame_avg_us=83546 frame_max_us=192669
+975060	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2602240 rendered=2598400 queued=0 flags=1 writes=8132 blocked=3710 nonzero=2557870
+975190	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=69 elapsed_us=5053509 render_us=3316544 logic_us=571150 convert_us=232094 updates=129 skipped=0 pos=78747,-1024,12964 yaw=25624
+975190	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=3 avg_us=116012 max_us=146860 ingress_avg_us=86398 ingress_max_us=124515 frame_avg_us=29614 frame_max_us=46074
+987795	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara save restored
+987819	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara ready level=3 bytes=2873406 linear_bytes=7929856
+987985	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2602240 rendered=2598400 queued=0 flags=1 writes=8132 blocked=3710 nonzero=2557870
+992827	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara frames=59 elapsed_us=5000429 render_us=3784514 logic_us=594400 convert_us=198037 updates=148 skipped=0 pos=78747,-1024,12964 yaw=12124
+992828	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=3 avg_us=118148 max_us=122634 ingress_avg_us=69487 ingress_max_us=70978 frame_avg_us=48661 frame_max_us=52900
+992912	[PXA app=pxa-openlara component=65537 level=INFO] OpenLara audio submitted=2602240 rendered=2598400 queued=0 flags=1 writes=8132 blocked=3710 nonzero=2557870

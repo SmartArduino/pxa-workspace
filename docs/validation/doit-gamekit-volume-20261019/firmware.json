@@ -1,0 +1,13 @@
+{
+  "image": "local/volume-firmware/build/pxa_esp_platform.bin",
+  "bytes": 3925344,
+  "sha256": "21c9d28c7a484873e2b46c782a965a60eec4f746886802ab85983332f5fb9b39",
+  "revision": "33-volume-persistence",
+  "flash_offset": "0x10000",
+  "root_source": "base commit plus the board source identified by board_source_sha256",
+  "sdk_head": "dc9365e2da4a4187991a22b40e1276f26a2cc448",
+  "flashed": true,
+  "partition_table_matches_original": true,
+  "board_source_sha256": "66c3b2280dfdc81c1dd3ba6664125862606876c05d56e1a6ed51fea56193d9f6",
+  "root_source_base": "a4ac37a31a1e80a9d151e371913c507ba8ffe3aa"
+}
