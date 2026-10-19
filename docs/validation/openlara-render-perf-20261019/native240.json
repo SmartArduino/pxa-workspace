@@ -1,0 +1,98 @@
+{
+  "passed": true,
+  "mode": "S31 native AOT; stationary public PC demo City; controller-0 injection",
+  "package_sha256": "f4696bd0112533fac78a5e60ae6bdd3fd4ebd7734d42ea1d125ec0f0ab6675ea",
+  "samples": [
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9
+  ],
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "packages_before": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.11\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+  ],
+  "firmware": {
+    "image": "local/volume-firmware/build/pxa_esp_platform.bin",
+    "bytes": 3925344,
+    "sha256": "21c9d28c7a484873e2b46c782a965a60eec4f746886802ab85983332f5fb9b39",
+    "revision": "33-volume-persistence",
+    "flash_offset": "0x10000",
+    "root_source": "HEAD plus Gamekit::SetVolume immediate status publication and diagnostic log",
+    "sdk_head": "dc9365e2da4a4187991a22b40e1276f26a2cc448",
+    "flashed": true,
+    "partition_table_matches_original": true
+  },
+  "menu_response_upper_bounds_ms": [
+    707,
+    720
+  ],
+  "gameplay_resolution": [
+    240,
+    180
+  ],
+  "ui_resolution": [
+    320,
+    240
+  ],
+  "stationary_position": [
+    78336,
+    -1024,
+    12800,
+    0
+  ],
+  "memory": [
+    "scope=heap;sram_total=652435;sram_free=103707;sram_min=87271;sram_largest=65536;psram_total=16741200;psram_free=1261212;psram_min=1257380;psram_largest=1032192",
+    "scope=budget;internal=28500;external=24913;peak_internal=28500;peak_external=24913;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+    "scope=kind;name=raster;internal=0;external=0",
+    "scope=kind;name=image;internal=0;external=0",
+    "scope=kind;name=audio;internal=0;external=16400",
+    "scope=kind;name=temporary;internal=0;external=0",
+    "scope=kind;name=metadata;internal=28500;external=8513",
+    "scope=kind;name=frame;internal=0;external=0",
+    "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+  ],
+  "fps": {
+    "median": 8.9,
+    "mean": 8.9,
+    "min": 8.9,
+    "max": 8.9
+  },
+  "stationary_throughout_timing": true,
+  "validation_scope": "stationary timing only",
+  "input_reports": [
+    "533272\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=12 avg_us=94710 max_us=145238 ingress_avg_us=68660 ingress_max_us=88450 frame_avg_us=26049 frame_max_us=56788\u001b[0m",
+    "539752\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=14 avg_us=103040 max_us=135940 ingress_avg_us=69559 ingress_max_us=82567 frame_avg_us=33481 frame_max_us=56082\u001b[0m",
+    "544790\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=18 avg_us=129133 max_us=312922 ingress_avg_us=73021 ingress_max_us=109606 frame_avg_us=56111 frame_max_us=246145\u001b[0m",
+    "564896\t\u001b[32m[PXA app=pxa-openlara component=65537 level=INFO] OpenLara input samples=10 avg_us=107729 max_us=143871 ingress_avg_us=73472 ingress_max_us=114681 frame_avg_us=34257 frame_max_us=53973\u001b[0m"
+  ],
+  "render_profile_reports": [],
+  "frame_clock_reports": [],
+  "packages_after": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.7\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.11\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+  ]
+}

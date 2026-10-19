@@ -1,0 +1,14 @@
+{
+  "160": {
+    "persisted": true,
+    "complete_gameplay_save_identical": true,
+    "native_title_inventory_and_platform_ui": true,
+    "checkpoint_restored": true
+  },
+  "240": {
+    "persisted": true,
+    "complete_gameplay_save_identical": true,
+    "native_title_inventory_and_platform_ui": true,
+    "checkpoint_restored": true
+  }
+}

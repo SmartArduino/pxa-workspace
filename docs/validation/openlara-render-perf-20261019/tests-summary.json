@@ -1,0 +1,47 @@
+{
+  "integration": {
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 15.63
+  },
+  "latency": {
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 8.44
+  },
+  "catalog": {
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 0.68
+  },
+  "settings": {
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.36
+  },
+  "upgrade": {
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 2.8
+  },
+  "cadence": {
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.32
+  },
+  "overlays": {
+    "passed": true,
+    "exit_code": 0,
+    "note": "rerun after explicitly excluding the new resolution/back rows; firstfivecontrols+heading match baseline"
+  },
+  "controller": {
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 6.03
+  },
+  "pixels": {
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 3.16
+  }
+}

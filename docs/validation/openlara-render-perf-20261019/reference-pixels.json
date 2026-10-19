@@ -1,0 +1,11 @@
+{
+  "identical": true,
+  "scope": "five original-reference fixed camera images; RGB888 screenshot bytes identical to0.4.3 correct-depth renderer",
+  "scenes": {
+    "start": true,
+    "turned": true,
+    "walked": true,
+    "reverse": true,
+    "doorway": true
+  }
+}

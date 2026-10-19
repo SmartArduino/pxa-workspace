@@ -1,0 +1,333 @@
+{
+  "version": "0.4.10",
+  "release_sequence": 35,
+  "render_resolution": [
+    320,
+    240
+  ],
+  "render_profile": false,
+  "main_engine_optimization": "O1",
+  "span_optimization": "O3",
+  "files": [
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "bb20130c3530761eb4b010961051a640d7980c3b0d07807144dc95ab506b2661"
+    },
+    {
+      "path": "audio.cpp",
+      "sha256": "5f4b176caaec9823bcbda2e3fdb04d1bb34640c659297d724d72dc26c3b7b1d7"
+    },
+    {
+      "path": "audio.h",
+      "sha256": "324a1bc12a2005f0379cd0c5887a062f701036d69e984a5a5fe6a884f638efc9"
+    },
+    {
+      "path": "classic-engine.cpp",
+      "sha256": "c7c013cb968e301ee041ed0fd61bfa9ede5a4ff90b870d64805712c001f100e2"
+    },
+    {
+      "path": "classic-raster.cpp",
+      "sha256": "b9f60ac3d4a91b2bf2a53cccef3072222c39d276d9da619d7e263e05e9eaed68"
+    },
+    {
+      "path": "classic-raster.h",
+      "sha256": "f65e07c618c502a93d1c1ace03629a6eb69610a40c3436e52eaa0f210247549a"
+    },
+    {
+      "path": "engine.h",
+      "sha256": "23d3d622baefa0b4b13d8055de69e8e997e00c5edfe8e857f2e5c91b13aaafde"
+    },
+    {
+      "path": "level-catalog.cpp",
+      "sha256": "fcce944bb44da9b28473319d1cf21a12820619a1279d6f4c3ff53f7bd7ff2712"
+    },
+    {
+      "path": "level-catalog.h",
+      "sha256": "5d1246f7505ba140840d50715b489e5b9d4af0b0e13e4fd2d49c824ad5d0a9d5"
+    },
+    {
+      "path": "levels.def",
+      "sha256": "e1056c364a39ae485f5cb114fd15a06a86f47c4d089357b19fc8fd48596f3962"
+    },
+    {
+      "path": "levels.h",
+      "sha256": "b9e306f4ad143f9584cc5e9bf3ea420ba4850a77747fd1e993408e761b36623c"
+    },
+    {
+      "path": "main.cpp",
+      "sha256": "5e0552936b08a4702c6b485d9a1cdf34a7105d54eefd84d267d197e2bea2836f"
+    },
+    {
+      "path": "music-stream.cpp",
+      "sha256": "dd1f6d303c63ad4853749a1432de9501884263566ce96ce0230350cb16a78020"
+    },
+    {
+      "path": "music-stream.h",
+      "sha256": "addbb64418ce24bb4522f1f8523a4be9fdbef9e5b077601637104c6d285e74f8"
+    },
+    {
+      "path": "package.json",
+      "sha256": "b029712a468f71ef3119692a240d724c35ec35ce2f76b0e17f2ffde0c9164503"
+    },
+    {
+      "path": "storage.cpp",
+      "sha256": "41043361ce30722000212cda33611e0c336970adbfd5e8170bf6641e8f1e2c3d"
+    },
+    {
+      "path": "storage.h",
+      "sha256": "ae2966f758f39a8f9bb3b207d7ff3fcc270a3f9db975420f99d387c08599e61c"
+    },
+    {
+      "path": "vendor/classic/animation.h",
+      "sha256": "fd7f327982d0a3f083f80ee3d165b474979c1d4f6cbcfb5c17835993bec53725"
+    },
+    {
+      "path": "vendor/classic/cache.h",
+      "sha256": "6244200cbeae9003f6d432f8497d7f623592e8fc347b1c21521c1d5df787bf28"
+    },
+    {
+      "path": "vendor/classic/camera.h",
+      "sha256": "76b5c69cedfe8afc4e3a24cb1fa59f06271ac08b37ba53363b5b1f2842dc46c8"
+    },
+    {
+      "path": "vendor/classic/character.h",
+      "sha256": "6d5c3814792ac34b92edc641dc36304b72a47d09e32e53786eba671f520b0646"
+    },
+    {
+      "path": "vendor/classic/collision.h",
+      "sha256": "7ce6f7b23e83e2e45400d23e1beb789e10d55160cee7fd15737cc658a6d6e4a2"
+    },
+    {
+      "path": "vendor/classic/controller.h",
+      "sha256": "8e60e14050e904dedefbfd8e86d88b0c2deaa8a83c4b0b92196b3f409543998a"
+    },
+    {
+      "path": "vendor/classic/core.h",
+      "sha256": "a1d7d35055775f9058a51aae473f7a4d59758547620b09e9a9a3fc90cc23940d"
+    },
+    {
+      "path": "vendor/classic/enemy.h",
+      "sha256": "aa72ed373bba6a4a36c3d267c03a839e0007e5f73f3824063f7fa39d62b7ffae"
+    },
+    {
+      "path": "vendor/classic/extension.h",
+      "sha256": "16ad46b223d2e6f8f7a724bbeb2af7fda6268e2dadc42dd041251930dd0870a0"
+    },
+    {
+      "path": "vendor/classic/format.h",
+      "sha256": "3a7090f768f9793dd37087587cb49da600a522118b68932504d1b0bce8535144"
+    },
+    {
+      "path": "vendor/classic/frustum.h",
+      "sha256": "f418607a68fae31bc1278c93c775a2ba35b80a48d109f904b76beee5610686cb"
+    },
+    {
+      "path": "vendor/classic/game.h",
+      "sha256": "4c0d8db85bfa914143496ee27c1943dcc2e1ae4d56bafb1012c07815dc7b24d8"
+    },
+    {
+      "path": "vendor/classic/gameflow.h",
+      "sha256": "5bf5886abe58cbaff9d0933600569f92ac982bacbaa7dcb35cc5f1006334d532"
+    },
+    {
+      "path": "vendor/classic/gapi/sw.h",
+      "sha256": "3318c6326ae8ce7da4cd824866a42dfbb8650b33492057b69174f1e235419098"
+    },
+    {
+      "path": "vendor/classic/input.h",
+      "sha256": "53bb8912c1597647155d980e65a07bc7c382bbdcc81e03c137713077dff66ab6"
+    },
+    {
+      "path": "vendor/classic/inventory.h",
+      "sha256": "9510f46fd641c192516c10a6139cc5fd92c372a8147dc24e5cd5dfc8d3bfd84d"
+    },
+    {
+      "path": "vendor/classic/lang.h",
+      "sha256": "6218a9a8d76108386135b9395cc18db61add4793ae0c29bd61112f6fcf450ab6"
+    },
+    {
+      "path": "vendor/classic/lang/cn.h",
+      "sha256": "d95f8eaca41f60c69c51e534e4608812cffc0bddd65ce18ce512f6371afee343"
+    },
+    {
+      "path": "vendor/classic/lang/cz.h",
+      "sha256": "ab89049f7e0068375d19df6b40382b147683e6f73adc4f91fbfba508434e424d"
+    },
+    {
+      "path": "vendor/classic/lang/de.h",
+      "sha256": "8e97fb8ecc7b76594ca37e3aa2da6f41f92248570956c53790b91a61b446f078"
+    },
+    {
+      "path": "vendor/classic/lang/en.h",
+      "sha256": "2e2780803eec28c71f0dec22a4a5adb4b255c33dbe64aeaeffb6cba5da2051bb"
+    },
+    {
+      "path": "vendor/classic/lang/es.h",
+      "sha256": "ffd5d1feb9f94d067764687138815a9479450201f05f0b9635939c6e4a6e6ceb"
+    },
+    {
+      "path": "vendor/classic/lang/fi.h",
+      "sha256": "6bb21aa50ed85a1b1d7ac8b9e9b34e372d79e592c929aaa09d010f4ea656e044"
+    },
+    {
+      "path": "vendor/classic/lang/fr.h",
+      "sha256": "b9463b5c7e2da7e93e7c4517b2d89fdebff73fc4ab26eaa2ad09f4a8b733bfb7"
+    },
+    {
+      "path": "vendor/classic/lang/glyph_cn.h",
+      "sha256": "d0536eba3e3026b0f0d72ee25a1c38954eb526067a033fc750e2cba087a71a44"
+    },
+    {
+      "path": "vendor/classic/lang/glyph_gr.h",
+      "sha256": "edd4339c53bf19f21320e60e447ac0362cc2405e5b9ba3673162f3da852c9874"
+    },
+    {
+      "path": "vendor/classic/lang/glyph_ja.h",
+      "sha256": "cdfae0d64acd92a1d7947949f21345a8b7b10fa26dcb87f7460554d42cf7e175"
+    },
+    {
+      "path": "vendor/classic/lang/glyph_ko.h",
+      "sha256": "f5f6c410a37fbda568487cc1454cf7e94e0136ce68fb0dbf7ffb105985ef5d2b"
+    },
+    {
+      "path": "vendor/classic/lang/glyph_ru.h",
+      "sha256": "4a1741eb3633453f6c00b18e60fa423b267f6f2fdbd259cc69849b64ca120c16"
+    },
+    {
+      "path": "vendor/classic/lang/gr.h",
+      "sha256": "47fc2ea9387da008b6d86ce11508bf25fef85fc8a576990cc7af08d6fcb2fa4f"
+    },
+    {
+      "path": "vendor/classic/lang/hu.h",
+      "sha256": "a41d41f9ee7da19da140d9cc25b156b893f5c8d95ea0ffc779c60f453ec1055d"
+    },
+    {
+      "path": "vendor/classic/lang/it.h",
+      "sha256": "475b360061228cd86c3d768b7a942fcb8cbf6b8bfb82f02a0f488ce3199611f2"
+    },
+    {
+      "path": "vendor/classic/lang/ja.h",
+      "sha256": "6f012e5dc0dfac37b8b6602ea549e729c4dd74bbb39b1acd8030afe128fb8d14"
+    },
+    {
+      "path": "vendor/classic/lang/ko.h",
+      "sha256": "1f53758fdd0754f7c6b24c43f295dbec6eb01d0f16c447848834a0789e7d6395"
+    },
+    {
+      "path": "vendor/classic/lang/pl.h",
+      "sha256": "d04a009c1c71105c9051c6b835759d46877335786c6e0787cfe781fbf0609159"
+    },
+    {
+      "path": "vendor/classic/lang/pt.h",
+      "sha256": "1b73f102e23a56dc7553c4b390dab5d72a5f64bc91363be14be8cacc9f5b5876"
+    },
+    {
+      "path": "vendor/classic/lang/ru.h",
+      "sha256": "7b97ee77a9843e91e07adc325d3ae1652f18c6cf162c2934faffd1aa6a7de99a"
+    },
+    {
+      "path": "vendor/classic/lang/sv.h",
+      "sha256": "bbe93e2f1ca266be695982eb54f44d813c46b258102c6386a288762e27b4a628"
+    },
+    {
+      "path": "vendor/classic/lara.h",
+      "sha256": "0063bbfc6dd0b073a57cca6900050bc8c4899faa433931fd297e8810f2c6a8fa"
+    },
+    {
+      "path": "vendor/classic/level.h",
+      "sha256": "2bef0d6e41bf8cb8b2d8bb5e166492f5eb16277f0f6645dd7b2b2452e014e458"
+    },
+    {
+      "path": "vendor/classic/libs/tinf/tinf.h",
+      "sha256": "aadbe20ceb87ce0b866ffd77cc20f66bdddd2e6aa75ca600fa757a6fd9180039"
+    },
+    {
+      "path": "vendor/classic/libs/tinf/tinflate.c",
+      "sha256": "88c8fcbb35572612e133f83057957238b655dc14591b02e8f007d1bcbe83d66e"
+    },
+    {
+      "path": "vendor/classic/mesh.h",
+      "sha256": "d98f72d9f73d04f6b7e8c57fc8cd2b84a3b234e2cdaac991816a67da71c8d8a5"
+    },
+    {
+      "path": "vendor/classic/napi_dummy.h",
+      "sha256": "34946717b02571efd226b6dcd35f9347b3b5cfa8c7b39ba0017e81978123556e"
+    },
+    {
+      "path": "vendor/classic/network.h",
+      "sha256": "b1eb2dd527297c58767b1b09df764f33465b44838fc5859ddbbddab8aeebbcc9"
+    },
+    {
+      "path": "vendor/classic/objects.h",
+      "sha256": "459e229e1b35ff1de12b858e0782864ed869a7d9fed62ccd6fc8cede9d8d32bc"
+    },
+    {
+      "path": "vendor/classic/platform_pxa.h",
+      "sha256": "2223cfb93618d3abe0acfbaad93a04b979aa5738dcc80ab50039db02d77a5e15"
+    },
+    {
+      "path": "vendor/classic/savegame.h",
+      "sha256": "de7fc014078eeadb8b71b91f15d11078f46b71739d0b8ce2bb0438e46402cc3f"
+    },
+    {
+      "path": "vendor/classic/shader.h",
+      "sha256": "c71e75a1290f4f72301b9aaa40a41a5aef1020ff4879b99915d0182f1bcfe655"
+    },
+    {
+      "path": "vendor/classic/sound.h",
+      "sha256": "88649b4b3e9974088ec02bbfe1609b6c65c1bbb036c559a801787e37da8b8f82"
+    },
+    {
+      "path": "vendor/classic/sprite.h",
+      "sha256": "4689459860fbf97f29af129c3b88dcdd084904c0c3f5fd37916e8139f926a88b"
+    },
+    {
+      "path": "vendor/classic/texture.h",
+      "sha256": "3e69a33dec9a4d9fa7cb787e1da638da8d2b3e081abb883d1d4c1c23b70121dc"
+    },
+    {
+      "path": "vendor/classic/ui.h",
+      "sha256": "ce89675e61724ed629f0b8472883316cd9d554bf61a19b586f06b40eec1418ba"
+    },
+    {
+      "path": "vendor/classic/utils.h",
+      "sha256": "b6dee4a62a631c8a52ae93da795bf46e19931f62e1d65dbb9c32a5f31cec5fad"
+    },
+    {
+      "path": "vendor/classic/video.h",
+      "sha256": "ae6563fb88961e00717f1a366de269aa9c822ef7082ebafc565ecd6474ca181d"
+    }
+  ],
+  "artifacts": {
+    "s31_aot": {
+      "path": "local/openlara-perf/final-0.4.10-device/pxa-openlara/artifacts/main.esp32-s31.aot",
+      "bytes": 2735076,
+      "sha256": "c924bec61ff6cf691bb18d6600723ab824e13be3aabf89c4020f2416dee64b7f"
+    },
+    "s31_container": {
+      "path": "local/openlara-perf/final-0.4.10-device/pxa-openlara.pxa",
+      "bytes": 1882948,
+      "sha256": "0d1de30a51d341158c7e95c76da4ef0b16cbd55e3c8953927a02a5cde79301e1"
+    },
+    "wasm": {
+      "path": "local/openlara-perf/final-0.4.10-wasm/pxa-openlara/artifacts/main.wasm",
+      "bytes": 947611,
+      "sha256": "6756f7c36dbcd0e019ee1a1b133b789848af3f6d7a3ae504323f3f6e7da35c7e"
+    },
+    "wasm_container": {
+      "path": "local/openlara-perf/final-0.4.10-wasm/pxa-openlara.pxa",
+      "bytes": 603726,
+      "sha256": "72eb4994e60bfa2b292c170f49f053d0d074ef37d999955e03b48f7e86f91223"
+    },
+    "simulator_aot": {
+      "path": "local/openlara-perf/final-0.4.10-simulator/pxa-openlara/artifacts/main.linux-x86_64.aot",
+      "bytes": 1821260,
+      "sha256": "58784fc62696521ba74e0e038d9113f7a37dfbfae0d645297f4b712de3158332"
+    },
+    "simulator_container": {
+      "path": "local/openlara-perf/final-0.4.10-simulator/pxa-openlara.pxa",
+      "bytes": 10603941,
+      "sha256": "6c6fd19fc917494d34eaea4e03fcd25680da02d58033bc45fce456989e00b38b"
+    }
+  }
+}

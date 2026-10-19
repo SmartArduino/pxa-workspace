@@ -1,0 +1,12 @@
+{
+  "baseline_checkpoint_loaded": true,
+  "candidate_checkpoint_backward_readable": true,
+  "saved_position": [
+    78401,
+    -1024,
+    14853
+  ],
+  "saved_rotation": 14193,
+  "upgraded_rotation": 14193,
+  "yaw_tolerance_units": 1
+}

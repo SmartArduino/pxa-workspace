@@ -1,0 +1,32 @@
+{
+  "s31_aot": {
+    "path": "local/openlara-perf/final-0.5.0-device/pxa-openlara/artifacts/main.esp32-s31.aot",
+    "bytes": 2737360,
+    "sha256": "a0b64330a5f8441c97796b3343b5b19dc89b028ba0c7de5327f7bb21f6b64a99"
+  },
+  "s31_container": {
+    "path": "local/openlara-perf/final-0.5.0-device/pxa-openlara.pxa",
+    "bytes": 1880257,
+    "sha256": "f4696bd0112533fac78a5e60ae6bdd3fd4ebd7734d42ea1d125ec0f0ab6675ea"
+  },
+  "wasm": {
+    "path": "local/openlara-perf/final-0.5.0-wasm/pxa-openlara/artifacts/main.wasm",
+    "bytes": 948903,
+    "sha256": "585683a215b7c5a8b4ae7558ddb78ad773c84342e83d147562b98c43c109acbe"
+  },
+  "wasm_container": {
+    "path": "local/openlara-perf/final-0.5.0-wasm/pxa-openlara.pxa",
+    "bytes": 605352,
+    "sha256": "8add08c301803a6faa09113d278a4897c05e2b30ea850d0e771680b6a4fce2f1"
+  },
+  "simulator_aot": {
+    "path": "local/openlara-perf/final-0.5.0-simulator/pxa-openlara/artifacts/main.linux-x86_64.aot",
+    "bytes": 1823332,
+    "sha256": "2bd0c76598cfacc27494dc03318449dd1d7eae999a062ca89bd2cd4fb8152ff1"
+  },
+  "simulator_container": {
+    "path": "local/openlara-perf/final-0.5.0-simulator/pxa-openlara.pxa",
+    "bytes": 10603531,
+    "sha256": "5ed81bc73b4832106259954a323ae9f17141dfb9768ad19322d7152c9153e1e0"
+  }
+}

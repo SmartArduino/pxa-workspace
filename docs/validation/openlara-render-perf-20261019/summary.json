@@ -1,0 +1,54 @@
+{
+  "passed": true,
+  "version": "0.5.0",
+  "release_sequence": 36,
+  "device_serial": "1c:29:04:d0:af:5e",
+  "firmware_sha256": "21c9d28c7a484873e2b46c782a965a60eec4f746886802ab85983332f5fb9b39",
+  "resolution_fps": {
+    "320": {
+      "samples": 20,
+      "median": 7.9,
+      "mean": 8.1,
+      "min": 7.9,
+      "max": 8.9
+    },
+    "240": {
+      "samples": 20,
+      "median": 8.9,
+      "mean": 8.9,
+      "min": 8.9,
+      "max": 8.9
+    },
+    "160": {
+      "samples": 60,
+      "median": 9.9,
+      "mean": 10.233333333333334,
+      "min": 9.9,
+      "max": 10.9
+    }
+  },
+  "fast_mode_input_latency": {
+    "samples": 40,
+    "mean_us": 135038.05,
+    "max_us": 169958,
+    "scope": "Host controller sample to Guest presentation; excludes physical switch debounce and LCD scanout"
+  },
+  "save_restore": true,
+  "physical_reboot_restore": true,
+  "physical_reboot_video_mode_restore": true,
+  "peer_package_states_unchanged": true,
+  "current_device_gameplay_resolution": [
+    160,
+    120
+  ],
+  "default_gameplay_resolution": [
+    320,
+    240
+  ],
+  "ui_resolution": [
+    320,
+    240
+  ],
+  "scope": "S31 native AOT; same City demo start position/yaw; no input during FPS; exact original gameplay/enemy sources; full retail campaign assets absent",
+  "apps_commit": "277bf83d0d99c78a1900590ca7488574e4b6141d"
+}
