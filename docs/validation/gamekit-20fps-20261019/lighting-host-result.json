@@ -1,0 +1,14 @@
+{
+  "frames": 2459,
+  "ticks": 3518,
+  "calls": 248,
+  "bytes": 3014656,
+  "elapsedMs": 45039,
+  "firstFrameMs": 43,
+  "scope": "Node protocol host, not device FPS",
+  "wasm_sha256": "d13e4d33698de04308d6046f63e4e6ed64b3442cd4ca45b3c802b70effabcfee",
+  "exact_pixel_cases": 200000,
+  "asan_ubsan_passed": true,
+  "device_fps_measured": false,
+  "default_enabled": false
+}

@@ -1,0 +1,38 @@
+# AOT alignment experiment
+
+This is an opt-in compiler experiment against the WAMR and LLVM revisions pinned
+by `deps/pxa-system/config/wamr.json`. It does not change the SDK's default compiler,
+target features, bounds checks, application ABI or installed firmware.
+
+The original compiler assigns alignment 1 to every nonconstant guest address.
+On generic RV32 this expands even provably aligned word accesses into byte
+accesses. The patch uses LLVM's known-bits analysis of the effective guest offset,
+bounded by the same 8-byte linear-memory-base alignment already assumed by the
+compiler's constant-address path. Unknown or unaligned offsets retain alignment 1.
+Wasm alignment hints are not treated as guarantees.
+
+Build an isolated compiler from the project root, using the already built pinned
+LLVM dependencies:
+
+```sh
+git -C deps/pxa-system/wamr worktree add --detach "$PWD/local/wamr-known-alignment" 6a54186abc1c10c37c28e443107107c97af8f25f
+git -C local/wamr-known-alignment apply --check "$PWD/tools/game-perf/wamr-known-alignment.patch"
+git -C local/wamr-known-alignment apply "$PWD/tools/game-perf/wamr-known-alignment.patch"
+cmake -S local/wamr-known-alignment/wamr-compiler -B local/wamrc-known-alignment -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DWAMR_BUILD_TARGET=X86_64 -DWAMR_BUILD_WITH_CUSTOM_LLVM=1 \
+  -DLLVM_DIR="$PWD/deps/pxa-system/.pxa/llvm-344b928e67bfc1d07cb150609c55548e86a9bf19/build/lib/cmake/llvm"
+cmake --build local/wamrc-known-alignment --parallel 4
+```
+
+`check_alignment.py --help` lists required local tool paths. Supply the candidate
+compiler, pinned baseline compiler, WASI SDK, a host WAMR `libiwasm.a`, RV32
+objdump and an output directory. It verifies shortened aligned RV32 reads/writes,
+preserved byte access for unaligned addresses, and retained bounds branches. An
+x86 AOT executable checks every byte alignment, the last valid word, out-of-bounds
+loads/stores and address overflow. Reports include compiler and Wasm hashes.
+These checks do not establish a device FPS improvement.
+
+For a game comparison, pass the isolated compiler through `WAMRC` when invoking
+`tools/app.sh`. Record the final AOT hash, original Wasm code-section hash, scene,
+firmware and native measurements. Keep experiments out of SDK defaults until the
+target-device comparison and broader compiler regression checks are complete.

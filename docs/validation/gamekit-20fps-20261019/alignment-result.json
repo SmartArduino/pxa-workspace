@@ -1,0 +1,131 @@
+{
+  "baseline": {
+    "load_any": {
+      "bytes": 126,
+      "lbu": 4,
+      "sb": 0,
+      "lw": 8,
+      "sw": 2,
+      "bltu": 2
+    },
+    "load_aligned": {
+      "bytes": 128,
+      "lbu": 4,
+      "sb": 0,
+      "lw": 8,
+      "sw": 2,
+      "bltu": 2
+    },
+    "load_half": {
+      "bytes": 112,
+      "lbu": 2,
+      "sb": 0,
+      "lw": 8,
+      "sw": 2,
+      "bltu": 2
+    },
+    "load_offset": {
+      "bytes": 130,
+      "lbu": 4,
+      "sb": 0,
+      "lw": 8,
+      "sw": 2,
+      "bltu": 2
+    },
+    "store_any": {
+      "bytes": 112,
+      "lbu": 0,
+      "sb": 4,
+      "lw": 7,
+      "sw": 1,
+      "bltu": 2
+    },
+    "store_aligned": {
+      "bytes": 114,
+      "lbu": 0,
+      "sb": 4,
+      "lw": 7,
+      "sw": 1,
+      "bltu": 2
+    },
+    "store_byte": {
+      "bytes": 90,
+      "lbu": 0,
+      "sb": 1,
+      "lw": 7,
+      "sw": 1,
+      "bltu": 2
+    }
+  },
+  "candidate": {
+    "load_any": {
+      "bytes": 126,
+      "lbu": 4,
+      "sb": 0,
+      "lw": 8,
+      "sw": 2,
+      "bltu": 2
+    },
+    "load_aligned": {
+      "bytes": 102,
+      "lbu": 0,
+      "sb": 0,
+      "lw": 9,
+      "sw": 2,
+      "bltu": 2
+    },
+    "load_half": {
+      "bytes": 104,
+      "lbu": 0,
+      "sb": 0,
+      "lw": 8,
+      "sw": 2,
+      "bltu": 2
+    },
+    "load_offset": {
+      "bytes": 104,
+      "lbu": 0,
+      "sb": 0,
+      "lw": 9,
+      "sw": 2,
+      "bltu": 2
+    },
+    "store_any": {
+      "bytes": 112,
+      "lbu": 0,
+      "sb": 4,
+      "lw": 7,
+      "sw": 1,
+      "bltu": 2
+    },
+    "store_aligned": {
+      "bytes": 88,
+      "lbu": 0,
+      "sb": 0,
+      "lw": 7,
+      "sw": 2,
+      "bltu": 2
+    },
+    "store_byte": {
+      "bytes": 88,
+      "lbu": 0,
+      "sb": 1,
+      "lw": 7,
+      "sw": 1,
+      "bltu": 2
+    }
+  },
+  "passed": true,
+  "device_fps_measured": false,
+  "flags": [
+    "--target=riscv32",
+    "--target-abi=ilp32f",
+    "--cpu=generic-rv32",
+    "--cpu-features=+m,+a,+f,+c,+zba,+zbb,+zbs",
+    "--opt-level=3",
+    "--size-level=3"
+  ],
+  "candidate_compiler_sha256": "3cd19b5f4a1756ac588dedaa9261df05de9149b88271693e19b96846151aa044",
+  "baseline_compiler_sha256": "a95da596d14100e722d2d6fff4615003c06b602cf3adabefd93f039f3edd66ea",
+  "wasm_sha256": "9b90a9477dd1452ece9d9c997055ba96ed5ae310297f10a168e3d4f5a1d1507c"
+}

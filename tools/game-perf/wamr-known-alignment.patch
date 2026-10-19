@@ -1,0 +1,58 @@
+diff --git a/core/iwasm/compilation/aot_emit_memory.c b/core/iwasm/compilation/aot_emit_memory.c
+index 420096c..b98c985 100644
+--- a/core/iwasm/compilation/aot_emit_memory.c
++++ b/core/iwasm/compilation/aot_emit_memory.c
+@@ -732,6 +732,9 @@ aot_check_memory_overflow(AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+     /* offset1 = offset + addr; */
+     BUILD_OP(Add, offset_const, addr, offset1, "offset1");
+ 
++    if (alignp != NULL)
++        *alignp = aot_known_memory_alignment(offset1, comp_ctx->module);
++
+     /* 1.1 offset + addr can overflow when it's memory64
+      * 2.1 Or when it's on 32-bit platform */
+     if (is_memory64 || !is_target_64bit) {
+diff --git a/core/iwasm/compilation/aot_llvm.h b/core/iwasm/compilation/aot_llvm.h
+index 5bd75a3..42583ab 100644
+--- a/core/iwasm/compilation/aot_llvm.h
++++ b/core/iwasm/compilation/aot_llvm.h
+@@ -53,6 +53,9 @@
+ extern "C" {
+ #endif
+ 
++/* Infer only guaranteed low address bits; never trust Wasm alignment hints. */
++unsigned int aot_known_memory_alignment(LLVMValueRef offset, LLVMModuleRef module);
++
+ #if LLVM_VERSION_MAJOR < 14
+ #define LLVMBuildLoad2(builder, type, value, name) \
+     LLVMBuildLoad(builder, value, name)
+diff --git a/core/iwasm/compilation/aot_llvm_extra.cpp b/core/iwasm/compilation/aot_llvm_extra.cpp
+index 3a3dc29..1f6c0b7 100644
+--- a/core/iwasm/compilation/aot_llvm_extra.cpp
++++ b/core/iwasm/compilation/aot_llvm_extra.cpp
+@@ -55,6 +55,8 @@
+ #include <llvm/Transforms/Scalar/GVN.h>
+ #include <llvm/Passes/PassBuilder.h>
+ #include <llvm/Analysis/TargetLibraryInfo.h>
++#include <llvm/Analysis/ValueTracking.h>
++#include <llvm/Support/KnownBits.h>
+ #if LLVM_VERSION_MAJOR >= 12
+ #include <llvm/Analysis/AliasAnalysis.h>
+ #endif
+@@ -438,3 +440,16 @@ aot_compress_aot_func_names(AOTCompContext *comp_ctx, uint32 *p_size)
+     *p_size = compressed_str_len;
+     return compressed_str;
+ }
++
++extern "C" unsigned int
++aot_known_memory_alignment(LLVMValueRef offset, LLVMModuleRef module)
++{
++    Value *value = unwrap(offset);
++    if (!value->getType()->isIntegerTy())
++        return 1;
++    KnownBits bits = computeKnownBits(value, unwrap(module)->getDataLayout());
++    unsigned int zero_bits = bits.countMinTrailingZeros();
++    // The existing constant-address path already assumes an 8-byte-aligned
++    // linear-memory base. Keep that bound and every overflow/bounds check.
++    return 1U << (zero_bits > 3 ? 3 : zero_bits);
++}
