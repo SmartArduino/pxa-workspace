@@ -1,0 +1,10 @@
+{
+  "root_commit": "10f39c4212da6ee51c6bc5128401846633b3fe09",
+  "sdk_base": "5a6e1798b2f6b012ce4df481afeb3a6b0abdc998",
+  "files": {
+    "deps/pxa-system/ui/reference/lvgl/src/reference_lvgl.c": "adca8fd37e841b556ab7db8a9f407b26a8cbfa3c14838ea614273cf65fc8326d",
+    "firmware/boards/esp32s31-korvo-1/src/esp32s31_korvo_1_hardware.cc": "cfca3ba307ab7288ac6468c81c7607f1813226d6bfd652619338dc85e05694c8",
+    "firmware/boards/esp32s31-korvo-1/src/esp32s31_korvo_1_board_port.cc": "cc007582fc664d94a6a2502f44d70ea9eefecbfa6c15eba08bc9107099f87f5d",
+    "firmware/components/pxa/src/services/pxa_esp_surface.c": "4b70c63221a6bd812de2d1c8615d2c82c143eb17c8a6cbb4d4b03ee724803100"
+  }
+}
