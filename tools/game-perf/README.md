@@ -108,6 +108,12 @@ matching firmware image hash and run it before the game profiles. An optional
 `--replace-with` names an existing app to check that replacement survives the
 old call's cancellation.
 
+The device must initially have no active packages. The probe requires input
+ACKs containing `log_ms`, rejects older firmware before interactive input, and
+uses that clock to exclude replayed history. `device_us` and framed log time
+have different clock origins; a processed ACK is not Guest consumption.
+See [input timing](../../docs/pxadb-input-timing.md) for the protocol semantics.
+
 `quake-main-loop`, `quake2-main-loop`, `duke-main-loop`, `cnc-main-loop` and
 `ra-main-loop` retain the original game settings and select
 `PXA_RECROF_MAIN_LOOP=ON`. Set `PXA_GAME_APPS_ROOT` to the matching Apps checkout

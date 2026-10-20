@@ -2,6 +2,7 @@
 #include "doit_gamekit_audio.h"
 #include "doit_gamekit_config.h"
 #include "doit_gamekit_input.h"
+#include "doit_gamekit_controller.h"
 #include "doit_gamekit_navigation.h"
 #include "doit_gamekit_rotation.h"
 #include "doit_gamekit_refresh.h"
@@ -155,8 +156,8 @@ private:
     lv_indev_t* remote_pointer_ = nullptr;
     RemotePoint remote_state_{};
     std::atomic<bool> physical_active_{false}, wake_requested_{false};
-    // Bits 16/17 mark a diagnostic override and its connection state.
-    std::atomic<uint32_t> remote_controller_{0};
+    ControllerSamples<> remote_controller_;
+    portMUX_TYPE controller_lock_ = portMUX_INITIALIZER_UNLOCKED;
     bool reported_connected_ = true;
     pxadb::TestControlTakeoverCallback takeover_ = nullptr;
     void* takeover_context_ = nullptr;
@@ -664,7 +665,9 @@ void Gamekit::PollInput() {
         if (!gpio_get_level(gpio_num_t(kButtonPins[i]))) raw |= 1u << i;
     physical_active_.store(raw != 0);
     if (raw && !previous_raw_) {
-        remote_controller_.store(0);
+        portENTER_CRITICAL(&controller_lock_);
+        remote_controller_.Clear();
+        portEXIT_CRITICAL(&controller_lock_);
         xQueueReset(remote_points_);
         remote_state_ = {};
         lv_indev_reset(remote_pointer_, nullptr);
@@ -782,17 +785,24 @@ void Gamekit::Back() {
 }
 
 void Gamekit::ReportController(uint32_t report, uint32_t now) {
-    const uint32_t remote = remote_controller_.load();
+    portENTER_CRITICAL(&controller_lock_);
+    const auto remote = remote_controller_.Peek();
+    portEXIT_CRITICAL(&controller_lock_);
     bool connected = true;
-    if (remote & (1u << 16)) {
-        connected = (remote & (1u << 17)) != 0;
-        report = remote & 4095u;
+    if (remote.active()) {
+        connected = remote.connected();
+        report = remote.buttons();
     }
     // Retry failed queue submissions and periodically refresh complete state,
     // including zero, so app startup/resume never inherits stale held keys.
-    if (report != reported_buttons_ || connected != reported_connected_ ||
-        now - report_tick_ >= 50) {
+    if (remote.pending || report != reported_buttons_ ||
+        connected != reported_connected_ || now - report_tick_ >= 50) {
+        // One queued edge per poll. Never remove a failed submission, and never
+        // call the Host while holding the producer's critical section.
         if (pxa_host_post_controller_state(0, connected, report)) {
+            portENTER_CRITICAL(&controller_lock_);
+            (void)remote_controller_.Commit(remote);
+            portEXIT_CRITICAL(&controller_lock_);
             reported_buttons_ = report;
             reported_connected_ = connected;
             report_tick_ = now;
@@ -829,14 +839,19 @@ bool Gamekit::ConfigureDiagnostics() {
     adapter.inject_controller = [](void* context, uint8_t controller,
                                     bool connected, uint32_t buttons) {
         auto* self = static_cast<Gamekit*>(context);
-        if (controller || buttons > 4095 || self->physical_active_.load()) return false;
-        self->remote_controller_.store((1u << 16) |
-            (connected ? (1u << 17) : 0) | buttons);
-        self->wake_requested_.store(true);
-        return true;
+        if (controller || self->physical_active_.load()) return false;
+        portENTER_CRITICAL(&self->controller_lock_);
+        const bool accepted = !self->physical_active_.load() &&
+            self->remote_controller_.Push(connected, buttons);
+        portEXIT_CRITICAL(&self->controller_lock_);
+        if (accepted) self->wake_requested_.store(true);
+        return accepted;
     };
     adapter.cancel_controller = [](void* context) {
-        static_cast<Gamekit*>(context)->remote_controller_.store(0);
+        auto* self = static_cast<Gamekit*>(context);
+        portENTER_CRITICAL(&self->controller_lock_);
+        self->remote_controller_.Clear();
+        portEXIT_CRITICAL(&self->controller_lock_);
     };
     adapter.set_input_takeover_callback = [](void* context, pxadb::TestControlTakeoverCallback callback, void* argument) {
         auto* self = static_cast<Gamekit*>(context);

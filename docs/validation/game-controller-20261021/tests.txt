@@ -1,0 +1,3 @@
+controller edges, backpressure, takeover and 200000 model operations passed
+actual board reporting: ordered edges, busy retries, cancellation and tick wrap passed
+actual input ACK: distinct timer/log clocks, no-ACK requests and field limits passed

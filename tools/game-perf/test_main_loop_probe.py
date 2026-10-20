@@ -17,8 +17,9 @@ spec.loader.exec_module(probe)
 
 
 class Client:
-    def __init__(self, serial, active=False):
+    def __init__(self, serial, active=False, app="pxa-main-loop-probe"):
         self.serial, self.active, self.commands = serial, active, []
+        self.app = app
 
     def __enter__(self):
         return self
@@ -32,7 +33,7 @@ class Client:
     def request(self, command, **_):
         self.commands.append(command)
         if command == "PACKAGES" and self.active:
-            return [SimpleNamespace(kind="PKG", payload="publisher:pxa-main-loop-probe\tprobe\t0.1.0\tactive=1")]
+            return [SimpleNamespace(kind="PKG", payload=f"publisher:{self.app}\tprobe\t0.1.0\tactive=1")]
         return [SimpleNamespace(kind="OK", payload="")]
 
 
@@ -58,6 +59,29 @@ class ProbeGuardTest(unittest.TestCase):
         self.assertTrue(client.commands)
         self.assertTrue(all(cmd in {"PACKAGES", "MEMORY", "INFO"} for cmd in client.commands))
 
+    def test_another_running_app_is_not_interrupted(self):
+        client = Client("expected", active=True, app="pxa-nes")
+        self.run_guard(client)
+        self.assertTrue(client.commands)
+        self.assertTrue(all(cmd in {"PACKAGES", "MEMORY", "INFO"} for cmd in client.commands))
+
+    def test_old_firmware_without_log_clock_is_rejected_before_mutations(self):
+        client = Client("expected")
+        self.run_guard(client)
+        self.assertIn("INPUT SYNC", client.commands)
+        self.assertTrue(all(cmd in {"PACKAGES", "MEMORY", "INFO", "INPUT SYNC"} for cmd in client.commands))
+
+    def test_log_barrier_uses_log_clock_and_requires_success(self):
+        def ack(text):
+            return [SimpleNamespace(kind="OK", payload=text)]
+        self.assertEqual(probe.log_barrier(ack("event=1;device_us=2000000;log_ms=3600;status=processed")), 3600)
+        for text in ("device_us=2000000;status=processed",
+                     "log_ms=3600;status=rejected",
+                     "log_ms=-1;status=processed",
+                     "log_ms=4294967296;status=processed"):
+            with self.assertRaises(RuntimeError):
+                probe.log_barrier(ack(text))
+
     def test_invalid_replacement_is_rejected_before_opening_a_port(self):
         argv = ["probe", "--port", "never-open-a-port", "--serial", "expected", "--output", "/unused", "--replace-with", "invalid\nINPUT KEY HOME"]
         with patch.object(sys, "argv", argv), patch.object(probe.pxadb, "PxaDbClient") as open_client, contextlib.redirect_stderr(io.StringIO()):
@@ -74,6 +98,21 @@ class ProbeGuardTest(unittest.TestCase):
         self.assertEqual(probe.heartbeat_progress(probe.fresh_probe_records(records, 1000)), [1])
         records += [row(2100, 2), row(3100, 3)]
         self.assertEqual(probe.heartbeat_progress(probe.fresh_probe_records(records, 1000)), [1, 2, 3])
+
+    def test_different_clock_origins_cannot_admit_old_history(self):
+        records = [{"kind": "LOG", "payload":
+                    f"{stamp}\t[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat={count}"}
+                   for stamp, count in ((3000, 90), (3500, 91), (3600, 92), (4600, 1))]
+        barrier = probe.log_barrier([SimpleNamespace(kind="OK", payload=
+            "event=1;device_us=2000000;log_ms=3600;status=processed")])
+        self.assertEqual(probe.heartbeat_progress(probe.fresh_probe_records(records, barrier)), [1])
+
+    def test_log_clock_wrap_rejects_history_and_accepts_new_records(self):
+        records = [{"kind": "LOG", "payload":
+                    f"{stamp}\t[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat={count}"}
+                   for stamp, count in ((4294967285, 90), (4294967290, 91), (2, 1), (1002, 2))]
+        self.assertEqual(probe.heartbeat_progress(probe.fresh_probe_records(records, 4294967290)), [1, 2])
+        self.assertEqual(probe.heartbeat_progress(probe.fresh_probe_records(records, 3)), [2])
 
     def test_launch_card_is_not_an_application_canvas(self):
         metadata = {"format": "rgb565le", "width": "320", "height": "240"}

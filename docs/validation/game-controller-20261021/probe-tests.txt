@@ -1,0 +1,15 @@
+test_already_running_probe_is_not_stopped_by_failed_guard (test_main_loop_probe.ProbeGuardTest.test_already_running_probe_is_not_stopped_by_failed_guard) ... ok
+test_another_running_app_is_not_interrupted (test_main_loop_probe.ProbeGuardTest.test_another_running_app_is_not_interrupted) ... ok
+test_different_clock_origins_cannot_admit_old_history (test_main_loop_probe.ProbeGuardTest.test_different_clock_origins_cannot_admit_old_history) ... ok
+test_invalid_replacement_is_rejected_before_opening_a_port (test_main_loop_probe.ProbeGuardTest.test_invalid_replacement_is_rejected_before_opening_a_port) ... ok
+test_launch_card_is_not_an_application_canvas (test_main_loop_probe.ProbeGuardTest.test_launch_card_is_not_an_application_canvas) ... ok
+test_log_barrier_uses_log_clock_and_requires_success (test_main_loop_probe.ProbeGuardTest.test_log_barrier_uses_log_clock_and_requires_success) ... ok
+test_log_clock_wrap_rejects_history_and_accepts_new_records (test_main_loop_probe.ProbeGuardTest.test_log_clock_wrap_rejects_history_and_accepts_new_records) ... ok
+test_old_firmware_without_log_clock_is_rejected_before_mutations (test_main_loop_probe.ProbeGuardTest.test_old_firmware_without_log_clock_is_rejected_before_mutations) ... ok
+test_old_history_duplicates_and_other_apps_cannot_prove_progress (test_main_loop_probe.ProbeGuardTest.test_old_history_duplicates_and_other_apps_cannot_prove_progress) ... ok
+test_wrong_serial_never_reaches_cleanup_commands (test_main_loop_probe.ProbeGuardTest.test_wrong_serial_never_reaches_cleanup_commands) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.051s
+
+OK

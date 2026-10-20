@@ -1548,9 +1548,10 @@ void SendInputAck(const InputCommand& command, const char* status) {
     if (command.request_sequence == 0) return;
     char payload[112] = {};
     snprintf(payload, sizeof(payload),
-             "event=%u;device_us=%" PRIu64 ";status=%s",
+             "event=%u;device_us=%" PRIu64 ";log_ms=%u;status=%s",
              static_cast<unsigned>(command.event_sequence),
-             static_cast<uint64_t>(esp_timer_get_time()), status);
+             static_cast<uint64_t>(esp_timer_get_time()),
+             static_cast<unsigned>(esp_log_timestamp()), status);
     SendFrame(command.request_sequence, "OK", payload);
 }
 

@@ -17,15 +17,44 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
-def fresh_probe_records(records, device_ms, app="pxa-main-loop-probe"):
+def fresh_probe_records(records, log_ms, app="pxa-main-loop-probe"):
     """A log subscription replays history; only accept this activation's logs."""
     result = []
     for row in records:
         stamp = re.match(r"^(\d+)\t", row["payload"])
-        if (row["kind"] == "LOG" and stamp and int(stamp[1]) >= device_ms
+        tick = int(stamp[1]) if stamp else -1
+        # LOG is a wrapping u32 millisecond clock; all probe phases are short.
+        newer = 0 <= tick <= 0xffffffff and 0 < ((tick - log_ms) & 0xffffffff) < 0x80000000
+        if (row["kind"] == "LOG" and newer
                 and f"[PXA app={app} " in row["payload"] and "MAINLOOP " in row["payload"]):
             result.append(row)
     return result
+
+
+def log_barrier(frames):
+    """INPUT ACK's device_us uses a different clock from framed LOG records."""
+    replies = [frame for frame in frames if frame.kind == "OK"]
+    require(len(replies) == 1, "Expected one input acknowledgement")
+    props = pxadb.info_properties(replies[0].payload)
+    value = props.get("log_ms", "")
+    require(props.get("status") == "processed" and re.fullmatch(r"\d{1,10}", value),
+            "Firmware must provide a processed input ACK with log_ms; device_us is not a log clock")
+    value = int(value)
+    require(value <= 0xffffffff, "Invalid input log clock")
+    return value
+
+
+def require_idle_packages(frames):
+    running = []
+    for frame in frames:
+        if frame.kind != "PKG":
+            continue
+        identity, _, flags = frame.payload.rpartition("\t")
+        props = pxadb.info_properties(flags)
+        require(props.get("active") in {"0", "1"}, "Package activity is unknown")
+        if props["active"] == "1":
+            running.append(identity.split("\t")[0])
+    require(not running, "Device is in use; stop its active apps explicitly before testing: " + ", ".join(running))
 
 
 def heartbeat_progress(records):
@@ -125,7 +154,9 @@ def main():
             require(pxadb.info_properties(report["hello"])["serial"] == args.serial,
                     "Device serial does not match --serial")
             snapshot("before")
-            require(not active(), "Start with the probe stopped")
+            require_idle_packages(request("PACKAGES"))
+            # Check clock support before any input or application mutation.
+            log_barrier(request("INPUT SYNC"))
             client.subscribe_logs()
             prepared = True
             request("INPUT KEY HOME")
@@ -137,12 +168,12 @@ def main():
             for cycle in range(3):
                 begin = len(records)
                 barrier = request("INPUT SYNC")
-                device_ms = int(pxadb.info_properties(barrier[-1].payload)["device_us"]) // 1000
+                log_ms = log_barrier(barrier)
                 started = True
                 request(f"PACKAGE run {app}")
                 pump(8)
                 require(active(), "Probe is not active after launch")
-                require(len(heartbeat_progress(fresh_probe_records(records[begin:], device_ms))) >= 3,
+                require(len(heartbeat_progress(fresh_probe_records(records[begin:], log_ms))) >= 3,
                         "No fresh progress inside the retained native wait loop")
                 if cycle == 0:
                     for bits in (1, 2, 16):
@@ -156,11 +187,11 @@ def main():
                     screenshot("background")
                     request(f"PACKAGE run {app}"); pump(3)
                     require_probe_canvas(screenshot("resumed"))
-                phase = fresh_probe_records(records[begin:], device_ms)
+                phase = fresh_probe_records(records[begin:], log_ms)
                 heartbeats = heartbeat_progress(phase)
                 require(len(heartbeats) >= 3,
                         "Probe did not survive multiple waits")
-                report["phases"].append({"cycle": cycle, "device_ms": device_ms,
+                report["phases"].append({"cycle": cycle, "log_ms": log_ms,
                     "heartbeats": heartbeats,
                     "entered_log_received": any("MAINLOOP entered" in r["payload"] for r in phase)})
                 if cycle == 1 and args.replace_with:
@@ -176,7 +207,7 @@ def main():
                     stop(); pump(1)
                 snapshot(f"stopped-{cycle}")
                 print(f"cycle {cycle}: start, retained waits and terminal stop passed", flush=True)
-            probe_logs = [r["payload"] for r in fresh_probe_records(records, report["phases"][0]["device_ms"])]
+            probe_logs = [r["payload"] for r in fresh_probe_records(records, report["phases"][0]["log_ms"])]
             for kind in ("pointer", "controller", "lifecycle"):
                 require(any(f"MAINLOOP {kind}" in text for text in probe_logs), f"No {kind} event received")
             require(any("MAINLOOP lifecycle value=0" in text for text in probe_logs), "No background transition")
