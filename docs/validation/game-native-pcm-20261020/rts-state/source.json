@@ -1,0 +1,15 @@
+{
+  "apps_commit": "fe1227c",
+  "sdk_commit": "b787d4a",
+  "native_profiles": {
+    "cnc": {
+      "version": "0.1.13",
+      "release_sequence": 14
+    },
+    "ra": {
+      "version": "0.1.6",
+      "release_sequence": 7
+    }
+  },
+  "node_scope": "actual scenario, advancing simulation frames, original exact PCM retry; not device FPS"
+}

@@ -1,0 +1,58 @@
+{
+  "fps_query_count": 60,
+  "query_span_seconds": 58.99920773500344,
+  "unique_level_records": 11,
+  "level_record_span_ms": 51009,
+  "launch_to_first_received_level_record_seconds": 173.8669414439937,
+  "positions_after_measurement": [
+    {
+      "device_ms": 1443375,
+      "xyz": [
+        "1024",
+        "-2560",
+        "193"
+      ]
+    },
+    {
+      "device_ms": 1448397,
+      "xyz": [
+        "1024",
+        "-2560",
+        "193"
+      ]
+    },
+    {
+      "device_ms": 1453442,
+      "xyz": [
+        "1024",
+        "-2560",
+        "193"
+      ]
+    },
+    {
+      "device_ms": 1458520,
+      "xyz": [
+        "1024",
+        "-2560",
+        "193"
+      ]
+    },
+    {
+      "device_ms": 1468671,
+      "xyz": [
+        "623",
+        "-2159",
+        "193"
+      ]
+    },
+    {
+      "device_ms": 1478754,
+      "xyz": [
+        "1118",
+        "-2706",
+        "193"
+      ]
+    }
+  ],
+  "warmup_note": "Sampling began after first readiness; initial texture/model work may remain. Not a steady-state >=15 FPS pass."
+}

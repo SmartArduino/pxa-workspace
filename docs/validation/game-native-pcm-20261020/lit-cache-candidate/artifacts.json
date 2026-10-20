@@ -1,0 +1,34 @@
+{
+  "apps_commit": "fe1227c",
+  "sdk_commit": "b787d4a",
+  "version": "0.4.12",
+  "release_sequence": 132,
+  "device_measured": false,
+  "files": {
+    "aot": {
+      "path": "build/game-native-pcm-20261020/packages-lit-cache/pxa-quake-native-lit-cache/artifacts/main.esp32-s31.aot",
+      "bytes": 2992068,
+      "sha256": "d636618391541df063c5905c83ec3be20fd2095a3b87dce6589a2d41efe52ce8"
+    },
+    "container": {
+      "path": "build/game-native-pcm-20261020/packages-lit-cache/pxa-quake-native-lit-cache.pxa",
+      "bytes": 1493205,
+      "sha256": "3d08c38c8e3fb5caf4457304582ce352a70e3407711887082489a67c9f606788"
+    },
+    "wasm": {
+      "path": "build/game-native-pcm-20261020/wasm-cache/quake-native-lit-cache-wasm-d03e507893ff5fb3/artifacts/main.wasm",
+      "bytes": 882609,
+      "sha256": "eb396971280b21bc388ee1e8cb3ee9cddff23cf6a218aaeb67236f74704f8c08"
+    },
+    "compiler": {
+      "path": "build/game-native-pcm-20261020/wamrc-known-alignment/wamrc",
+      "bytes": 69438232,
+      "sha256": "4e2c9668e8317600fe97f180f13af62259a7d77efc9acfbd5b096570f8ad6e11"
+    },
+    "patch": {
+      "path": "tools/game-perf/wamr-known-alignment.patch",
+      "bytes": 2425,
+      "sha256": "c94cdc218b77b62a1c3ac740875637ea6f86eb38185f684b1421ab2790e32676"
+    }
+  }
+}

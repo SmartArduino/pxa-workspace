@@ -157,3 +157,11 @@ The device probe checks the visible canvas as well as fresh, distinct
 heartbeats after each activation. A retained main-loop callback must not
 leave the launch overlay covering the app. PXADB `INFO` now includes the full
 running ELF SHA-256 so measurements can be bound to the actual firmware.
+
+`quake-native-lit-cache` adds the existing exact-pixel lighting-row cache to
+the native-loop/PCM profile. It is an explicit experiment. The 200,000-case
+reference-kernel comparison includes all eight mip/texture variants, negative
+and fractional stepping, fullbright and output guards. Record the compiler
+used as a separate factor: the current candidate uses the isolated alignment
+compiler, whereas the normal SDK compiler remains unchanged. Desktop pixel
+equivalence and successful signing do not establish a device FPS gain.

@@ -1,0 +1,30 @@
+{
+  "apps_commit": "fe1227c",
+  "sdk_commit": "b787d4a",
+  "profiles": {
+    "cnc": {
+      "container": {
+        "path": "build/game-native-pcm-20261020/packages-rts-state/pxa-cnc-native-pcm.pxa",
+        "bytes": 2063834,
+        "sha256": "11a2e421a04b5dfbe45136b9541a15a45d1087c0ffc0966d3d366a8047470efd"
+      },
+      "aot": {
+        "path": "build/game-native-pcm-20261020/packages-rts-state/pxa-cnc-native-pcm/artifacts/main.esp32-s31.aot",
+        "bytes": 3154836,
+        "sha256": "354b21aa7a7de43e61da748e89b6d56b0ebb1494cb5630f36e6c758d652d95ed"
+      }
+    },
+    "ra": {
+      "container": {
+        "path": "build/game-native-pcm-20261020/packages-rts-state/pxa-ra-native-pcm.pxa",
+        "bytes": 2635294,
+        "sha256": "149cc40a2d1efcb7b011edff96d30202885ad9612e55ba5f88084059e2eeb89a"
+      },
+      "aot": {
+        "path": "build/game-native-pcm-20261020/packages-rts-state/pxa-ra-native-pcm/artifacts/main.esp32-s31.aot",
+        "bytes": 4180728,
+        "sha256": "5c0609fe885b84a9220a7e2d5f994923be80e3f03a5ed621636e764978115ef4"
+      }
+    }
+  }
+}
