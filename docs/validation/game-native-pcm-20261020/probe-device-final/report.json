@@ -1,0 +1,567 @@
+{
+  "qualified": true,
+  "snapshots": {
+    "before": {
+      "PACKAGES": [
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "MEMORY": [
+        {
+          "kind": "DATA",
+          "payload": "scope=heap;sram_total=652387;sram_free=143295;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15622608;psram_min=9807020;psram_largest=14942208"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=budget;internal=24992;external=16564;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=raster;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=image;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=audio;internal=0;external=16400"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=temporary;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=metadata;internal=24992;external=164"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=frame;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "INFO": [
+        {
+          "kind": "OK",
+          "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15765903;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=10;elf_sha256=c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"
+        }
+      ]
+    },
+    "running": {
+      "PACKAGES": [
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "MEMORY": [
+        {
+          "kind": "DATA",
+          "payload": "scope=heap;sram_total=652387;sram_free=133415;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15238152;psram_min=9807020;psram_largest=14942208"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=budget;internal=24992;external=16689;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=raster;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=image;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=audio;internal=0;external=16400"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=temporary;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=metadata;internal=24992;external=289"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=frame;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "INFO": [
+        {
+          "kind": "OK",
+          "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15371567;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=0;elf_sha256=c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"
+        }
+      ]
+    },
+    "stopped-0": {
+      "PACKAGES": [
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "MEMORY": [
+        {
+          "kind": "DATA",
+          "payload": "scope=heap;sram_total=652387;sram_free=143295;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15622500;psram_min=9807020;psram_largest=14942208"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=budget;internal=24992;external=16564;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=raster;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=image;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=audio;internal=0;external=16400"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=temporary;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=metadata;internal=24992;external=164"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=frame;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "INFO": [
+        {
+          "kind": "OK",
+          "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15765795;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=19;elf_sha256=c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"
+        }
+      ]
+    },
+    "stopped-1": {
+      "PACKAGES": [
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "MEMORY": [
+        {
+          "kind": "DATA",
+          "payload": "scope=heap;sram_total=652387;sram_free=143295;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15622576;psram_min=9800408;psram_largest=14942208"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=budget;internal=24992;external=16564;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=raster;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=image;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=audio;internal=0;external=16400"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=temporary;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=metadata;internal=24992;external=164"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=frame;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "INFO": [
+        {
+          "kind": "OK",
+          "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15765871;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=0;elf_sha256=c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"
+        }
+      ]
+    },
+    "stopped-2": {
+      "PACKAGES": [
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "MEMORY": [
+        {
+          "kind": "DATA",
+          "payload": "scope=heap;sram_total=652387;sram_free=143295;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15622588;psram_min=9800408;psram_largest=14942208"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=budget;internal=24992;external=16564;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=raster;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=image;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=audio;internal=0;external=16400"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=temporary;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=metadata;internal=24992;external=164"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=frame;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "INFO": [
+        {
+          "kind": "OK",
+          "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15765883;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=19;elf_sha256=c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"
+        }
+      ]
+    }
+  },
+  "phases": [
+    {
+      "cycle": 0,
+      "device_ms": 386215,
+      "heartbeats": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        13,
+        14,
+        15,
+        18,
+        19,
+        20
+      ],
+      "entered_log_received": true
+    },
+    {
+      "cycle": 1,
+      "device_ms": 409747,
+      "heartbeats": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "entered_log_received": true
+    },
+    {
+      "cycle": 2,
+      "device_ms": 425310,
+      "heartbeats": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "entered_log_received": true
+    }
+  ],
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "screenshots": {
+    "foreground": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "150",
+      "device_us": "386768746",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "1a4f90d3b9fa1f94c2421b8871768de67307a2efee09d6fe97ff36a8ee157bea"
+    },
+    "background": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "152",
+      "device_us": "399101078",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "81836b90e4ed56a3e5767547c61ac6bf2ce8e350bde24f153a52aeb4f25bb4fa"
+    },
+    "resumed": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "155",
+      "device_us": "403414816",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "1a4f90d3b9fa1f94c2421b8871768de67307a2efee09d6fe97ff36a8ee157bea"
+    }
+  },
+  "stop_seconds": [
+    0.1261494319915073,
+    0.12484327499987558
+  ],
+  "replacement": "pxa-nes",
+  "probe_logs": [
+    "387918\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP start value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m",
+    "388011\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP entered value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m",
+    "388045\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=1 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m",
+    "388073\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=1 pointer=0 controller=0 lifecycle=1 background=0\u001b[0m",
+    "388077\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=1 lifecycle=1 background=0\u001b[0m",
+    "389047\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=2 pointer=0 controller=21 lifecycle=1 background=0\u001b[0m",
+    "390048\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=3 pointer=0 controller=41 lifecycle=1 background=0\u001b[0m",
+    "391051\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=4 pointer=0 controller=61 lifecycle=1 background=0\u001b[0m",
+    "392053\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=5 pointer=0 controller=81 lifecycle=1 background=0\u001b[0m",
+    "393057\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=6 pointer=0 controller=101 lifecycle=1 background=0\u001b[0m",
+    "394059\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=7 pointer=0 controller=121 lifecycle=1 background=0\u001b[0m",
+    "395061\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=8 pointer=0 controller=141 lifecycle=1 background=0\u001b[0m",
+    "395581\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=1 heartbeat=8 pointer=0 controller=152 lifecycle=1 background=0\u001b[0m",
+    "395791\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=157 lifecycle=1 background=0\u001b[0m",
+    "395999\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=2 heartbeat=8 pointer=0 controller=162 lifecycle=1 background=0\u001b[0m",
+    "396102\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=9 pointer=0 controller=164 lifecycle=1 background=0\u001b[0m",
+    "396207\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=167 lifecycle=1 background=0\u001b[0m",
+    "396417\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=16 heartbeat=9 pointer=0 controller=172 lifecycle=1 background=0\u001b[0m",
+    "396622\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=177 lifecycle=1 background=0\u001b[0m",
+    "396833\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=0 heartbeat=9 pointer=1 controller=181 lifecycle=1 background=0\u001b[0m",
+    "396835\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=2 controller=181 lifecycle=1 background=0\u001b[0m",
+    "396853\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=3 controller=181 lifecycle=1 background=0\u001b[0m",
+    "396874\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=4 controller=181 lifecycle=1 background=0\u001b[0m",
+    "396892\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=5 controller=182 lifecycle=1 background=0\u001b[0m",
+    "396912\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=6 controller=182 lifecycle=1 background=0\u001b[0m",
+    "396933\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=7 controller=183 lifecycle=1 background=0\u001b[0m",
+    "396953\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=8 controller=183 lifecycle=1 background=0\u001b[0m",
+    "396969\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=9 controller=183 lifecycle=1 background=0\u001b[0m",
+    "396988\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=10 controller=184 lifecycle=1 background=0\u001b[0m",
+    "397004\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=11 controller=184 lifecycle=1 background=0\u001b[0m",
+    "397022\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=12 controller=184 lifecycle=1 background=0\u001b[0m",
+    "397041\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=13 controller=185 lifecycle=1 background=0\u001b[0m",
+    "397050\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=2 heartbeat=9 pointer=14 controller=185 lifecycle=1 background=0\u001b[0m",
+    "397124\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=10 pointer=14 controller=187 lifecycle=1 background=0\u001b[0m",
+    "396835\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=2 controller=181 lifecycle=1 background=0\u001b[0m",
+    "396853\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=3 controller=181 lifecycle=1 background=0\u001b[0m",
+    "396874\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=4 controller=181 lifecycle=1 background=0\u001b[0m",
+    "396892\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=5 controller=182 lifecycle=1 background=0\u001b[0m",
+    "396912\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=6 controller=182 lifecycle=1 background=0\u001b[0m",
+    "396933\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=7 controller=183 lifecycle=1 background=0\u001b[0m",
+    "396953\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=8 controller=183 lifecycle=1 background=0\u001b[0m",
+    "396969\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=9 controller=183 lifecycle=1 background=0\u001b[0m",
+    "396988\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=10 controller=184 lifecycle=1 background=0\u001b[0m",
+    "397004\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=11 controller=184 lifecycle=1 background=0\u001b[0m",
+    "397022\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=12 controller=184 lifecycle=1 background=0\u001b[0m",
+    "397041\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=13 controller=185 lifecycle=1 background=0\u001b[0m",
+    "397050\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=2 heartbeat=9 pointer=14 controller=185 lifecycle=1 background=0\u001b[0m",
+    "397124\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=10 pointer=14 controller=187 lifecycle=1 background=0\u001b[0m",
+    "400314\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=0 heartbeat=12 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m",
+    "400315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=13 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m",
+    "401315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=14 pointer=14 controller=260 lifecycle=2 background=1\u001b[0m",
+    "402324\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=15 pointer=14 controller=280 lifecycle=2 background=1\u001b[0m",
+    "396969\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=9 controller=183 lifecycle=1 background=0\u001b[0m",
+    "396988\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=10 controller=184 lifecycle=1 background=0\u001b[0m",
+    "397004\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=11 controller=184 lifecycle=1 background=0\u001b[0m",
+    "397022\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=12 controller=184 lifecycle=1 background=0\u001b[0m",
+    "397041\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=13 controller=185 lifecycle=1 background=0\u001b[0m",
+    "397050\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=2 heartbeat=9 pointer=14 controller=185 lifecycle=1 background=0\u001b[0m",
+    "397124\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=10 pointer=14 controller=187 lifecycle=1 background=0\u001b[0m",
+    "400314\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=0 heartbeat=12 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m",
+    "400315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=13 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m",
+    "401315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=14 pointer=14 controller=260 lifecycle=2 background=1\u001b[0m",
+    "402324\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=15 pointer=14 controller=280 lifecycle=2 background=1\u001b[0m",
+    "404693\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=17 pointer=14 controller=325 lifecycle=3 background=0\u001b[0m",
+    "405402\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=18 pointer=14 controller=340 lifecycle=3 background=0\u001b[0m",
+    "406407\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=19 pointer=14 controller=360 lifecycle=3 background=0\u001b[0m",
+    "407412\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=20 pointer=14 controller=380 lifecycle=3 background=0\u001b[0m",
+    "397050\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=2 heartbeat=9 pointer=14 controller=185 lifecycle=1 background=0\u001b[0m",
+    "397124\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=10 pointer=14 controller=187 lifecycle=1 background=0\u001b[0m",
+    "400314\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=0 heartbeat=12 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m",
+    "400315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=13 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m",
+    "401315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=14 pointer=14 controller=260 lifecycle=2 background=1\u001b[0m",
+    "402324\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=15 pointer=14 controller=280 lifecycle=2 background=1\u001b[0m",
+    "404693\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=17 pointer=14 controller=325 lifecycle=3 background=0\u001b[0m",
+    "405402\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=18 pointer=14 controller=340 lifecycle=3 background=0\u001b[0m",
+    "406407\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=19 pointer=14 controller=360 lifecycle=3 background=0\u001b[0m",
+    "407412\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=20 pointer=14 controller=380 lifecycle=3 background=0\u001b[0m",
+    "411452\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP start value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m",
+    "411547\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP entered value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m",
+    "411578\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=1 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m",
+    "411606\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=1 pointer=0 controller=0 lifecycle=1 background=0\u001b[0m",
+    "411608\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=1 lifecycle=1 background=0\u001b[0m",
+    "412584\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=2 pointer=0 controller=21 lifecycle=1 background=0\u001b[0m",
+    "413587\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=3 pointer=0 controller=41 lifecycle=1 background=0\u001b[0m",
+    "414636\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=4 pointer=0 controller=62 lifecycle=1 background=0\u001b[0m",
+    "415641\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=5 pointer=0 controller=82 lifecycle=1 background=0\u001b[0m",
+    "416644\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=6 pointer=0 controller=102 lifecycle=1 background=0\u001b[0m",
+    "417650\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=7 pointer=0 controller=122 lifecycle=1 background=0\u001b[0m",
+    "418652\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=8 pointer=0 controller=142 lifecycle=1 background=0\u001b[0m",
+    "427006\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP start value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m",
+    "427106\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP entered value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m",
+    "427136\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=1 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m",
+    "427161\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=1 pointer=0 controller=0 lifecycle=1 background=0\u001b[0m",
+    "427165\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=1 lifecycle=1 background=0\u001b[0m",
+    "428141\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=2 pointer=0 controller=21 lifecycle=1 background=0\u001b[0m",
+    "429141\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=3 pointer=0 controller=41 lifecycle=1 background=0\u001b[0m",
+    "430145\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=4 pointer=0 controller=61 lifecycle=1 background=0\u001b[0m",
+    "431146\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=5 pointer=0 controller=81 lifecycle=1 background=0\u001b[0m",
+    "432148\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=6 pointer=0 controller=101 lifecycle=1 background=0\u001b[0m",
+    "433149\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=7 pointer=0 controller=121 lifecycle=1 background=0\u001b[0m",
+    "434152\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=8 pointer=0 controller=141 lifecycle=1 background=0\u001b[0m"
+  ]
+}

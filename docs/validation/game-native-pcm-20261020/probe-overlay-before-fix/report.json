@@ -1,0 +1,97 @@
+{
+  "qualified": false,
+  "snapshots": {
+    "before": {
+      "PACKAGES": [
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "PKG",
+          "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "MEMORY": [
+        {
+          "kind": "DATA",
+          "payload": "scope=heap;sram_total=652387;sram_free=143339;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15622692;psram_min=9800444;psram_largest=14942208"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=budget;internal=24992;external=16564;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=raster;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=image;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=audio;internal=0;external=16400"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=temporary;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=metadata;internal=24992;external=164"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=kind;name=frame;internal=0;external=0"
+        },
+        {
+          "kind": "DATA",
+          "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+        },
+        {
+          "kind": "OK",
+          "payload": ""
+        }
+      ],
+      "INFO": [
+        {
+          "kind": "OK",
+          "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15766031;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=0;elf_sha256=a3f452c07"
+        }
+      ]
+    }
+  },
+  "phases": [],
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "screenshots": {
+    "foreground": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "150",
+      "device_us": "673658828",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "4eb582fdc4ba2949ffd81b2a91df760175d3628af3b3e5c0980cc98e363fae2f"
+    }
+  },
+  "failure": {
+    "type": "RuntimeError",
+    "message": "Probe UI is covered or missing; expected its opaque blue canvas"
+  }
+}

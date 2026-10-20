@@ -129,4 +129,31 @@ the real event-port SDK and omit the Asyncify pass and continuation buffer.
 The RISC-V package build verifies their imports and memory bounds. Successful
 compilation, desktop file/input tests, reduced AOT size and a positive static
 memory remainder do not qualify device loading, FPS or original audio fidelity.
-The existing 16 kHz mono audio output remains a separate unfinished change.
+Those initial main-loop profiles used the legacy 16 kHz mono audio path.
+
+## Exact source PCM candidates
+
+`quake-native-pcm`, `quake2-native-pcm`, `duke-native-pcm`, `cnc-native-pcm`
+and `ra-native-pcm` enable both `PXA_RECROF_MAIN_LOOP` and
+`PXA_RECROF_NATIVE_PCM`. They require Core 2.1 and Audio 0.10. The signed
+package IDs remain the corresponding `*-sd` app IDs, so the fixed SD resource
+root and private saves remain associated with the same publisher and app.
+The profiles retain the original renderer settings.
+
+Use SDK `b787d4a` and Apps `5281572` or descendants containing those changes.
+Quake, Quake II and Duke submit their original 11025 Hz stereo PCM; C&C and
+RA submit 22050 Hz stereo PCM. The GameKit output worker pulls the Host mixer
+at its 48000 Hz mono device clock. Bounded resampling and downmixing happen
+at that boundary, with mixer storage charged to PSRAM.
+
+Build with the same command as above, replacing the profile name. All five
+signed artifacts, source identities, Node actual-level/PCM retry checks and
+the real-device main-loop lifecycle probe are recorded in
+`docs/validation/game-native-pcm-20261020`. Node timing is not device FPS.
+Exact PCM negotiation alone does not prove uninterrupted physical playback
+or the >=15 FPS acceptance target.
+
+The device probe checks the visible canvas as well as fresh, distinct
+heartbeats after each activation. A retained main-loop callback must not
+leave the launch overlay covering the app. PXADB `INFO` now includes the full
+running ELF SHA-256 so measurements can be bound to the actual firmware.

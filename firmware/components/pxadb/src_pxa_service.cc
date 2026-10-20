@@ -1290,7 +1290,7 @@ void SendHello(unsigned long sequence) {
 
 void SendInfo(unsigned long sequence) {
     const esp_app_desc_t* app = esp_app_get_description();
-    char payload[kMaxFramePayload] = {};
+    char payload[512] = {};
     snprintf(payload, sizeof(payload), "target=%s;serial=%s;version=%s;free_heap=%u;pxa=%s",
              CONFIG_IDF_TARGET, DeviceSerial(),
              app == nullptr ? "unknown" : app->version,
@@ -1323,6 +1323,21 @@ void SendInfo(unsigned long sequence) {
                  static_cast<unsigned>(s_test_control.presentation_fps_x10(s_test_control.context)));
     }
 #endif
+    // Bind measurements and panic addresses to the exact running ELF without
+    // resetting the device or reading its application partition over UART.
+    char elf_sha256[65] = {};
+    if (app != nullptr) {
+        // The IDF panic helper can expose only CONFIG_APP_RETRIEVE_LEN_ELF_SHA
+        // characters. The image description always carries the full digest.
+        static constexpr char hex[] = "0123456789abcdef";
+        for (size_t i = 0; i < sizeof(app->app_elf_sha256); ++i) {
+            elf_sha256[i * 2] = hex[app->app_elf_sha256[i] >> 4];
+            elf_sha256[i * 2 + 1] = hex[app->app_elf_sha256[i] & 15];
+        }
+    }
+    const size_t identity_offset = strlen(payload);
+    snprintf(payload + identity_offset, sizeof(payload) - identity_offset,
+             ";elf_sha256=%s", elf_sha256);
     SendFrame(sequence, "OK", payload);
 }
 

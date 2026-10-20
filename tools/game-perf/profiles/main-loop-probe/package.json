@@ -4,8 +4,8 @@
   "target_sdk": [2, 1],
   "compile_sdk": [2, 1],
   "id": "pxa-main-loop-probe",
-  "version": "0.1.0",
-  "release_sequence": 1,
+  "version": "0.1.1",
+  "release_sequence": 2,
   "name": "Main loop probe",
   "description": "Device validation of native event waits, input, lifecycle and terminal cancellation.",
   "build": {

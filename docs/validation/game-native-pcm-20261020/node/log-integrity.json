@@ -1,0 +1,27 @@
+[
+  {
+    "file": "quake.log.gz",
+    "uncompressed_bytes": 7269,
+    "uncompressed_sha256": "652f7c582a262a2095f163c2d1f25257e8db09e684f0abff17ba9c7fedbb93ab"
+  },
+  {
+    "file": "quake2.log.gz",
+    "uncompressed_bytes": 7690,
+    "uncompressed_sha256": "de438ea7809332941a3cdfad54d6c9c292e4331ed74aaf0a5caf2972f06982a3"
+  },
+  {
+    "file": "duke.log.gz",
+    "uncompressed_bytes": 13035,
+    "uncompressed_sha256": "afbd3d1787795c90ccb9f0e2c35ce6ba3cd2925e3e551c467cdabda83d52167e"
+  },
+  {
+    "file": "cnc.log.gz",
+    "uncompressed_bytes": 2017,
+    "uncompressed_sha256": "2ea79f157e03c93ade474d4cf0f24481465f4ed7eca98f23b19eb416ac8ad210"
+  },
+  {
+    "file": "ra.log.gz",
+    "uncompressed_bytes": 2039,
+    "uncompressed_sha256": "220b29d3376b2f238f450bbfa1bb45a832c072620ac01e8b0071a9be5500dee1"
+  }
+]

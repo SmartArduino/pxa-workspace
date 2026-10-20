@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(pxa_quake_native_pcm C CXX)
+if(NOT DEFINED ENV{PXA_GAME_APPS_ROOT})
+    message(FATAL_ERROR "Set PXA_GAME_APPS_ROOT to the native main-loop Apps checkout")
+endif()
+set(PXA_RECROF_MAIN_LOOP ON)
+set(PXA_RECROF_NATIVE_PCM ON)
+add_subdirectory("$ENV{PXA_GAME_APPS_ROOT}/quake-sd" engine)

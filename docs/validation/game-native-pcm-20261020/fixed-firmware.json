@@ -1,0 +1,10 @@
+{
+  "serial": "1c:29:04:d0:af:5e",
+  "offset": "0x10000",
+  "bytes": 3949232,
+  "application_sha256": "fd70da1fc21893d1675877e0f041c60d00e8eed7b0aa5785c81221a475919a3d",
+  "elf_sha256": "c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845",
+  "partition_table_unchanged": true,
+  "status": "flashed",
+  "esptool_exit_code": 0
+}

@@ -66,6 +66,21 @@ class ProbeGuardTest(unittest.TestCase):
             self.assertEqual(error.exception.code, 2)
             open_client.assert_not_called()
 
+    def test_old_history_duplicates_and_other_apps_cannot_prove_progress(self):
+        def row(stamp, count, app="pxa-main-loop-probe", kind="LOG"):
+            return {"kind": kind, "payload":
+                f"{stamp}\t[PXA app={app} component=65537 level=INFO] MAINLOOP alive value=0 heartbeat={count}"}
+        records = [row(100, 10), row(1100, 1), row(1100, 1), row(1200, 2, "another-app"), row(1300, 3, kind="RAW")]
+        self.assertEqual(probe.heartbeat_progress(probe.fresh_probe_records(records, 1000)), [1])
+        records += [row(2100, 2), row(3100, 3)]
+        self.assertEqual(probe.heartbeat_progress(probe.fresh_probe_records(records, 1000)), [1, 2, 3])
+
+    def test_launch_card_is_not_an_application_canvas(self):
+        metadata = {"format": "rgb565le", "width": "320", "height": "240"}
+        with self.assertRaisesRegex(RuntimeError, "covered or missing"):
+            probe.require_probe_canvas(SimpleNamespace(metadata=metadata, data=b"\0" * (320 * 240 * 2)))
+        probe.require_probe_canvas(SimpleNamespace(metadata=metadata, data=b"\x2b\x12" * (320 * 240)))
+
 
 if __name__ == "__main__":
     unittest.main()

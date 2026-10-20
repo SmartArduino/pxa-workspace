@@ -8,6 +8,7 @@
 
 static uint8_t events[PXA_MAX_CONTROL_BYTES], packet[512];
 static unsigned pointers, controllers, transitions, heartbeats, background;
+static uint32_t last_controller_buttons = UINT32_MAX;
 
 static uint64_t now_us(void) {
     struct timespec t;
@@ -32,7 +33,13 @@ static void dispatch(const pxa_event_t *event) {
     } else if (pxa_ui_parse_pointer(event, &pointer)) {
         ++pointers; note("pointer", pointer.phase);
     } else if (pxa_ui_parse_controller(event, &controller)) {
-        ++controllers; note("controller", (int)controller.buttons);
+        ++controllers;
+        /* Count every state refresh, but log edges rather than 20 identical
+         * idle records each second. Keep the bounded device log queue useful. */
+        if (controller.buttons != last_controller_buttons) {
+            last_controller_buttons = controller.buttons;
+            note("controller", (int)controller.buttons);
+        }
     }
 }
 

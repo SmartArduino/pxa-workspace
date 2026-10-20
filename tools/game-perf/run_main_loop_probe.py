@@ -17,6 +17,35 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def fresh_probe_records(records, device_ms, app="pxa-main-loop-probe"):
+    """A log subscription replays history; only accept this activation's logs."""
+    result = []
+    for row in records:
+        stamp = re.match(r"^(\d+)\t", row["payload"])
+        if (row["kind"] == "LOG" and stamp and int(stamp[1]) >= device_ms
+                and f"[PXA app={app} " in row["payload"] and "MAINLOOP " in row["payload"]):
+            result.append(row)
+    return result
+
+
+def heartbeat_progress(records):
+    # Only this retained call emits alive, after checking its local stack
+    # sentinel following native waits. Three distinct values prove continued
+    # execution even if the bounded log queue drops a one-shot entered line.
+    return sorted({int(match[1]) for row in records
+                   if (match := re.search(r"MAINLOOP alive value=0 heartbeat=(\d+)", row["payload"]))})
+
+
+def require_probe_canvas(shot):
+    width, height = int(shot.metadata["width"]), int(shot.metadata["height"])
+    require(shot.metadata["format"] == "rgb565le" and width == 320 and height == 240,
+            "Unexpected probe capture format or dimensions")
+    for x, y in ((32, 200), (280, 160), (280, 200)):
+        offset = (y * width + x) * 2
+        require(int.from_bytes(shot.data[offset:offset + 2], "little") == 0x122b,
+                "Probe UI is covered or missing; expected its opaque blue canvas")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True)
@@ -73,6 +102,7 @@ def main():
                         time.sleep(.2)
                 pxadb.write_screenshot(shot, args.output / (name + ".png"))
                 report.setdefault("screenshots", {})[name] = shot.metadata
+                return shot
             finally:
                 client.subscribe_logs()
 
@@ -106,28 +136,33 @@ def main():
             pump(.3)
             for cycle in range(3):
                 begin = len(records)
+                barrier = request("INPUT SYNC")
+                device_ms = int(pxadb.info_properties(barrier[-1].payload)["device_us"]) // 1000
                 started = True
                 request(f"PACKAGE run {app}")
                 pump(8)
                 require(active(), "Probe is not active after launch")
-                require(any("MAINLOOP entered" in r["payload"] for r in records[begin:]),
-                        "Probe did not enter its retained VM call")
+                require(len(heartbeat_progress(fresh_probe_records(records[begin:], device_ms))) >= 3,
+                        "No fresh progress inside the retained native wait loop")
                 if cycle == 0:
                     for bits in (1, 2, 16):
                         request(f"INPUT CONTROLLER 0 1 {bits}"); pump(.2)
                         request("INPUT CONTROLLER 0 1 0"); pump(.2)
                     request("INPUT POINTER DOWN 285 180 0"); pump(.2)
                     request("INPUT POINTER UP 285 180 0"); pump(.4)
-                    screenshot("foreground")
+                    require_probe_canvas(screenshot("foreground"))
                     snapshot("running")
                     request("INPUT KEY HOME"); pump(3)
                     screenshot("background")
                     request(f"PACKAGE run {app}"); pump(3)
-                    screenshot("resumed")
-                phase = records[begin:]
-                require(sum("MAINLOOP alive" in r["payload"] for r in phase) >= 3,
+                    require_probe_canvas(screenshot("resumed"))
+                phase = fresh_probe_records(records[begin:], device_ms)
+                heartbeats = heartbeat_progress(phase)
+                require(len(heartbeats) >= 3,
                         "Probe did not survive multiple waits")
-                report["phases"].append({"cycle": cycle, "heartbeats": sum("MAINLOOP alive" in r["payload"] for r in phase)})
+                report["phases"].append({"cycle": cycle, "device_ms": device_ms,
+                    "heartbeats": heartbeats,
+                    "entered_log_received": any("MAINLOOP entered" in r["payload"] for r in phase)})
                 if cycle == 1 and args.replace_with:
                     replacement_requested = True
                     request(f"PACKAGE run {args.replace_with}"); pump(5)
@@ -141,7 +176,7 @@ def main():
                     stop(); pump(1)
                 snapshot(f"stopped-{cycle}")
                 print(f"cycle {cycle}: start, retained waits and terminal stop passed", flush=True)
-            probe_logs = [r["payload"] for r in records if "MAINLOOP " in r["payload"]]
+            probe_logs = [r["payload"] for r in fresh_probe_records(records, report["phases"][0]["device_ms"])]
             for kind in ("pointer", "controller", "lifecycle"):
                 require(any(f"MAINLOOP {kind}" in text for text in probe_logs), f"No {kind} event received")
             require(any("MAINLOOP lifecycle value=0" in text for text in probe_logs), "No background transition")
@@ -157,7 +192,7 @@ def main():
             if prepared:
                 try:
                     request("INPUT CONTROLLER 0 1 0")
-                    if started:
+                    if started and active():
                         request(f"PACKAGE stop {app}")
                     if replacement_requested:
                         request(f"PACKAGE stop {args.replace_with}")
@@ -165,7 +200,9 @@ def main():
                     request("INPUT KEY HOME")
                 except Exception as error:
                     report["cleanup_error"] = str(error)
+                    report["qualified"] = False
             (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    require(report["qualified"], "Probe cleanup failed: " + report.get("cleanup_error", "unknown"))
 
 
 if __name__ == "__main__":

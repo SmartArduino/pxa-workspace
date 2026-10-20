@@ -1,0 +1,458 @@
+{"time": 90538.011607627, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90538.023510969, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90538.023667718, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90538.023719978, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90538.023758782, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90538.023796193, "kind": "OK", "payload": ""}
+{"time": 90538.023843804, "kind": "COMMAND", "payload": "MEMORY"}
+{"time": 90538.038706996, "kind": "DATA", "payload": "scope=heap;sram_total=652387;sram_free=143295;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15622608;psram_min=9807020;psram_largest=14942208"}
+{"time": 90538.038848296, "kind": "DATA", "payload": "scope=budget;internal=24992;external=16564;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"}
+{"time": 90538.038905655, "kind": "DATA", "payload": "scope=kind;name=raster;internal=0;external=0"}
+{"time": 90538.038943026, "kind": "DATA", "payload": "scope=kind;name=image;internal=0;external=0"}
+{"time": 90538.038978614, "kind": "DATA", "payload": "scope=kind;name=audio;internal=0;external=16400"}
+{"time": 90538.039068084, "kind": "DATA", "payload": "scope=kind;name=temporary;internal=0;external=0"}
+{"time": 90538.039106959, "kind": "DATA", "payload": "scope=kind;name=metadata;internal=24992;external=164"}
+{"time": 90538.039141114, "kind": "DATA", "payload": "scope=kind;name=frame;internal=0;external=0"}
+{"time": 90538.039174648, "kind": "DATA", "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"}
+{"time": 90538.039209664, "kind": "OK", "payload": ""}
+{"time": 90538.039260181, "kind": "COMMAND", "payload": "INFO"}
+{"time": 90538.47660104, "kind": "OK", "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15765903;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=10;elf_sha256=c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"}
+{"time": 90538.476776184, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90538.488437144, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90538.488642656, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90538.488704654, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90538.488753387, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90538.488799435, "kind": "OK", "payload": ""}
+{"time": 90538.497746875, "kind": "LOG", "payload": "150095\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=2 pointer=0 controller=21 lifecycle=1 background=0\u001b[0m"}
+{"time": 90538.497952637, "kind": "LOG", "payload": "151099\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=3 pointer=0 controller=41 lifecycle=1 background=0\u001b[0m"}
+{"time": 90538.498251607, "kind": "LOG", "payload": "152100\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=4 pointer=0 controller=61 lifecycle=1 background=0\u001b[0m"}
+{"time": 90538.499567985, "kind": "LOG", "payload": "153105\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=5 pointer=0 controller=81 lifecycle=1 background=0\u001b[0m"}
+{"time": 90538.500982891, "kind": "LOG", "payload": "154106\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=6 pointer=0 controller=101 lifecycle=1 background=0\u001b[0m"}
+{"time": 90538.504122905, "kind": "LOG", "payload": "155155\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=7 pointer=0 controller=122 lifecycle=1 background=0\u001b[0m"}
+{"time": 90538.505927383, "kind": "LOG", "payload": "156156\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=8 pointer=0 controller=142 lifecycle=1 background=0\u001b[0m"}
+{"time": 90538.506194572, "kind": "LOG", "payload": "156611\tI (156611) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90538.506302618, "kind": "LOG", "payload": "156619\tI (156618) PxaHost: Main loop ended: reason=0 runtime_stack_min_free=25364 bytes"}
+{"time": 90538.506839471, "kind": "LOG", "payload": "156619\tI (156619) PxaHost: UI peaks: dynamic=2076 current=1660 assets=0 current_assets=0 largest_decoded=0 asset_count=0 referenced=0 hits=0 misses=0 evictions=0 nodes=2 canvases=0 surfaces=1"}
+{"time": 90538.508474637, "kind": "LOG", "payload": "156619\tI (156619) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 90538.509571848, "kind": "LOG", "payload": "156678\tI (156678) PxaHost: Runtime peaks: components=1 requests=1 handles=1 events=4 event_blocks=6 services=17"}
+{"time": 90538.510474237, "kind": "LOG", "payload": "156678\tI (156678) PxaHost: WAMR dynamic: peak=26389 current=416 linear=0 linear_peak=65536 artifact=0 events=0"}
+{"time": 90538.511543345, "kind": "LOG", "payload": "156678\tI (156678) PxaHost: Activation memory: workspaces=18 blocks=3 used=13031 reserved=17521 peak_used=13031 peak_reserved=17521"}
+{"time": 90538.512147716, "kind": "LOG", "payload": "156734\tI (156733) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90538.512772357, "kind": "LOG", "payload": "157750\tI (157750) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90538.513128525, "kind": "COMMAND", "payload": "INPUT KEY HOME"}
+{"time": 90538.522978495, "kind": "OK", "payload": "event=27;device_us=385243795;status=processed"}
+{"time": 90538.523184127, "kind": "COMMAND", "payload": "INPUT POINTER DOWN 160 185 0"}
+{"time": 90538.529359354, "kind": "OK", "payload": "event=28;device_us=385253853;status=processed"}
+{"time": 90538.6310807, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 163 0"}
+{"time": 90538.637380686, "kind": "OK", "payload": "event=29;device_us=385361770;status=processed"}
+{"time": 90538.73843478, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 139 0"}
+{"time": 90538.744673368, "kind": "OK", "payload": "event=30;device_us=385468836;status=processed"}
+{"time": 90538.845611452, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 115 0"}
+{"time": 90538.852485771, "kind": "OK", "payload": "event=31;device_us=385576800;status=processed"}
+{"time": 90538.953302193, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 91 0"}
+{"time": 90538.95958742, "kind": "OK", "payload": "event=32;device_us=385683851;status=processed"}
+{"time": 90539.060477923, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 67 0"}
+{"time": 90539.06669514, "kind": "OK", "payload": "event=33;device_us=385790912;status=processed"}
+{"time": 90539.167908779, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 53 0"}
+{"time": 90539.174456125, "kind": "OK", "payload": "event=34;device_us=385898770;status=processed"}
+{"time": 90539.174660254, "kind": "COMMAND", "payload": "INPUT POINTER UP 160 53 0"}
+{"time": 90539.181739584, "kind": "OK", "payload": "event=35;device_us=385906038;status=processed"}
+{"time": 90539.485129653, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"time": 90539.491380534, "kind": "OK", "payload": "event=36;device_us=386215723;status=processed"}
+{"time": 90539.491594943, "kind": "COMMAND", "payload": "PACKAGE run pxa-main-loop-probe"}
+{"time": 90539.497716327, "kind": "OK", "payload": "launch_queued"}
+{"time": 90539.518488269, "kind": "LOG", "payload": "387550\tI (387549) PxaHost: Queueing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90539.539163427, "kind": "LOG", "payload": "387559\tI (387559) PxaHost: Processing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90539.660870287, "kind": "LOG", "payload": "387697\tI (387697) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 90539.701834547, "kind": "LOG", "payload": "387729\tI (387728) PxaHost: Heap[launch-begin]: SRAM used=509092 free=143295 total=652387 min_free=14568 largest=98304 exec_free=15417028 exec_largest=14942208; PSRAM used=1324172 free=15417028 total=16741200 min_free=9807020 largest=14942208"}
+{"time": 90539.762931932, "kind": "LOG", "payload": "387793\tI (387793) PxaWamrMap: pinned mapping reserved before AOT: bytes=262144"}
+{"time": 90539.803733031, "kind": "LOG", "payload": "387825\tI (387825) PxaWamr: AOT streamed: file=80704 source_buffer=0"}
+{"time": 90539.804052469, "kind": "LOG", "payload": "387828\tI (387828) PxaWamrMap: pinned mapping adopted: bytes=262144 scratch=31104"}
+{"time": 90539.884821009, "kind": "LOG", "payload": "387918\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP start value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 90539.884948842, "kind": "LOG", "payload": "387920\tI (387919) PxaHost: Component memory: id=main status=0 sram_delta=25836 free_sram=117015 largest_sram=86016 psram_delta=920748 free_psram=14458432 largest_psram=14417920 wamr_delta=25825 wamr_current=26241"}
+{"time": 90539.946407305, "kind": "DROP", "payload": "dropped=1"}
+{"time": 90539.946591737, "kind": "LOG", "payload": "387971\tI (387971) PxaBridge: Application foregrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90539.946654997, "kind": "LOG", "payload": "387971\tI (387971) PxaBridge: Launch completion: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe intent=0 status=0"}
+{"time": 90539.946707076, "kind": "LOG", "payload": "387974\tI (387969) PxaHost: Heap[launch-ready]: SRAM used=531272 free=121115 total=652387 min_free=14568 largest=90112 exec_free=15003580 exec_largest=14680064; PSRAM used=1737620 free=15003580 total=16741200 min_free=9807020 largest=14680064"}
+{"time": 90539.946752553, "kind": "LOG", "payload": "387974\tI (387974) PxaHost: WAMR dynamic: peak=26245 current=26241 linear=65536 linear_peak=65536 artifact=0 events=0"}
+{"time": 90539.946797038, "kind": "LOG", "payload": "387981\tI (387976) PxaHost: UI lifecycle: component=65537 foreground=1 requested=1 display_interactive=1"}
+{"time": 90539.987242229, "kind": "LOG", "payload": "388011\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP entered value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 90540.007608979, "kind": "LOG", "payload": "388045\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=1 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 90540.048131206, "kind": "LOG", "payload": "388073\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=1 pointer=0 controller=0 lifecycle=1 background=0\u001b[0m"}
+{"time": 90540.048279278, "kind": "LOG", "payload": "388077\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=1 lifecycle=1 background=0\u001b[0m"}
+{"time": 90541.019796463, "kind": "LOG", "payload": "389047\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=2 pointer=0 controller=21 lifecycle=1 background=0\u001b[0m"}
+{"time": 90542.008325055, "kind": "LOG", "payload": "390048\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=3 pointer=0 controller=41 lifecycle=1 background=0\u001b[0m"}
+{"time": 90543.012343864, "kind": "LOG", "payload": "391051\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=4 pointer=0 controller=61 lifecycle=1 background=0\u001b[0m"}
+{"time": 90544.027299905, "kind": "LOG", "payload": "392053\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=5 pointer=0 controller=81 lifecycle=1 background=0\u001b[0m"}
+{"time": 90545.037422976, "kind": "LOG", "payload": "393057\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=6 pointer=0 controller=101 lifecycle=1 background=0\u001b[0m"}
+{"time": 90546.025291079, "kind": "LOG", "payload": "394059\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=7 pointer=0 controller=121 lifecycle=1 background=0\u001b[0m"}
+{"time": 90547.03416511, "kind": "LOG", "payload": "395061\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=8 pointer=0 controller=141 lifecycle=1 background=0\u001b[0m"}
+{"time": 90547.517343125, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90547.528736055, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"time": 90547.528808493, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90547.528831678, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90547.528851465, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90547.528868117, "kind": "OK", "payload": ""}
+{"time": 90547.529458562, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 1"}
+{"time": 90547.529872611, "kind": "LOG", "payload": "395573\tI (395573) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90547.535826106, "kind": "OK", "payload": "event=37;device_us=394259888;status=processed"}
+{"time": 90547.556190011, "kind": "LOG", "payload": "395581\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=1 heartbeat=8 pointer=0 controller=152 lifecycle=1 background=0\u001b[0m"}
+{"time": 90547.737407612, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 90547.743821073, "kind": "OK", "payload": "event=38;device_us=394467776;status=processed"}
+{"time": 90547.764185318, "kind": "LOG", "payload": "395791\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=157 lifecycle=1 background=0\u001b[0m"}
+{"time": 90547.945508491, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 2"}
+{"time": 90547.952016833, "kind": "OK", "payload": "event=39;device_us=394675926;status=processed"}
+{"time": 90547.972384685, "kind": "LOG", "payload": "395999\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=2 heartbeat=8 pointer=0 controller=162 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.073676994, "kind": "LOG", "payload": "396102\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=9 pointer=0 controller=164 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.154536707, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 90548.160962542, "kind": "OK", "payload": "event=40;device_us=394884832;status=processed"}
+{"time": 90548.181450363, "kind": "LOG", "payload": "396207\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=167 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.362823079, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 16"}
+{"time": 90548.368794989, "kind": "OK", "payload": "event=41;device_us=395092778;status=processed"}
+{"time": 90548.389244156, "kind": "LOG", "payload": "396417\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=16 heartbeat=9 pointer=0 controller=172 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.570858393, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 90548.576739911, "kind": "OK", "payload": "event=42;device_us=395300741;status=processed"}
+{"time": 90548.597533374, "kind": "LOG", "payload": "396622\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=177 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.779162029, "kind": "COMMAND", "payload": "INPUT POINTER DOWN 285 180 0"}
+{"time": 90548.786067477, "kind": "OK", "payload": "event=43;device_us=395509899;status=processed"}
+{"time": 90548.806482049, "kind": "LOG", "payload": "396832\tI (396832) PxaHost: pointer queued id=0 phase=0 x=285 y=180"}
+{"time": 90548.806639639, "kind": "LOG", "payload": "396832\tI (396832) PxaHost: pointer delivered id=0 phase=0 x=285 y=180"}
+{"time": 90548.806728969, "kind": "LOG", "payload": "396833\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=0 heartbeat=9 pointer=1 controller=181 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.806807258, "kind": "LOG", "payload": "396835\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=2 controller=181 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.827186082, "kind": "LOG", "payload": "396853\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=3 controller=181 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.847736722, "kind": "LOG", "payload": "396874\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=4 controller=181 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.868204334, "kind": "LOG", "payload": "396892\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=5 controller=182 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.888683869, "kind": "LOG", "payload": "396912\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=6 controller=182 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.909146131, "kind": "LOG", "payload": "396933\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=7 controller=183 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.929589127, "kind": "LOG", "payload": "396953\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=8 controller=183 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.950102847, "kind": "LOG", "payload": "396969\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=9 controller=183 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.950252662, "kind": "LOG", "payload": "396988\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=10 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.970561262, "kind": "LOG", "payload": "397004\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=11 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.990793435, "kind": "COMMAND", "payload": "INPUT POINTER UP 285 180 0"}
+{"time": 90548.991371427, "kind": "LOG", "payload": "397022\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=12 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 90548.997330691, "kind": "OK", "payload": "event=44;device_us=395720959;status=processed"}
+{"time": 90549.0178747, "kind": "LOG", "payload": "397041\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=13 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 90549.018121449, "kind": "LOG", "payload": "397046\tI (397046) PxaHost: pointer queued id=0 phase=2 x=285 y=180"}
+{"time": 90549.018218032, "kind": "LOG", "payload": "397048\tI (397046) PxaHost: pointer delivered id=0 phase=2 x=285 y=180"}
+{"time": 90549.01830122, "kind": "LOG", "payload": "397050\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=2 heartbeat=9 pointer=14 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 90549.099195052, "kind": "LOG", "payload": "397124\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=10 pointer=14 controller=187 lifecycle=1 background=0\u001b[0m"}
+{"time": 90549.409439785, "kind": "COMMAND", "payload": "SCREENSHOT"}
+{"time": 90551.017992435, "kind": "META", "payload": "format=rgb565le;width=320;height=240;stride=640;orientation=logical;frame_id=150;device_us=386768746;source=st7789-native-sw270-completed;bytes=153600;sha256=1a4f90d3b9fa1f94c2421b8871768de67307a2efee09d6fe97ff36a8ee157bea"}
+{"time": 90551.018264011, "kind": "OK", "payload": ""}
+{"time": 90551.272719118, "kind": "LOG", "payload": "396835\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=2 controller=181 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.274156512, "kind": "LOG", "payload": "396853\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=3 controller=181 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.275440311, "kind": "LOG", "payload": "396874\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=4 controller=181 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.276723718, "kind": "LOG", "payload": "396892\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=5 controller=182 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.278029207, "kind": "LOG", "payload": "396912\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=6 controller=182 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.2796597, "kind": "LOG", "payload": "396933\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=7 controller=183 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.281115778, "kind": "LOG", "payload": "396953\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=8 controller=183 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.282361676, "kind": "LOG", "payload": "396969\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=9 controller=183 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.283785064, "kind": "LOG", "payload": "396988\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=10 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.285142729, "kind": "LOG", "payload": "397004\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=11 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.286574423, "kind": "LOG", "payload": "397022\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=12 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.28784725, "kind": "LOG", "payload": "397041\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=13 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.288639695, "kind": "LOG", "payload": "397046\tI (397046) PxaHost: pointer queued id=0 phase=2 x=285 y=180"}
+{"time": 90551.291129456, "kind": "LOG", "payload": "397048\tI (397046) PxaHost: pointer delivered id=0 phase=2 x=285 y=180"}
+{"time": 90551.291365796, "kind": "LOG", "payload": "397050\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=2 heartbeat=9 pointer=14 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.292343835, "kind": "LOG", "payload": "397124\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=10 pointer=14 controller=187 lifecycle=1 background=0\u001b[0m"}
+{"time": 90551.292820722, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90551.303801339, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"time": 90551.303956027, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90551.304066663, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90551.304125522, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90551.304176888, "kind": "OK", "payload": ""}
+{"time": 90551.30423736, "kind": "COMMAND", "payload": "MEMORY"}
+{"time": 90551.304886127, "kind": "LOG", "payload": "399348\tI (399348) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90551.317354271, "kind": "DATA", "payload": "scope=heap;sram_total=652387;sram_free=133415;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15238152;psram_min=9807020;psram_largest=14942208"}
+{"time": 90551.317501485, "kind": "DATA", "payload": "scope=budget;internal=24992;external=16689;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"}
+{"time": 90551.31756878, "kind": "DATA", "payload": "scope=kind;name=raster;internal=0;external=0"}
+{"time": 90551.317622229, "kind": "DATA", "payload": "scope=kind;name=image;internal=0;external=0"}
+{"time": 90551.317669257, "kind": "DATA", "payload": "scope=kind;name=audio;internal=0;external=16400"}
+{"time": 90551.317716415, "kind": "DATA", "payload": "scope=kind;name=temporary;internal=0;external=0"}
+{"time": 90551.317765526, "kind": "DATA", "payload": "scope=kind;name=metadata;internal=24992;external=289"}
+{"time": 90551.317815349, "kind": "DATA", "payload": "scope=kind;name=frame;internal=0;external=0"}
+{"time": 90551.31786455, "kind": "DATA", "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"}
+{"time": 90551.317913762, "kind": "OK", "payload": ""}
+{"time": 90551.317978843, "kind": "COMMAND", "payload": "INFO"}
+{"time": 90551.767304349, "kind": "OK", "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15371567;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=0;elf_sha256=c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"}
+{"time": 90551.76744418, "kind": "COMMAND", "payload": "INPUT KEY HOME"}
+{"time": 90551.773834206, "kind": "OK", "payload": "event=45;device_us=398497919;status=processed"}
+{"time": 90551.794869347, "kind": "LOG", "payload": "399833\tI (399833) PxaBridge: Application backgrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90552.258471629, "kind": "LOG", "payload": "400299\tI (400299) PxaHost: UI lifecycle: component=65537 foreground=0 requested=0 display_interactive=1"}
+{"time": 90552.278940076, "kind": "LOG", "payload": "400314\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=0 heartbeat=12 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m"}
+{"time": 90552.279099613, "kind": "LOG", "payload": "400315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=13 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m"}
+{"time": 90553.289693813, "kind": "LOG", "payload": "401315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=14 pointer=14 controller=260 lifecycle=2 background=1\u001b[0m"}
+{"time": 90554.297667263, "kind": "LOG", "payload": "402324\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=15 pointer=14 controller=280 lifecycle=2 background=1\u001b[0m"}
+{"time": 90554.787454929, "kind": "COMMAND", "payload": "SCREENSHOT"}
+{"time": 90556.402052769, "kind": "META", "payload": "format=rgb565le;width=320;height=240;stride=640;orientation=logical;frame_id=152;device_us=399101078;source=st7789-native-sw270-completed;bytes=153600;sha256=81836b90e4ed56a3e5767547c61ac6bf2ce8e350bde24f153a52aeb4f25bb4fa"}
+{"time": 90556.402206075, "kind": "OK", "payload": ""}
+{"time": 90556.581535699, "kind": "LOG", "payload": "396969\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=9 controller=183 lifecycle=1 background=0\u001b[0m"}
+{"time": 90556.582817554, "kind": "LOG", "payload": "396988\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=10 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 90556.584145695, "kind": "LOG", "payload": "397004\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=11 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 90556.585460271, "kind": "LOG", "payload": "397022\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=12 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 90556.586677576, "kind": "LOG", "payload": "397041\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=1 heartbeat=9 pointer=13 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 90556.587387387, "kind": "LOG", "payload": "397046\tI (397046) PxaHost: pointer queued id=0 phase=2 x=285 y=180"}
+{"time": 90556.588052023, "kind": "LOG", "payload": "397048\tI (397046) PxaHost: pointer delivered id=0 phase=2 x=285 y=180"}
+{"time": 90556.589288614, "kind": "LOG", "payload": "397050\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=2 heartbeat=9 pointer=14 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 90556.590609271, "kind": "LOG", "payload": "397124\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=10 pointer=14 controller=187 lifecycle=1 background=0\u001b[0m"}
+{"time": 90556.591316497, "kind": "LOG", "payload": "399348\tI (399348) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90556.592484821, "kind": "LOG", "payload": "399833\tI (399833) PxaBridge: Application backgrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90556.593614823, "kind": "LOG", "payload": "400299\tI (400299) PxaHost: UI lifecycle: component=65537 foreground=0 requested=0 display_interactive=1"}
+{"time": 90556.595186828, "kind": "LOG", "payload": "400314\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=0 heartbeat=12 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m"}
+{"time": 90556.596432296, "kind": "LOG", "payload": "400315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=13 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m"}
+{"time": 90556.597791485, "kind": "LOG", "payload": "401315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=14 pointer=14 controller=260 lifecycle=2 background=1\u001b[0m"}
+{"time": 90556.599052771, "kind": "LOG", "payload": "402324\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=15 pointer=14 controller=280 lifecycle=2 background=1\u001b[0m"}
+{"time": 90556.599386693, "kind": "COMMAND", "payload": "PACKAGE run pxa-main-loop-probe"}
+{"time": 90556.606251305, "kind": "OK", "payload": "launch_queued"}
+{"time": 90556.626640652, "kind": "LOG", "payload": "404662\tI (404662) PxaBridge: Application foregrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90556.647026623, "kind": "LOG", "payload": "404666\tI (404665) PxaHost: UI lifecycle: component=65537 foreground=1 requested=1 display_interactive=1"}
+{"time": 90556.667363973, "kind": "LOG", "payload": "404693\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=17 pointer=14 controller=325 lifecycle=3 background=0\u001b[0m"}
+{"time": 90557.375315566, "kind": "LOG", "payload": "405402\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=18 pointer=14 controller=340 lifecycle=3 background=0\u001b[0m"}
+{"time": 90558.384109137, "kind": "LOG", "payload": "406407\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=19 pointer=14 controller=360 lifecycle=3 background=0\u001b[0m"}
+{"time": 90559.39038065, "kind": "LOG", "payload": "407412\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=20 pointer=14 controller=380 lifecycle=3 background=0\u001b[0m"}
+{"time": 90559.625109183, "kind": "COMMAND", "payload": "SCREENSHOT"}
+{"time": 90561.239073768, "kind": "META", "payload": "format=rgb565le;width=320;height=240;stride=640;orientation=logical;frame_id=155;device_us=403414816;source=st7789-native-sw270-completed;bytes=153600;sha256=1a4f90d3b9fa1f94c2421b8871768de67307a2efee09d6fe97ff36a8ee157bea"}
+{"time": 90561.239191998, "kind": "OK", "payload": ""}
+{"time": 90561.39998414, "kind": "LOG", "payload": "397048\tI (397046) PxaHost: pointer delivered id=0 phase=2 x=285 y=180"}
+{"time": 90561.4020689, "kind": "LOG", "payload": "397050\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP pointer value=2 heartbeat=9 pointer=14 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 90561.403491276, "kind": "LOG", "payload": "397124\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=10 pointer=14 controller=187 lifecycle=1 background=0\u001b[0m"}
+{"time": 90561.403690387, "kind": "LOG", "payload": "399348\tI (399348) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90561.404308758, "kind": "LOG", "payload": "399833\tI (399833) PxaBridge: Application backgrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90561.405317886, "kind": "LOG", "payload": "400299\tI (400299) PxaHost: UI lifecycle: component=65537 foreground=0 requested=0 display_interactive=1"}
+{"time": 90561.406876306, "kind": "LOG", "payload": "400314\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=0 heartbeat=12 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m"}
+{"time": 90561.408194699, "kind": "LOG", "payload": "400315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=13 pointer=14 controller=240 lifecycle=2 background=1\u001b[0m"}
+{"time": 90561.409258108, "kind": "LOG", "payload": "401315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=14 pointer=14 controller=260 lifecycle=2 background=1\u001b[0m"}
+{"time": 90561.410773328, "kind": "LOG", "payload": "402324\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=15 pointer=14 controller=280 lifecycle=2 background=1\u001b[0m"}
+{"time": 90561.411959486, "kind": "LOG", "payload": "404662\tI (404662) PxaBridge: Application foregrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90561.412771296, "kind": "LOG", "payload": "404666\tI (404665) PxaHost: UI lifecycle: component=65537 foreground=1 requested=1 display_interactive=1"}
+{"time": 90561.414375752, "kind": "LOG", "payload": "404693\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=17 pointer=14 controller=325 lifecycle=3 background=0\u001b[0m"}
+{"time": 90561.415665122, "kind": "LOG", "payload": "405402\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=18 pointer=14 controller=340 lifecycle=3 background=0\u001b[0m"}
+{"time": 90561.416965301, "kind": "LOG", "payload": "406407\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=19 pointer=14 controller=360 lifecycle=3 background=0\u001b[0m"}
+{"time": 90561.418281351, "kind": "LOG", "payload": "407412\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=20 pointer=14 controller=380 lifecycle=3 background=0\u001b[0m"}
+{"time": 90561.421798736, "kind": "COMMAND", "payload": "PACKAGE stop pxa-main-loop-probe"}
+{"time": 90561.428616023, "kind": "OK", "payload": "stop_queued"}
+{"time": 90561.449653514, "kind": "LOG", "payload": "409473\tI (409473) PxaHost: Main loop ended: reason=0 runtime_stack_min_free=25364 bytes"}
+{"time": 90561.449845822, "kind": "LOG", "payload": "409473\tI (409473) PxaHost: UI peaks: dynamic=2076 current=1660 assets=0 current_assets=0 largest_decoded=0 asset_count=0 referenced=0 hits=0 misses=0 evictions=0 nodes=2 canvases=0 surfaces=1"}
+{"time": 90561.449926782, "kind": "LOG", "payload": "409473\tI (409473) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 90561.490740767, "kind": "LOG", "payload": "409530\tI (409530) PxaHost: Runtime peaks: components=1 requests=1 handles=1 events=4 event_blocks=6 services=17"}
+{"time": 90561.490959013, "kind": "LOG", "payload": "409531\tI (409531) PxaHost: WAMR dynamic: peak=26389 current=416 linear=0 linear_peak=65536 artifact=0 events=0"}
+{"time": 90561.491120403, "kind": "LOG", "payload": "409531\tI (409531) PxaHost: Activation memory: workspaces=18 blocks=3 used=13031 reserved=17521 peak_used=13031 peak_reserved=17521"}
+{"time": 90561.531500871, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90561.547497791, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90561.5476637, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90561.547719123, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90561.547769707, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90561.547850798, "kind": "OK", "payload": ""}
+{"time": 90561.548144434, "kind": "LOG", "payload": "409590\tI (409590) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90562.557061004, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90562.568019138, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90562.568162424, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90562.568203601, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90562.568232465, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90562.568261038, "kind": "OK", "payload": ""}
+{"time": 90562.568299419, "kind": "COMMAND", "payload": "MEMORY"}
+{"time": 90562.56905199, "kind": "LOG", "payload": "410612\tI (410612) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90562.581649244, "kind": "DATA", "payload": "scope=heap;sram_total=652387;sram_free=143295;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15622500;psram_min=9807020;psram_largest=14942208"}
+{"time": 90562.581809442, "kind": "DATA", "payload": "scope=budget;internal=24992;external=16564;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"}
+{"time": 90562.581854446, "kind": "DATA", "payload": "scope=kind;name=raster;internal=0;external=0"}
+{"time": 90562.581888389, "kind": "DATA", "payload": "scope=kind;name=image;internal=0;external=0"}
+{"time": 90562.581920268, "kind": "DATA", "payload": "scope=kind;name=audio;internal=0;external=16400"}
+{"time": 90562.581951517, "kind": "DATA", "payload": "scope=kind;name=temporary;internal=0;external=0"}
+{"time": 90562.581981963, "kind": "DATA", "payload": "scope=kind;name=metadata;internal=24992;external=164"}
+{"time": 90562.582054679, "kind": "DATA", "payload": "scope=kind;name=frame;internal=0;external=0"}
+{"time": 90562.582090706, "kind": "DATA", "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"}
+{"time": 90562.582122785, "kind": "OK", "payload": ""}
+{"time": 90562.582172859, "kind": "COMMAND", "payload": "INFO"}
+{"time": 90563.018158454, "kind": "OK", "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15765795;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=19;elf_sha256=c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"}
+{"time": 90563.018318983, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"time": 90563.024191112, "kind": "OK", "payload": "event=46;device_us=409747869;status=processed"}
+{"time": 90563.024318649, "kind": "COMMAND", "payload": "PACKAGE run pxa-main-loop-probe"}
+{"time": 90563.030905768, "kind": "OK", "payload": "launch_queued"}
+{"time": 90563.051393316, "kind": "LOG", "payload": "411085\tI (411085) PxaHost: Queueing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90563.071793062, "kind": "LOG", "payload": "411094\tI (411094) PxaHost: Processing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90563.192993274, "kind": "LOG", "payload": "411231\tI (411230) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 90563.233695266, "kind": "LOG", "payload": "411263\tI (411261) PxaHost: Heap[launch-begin]: SRAM used=517292 free=135095 total=652387 min_free=14568 largest=90112 exec_free=15417012 exec_largest=14942208; PSRAM used=1324188 free=15417012 total=16741200 min_free=9807020 largest=14942208"}
+{"time": 90563.294382583, "kind": "LOG", "payload": "411327\tI (411327) PxaWamrMap: pinned mapping reserved before AOT: bytes=262144"}
+{"time": 90563.334899891, "kind": "LOG", "payload": "411359\tI (411359) PxaWamr: AOT streamed: file=80704 source_buffer=0"}
+{"time": 90563.335074617, "kind": "LOG", "payload": "411362\tI (411362) PxaWamrMap: pinned mapping adopted: bytes=262144 scratch=31112"}
+{"time": 90563.415981575, "kind": "LOG", "payload": "411452\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP start value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 90563.41634395, "kind": "LOG", "payload": "411454\tI (411453) PxaHost: Component memory: id=main status=0 sram_delta=25812 free_sram=117027 largest_sram=86016 psram_delta=920764 free_psram=14458388 largest_psram=14155776 wamr_delta=25825 wamr_current=26241"}
+{"time": 90563.47732285, "kind": "DROP", "payload": "dropped=2"}
+{"time": 90563.47761861, "kind": "LOG", "payload": "411505\tI (411505) PxaBridge: Application foregrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90563.47776923, "kind": "LOG", "payload": "411505\tI (411505) PxaBridge: Launch completion: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe intent=0 status=0"}
+{"time": 90563.477924239, "kind": "LOG", "payload": "411507\tI (411503) PxaHost: Heap[launch-ready]: SRAM used=531260 free=121127 total=652387 min_free=14568 largest=90112 exec_free=15003548 exec_largest=14417920; PSRAM used=1737652 free=15003548 total=16741200 min_free=9807020 largest=14417920"}
+{"time": 90563.478154488, "kind": "LOG", "payload": "411507\tI (411507) PxaHost: WAMR dynamic: peak=26245 current=26241 linear=65536 linear_peak=65536 artifact=0 events=0"}
+{"time": 90563.520300938, "kind": "LOG", "payload": "411547\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP entered value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 90563.540960578, "kind": "LOG", "payload": "411578\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=1 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 90563.581961156, "kind": "LOG", "payload": "411606\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=1 pointer=0 controller=0 lifecycle=1 background=0\u001b[0m"}
+{"time": 90563.582358275, "kind": "LOG", "payload": "411608\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=1 lifecycle=1 background=0\u001b[0m"}
+{"time": 90564.557860864, "kind": "LOG", "payload": "412584\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=2 pointer=0 controller=21 lifecycle=1 background=0\u001b[0m"}
+{"time": 90565.566789147, "kind": "LOG", "payload": "413587\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=3 pointer=0 controller=41 lifecycle=1 background=0\u001b[0m"}
+{"time": 90566.615630757, "kind": "LOG", "payload": "414636\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=4 pointer=0 controller=62 lifecycle=1 background=0\u001b[0m"}
+{"time": 90567.605299381, "kind": "LOG", "payload": "415641\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=5 pointer=0 controller=82 lifecycle=1 background=0\u001b[0m"}
+{"time": 90568.608220044, "kind": "LOG", "payload": "416644\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=6 pointer=0 controller=102 lifecycle=1 background=0\u001b[0m"}
+{"time": 90569.616929186, "kind": "LOG", "payload": "417650\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=7 pointer=0 controller=122 lifecycle=1 background=0\u001b[0m"}
+{"time": 90570.624914914, "kind": "LOG", "payload": "418652\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=8 pointer=0 controller=142 lifecycle=1 background=0\u001b[0m"}
+{"time": 90571.048070989, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90571.059134836, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"time": 90571.059236255, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90571.059268094, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90571.059292299, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90571.059315402, "kind": "OK", "payload": ""}
+{"time": 90571.059613758, "kind": "COMMAND", "payload": "PACKAGE run pxa-nes"}
+{"time": 90571.060149946, "kind": "LOG", "payload": "419103\tI (419103) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90571.066439675, "kind": "OK", "payload": "launch_queued"}
+{"time": 90571.086752611, "kind": "LOG", "payload": "419120\tI (419120) PxaBridge: Application backgrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90571.086868015, "kind": "LOG", "payload": "419121\tI (419121) PxaHost: Queueing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes"}
+{"time": 90571.227753277, "kind": "LOG", "payload": "419252\tI (419252) PxaHost: UI lifecycle: component=65537 foreground=0 requested=0 display_interactive=1"}
+{"time": 90571.227868742, "kind": "LOG", "payload": "419258\tI (419257) PxaHost: Main loop ended: reason=1 runtime_stack_min_free=25364 bytes"}
+{"time": 90571.28821502, "kind": "LOG", "payload": "419309\tI (419309) PxaHost: UI peaks: dynamic=2076 current=1660 assets=0 current_assets=0 largest_decoded=0 asset_count=0 referenced=0 hits=0 misses=0 evictions=0 nodes=2 canvases=0 surfaces=1"}
+{"time": 90571.288296541, "kind": "LOG", "payload": "419309\tI (419309) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 90571.389328294, "kind": "LOG", "payload": "419425\tI (419425) PxaHost: Runtime peaks: components=1 requests=1 handles=1 events=4 event_blocks=6 services=17"}
+{"time": 90571.389483212, "kind": "LOG", "payload": "419425\tI (419425) PxaHost: WAMR dynamic: peak=26389 current=416 linear=0 linear_peak=65536 artifact=0 events=0"}
+{"time": 90571.389540399, "kind": "LOG", "payload": "419426\tI (419426) PxaHost: Activation memory: workspaces=18 blocks=3 used=13031 reserved=17521 peak_used=13031 peak_reserved=17521"}
+{"time": 90571.389588168, "kind": "LOG", "payload": "419427\tI (419427) PxaHost: Processing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes"}
+{"time": 90571.451346845, "kind": "LOG", "payload": "419489\tI (419489) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 90571.511863479, "kind": "LOG", "payload": "419533\tI (419532) PxaHost: Heap[launch-begin]: SRAM used=513192 free=139195 total=652387 min_free=14568 largest=98304 exec_free=15261668 exec_largest=14942208; PSRAM used=1479532 free=15261668 total=16741200 min_free=9807020 largest=14942208"}
+{"time": 90571.755077494, "kind": "LOG", "payload": "419780\tI (419780) PxaWamrMap: pinned mapping reserved before AOT: bytes=4194304"}
+{"time": 90571.996895891, "kind": "LOG", "payload": "420030\tI (420030) PxaWamr: AOT streamed: file=552364 source_buffer=0"}
+{"time": 90572.037384148, "kind": "LOG", "payload": "420068\tI (420068) PxaWamrMap: pinned mapping adopted: bytes=4194304 scratch=263352"}
+{"time": 90572.218765742, "kind": "LOG", "payload": "420248\t\u001b[32m[PXA app=pxa-nes component=65537 level=INFO] NES LOCALE zh-CN\u001b[0m"}
+{"time": 90572.239202972, "kind": "LOG", "payload": "420265\tI (420265) PxaSurface: Created: 320x240 format=1 buffers=2 flags=0x06 mapped=1"}
+{"time": 90572.259586151, "kind": "LOG", "payload": "420289\tI (420288) PxaHost: Component memory: id=main status=0 sram_delta=19648 free_sram=123191 largest_sram=98304 psram_delta=4862888 free_psram=10348248 largest_psram=9961472 wamr_delta=110009 wamr_current=110425"}
+{"time": 90572.259706645, "kind": "LOG", "payload": "420290\tI (420290) PxaSurface: Guest buffers registered: frame_bytes=153600 count=2 total=307200"}
+{"time": 90572.300083839, "kind": "LOG", "payload": "420331\tI (420331) PxaBridge: Application foregrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes"}
+{"time": 90572.300193032, "kind": "LOG", "payload": "420331\tI (420331) PxaBridge: Launch completion: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes intent=0 status=0"}
+{"time": 90572.300246792, "kind": "LOG", "payload": "420331\tI (420329) PxaHost: Heap[launch-ready]: SRAM used=529196 free=123191 total=652387 min_free=14568 largest=98304 exec_free=10348020 exec_largest=9961472; PSRAM used=6393180 free=10348020 total=16741200 min_free=9800408 largest=9961472"}
+{"time": 90572.300311022, "kind": "LOG", "payload": "420337\tI (420336) PxaHost: WAMR dynamic: peak=110429 current=110425 linear=4194304 linear_peak=4194304 artifact=0 events=64"}
+{"time": 90572.3205542, "kind": "LOG", "payload": "420342\tI (420338) PxaHost: Started verified Package 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes"}
+{"time": 90572.320682329, "kind": "LOG", "payload": "420343\tI (420343) PxaHost: UI lifecycle: component=65537 foreground=1 requested=1 display_interactive=1"}
+{"time": 90572.40129932, "kind": "LOG", "payload": "420438\tI (420438) PxaSurface: First frame submitted: id=1 buffer=0"}
+{"time": 90576.071783033, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90576.083743793, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90576.083809115, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"time": 90576.083839912, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90576.083863055, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90576.083885567, "kind": "OK", "payload": ""}
+{"time": 90576.083921494, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90576.084732354, "kind": "LOG", "payload": "424127\tI (424127) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90576.094379146, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90576.094562157, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"time": 90576.094601561, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90576.094665269, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90576.094727215, "kind": "OK", "payload": ""}
+{"time": 90576.0947894, "kind": "COMMAND", "payload": "PACKAGE stop pxa-nes"}
+{"time": 90576.095436425, "kind": "LOG", "payload": "424138\tI (424138) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90576.101307747, "kind": "OK", "payload": "stop_queued"}
+{"time": 90576.121693836, "kind": "LOG", "payload": "424145\tI (424145) PxaHost: UI lifecycle: component=65537 foreground=0 requested=0 display_interactive=1"}
+{"time": 90576.121812898, "kind": "LOG", "payload": "424146\tI (424146) PxaHost: UI peaks: dynamic=2032 current=1660 assets=0 current_assets=0 largest_decoded=0 asset_count=0 referenced=0 hits=0 misses=0 evictions=0 nodes=1 canvases=0 surfaces=1"}
+{"time": 90576.121868131, "kind": "LOG", "payload": "424146\tI (424146) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 90576.182473879, "kind": "LOG", "payload": "424205\tI (424205) PxaHost: Runtime peaks: components=1 requests=3 handles=1 events=5 event_blocks=6 services=19"}
+{"time": 90576.182591138, "kind": "LOG", "payload": "424205\tI (424205) PxaHost: WAMR dynamic: peak=110429 current=416 linear=0 linear_peak=4194304 artifact=0 events=0"}
+{"time": 90576.18264621, "kind": "LOG", "payload": "424206\tI (424206) PxaHost: Activation memory: workspaces=22 blocks=3 used=18601 reserved=18611 peak_used=18601 peak_reserved=18611"}
+{"time": 90576.182694751, "kind": "LOG", "payload": "424215\tI (424215) PxaAssets: peak_internal=0 peak_external=0 metadata=9243 task_stack=6144 evictions=0 failures=0"}
+{"time": 90576.182763889, "kind": "LOG", "payload": "424215\tI (424215) PxaStorage: lane=0 reads=2 bytes=144 wait_us=40 max_wait_us=24 service_us=464 max_service_us=449 max_read=144 cancelled=0 errors=0"}
+{"time": 90576.182810186, "kind": "LOG", "payload": "424215\tI (424215) PxaStorage: lane=1 reads=0 bytes=0 wait_us=0 max_wait_us=0 service_us=0 max_service_us=0 max_read=0 cancelled=0 errors=0"}
+{"time": 90578.118159672, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90578.12905472, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90578.129133517, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90578.129163383, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90578.129187618, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90578.129209749, "kind": "OK", "payload": ""}
+{"time": 90578.129236819, "kind": "COMMAND", "payload": "MEMORY"}
+{"time": 90578.129967911, "kind": "LOG", "payload": "426173\tI (426173) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90578.142567944, "kind": "DATA", "payload": "scope=heap;sram_total=652387;sram_free=143295;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15622576;psram_min=9800408;psram_largest=14942208"}
+{"time": 90578.142708475, "kind": "DATA", "payload": "scope=budget;internal=24992;external=16564;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"}
+{"time": 90578.142739203, "kind": "DATA", "payload": "scope=kind;name=raster;internal=0;external=0"}
+{"time": 90578.142794906, "kind": "DATA", "payload": "scope=kind;name=image;internal=0;external=0"}
+{"time": 90578.142844789, "kind": "DATA", "payload": "scope=kind;name=audio;internal=0;external=16400"}
+{"time": 90578.142867231, "kind": "DATA", "payload": "scope=kind;name=temporary;internal=0;external=0"}
+{"time": 90578.142889272, "kind": "DATA", "payload": "scope=kind;name=metadata;internal=24992;external=164"}
+{"time": 90578.142910762, "kind": "DATA", "payload": "scope=kind;name=frame;internal=0;external=0"}
+{"time": 90578.14295275, "kind": "DATA", "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"}
+{"time": 90578.142975933, "kind": "OK", "payload": ""}
+{"time": 90578.143031427, "kind": "COMMAND", "payload": "INFO"}
+{"time": 90578.58039542, "kind": "OK", "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15765871;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=0;elf_sha256=c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"}
+{"time": 90578.580580535, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"time": 90578.587079126, "kind": "OK", "payload": "event=47;device_us=425310870;status=processed"}
+{"time": 90578.587181126, "kind": "COMMAND", "payload": "PACKAGE run pxa-main-loop-probe"}
+{"time": 90578.593297967, "kind": "OK", "payload": "launch_queued"}
+{"time": 90578.613736568, "kind": "LOG", "payload": "426645\tI (426645) PxaHost: Queueing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90578.634169609, "kind": "LOG", "payload": "426654\tI (426654) PxaHost: Processing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90578.756945975, "kind": "LOG", "payload": "426789\tI (426789) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 90578.797678337, "kind": "LOG", "payload": "426821\tI (426820) PxaHost: Heap[launch-begin]: SRAM used=517292 free=135095 total=652387 min_free=14568 largest=94208 exec_free=15417012 exec_largest=14942208; PSRAM used=1324188 free=15417012 total=16741200 min_free=9800408 largest=14942208"}
+{"time": 90578.85854823, "kind": "LOG", "payload": "426885\tI (426885) PxaWamrMap: pinned mapping reserved before AOT: bytes=262144"}
+{"time": 90578.878976983, "kind": "LOG", "payload": "426916\tI (426916) PxaWamr: AOT streamed: file=80704 source_buffer=0"}
+{"time": 90578.87913688, "kind": "LOG", "payload": "426920\tI (426919) PxaWamrMap: pinned mapping adopted: bytes=262144 scratch=31112"}
+{"time": 90578.979894623, "kind": "LOG", "payload": "427006\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP start value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 90578.980030195, "kind": "LOG", "payload": "427008\tI (427007) PxaHost: Component memory: id=main status=0 sram_delta=25812 free_sram=117039 largest_sram=86016 psram_delta=920788 free_psram=14458388 largest_psram=14155776 wamr_delta=25825 wamr_current=26241"}
+{"time": 90579.040641126, "kind": "LOG", "payload": "427062\tI (427062) PxaBridge: Application foregrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90579.047989721, "kind": "LOG", "payload": "427062\tI (427062) PxaBridge: Launch completion: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe intent=0 status=0"}
+{"time": 90579.048120043, "kind": "LOG", "payload": "427067\tI (427061) PxaHost: Heap[launch-ready]: SRAM used=527148 free=125239 total=652387 min_free=14568 largest=94208 exec_free=15003536 exec_largest=14417920; PSRAM used=1737664 free=15003536 total=16741200 min_free=9800408 largest=14417920"}
+{"time": 90579.048201936, "kind": "LOG", "payload": "427067\tI (427067) PxaHost: WAMR dynamic: peak=26245 current=26241 linear=65536 linear_peak=65536 artifact=0 events=0"}
+{"time": 90579.048300429, "kind": "LOG", "payload": "427067\tI (427067) PxaHost: Started verified Package 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 90579.048387662, "kind": "LOG", "payload": "427068\tI (427068) PxaHost: UI lifecycle: component=65537 foreground=1 requested=1 display_interactive=1"}
+{"time": 90579.068700518, "kind": "LOG", "payload": "427106\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP entered value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 90579.109216568, "kind": "LOG", "payload": "427136\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=1 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 90579.129589136, "kind": "LOG", "payload": "427161\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=1 pointer=0 controller=0 lifecycle=1 background=0\u001b[0m"}
+{"time": 90579.129723767, "kind": "LOG", "payload": "427165\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=1 lifecycle=1 background=0\u001b[0m"}
+{"time": 90580.117991469, "kind": "LOG", "payload": "428141\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=2 pointer=0 controller=21 lifecycle=1 background=0\u001b[0m"}
+{"time": 90581.106365229, "kind": "LOG", "payload": "429141\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=3 pointer=0 controller=41 lifecycle=1 background=0\u001b[0m"}
+{"time": 90582.113847765, "kind": "LOG", "payload": "430145\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=4 pointer=0 controller=61 lifecycle=1 background=0\u001b[0m"}
+{"time": 90583.121221441, "kind": "LOG", "payload": "431146\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=5 pointer=0 controller=81 lifecycle=1 background=0\u001b[0m"}
+{"time": 90584.109184354, "kind": "LOG", "payload": "432148\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=6 pointer=0 controller=101 lifecycle=1 background=0\u001b[0m"}
+{"time": 90585.119184813, "kind": "LOG", "payload": "433149\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=7 pointer=0 controller=121 lifecycle=1 background=0\u001b[0m"}
+{"time": 90586.12815225, "kind": "LOG", "payload": "434152\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=8 pointer=0 controller=141 lifecycle=1 background=0\u001b[0m"}
+{"time": 90586.611537376, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90586.623211432, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"time": 90586.623299416, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90586.623319092, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90586.623336004, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90586.623351382, "kind": "OK", "payload": ""}
+{"time": 90586.623578285, "kind": "COMMAND", "payload": "PACKAGE stop pxa-main-loop-probe"}
+{"time": 90586.624212797, "kind": "LOG", "payload": "434667\tI (434667) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90586.630347875, "kind": "OK", "payload": "stop_queued"}
+{"time": 90586.650756903, "kind": "LOG", "payload": "434675\tI (434674) PxaHost: Main loop ended: reason=0 runtime_stack_min_free=25364 bytes"}
+{"time": 90586.650820471, "kind": "LOG", "payload": "434675\tI (434675) PxaHost: UI peaks: dynamic=2076 current=1660 assets=0 current_assets=0 largest_decoded=0 asset_count=0 referenced=0 hits=0 misses=0 evictions=0 nodes=2 canvases=0 surfaces=1"}
+{"time": 90586.650865134, "kind": "LOG", "payload": "434675\tI (434675) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 90586.691559269, "kind": "LOG", "payload": "434715\tI (434715) PxaHost: Runtime peaks: components=1 requests=1 handles=1 events=4 event_blocks=6 services=17"}
+{"time": 90586.691798093, "kind": "LOG", "payload": "434715\tI (434715) PxaHost: WAMR dynamic: peak=26389 current=416 linear=0 linear_peak=65536 artifact=0 events=0"}
+{"time": 90586.691893261, "kind": "LOG", "payload": "434715\tI (434715) PxaHost: Activation memory: workspaces=18 blocks=3 used=13039 reserved=17521 peak_used=13039 peak_reserved=17521"}
+{"time": 90586.732167362, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90586.748234191, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90586.748332074, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90586.748351049, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90586.748368682, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90586.74838412, "kind": "OK", "payload": ""}
+{"time": 90586.768611299, "kind": "LOG", "payload": "434793\tI (434792) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90587.7653115, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90587.777583591, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90587.777814792, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90587.777895432, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90587.777962938, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90587.778062123, "kind": "OK", "payload": ""}
+{"time": 90587.778138525, "kind": "COMMAND", "payload": "MEMORY"}
+{"time": 90587.781800617, "kind": "LOG", "payload": "435821\tI (435821) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90587.791346029, "kind": "DATA", "payload": "scope=heap;sram_total=652387;sram_free=143295;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15622588;psram_min=9800408;psram_largest=14942208"}
+{"time": 90587.791530532, "kind": "DATA", "payload": "scope=budget;internal=24992;external=16564;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"}
+{"time": 90587.791611864, "kind": "DATA", "payload": "scope=kind;name=raster;internal=0;external=0"}
+{"time": 90587.791677677, "kind": "DATA", "payload": "scope=kind;name=image;internal=0;external=0"}
+{"time": 90587.791741475, "kind": "DATA", "payload": "scope=kind;name=audio;internal=0;external=16400"}
+{"time": 90587.791853214, "kind": "DATA", "payload": "scope=kind;name=temporary;internal=0;external=0"}
+{"time": 90587.79196395, "kind": "DATA", "payload": "scope=kind;name=metadata;internal=24992;external=164"}
+{"time": 90587.792063515, "kind": "DATA", "payload": "scope=kind;name=frame;internal=0;external=0"}
+{"time": 90587.792123577, "kind": "DATA", "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"}
+{"time": 90587.79219999, "kind": "OK", "payload": ""}
+{"time": 90587.792276352, "kind": "COMMAND", "payload": "INFO"}
+{"time": 90588.231345114, "kind": "OK", "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15765883;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=19;elf_sha256=c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"}
+{"time": 90588.237288956, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 90588.246542084, "kind": "OK", "payload": "event=48;device_us=434967954;status=processed"}
+{"time": 90588.246786279, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 90588.258120834, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.1\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90588.258395967, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90588.258487017, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90588.258557267, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 90588.258624643, "kind": "OK", "payload": ""}
+{"time": 90588.27940789, "kind": "LOG", "payload": "436302\tI (436302) Pxadb: Package list finished: stack_free=7280B"}
+{"time": 90589.263708065, "kind": "COMMAND", "payload": "INPUT KEY HOME"}
+{"time": 90589.270708357, "kind": "OK", "payload": "event=49;device_us=435993925;status=processed"}

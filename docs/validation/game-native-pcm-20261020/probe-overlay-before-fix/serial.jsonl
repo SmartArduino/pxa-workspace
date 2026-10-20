@@ -1,0 +1,337 @@
+{"time": 89954.087061223, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 89954.100514467, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89954.100785383, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89954.100882508, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89954.100960547, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89954.101075035, "kind": "OK", "payload": ""}
+{"time": 89954.101171228, "kind": "COMMAND", "payload": "MEMORY"}
+{"time": 89954.114691289, "kind": "DATA", "payload": "scope=heap;sram_total=652387;sram_free=143339;sram_min=14568;sram_largest=98304;psram_total=16741200;psram_free=15622692;psram_min=9800444;psram_largest=14942208"}
+{"time": 89954.114906479, "kind": "DATA", "payload": "scope=budget;internal=24992;external=16564;peak_internal=26488;peak_external=24956;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"}
+{"time": 89954.114993275, "kind": "DATA", "payload": "scope=kind;name=raster;internal=0;external=0"}
+{"time": 89954.115101972, "kind": "DATA", "payload": "scope=kind;name=image;internal=0;external=0"}
+{"time": 89954.115171895, "kind": "DATA", "payload": "scope=kind;name=audio;internal=0;external=16400"}
+{"time": 89954.11523761, "kind": "DATA", "payload": "scope=kind;name=temporary;internal=0;external=0"}
+{"time": 89954.115303766, "kind": "DATA", "payload": "scope=kind;name=metadata;internal=24992;external=164"}
+{"time": 89954.115370243, "kind": "DATA", "payload": "scope=kind;name=frame;internal=0;external=0"}
+{"time": 89954.115435137, "kind": "DATA", "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"}
+{"time": 89954.115501343, "kind": "OK", "payload": ""}
+{"time": 89954.115592867, "kind": "COMMAND", "payload": "INFO"}
+{"time": 89954.53744994, "kind": "OK", "payload": "target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;free_heap=15766031;pxa=ready;package_directory_adopt=1;package_receive=1;board=doit-gamekit;pxa_version=0.4.0;pxa_core=2.1;storage_total=11468800;storage_used=8720384;storage_free=2748416;presentation_fps_x10=0;elf_sha256=a3f452c07"}
+{"time": 89954.537671813, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 89954.548794025, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89954.548987845, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89954.549124445, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89954.549193967, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89954.549259532, "kind": "OK", "payload": ""}
+{"time": 89954.562123573, "kind": "LOG", "payload": "207803\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=142 lifecycle=1 background=0\u001b[0m"}
+{"time": 89954.562377096, "kind": "LOG", "payload": "207853\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=143 lifecycle=1 background=0\u001b[0m"}
+{"time": 89954.562509739, "kind": "LOG", "payload": "207903\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=144 lifecycle=1 background=0\u001b[0m"}
+{"time": 89954.562679102, "kind": "LOG", "payload": "207954\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=145 lifecycle=1 background=0\u001b[0m"}
+{"time": 89954.562838445, "kind": "LOG", "payload": "208004\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=146 lifecycle=1 background=0\u001b[0m"}
+{"time": 89954.563211456, "kind": "LOG", "payload": "208054\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=147 lifecycle=1 background=0\u001b[0m"}
+{"time": 89954.566727265, "kind": "LOG", "payload": "208104\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=148 lifecycle=1 background=0\u001b[0m"}
+{"time": 89954.566959177, "kind": "LOG", "payload": "208154\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=149 lifecycle=1 background=0\u001b[0m"}
+{"time": 89954.56943279, "kind": "LOG", "payload": "208204\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=150 lifecycle=1 background=0\u001b[0m"}
+{"time": 89954.569697615, "kind": "LOG", "payload": "208213\tI (208213) Pxadb: Package list finished: stack_free=6804B"}
+{"time": 89954.569858421, "kind": "LOG", "payload": "208228\tI (208228) PxaHost: Main loop ended: reason=0 runtime_stack_min_free=25352 bytes"}
+{"time": 89954.573445446, "kind": "LOG", "payload": "208229\tI (208229) PxaHost: UI peaks: dynamic=2076 current=1660 assets=0 current_assets=0 largest_decoded=0 asset_count=0 referenced=0 hits=0 misses=0 evictions=0 nodes=2 canvases=0 surfaces=1"}
+{"time": 89954.573747562, "kind": "LOG", "payload": "208229\tI (208229) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 89954.573916644, "kind": "LOG", "payload": "208310\tI (208310) PxaHost: Runtime peaks: components=1 requests=1 handles=1 events=4 event_blocks=6 services=17"}
+{"time": 89954.578491741, "kind": "LOG", "payload": "208310\tI (208310) PxaHost: WAMR dynamic: peak=26389 current=416 linear=0 linear_peak=65536 artifact=0 events=0"}
+{"time": 89954.578875432, "kind": "LOG", "payload": "208311\tI (208311) PxaHost: Activation memory: workspaces=18 blocks=3 used=13039 reserved=17521 peak_used=13039 peak_reserved=17521"}
+{"time": 89954.582237278, "kind": "COMMAND", "payload": "INPUT KEY HOME"}
+{"time": 89954.595291702, "kind": "OK", "payload": "event=27;device_us=672086752;status=processed"}
+{"time": 89954.595531218, "kind": "COMMAND", "payload": "INPUT POINTER DOWN 160 185 0"}
+{"time": 89954.608357758, "kind": "OK", "payload": "event=28;device_us=672099650;status=processed"}
+{"time": 89954.716439766, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 163 0"}
+{"time": 89954.724906068, "kind": "OK", "payload": "event=29;device_us=672220801;status=processed"}
+{"time": 89954.829974915, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 139 0"}
+{"time": 89954.837298249, "kind": "OK", "payload": "event=30;device_us=672334775;status=processed"}
+{"time": 89954.94469899, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 115 0"}
+{"time": 89954.951346586, "kind": "OK", "payload": "event=31;device_us=672448841;status=processed"}
+{"time": 89955.054752394, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 91 0"}
+{"time": 89955.063165825, "kind": "OK", "payload": "event=32;device_us=672558790;status=processed"}
+{"time": 89955.164351314, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 67 0"}
+{"time": 89955.172120787, "kind": "OK", "payload": "event=33;device_us=672668766;status=processed"}
+{"time": 89955.276786016, "kind": "COMMAND", "payload": "INPUT POINTER MOVE 160 53 0"}
+{"time": 89955.283965385, "kind": "OK", "payload": "event=34;device_us=672781833;status=processed"}
+{"time": 89955.28415135, "kind": "COMMAND", "payload": "INPUT POINTER UP 160 53 0"}
+{"time": 89955.290802342, "kind": "OK", "payload": "event=35;device_us=672788654;status=processed"}
+{"time": 89955.596226826, "kind": "COMMAND", "payload": "INPUT SYNC"}
+{"time": 89955.602915932, "kind": "OK", "payload": "event=36;device_us=673100753;status=processed"}
+{"time": 89955.603127815, "kind": "COMMAND", "payload": "PACKAGE run pxa-main-loop-probe"}
+{"time": 89955.61025742, "kind": "OK", "payload": "launch_queued"}
+{"time": 89955.630783059, "kind": "LOG", "payload": "674435\tI (674435) PxaHost: Queueing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 89955.651342153, "kind": "LOG", "payload": "674445\tI (674445) PxaHost: Processing launch request: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 89955.794559658, "kind": "LOG", "payload": "674603\tI (674603) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 89955.836262509, "kind": "LOG", "payload": "674638\tI (674637) PxaHost: Heap[launch-begin]: SRAM used=517248 free=135139 total=652387 min_free=14568 largest=94208 exec_free=15417112 exec_largest=14942208; PSRAM used=1324088 free=15417112 total=16741200 min_free=9800444 largest=14942208"}
+{"time": 89955.899196623, "kind": "LOG", "payload": "674710\tI (674710) PxaWamrMap: pinned mapping reserved before AOT: bytes=262144"}
+{"time": 89955.940238564, "kind": "LOG", "payload": "674743\tI (674743) PxaWamr: AOT streamed: file=80684 source_buffer=0"}
+{"time": 89955.940589813, "kind": "LOG", "payload": "674747\tI (674746) PxaWamrMap: pinned mapping adopted: bytes=262144 scratch=31112"}
+{"time": 89956.042314218, "kind": "LOG", "payload": "674835\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP start value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 89956.042523968, "kind": "LOG", "payload": "674837\tI (674836) PxaHost: Component memory: id=main status=0 sram_delta=25824 free_sram=117075 largest_sram=86016 psram_delta=920828 free_psram=14458448 largest_psram=14155776 wamr_delta=25825 wamr_current=26241"}
+{"time": 89956.084458449, "kind": "DROP", "payload": "dropped=1"}
+{"time": 89956.084683468, "kind": "LOG", "payload": "674888\tI (674888) PxaBridge: Application foregrounded: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe"}
+{"time": 89956.084831069, "kind": "LOG", "payload": "674888\tI (674888) PxaBridge: Launch completion: 17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe intent=0 status=0"}
+{"time": 89956.084972739, "kind": "LOG", "payload": "674890\tI (674886) PxaHost: Heap[launch-ready]: SRAM used=531212 free=121175 total=652387 min_free=14568 largest=90112 exec_free=15003600 exec_largest=14417920; PSRAM used=1737600 free=15003600 total=16741200 min_free=9800444 largest=14417920"}
+{"time": 89956.085159675, "kind": "LOG", "payload": "674891\tI (674890) PxaHost: WAMR dynamic: peak=26245 current=26241 linear=65536 linear_peak=65536 artifact=0 events=0"}
+{"time": 89956.10562511, "kind": "LOG", "payload": "674899\tI (674894) PxaHost: UI lifecycle: component=65537 foreground=1 requested=1 display_interactive=1"}
+{"time": 89956.105855409, "kind": "LOG", "payload": "674908\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP entered value=0 heartbeat=0 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 89956.126327737, "kind": "LOG", "payload": "674930\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=1 pointer=0 controller=0 lifecycle=0 background=0\u001b[0m"}
+{"time": 89956.167545944, "kind": "LOG", "payload": "674964\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP lifecycle value=1 heartbeat=1 pointer=0 controller=0 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.167854281, "kind": "LOG", "payload": "674966\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=1 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.209492398, "kind": "LOG", "payload": "675015\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=2 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.251538893, "kind": "LOG", "payload": "675065\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=3 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.313249005, "kind": "LOG", "payload": "675115\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=4 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.35385193, "kind": "LOG", "payload": "675165\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=5 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.41722486, "kind": "LOG", "payload": "675215\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=6 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.4632625, "kind": "LOG", "payload": "675265\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=7 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.52628349, "kind": "LOG", "payload": "675315\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=8 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.564376713, "kind": "LOG", "payload": "675365\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=9 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.605062295, "kind": "LOG", "payload": "675415\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=10 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.668363609, "kind": "LOG", "payload": "675465\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=11 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.709243872, "kind": "LOG", "payload": "675515\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=12 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.771899846, "kind": "LOG", "payload": "675565\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=13 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.81442326, "kind": "LOG", "payload": "675615\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=14 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.85626794, "kind": "LOG", "payload": "675668\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=15 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.917888311, "kind": "LOG", "payload": "675716\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=16 lifecycle=1 background=0\u001b[0m"}
+{"time": 89956.958458854, "kind": "LOG", "payload": "675768\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=17 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.019242942, "kind": "LOG", "payload": "675818\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=18 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.059883759, "kind": "LOG", "payload": "675868\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=19 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.114299302, "kind": "LOG", "payload": "675918\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=20 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.155427848, "kind": "LOG", "payload": "675968\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=1 pointer=0 controller=21 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.176048468, "kind": "LOG", "payload": "675969\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=2 pointer=0 controller=21 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.221090411, "kind": "LOG", "payload": "676018\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=22 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.262476458, "kind": "LOG", "payload": "676068\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=23 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.304825369, "kind": "LOG", "payload": "676118\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=24 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.367614818, "kind": "LOG", "payload": "676168\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=25 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.409330222, "kind": "LOG", "payload": "676218\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=26 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.47315833, "kind": "LOG", "payload": "676269\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=27 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.513866455, "kind": "LOG", "payload": "676319\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=28 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.554581984, "kind": "LOG", "payload": "676369\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=29 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.618621595, "kind": "LOG", "payload": "676419\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=30 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.665055209, "kind": "LOG", "payload": "676470\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=31 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.726680289, "kind": "LOG", "payload": "676520\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=32 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.767605247, "kind": "LOG", "payload": "676570\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=33 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.808533893, "kind": "LOG", "payload": "676620\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=34 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.870596206, "kind": "LOG", "payload": "676671\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=35 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.912807535, "kind": "LOG", "payload": "676721\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=36 lifecycle=1 background=0\u001b[0m"}
+{"time": 89957.977344754, "kind": "LOG", "payload": "676772\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=37 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.018493509, "kind": "LOG", "payload": "676822\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=38 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.063561551, "kind": "LOG", "payload": "676872\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=39 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.127222751, "kind": "LOG", "payload": "676922\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=40 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.167979017, "kind": "LOG", "payload": "676972\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=2 pointer=0 controller=41 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.168307042, "kind": "LOG", "payload": "676972\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=3 pointer=0 controller=41 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.209134916, "kind": "LOG", "payload": "677022\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=42 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.270381675, "kind": "LOG", "payload": "677072\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=43 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.311545308, "kind": "LOG", "payload": "677122\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=44 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.374488359, "kind": "LOG", "payload": "677172\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=45 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.416565413, "kind": "LOG", "payload": "677222\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=46 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.458601639, "kind": "LOG", "payload": "677272\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=47 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.519997933, "kind": "LOG", "payload": "677322\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=48 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.563595704, "kind": "LOG", "payload": "677372\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=49 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.625585609, "kind": "LOG", "payload": "677422\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=50 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.669512066, "kind": "LOG", "payload": "677472\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=51 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.71135328, "kind": "LOG", "payload": "677522\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=52 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.773758617, "kind": "LOG", "payload": "677572\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=53 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.815473029, "kind": "LOG", "payload": "677622\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=54 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.87628484, "kind": "LOG", "payload": "677672\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=55 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.920445253, "kind": "LOG", "payload": "677723\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=56 lifecycle=1 background=0\u001b[0m"}
+{"time": 89958.964187439, "kind": "LOG", "payload": "677774\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=57 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.02546651, "kind": "LOG", "payload": "677824\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=58 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.067573461, "kind": "LOG", "payload": "677874\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=59 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.129711668, "kind": "LOG", "payload": "677924\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=60 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.170854422, "kind": "LOG", "payload": "677974\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=3 pointer=0 controller=61 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.171954347, "kind": "LOG", "payload": "677976\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=4 pointer=0 controller=61 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.213808837, "kind": "LOG", "payload": "678025\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=62 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.274591031, "kind": "LOG", "payload": "678075\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=63 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.316342975, "kind": "LOG", "payload": "678125\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=64 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.377259515, "kind": "LOG", "payload": "678175\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=65 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.419289208, "kind": "LOG", "payload": "678225\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=66 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.461248027, "kind": "LOG", "payload": "678275\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=67 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.524420585, "kind": "LOG", "payload": "678325\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=68 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.571422162, "kind": "LOG", "payload": "678375\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=69 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.644342464, "kind": "LOG", "payload": "678425\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=70 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.667947992, "kind": "LOG", "payload": "678475\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=71 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.717614015, "kind": "LOG", "payload": "678525\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=72 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.781721315, "kind": "LOG", "payload": "678575\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=73 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.822606828, "kind": "LOG", "payload": "678625\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=74 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.863793335, "kind": "LOG", "payload": "678675\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=75 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.927996517, "kind": "LOG", "payload": "678725\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=76 lifecycle=1 background=0\u001b[0m"}
+{"time": 89959.969578077, "kind": "LOG", "payload": "678775\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=77 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.012591695, "kind": "LOG", "payload": "678825\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=78 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.07428283, "kind": "LOG", "payload": "678875\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=79 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.11551831, "kind": "LOG", "payload": "678925\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=80 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.177846961, "kind": "LOG", "payload": "678975\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=4 pointer=0 controller=81 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.178129329, "kind": "LOG", "payload": "678975\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=5 pointer=0 controller=81 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.227320768, "kind": "LOG", "payload": "679025\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=82 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.276762505, "kind": "LOG", "payload": "679075\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=83 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.319238969, "kind": "LOG", "payload": "679125\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=84 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.360434313, "kind": "LOG", "payload": "679175\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=85 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.422730672, "kind": "LOG", "payload": "679225\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=86 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.464060842, "kind": "LOG", "payload": "679275\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=87 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.526409181, "kind": "LOG", "payload": "679325\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=88 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.567616016, "kind": "LOG", "payload": "679375\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=89 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.629270572, "kind": "LOG", "payload": "679425\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=90 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.669915607, "kind": "LOG", "payload": "679475\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=91 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.711482228, "kind": "LOG", "payload": "679525\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=92 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.781566096, "kind": "LOG", "payload": "679577\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=93 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.819433107, "kind": "LOG", "payload": "679626\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=94 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.865573072, "kind": "LOG", "payload": "679676\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=95 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.917379224, "kind": "LOG", "payload": "679726\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=96 lifecycle=1 background=0\u001b[0m"}
+{"time": 89960.985396373, "kind": "LOG", "payload": "679778\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=97 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.017336121, "kind": "LOG", "payload": "679827\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=98 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.08834447, "kind": "LOG", "payload": "679877\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=99 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.129044189, "kind": "LOG", "payload": "679927\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=100 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.170935459, "kind": "LOG", "payload": "679977\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=5 pointer=0 controller=101 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.17381758, "kind": "LOG", "payload": "679978\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=6 pointer=0 controller=101 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.215541711, "kind": "LOG", "payload": "680027\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=102 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.278280173, "kind": "LOG", "payload": "680079\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=103 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.31962931, "kind": "LOG", "payload": "680128\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=104 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.384752425, "kind": "LOG", "payload": "680178\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=105 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.426298457, "kind": "LOG", "payload": "680228\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=106 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.471192027, "kind": "LOG", "payload": "680280\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=107 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.53199454, "kind": "LOG", "payload": "680329\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=108 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.572685602, "kind": "LOG", "payload": "680379\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=109 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.634439248, "kind": "LOG", "payload": "680429\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=110 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.702430127, "kind": "LOG", "payload": "680480\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=111 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.723037142, "kind": "LOG", "payload": "680530\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=112 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.76879563, "kind": "LOG", "payload": "680581\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=113 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.833787495, "kind": "LOG", "payload": "680631\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=114 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.875895177, "kind": "LOG", "payload": "680681\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=115 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.916608663, "kind": "LOG", "payload": "680731\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=116 lifecycle=1 background=0\u001b[0m"}
+{"time": 89961.979974219, "kind": "LOG", "payload": "680781\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=117 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.023241511, "kind": "LOG", "payload": "680831\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=118 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.077173322, "kind": "LOG", "payload": "680881\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=119 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.117858484, "kind": "LOG", "payload": "680931\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=120 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.18032128, "kind": "LOG", "payload": "680981\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=6 pointer=0 controller=121 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.18059418, "kind": "LOG", "payload": "680982\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=7 pointer=0 controller=121 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.221218085, "kind": "LOG", "payload": "681031\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=122 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.282071585, "kind": "LOG", "payload": "681083\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=123 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.322788326, "kind": "LOG", "payload": "681132\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=124 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.384745079, "kind": "LOG", "payload": "681182\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=125 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.429113959, "kind": "LOG", "payload": "681232\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=126 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.469874544, "kind": "LOG", "payload": "681283\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=127 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.533673557, "kind": "LOG", "payload": "681333\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=128 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.576695511, "kind": "LOG", "payload": "681384\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=129 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.637964843, "kind": "LOG", "payload": "681434\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=130 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.681468996, "kind": "LOG", "payload": "681484\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=131 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.725491176, "kind": "LOG", "payload": "681534\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=132 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.786461468, "kind": "LOG", "payload": "681584\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=133 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.827276006, "kind": "LOG", "payload": "681634\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=134 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.871833396, "kind": "LOG", "payload": "681684\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=135 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.934034925, "kind": "LOG", "payload": "681734\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=136 lifecycle=1 background=0\u001b[0m"}
+{"time": 89962.975329116, "kind": "LOG", "payload": "681784\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=137 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.020503432, "kind": "LOG", "payload": "681834\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=138 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.082182715, "kind": "LOG", "payload": "681884\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=139 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.122873127, "kind": "LOG", "payload": "681934\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=140 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.186439606, "kind": "LOG", "payload": "681985\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=7 pointer=0 controller=141 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.186666869, "kind": "LOG", "payload": "681986\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=8 pointer=0 controller=141 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.227609411, "kind": "LOG", "payload": "682035\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=142 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.288513948, "kind": "LOG", "payload": "682085\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=143 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.329378442, "kind": "LOG", "payload": "682135\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=144 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.373705282, "kind": "LOG", "payload": "682185\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=145 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.436476877, "kind": "LOG", "payload": "682235\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=146 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.477419619, "kind": "LOG", "payload": "682285\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=147 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.538580705, "kind": "LOG", "payload": "682335\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=148 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.580605379, "kind": "LOG", "payload": "682385\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=149 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.621075611, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 89963.631679736, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-nes\tPXA NES\t0.1.22\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89963.631804394, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89963.631859338, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 89963.63190206, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-main-loop-probe\tMain loop probe\t0.1.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"time": 89963.631944851, "kind": "OK", "payload": ""}
+{"time": 89963.639124752, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 1"}
+{"time": 89963.640564906, "kind": "LOG", "payload": "682435\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=150 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.640745149, "kind": "LOG", "payload": "682449\tI (682449) Pxadb: Package list finished: stack_free=6804B"}
+{"time": 89963.645250404, "kind": "OK", "payload": "event=37;device_us=681142709;status=processed"}
+{"time": 89963.665731208, "kind": "LOG", "payload": "682468\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=1 heartbeat=8 pointer=0 controller=151 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.724315013, "kind": "LOG", "payload": "682516\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=1 heartbeat=8 pointer=0 controller=152 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.790471157, "kind": "LOG", "payload": "682566\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=1 heartbeat=8 pointer=0 controller=153 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.816116762, "kind": "LOG", "payload": "682617\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=1 heartbeat=8 pointer=0 controller=154 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.856629826, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 89963.857246591, "kind": "LOG", "payload": "682667\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=1 heartbeat=8 pointer=0 controller=155 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.863222247, "kind": "OK", "payload": "event=38;device_us=681360694;status=processed"}
+{"time": 89963.884659043, "kind": "LOG", "payload": "682682\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=156 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.926409604, "kind": "LOG", "payload": "682733\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=157 lifecycle=1 background=0\u001b[0m"}
+{"time": 89963.988676928, "kind": "LOG", "payload": "682785\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=158 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.02946194, "kind": "LOG", "payload": "682834\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=159 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.073133953, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 2"}
+{"time": 89964.073617103, "kind": "LOG", "payload": "682884\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=8 pointer=0 controller=160 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.080194125, "kind": "OK", "payload": "event=39;device_us=681576693;status=processed"}
+{"time": 89964.104397692, "kind": "LOG", "payload": "682899\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=2 heartbeat=8 pointer=0 controller=161 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.145274048, "kind": "LOG", "payload": "682950\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=2 heartbeat=8 pointer=0 controller=162 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.206718404, "kind": "LOG", "payload": "683002\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=2 heartbeat=8 pointer=0 controller=163 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.207066207, "kind": "LOG", "payload": "683002\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=9 pointer=0 controller=163 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.248495637, "kind": "LOG", "payload": "683052\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=2 heartbeat=9 pointer=0 controller=164 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.28927085, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 89964.291439402, "kind": "LOG", "payload": "683103\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=2 heartbeat=9 pointer=0 controller=165 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.296372631, "kind": "OK", "payload": "event=40;device_us=681793842;status=processed"}
+{"time": 89964.31833585, "kind": "LOG", "payload": "683119\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=166 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.359134889, "kind": "LOG", "payload": "683169\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=167 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.420610885, "kind": "LOG", "payload": "683221\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=168 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.461332816, "kind": "LOG", "payload": "683270\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=169 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.502781132, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 16"}
+{"time": 89964.509297047, "kind": "OK", "payload": "event=41;device_us=682006724;status=processed"}
+{"time": 89964.530272895, "kind": "LOG", "payload": "683321\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=170 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.530475882, "kind": "LOG", "payload": "683331\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=16 heartbeat=9 pointer=0 controller=171 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.574458376, "kind": "LOG", "payload": "683381\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=16 heartbeat=9 pointer=0 controller=172 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.635348326, "kind": "LOG", "payload": "683431\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=16 heartbeat=9 pointer=0 controller=173 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.677223004, "kind": "LOG", "payload": "683482\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=16 heartbeat=9 pointer=0 controller=174 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.721056323, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 89964.721533282, "kind": "LOG", "payload": "683531\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=16 heartbeat=9 pointer=0 controller=175 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.727100901, "kind": "OK", "payload": "event=42;device_us=682224679;status=processed"}
+{"time": 89964.74980976, "kind": "LOG", "payload": "683546\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=176 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.79047292, "kind": "LOG", "payload": "683596\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=177 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.852971555, "kind": "LOG", "payload": "683646\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=178 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.895174799, "kind": "LOG", "payload": "683696\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=179 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.938598779, "kind": "COMMAND", "payload": "INPUT POINTER DOWN 285 180 0"}
+{"time": 89964.939216967, "kind": "LOG", "payload": "683747\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=180 lifecycle=1 background=0\u001b[0m"}
+{"time": 89964.945178596, "kind": "OK", "payload": "event=43;device_us=682442746;status=processed"}
+{"time": 89964.985926146, "kind": "LOG", "payload": "683798\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=181 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.047434635, "kind": "LOG", "payload": "683849\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=182 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.089346714, "kind": "LOG", "payload": "683901\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=183 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.15039221, "kind": "COMMAND", "payload": "INPUT POINTER UP 285 180 0"}
+{"time": 89965.152683917, "kind": "LOG", "payload": "683951\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.156452738, "kind": "OK", "payload": "event=44;device_us=682653726;status=processed"}
+{"time": 89965.197461155, "kind": "LOG", "payload": "684003\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.197691895, "kind": "LOG", "payload": "684003\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=10 pointer=0 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.238862, "kind": "LOG", "payload": "684052\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=186 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.300696219, "kind": "LOG", "payload": "684102\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=187 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.343912634, "kind": "LOG", "payload": "684152\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=188 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.406178165, "kind": "LOG", "payload": "684202\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=189 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.449350786, "kind": "LOG", "payload": "684253\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=190 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.490492357, "kind": "LOG", "payload": "684303\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=191 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.554076771, "kind": "LOG", "payload": "684354\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=192 lifecycle=1 background=0\u001b[0m"}
+{"time": 89965.580829555, "kind": "COMMAND", "payload": "SCREENSHOT"}
+{"time": 89967.151445348, "kind": "META", "payload": "format=rgb565le;width=320;height=240;stride=640;orientation=logical;frame_id=150;device_us=673658828;source=st7789-native-sw270-completed;bytes=153600;sha256=4eb582fdc4ba2949ffd81b2a91df760175d3628af3b3e5c0980cc98e363fae2f"}
+{"time": 89967.1516986, "kind": "OK", "payload": ""}
+{"time": 89967.447287576, "kind": "LOG", "payload": "683646\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=178 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.448273916, "kind": "LOG", "payload": "683696\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=179 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.452116848, "kind": "LOG", "payload": "683747\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=180 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.452287964, "kind": "LOG", "payload": "683798\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=181 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.452424194, "kind": "LOG", "payload": "683849\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=182 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.454765825, "kind": "LOG", "payload": "683901\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=183 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.454985524, "kind": "LOG", "payload": "683951\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=184 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.456205128, "kind": "LOG", "payload": "684003\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=9 pointer=0 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.457451933, "kind": "LOG", "payload": "684003\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP alive value=0 heartbeat=10 pointer=0 controller=185 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.461576823, "kind": "LOG", "payload": "684052\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=186 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.461750514, "kind": "LOG", "payload": "684102\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=187 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.46183246, "kind": "LOG", "payload": "684152\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=188 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.463283365, "kind": "LOG", "payload": "684202\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=189 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.464724631, "kind": "LOG", "payload": "684253\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=190 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.466105552, "kind": "LOG", "payload": "684303\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=191 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.467413524, "kind": "LOG", "payload": "684354\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=10 pointer=0 controller=192 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.467679641, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 89967.470635323, "kind": "LOG", "payload": "686275\t\u001b[32m[PXA app=pxa-main-loop-probe component=65537 level=INFO] MAINLOOP controller value=0 heartbeat=12 pointer=0 controller=230 lifecycle=1 background=0\u001b[0m"}
+{"time": 89967.474843551, "kind": "OK", "payload": "event=45;device_us=684971746;status=processed"}
+{"time": 89967.474997164, "kind": "COMMAND", "payload": "PACKAGE stop pxa-main-loop-probe"}
+{"time": 89967.481604854, "kind": "OK", "payload": "stop_queued"}
+{"time": 89967.502557578, "kind": "LOG", "payload": "686300\tI (686300) PxaHost: Main loop ended: reason=0 runtime_stack_min_free=25352 bytes"}
+{"time": 89967.502781224, "kind": "LOG", "payload": "686300\tI (686300) PxaHost: UI peaks: dynamic=2076 current=1660 assets=0 current_assets=0 largest_decoded=0 asset_count=0 referenced=0 hits=0 misses=0 evictions=0 nodes=2 canvases=0 surfaces=1"}
+{"time": 89967.50292069, "kind": "LOG", "payload": "686300\tI (686300) PxaHost: Audio: active=0 queued=0/0 peak_queued=0 submitted=0 rendered=0 tones=0/0 tone_drop=0 voice_exhaust=0 queue_full=0 stale=0 rejected=0 assets=0/0 asset_fail=0 storage=0 stack=0"}
+{"time": 89967.566418589, "kind": "LOG", "payload": "686352\tI (686352) PxaHost: Runtime peaks: components=1 requests=1 handles=1 events=4 event_blocks=6 services=17"}
+{"time": 89967.566638808, "kind": "LOG", "payload": "686352\tI (686352) PxaHost: WAMR dynamic: peak=26389 current=416 linear=0 linear_peak=65536 artifact=0 events=0"}
+{"time": 89967.566761682, "kind": "LOG", "payload": "686352\tI (686352) PxaHost: Activation memory: workspaces=18 blocks=3 used=13027 reserved=17521 peak_used=13027 peak_reserved=17521"}
+{"time": 89968.486756412, "kind": "COMMAND", "payload": "INPUT KEY HOME"}
+{"time": 89968.49382485, "kind": "OK", "payload": "event=46;device_us=685990835;status=processed"}

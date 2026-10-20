@@ -4311,8 +4311,11 @@ static void sync_ui_lifecycle(void) {
             snprintf(launch_identity, sizeof(launch_identity), "%s",
                      g_host.activation.active_identity);
         g_host.lifecycle_delivered = effective;
-        drain_active_events();
+        /* A main-loop event callback can retain this call until the app exits.
+         * Remove launch chrome before dispatch, so it cannot cover the running
+         * app and intercept all pointer input for that entire lifetime. */
         if (effective) pxa_esp_ui_shell_dismiss_app_launch(launch_identity);
+        drain_active_events();
     }
 }
 
