@@ -1,0 +1,67 @@
+ 87e:	9fc9                	mul	a5,a5,a0
+
+00000880 <.LBE507>:
+ 880:	41f80833          	sub	a6,a6,t6
+
+00000884 <.LBB508>:
+ 884:	12054263          	bltz	a0,9a8 <.L317>
+			884: R_RISCV_BRANCH	.L317
+
+00000888 <.LM1341>:
+ 888:	0357b533          	mulhu	a0,a5,s5
+
+0000088c <.LM1342>:
+ 88c:	03d50db3          	mul	s11,a0,t4
+
+00000890 <.LM1344>:
+ 890:	41b787b3          	sub	a5,a5,s11
+
+00000894 <.LM1345>:
+ 894:	01d7b7b3          	sltu	a5,a5,t4
+ 898:	0017b793          	seqz	a5,a5
+
+0000089c <.LM1346>:
+ 89c:	97aa                	add	a5,a5,a0
+
+0000089e <.L165>:
+ 89e:	97f2                	add	a5,a5,t3
+
+000008a0 <.LBE508>:
+ 8a0:	9fed                	sext.h	a5,a5
+ 8a2:	d007f7d3          	fcvt.s.w	fa5,a5
+
+000008a6 <.LM1350>:
+ 8a6:	fff98793          	addi	a5,s3,-1 # 7fff <.LLST5+0x4dcc>
+
+000009a2 <.LM1431>:
+ 9a2:	f6f906a3          	sb	a5,-147(s2)
+ 9a6:	b749                	j	928 <.L168>
+			9a6: R_RISCV_RVC_JUMP	.L168
+
+000009a8 <.L317>:
+ 9a8:	40f007b3          	neg	a5,a5
+
+000009ac <.LBB509>:
+ 9ac:	0357b533          	mulhu	a0,a5,s5
+
+000009b0 <.LM1435>:
+ 9b0:	02ae8db3          	mul	s11,t4,a0
+
+000009b4 <.LM1438>:
+ 9b4:	9d75                	not	a0,a0
+
+000009b6 <.LM1439>:
+ 9b6:	41b787b3          	sub	a5,a5,s11
+
+000009ba <.LM1440>:
+ 9ba:	01d7b7b3          	sltu	a5,a5,t4
+
+000009be <.LM1441>:
+ 9be:	97aa                	add	a5,a5,a0
+
+000009c0 <.LM1442>:
+ 9c0:	bdf9                	j	89e <.L165>
+			9c0: R_RISCV_RVC_JUMP	.L165
+
+000009c2 <.L160>:
+ 9c2:	01c41e03          	lh	t3,28(s0)

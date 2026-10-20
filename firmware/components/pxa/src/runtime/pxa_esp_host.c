@@ -3629,7 +3629,9 @@ static void post_ui_event(const pxa_esp_host_command_t *command) {
     drain_active_events();
 }
 
-static void post_controller(const pxa_esp_host_command_t *command) {
+/* Called while the command is still at the queue head. Backpressure leaves it
+ * there until the Guest consumes events; no retry allocation or extra queue. */
+static int prepare_controller(const pxa_esp_host_command_t *command) {
     const pxa_host_controller_event_t *event =
         &command->payload.controller;
     uint8_t value[8] = {0};
@@ -3637,16 +3639,16 @@ static void post_controller(const pxa_esp_host_command_t *command) {
         g_host.activation.ui_component == PXA_COMPONENT_INVALID ||
         event->instance_id == 0 ||
         event->instance_id != g_host.activation.active_instance_id)
-        return;
+        return 1;
     value[0] = event->controller;
     value[1] = event->connected;
     pxa_write_u32(value + 4, event->buttons);
-    (void)pxa_ui_queue_event(
+    const pxa_status_t status = pxa_ui_queue_event(
         g_host.activation.services.ui, g_host.activation.ui_component,
         PXA_UI_PRIMARY_SURFACE, 1u, PXA_UI_EVENT_CONTROLLER_STATE,
-        PXA_UI_EVENT_FLAG_COALESCIBLE, event->timestamp_us, value,
+        PXA_UI_EVENT_FLAG_RELIABLE, event->timestamp_us, value,
         sizeof(value));
-    drain_active_events();
+    return status != PXA_STATUS_BUSY && status != PXA_STATUS_RESOURCE_LIMIT;
 }
 
 static void apply_color_scheme(pxa_ui_color_scheme_t color_scheme) {
@@ -4433,6 +4435,9 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
             result = PXA_STATUS_CANCELLED;
             goto finished;
         }
+        if (policy != PXA_HOST_LOOP_SKIP &&
+            command.type == PXA_ESP_HOST_CMD_CONTROLLER &&
+            !prepare_controller(&command)) break;
         if (xQueueReceive(g_host.queue, &command, 0) != pdTRUE) break;
         portENTER_CRITICAL(&g_process_state_lock);
         pxa_host_maintenance_clear(&g_host.maintenance_pending,
@@ -4449,7 +4454,7 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
             post_ui_event(&command);
             pxa_host_ui_event_release_text(&command.payload.ui_event, free);
             break;
-        case PXA_ESP_HOST_CMD_CONTROLLER: post_controller(&command); break;
+        case PXA_ESP_HOST_CMD_CONTROLLER: break; /* Prepared before removal. */
         case PXA_ESP_HOST_CMD_TICK:
             post_tick(command.payload.tick.slot, command.payload.tick.generation, host_now_us(NULL));
             break;
@@ -4571,7 +4576,17 @@ static void run(void) {
             handled = 1;
         }
         if (g_host.cooperative_exit_pending) continue;
-        if (xQueueReceive(g_host.queue, &command, 0) == pdTRUE) {
+        const int command_available = xQueuePeek(g_host.queue, &command, 0) == pdTRUE;
+        if (command_available &&
+            command.type == PXA_ESP_HOST_CMD_CONTROLLER &&
+            !prepare_controller(&command)) {
+            /* A callback-mode app can free event slots here. A native-loop
+             * app consumes them through its wait port instead. */
+            drain_active_events();
+            vTaskDelay(1);
+            continue;
+        }
+        if (command_available && xQueueReceive(g_host.queue, &command, 0) == pdTRUE) {
             handled = 1;
             portENTER_CRITICAL(&g_process_state_lock);
             pxa_host_maintenance_clear(&g_host.maintenance_pending,
@@ -4632,7 +4647,7 @@ static void run(void) {
                 pxa_host_ui_event_release_text(&command.payload.ui_event, free);
                 break;
             case PXA_ESP_HOST_CMD_CONTROLLER:
-                post_controller(&command);
+                drain_active_events();
                 break;
             case PXA_ESP_HOST_CMD_STOP:
                 if (command.payload.stop.host_instance_id != 0 &&

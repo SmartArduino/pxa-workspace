@@ -1,0 +1,42 @@
+diff --git a/libpxa/src/services/audio/audio_mixer.c b/libpxa/src/services/audio/audio_mixer.c
+index e9d4e1d..30ddc37 100644
+--- a/libpxa/src/services/audio/audio_mixer.c
++++ b/libpxa/src/services/audio/audio_mixer.c
+@@ -135,6 +135,19 @@ static int16_t interpolate_pcm(int32_t previous, int32_t current,
+     const int32_t offset = (int32_t)(magnitude * (output_rate - phase) / output_rate);
+     return (int16_t)(previous + (delta < 0 ? -offset : offset));
+ }
++static int16_t interpolate_pcm_reciprocal(int32_t previous, int32_t current,
++    uint32_t phase, uint32_t output_rate, uint32_t reciprocal) {
++    const int32_t delta = current - previous;
++    const uint32_t magnitude = (uint32_t)(delta < 0 ? -delta : delta);
++    const uint32_t numerator = magnitude * (output_rate - phase);
++    /* reciprocal=floor(UINT32_MAX/rate). For a 32-bit numerator the
++     * high product underestimates floor(n/rate) by at most one. Correcting
++     * the remainder preserves every sample, including signed truncation.
++     * RV32M emits MULHU here instead of a divide for each output sample. */
++    uint32_t offset = (uint32_t)(((uint64_t)numerator * reciprocal) >> 32);
++    offset += numerator - offset * output_rate >= output_rate;
++    return (int16_t)(previous + (delta < 0 ? -(int32_t)offset : (int32_t)offset));
++}
+ static int16_t render_pcm(pxa_audio_mixer_packet_t *p, uint32_t source_rate,
+                          uint32_t output_rate) {
+     if (source_rate == output_rate) return p->data.pcm[p->position];
+@@ -324,6 +337,7 @@ static void account_frame(pxa_audio_mixer_voice_t *v, pxa_audio_mixer_packet_t *
+ static size_t render_pcm_prefix(pxa_audio_mixer_voice_t *v, int16_t *out, size_t n) {
+     size_t written = 0;
+     const uint32_t source_rate = v->source_rate, output_rate = v->output_rate;
++    const uint32_t reciprocal = source_rate != output_rate ? UINT32_MAX / output_rate : 0;
+     const float gain = v->gain;
+     while (written < n && v->read != PXA_AUDIO_MIXER_PACKETS) {
+         pxa_audio_mixer_packet_t *p = &v->packets[v->read];
+@@ -350,7 +364,8 @@ static size_t render_pcm_prefix(pxa_audio_mixer_voice_t *v, int16_t *out, size_t
+                     current = p->data.pcm[++index];
+                 }
+                 phase -= source_rate;
+-                const float sample = interpolate_pcm(previous, current, phase, output_rate) * gain;
++                const float sample = interpolate_pcm_reciprocal(
++                    previous, current, phase, output_rate, reciprocal) * gain;
+                 out[written++] = sample > 32767 ? 32767 :
+                                  sample < -32768 ? -32768 : (int16_t)sample;
+             }
