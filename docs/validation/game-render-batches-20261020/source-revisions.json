@@ -1,0 +1,18 @@
+{
+  "root_integration_commit": "ff12bc2",
+  "sdk_native_firmware_commit": "95395476077d27c84b7096441122c3bf1d8b790d",
+  "sdk_guest_optimized_commit": "ab461fd",
+  "apps_frame_capture_commit": "d8b87cb",
+  "apps_final_producer_commit": "f358198",
+  "public_quake_version": "0.4.5",
+  "public_quake_release_sequence": 125,
+  "public_compute_bench_version": "1.2.3",
+  "public_compute_bench_release_sequence": 8,
+  "native_firmware_rebuild_required_for_guest_only_codec": false,
+  "apps_documentation_commit": "2bb98d8914983b287848d7f4a76abc9bd868c18b",
+  "public_frame_spans_enabled": false,
+  "public_native_blit_enabled": false,
+  "public_bulk_read_enabled": false,
+  "public_packed_codec_enabled": false,
+  "frame_bulk_snapshot_copy_when_frame_enabled": true
+}

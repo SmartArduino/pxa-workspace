@@ -1,0 +1,11 @@
+(node:1141937) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1142088) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS: WASM GameRender encoders preserve every wire byte, six records, odd offsets, short buffers and contiguous rows
+(node:1142128) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1142305) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS: WASM GameRender encoders preserve every wire byte, six records, odd offsets, short buffers and contiguous rows
+PXA WASM GameRender C/C++ portable and packed codecs passed

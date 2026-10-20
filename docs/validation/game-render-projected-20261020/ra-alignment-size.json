@@ -1,0 +1,70 @@
+{
+  "aligned": {
+    "path": "local/game-render-ra-aligned-s31/pxa-ra-aligned/artifacts/main.esp32-s31.aot",
+    "bytes": 7176396,
+    "sha256": "977f76b02a8924509b694fc26c08213f30bdc3bae1f2f50baa29856875d7602b",
+    "sections": [
+      {
+        "kind": 0,
+        "bytes": 48
+      },
+      {
+        "kind": 1,
+        "bytes": 151496
+      },
+      {
+        "kind": 2,
+        "bytes": 6230500
+      },
+      {
+        "kind": 3,
+        "bytes": 61200
+      },
+      {
+        "kind": 4,
+        "bytes": 343
+      },
+      {
+        "kind": 5,
+        "bytes": 732752
+      }
+    ]
+  },
+  "previous": {
+    "path": "local/storage-s31-final/pxa-red-alert-sd/artifacts/main.esp32-s31.aot",
+    "bytes": 7192392,
+    "sha256": "3e220b8666e43d8799f105941e868dac8c34aa10b258381f23e6fd2aa78108db",
+    "sections": [
+      {
+        "kind": 0,
+        "bytes": 48
+      },
+      {
+        "kind": 1,
+        "bytes": 151528
+      },
+      {
+        "kind": 2,
+        "bytes": 6246520
+      },
+      {
+        "kind": 3,
+        "bytes": 61168
+      },
+      {
+        "kind": 4,
+        "bytes": 343
+      },
+      {
+        "kind": 5,
+        "bytes": 732728
+      }
+    ]
+  },
+  "linear_memory_max_bytes": 10027008,
+  "idle_psram_free_bytes": 15684068,
+  "text_plus_reserved_linear_bytes": 16257508,
+  "lower_bound_deficit_before_module_metadata_bytes": 573440,
+  "installed_on_device": false,
+  "reason": "Current loader streams AOT and retains TEXT, not whole file. TEXT plus pinned maximum linear memory already exceeds measured idle PSRAM; host/module metadata and audio increase demand."
+}

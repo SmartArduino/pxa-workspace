@@ -1,0 +1,407 @@
+{
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "launch": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "1097",
+    "device_us": "2026674225",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "d9ed6ee353265bd04ff3d8a51b74eab0b30fe48b62c5d2501b2f0f0ef53f4090"
+  },
+  "start": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "1143",
+    "device_us": "2032163700",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "fecb07af0e499cd0d1bf7925f8c7b47d2413a991a8dba55c8ace0338f22e3f10"
+  },
+  "singleplayer": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "1177",
+    "device_us": "2035912564",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "36735e012def03c8ba926c69cd7119b1721fcff97199ccdf2db109e7001cf8e7"
+  },
+  "newgame": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "1308",
+    "device_us": "2058391484",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "b5557db1834c8a0348bc443b3c87180bde9a3a9050211330ca41eeea415e419f"
+  },
+  "qualified_ready_before_measurement": true,
+  "fps_samples": [
+    {
+      "seconds": 1.020054787004483,
+      "fps": 5.9
+    },
+    {
+      "seconds": 2.0123399200019776,
+      "fps": 4.9
+    },
+    {
+      "seconds": 3.0154266160025145,
+      "fps": 5.9
+    },
+    {
+      "seconds": 4.017333303003397,
+      "fps": 5.9
+    },
+    {
+      "seconds": 5.014488676999463,
+      "fps": 5.9
+    },
+    {
+      "seconds": 6.015510921002715,
+      "fps": 5.9
+    },
+    {
+      "seconds": 7.017475031003414,
+      "fps": 5.9
+    },
+    {
+      "seconds": 8.019952900001954,
+      "fps": 5.9
+    },
+    {
+      "seconds": 9.01861750700482,
+      "fps": 5.9
+    },
+    {
+      "seconds": 10.021742955002992,
+      "fps": 5.9
+    },
+    {
+      "seconds": 11.013627418004035,
+      "fps": 5.9
+    },
+    {
+      "seconds": 12.014664319998701,
+      "fps": 5.9
+    },
+    {
+      "seconds": 13.017072319002182,
+      "fps": 6.9
+    },
+    {
+      "seconds": 14.019656008000311,
+      "fps": 3.9
+    },
+    {
+      "seconds": 15.021790206999867,
+      "fps": 6.9
+    },
+    {
+      "seconds": 16.013816780003253,
+      "fps": 5.9
+    },
+    {
+      "seconds": 17.013844008004526,
+      "fps": 5.9
+    },
+    {
+      "seconds": 18.0208194730003,
+      "fps": 5.9
+    },
+    {
+      "seconds": 19.02083563600172,
+      "fps": 5.9
+    },
+    {
+      "seconds": 20.012911657002405,
+      "fps": 5.9
+    },
+    {
+      "seconds": 21.013870476999728,
+      "fps": 5.9
+    },
+    {
+      "seconds": 22.019960654004535,
+      "fps": 6.9
+    },
+    {
+      "seconds": 23.0218624620029,
+      "fps": 5.9
+    },
+    {
+      "seconds": 24.014986574999057,
+      "fps": 5.9
+    },
+    {
+      "seconds": 25.016011824998714,
+      "fps": 5.9
+    },
+    {
+      "seconds": 26.01303440600168,
+      "fps": 5.9
+    },
+    {
+      "seconds": 27.0151515739999,
+      "fps": 6.9
+    },
+    {
+      "seconds": 28.020134471000347,
+      "fps": 5.9
+    },
+    {
+      "seconds": 29.012218604002555,
+      "fps": 5.9
+    },
+    {
+      "seconds": 30.02021480700205,
+      "fps": 6.9
+    },
+    {
+      "seconds": 31.012235125999723,
+      "fps": 5.9
+    },
+    {
+      "seconds": 32.01465114099847,
+      "fps": 5.9
+    },
+    {
+      "seconds": 33.0182623810033,
+      "fps": 5.9
+    },
+    {
+      "seconds": 34.01943122800003,
+      "fps": 5.9
+    },
+    {
+      "seconds": 35.01644243400369,
+      "fps": 5.9
+    },
+    {
+      "seconds": 36.01967217899801,
+      "fps": 6.9
+    },
+    {
+      "seconds": 37.012186592000944,
+      "fps": 5.9
+    },
+    {
+      "seconds": 38.014524951002386,
+      "fps": 5.9
+    },
+    {
+      "seconds": 39.016519720004,
+      "fps": 6.9
+    },
+    {
+      "seconds": 40.0195328300033,
+      "fps": 5.9
+    },
+    {
+      "seconds": 41.02049840200198,
+      "fps": 6.9
+    },
+    {
+      "seconds": 42.02165111700015,
+      "fps": 5.9
+    },
+    {
+      "seconds": 43.01859923200391,
+      "fps": 5.9
+    },
+    {
+      "seconds": 44.02068195999891,
+      "fps": 5.9
+    },
+    {
+      "seconds": 45.01170203999936,
+      "fps": 6.9
+    },
+    {
+      "seconds": 46.0144738950039,
+      "fps": 5.9
+    },
+    {
+      "seconds": 47.01392913800373,
+      "fps": 5.9
+    },
+    {
+      "seconds": 48.01682301099936,
+      "fps": 6.9
+    },
+    {
+      "seconds": 49.02118202899874,
+      "fps": 5.9
+    },
+    {
+      "seconds": 50.01494475999789,
+      "fps": 5.9
+    },
+    {
+      "seconds": 51.015995799003576,
+      "fps": 5.9
+    },
+    {
+      "seconds": 52.01394277700456,
+      "fps": 6.9
+    },
+    {
+      "seconds": 53.01591839900357,
+      "fps": 5.9
+    },
+    {
+      "seconds": 54.018144202003896,
+      "fps": 6.9
+    },
+    {
+      "seconds": 55.019076812001,
+      "fps": 5.9
+    },
+    {
+      "seconds": 56.01599601300404,
+      "fps": 5.9
+    },
+    {
+      "seconds": 57.017093711998314,
+      "fps": 5.9
+    },
+    {
+      "seconds": 58.01925638999819,
+      "fps": 5.9
+    },
+    {
+      "seconds": 59.0130982480041,
+      "fps": 6.9
+    },
+    {
+      "seconds": 60.02159864800342,
+      "fps": 5.9
+    }
+  ],
+  "fps": {
+    "median": 5.9,
+    "min": 3.9,
+    "max": 6.9,
+    "mean": 6.066666666666667
+  },
+  "ready_recent_at_end": true,
+  "measured": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "1689",
+    "device_us": "2120431484",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "e9a75d591589e3cafde035d039687b7de8248759c18c6d2d296671c5250770fe"
+  },
+  "after-forward": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "1729",
+    "device_us": "2125953713",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "d734dd3e94740009ef31dce1d2cdb98368be4804b53b6cdf79bde54154202b9c"
+  },
+  "after-turn": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "1772",
+    "device_us": "2131031808",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "1e10813275c893133e919f8e72f61faa8ce4c34663cc2e50ca251fc2b427882e"
+  },
+  "MEMORY": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=652419;sram_free=93399;sram_min=31980;sram_largest=55296;psram_total=16741200;psram_free=6280668;psram_min=5506880;psram_largest=6029312"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=28500;external=16682;peak_internal=28500;peak_external=16697;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=16400"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=28500;external=282"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "PERF FPS": [
+    {
+      "kind": "OK",
+      "payload": "presentation_fps_x10=79"
+    }
+  ],
+  "PACKAGES": [
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake-sd\tQuake SD\t0.4.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ]
+}

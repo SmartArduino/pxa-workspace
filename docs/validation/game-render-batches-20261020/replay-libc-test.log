@@ -1,0 +1,3 @@
+(node:1100858) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS: 256 rejected WASM frame batches, 768 captured materials replay original colour/depth; recycled texture/light/span storage and restored live state

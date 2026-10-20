@@ -1,0 +1,1 @@
+PASS: 500 legacy indexed frame/cursor comparisons, 320x200/240 and arbitrary scale, odd byte splits, guards and rejection

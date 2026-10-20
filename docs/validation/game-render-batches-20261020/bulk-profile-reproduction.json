@@ -1,0 +1,53 @@
+{
+  "measured_candidate": {
+    "path": "/tmp/pxa-quake-frame-bulk-esp32s31.1J7laC/package/artifacts/main.wasm",
+    "bytes": 1786797,
+    "sha256": "14e5ad6de75ae3af08d5135f7a8300bdb0935cc24f8d8f5508215caa5b2e1b5a",
+    "executable_sections_sha256": "d62064cc64bade13d70cbc6b09324ecc5a61c661cd397579fb9ada0185d1761b",
+    "code_sha256": "cfe4db07738ec96b798606424da31dccbc1d2e53902281a8503e0052a51423be"
+  },
+  "tracked_profile": {
+    "path": "local/game-render-frame-bulk-repro-wasm/pxa-quake-frame-bulk/artifacts/main.wasm",
+    "bytes": 1786797,
+    "sha256": "822423521bc69b127857d3cdb3a3dc978e12cdc691ec06bf54e74736a651a457",
+    "executable_sections_sha256": "0808fd84a8dd932269e287676e7717b6b5279c2e3ef317ecfbc0a59b411dd831",
+    "code_sha256": "cfe4db07738ec96b798606424da31dccbc1d2e53902281a8503e0052a51423be"
+  },
+  "executable_sections_match": false,
+  "code_sections_match": true,
+  "differing_bytes": 8,
+  "difference_contexts": [
+    {
+      "offset": 1616490,
+      "candidate": "b'i:\\n\\x00Exe: 05:00:38 Oct 20 202'",
+      "tracked_profile": "b'i:\\n\\x00Exe: 05:34:19 Oct 20 202'"
+    },
+    {
+      "offset": 1616491,
+      "candidate": "b':\\n\\x00Exe: 05:00:38 Oct 20 2026'",
+      "tracked_profile": "b':\\n\\x00Exe: 05:34:19 Oct 20 2026'"
+    },
+    {
+      "offset": 1616493,
+      "candidate": "b'\\x00Exe: 05:00:38 Oct 20 2026\\n\\x00'",
+      "tracked_profile": "b'\\x00Exe: 05:34:19 Oct 20 2026\\n\\x00'"
+    },
+    {
+      "offset": 1616494,
+      "candidate": "b'Exe: 05:00:38 Oct 20 2026\\n\\x00E'",
+      "tracked_profile": "b'Exe: 05:34:19 Oct 20 2026\\n\\x00E'"
+    },
+    {
+      "offset": 1616517,
+      "candidate": "b'26\\n\\x00Exe: 05:00:41 Oct 20 202'",
+      "tracked_profile": "b'26\\n\\x00Exe: 05:34:20 Oct 20 202'"
+    },
+    {
+      "offset": 1616518,
+      "candidate": "b'6\\n\\x00Exe: 05:00:41 Oct 20 2026'",
+      "tracked_profile": "b'6\\n\\x00Exe: 05:34:20 Oct 20 2026'"
+    }
+  ],
+  "difference_explanation": "Only eight bytes in two Exe build-time strings differ; code-section hashes match. No claim of byte-identical complete modules.",
+  "apps_source_commit": "d8b87cb"
+}

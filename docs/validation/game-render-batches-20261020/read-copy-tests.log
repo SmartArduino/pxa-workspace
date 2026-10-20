@@ -1,0 +1,6 @@
+(node:1125662) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS: 2048 file/cache copies; threshold, all byte alignments, zero/small/large lengths, immutable source and complete destination guards
+(node:1125695) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS: 2048 file/cache copies; threshold, all byte alignments, zero/small/large lengths, immutable source and complete destination guards

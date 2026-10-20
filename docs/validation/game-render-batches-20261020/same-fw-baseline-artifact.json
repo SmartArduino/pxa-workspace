@@ -1,0 +1,10 @@
+{
+  "package": "local/game-render-same-fw-baseline/pxa-quake-baseline",
+  "version": "0.4.3",
+  "release_sequence": 123,
+  "original_artifact": "local/game-render-direct-s31/pxa-quake-direct/artifacts/main.esp32-s31.aot",
+  "bytes": 5888788,
+  "sha256": "1c6a037fe0c872b8116dfc2880ce982be66c66ed339983df24209539c9641c96",
+  "repackaged_without_recompiling": true,
+  "scope": "same exact stock AOT artifact used by the prior direct-globals baseline; new signed manifest only to exceed anti-rollback sequence"
+}

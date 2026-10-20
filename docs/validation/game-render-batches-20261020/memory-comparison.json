@@ -1,0 +1,70 @@
+{
+  "measurements": [
+    {
+      "candidate": "quake-same-fw-baseline",
+      "fps": {
+        "median": 6.9,
+        "min": 5.9,
+        "max": 7.9,
+        "mean": 7.016666666666667
+      },
+      "sram_free_bytes": 93399,
+      "psram_free_bytes": 6408228,
+      "sram_historical_low_bytes": 23272,
+      "psram_historical_low_bytes": 5506880
+    },
+    {
+      "candidate": "quake-frame",
+      "fps": {
+        "median": 5.9,
+        "min": 5.9,
+        "max": 6.9,
+        "mean": 6.051666666666667
+      },
+      "sram_free_bytes": 87135,
+      "psram_free_bytes": 6278348,
+      "sram_historical_low_bytes": 31980,
+      "psram_historical_low_bytes": 5503988
+    },
+    {
+      "candidate": "quake-frame-blit",
+      "fps": {
+        "median": 5.9,
+        "min": 4.9,
+        "max": 6.9,
+        "mean": 6.016666666666667
+      },
+      "sram_free_bytes": 93159,
+      "psram_free_bytes": 6280804,
+      "sram_historical_low_bytes": 31980,
+      "psram_historical_low_bytes": 5506996
+    },
+    {
+      "candidate": "quake-frame-bulk",
+      "fps": {
+        "median": 5.9,
+        "min": 3.9,
+        "max": 6.9,
+        "mean": 6.066666666666667
+      },
+      "sram_free_bytes": 93399,
+      "psram_free_bytes": 6280668,
+      "sram_historical_low_bytes": 31980,
+      "psram_historical_low_bytes": 5506880
+    },
+    {
+      "candidate": "quake-frame-io",
+      "fps": {
+        "median": 6.9,
+        "min": 5.9,
+        "max": 7.9,
+        "mean": 6.816666666666667
+      },
+      "sram_free_bytes": 93367,
+      "psram_free_bytes": 6276492,
+      "sram_historical_low_bytes": 23272,
+      "psram_historical_low_bytes": 5502624
+    }
+  ],
+  "historical_low_caveat": "Heap low-watermarks are since firmware boot, shared with previous runs. They are not per-candidate peak allocation measurements. Frame-only used v7; later candidates and baseline used v9."
+}

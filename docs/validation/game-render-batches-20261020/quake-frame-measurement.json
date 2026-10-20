@@ -1,0 +1,383 @@
+{
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "launch": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "688",
+    "device_us": "2590254752",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "ea217dc3caeec8498af17ec4a5f18a2e283af98bb34e8f78695cb24492ecc4f2"
+  },
+  "start": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "738",
+    "device_us": "2595773909",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "7aa65af3fd29f8de40fd3db60f6198cad869fe82b64b92c2a74d8350696cf91e"
+  },
+  "singleplayer": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "779",
+    "device_us": "2599431639",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "2aec86435e27bb1d6ae793038fcd73c9b974fd5570fd37a2d8ffa0919ff74731"
+  },
+  "newgame": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "914",
+    "device_us": "2621827659",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "e59209737538eb89ed4cc4b8c1e055da3fb4ab59f422207631d2f5fb005a3982"
+  },
+  "qualified_ready_before_measurement": true,
+  "fps_samples": [
+    {
+      "seconds": 1.0187190680007916,
+      "fps": 5.9
+    },
+    {
+      "seconds": 2.021753761000582,
+      "fps": 6.9
+    },
+    {
+      "seconds": 3.015689202999056,
+      "fps": 5.9
+    },
+    {
+      "seconds": 4.020511203001661,
+      "fps": 5.9
+    },
+    {
+      "seconds": 5.02113771999575,
+      "fps": 5.9
+    },
+    {
+      "seconds": 6.019071433998761,
+      "fps": 5.9
+    },
+    {
+      "seconds": 7.0159262960005435,
+      "fps": 5.9
+    },
+    {
+      "seconds": 8.022551383000973,
+      "fps": 5.9
+    },
+    {
+      "seconds": 9.011941233999096,
+      "fps": 5.9
+    },
+    {
+      "seconds": 10.014949377000448,
+      "fps": 5.9
+    },
+    {
+      "seconds": 11.017898660000355,
+      "fps": 6.9
+    },
+    {
+      "seconds": 12.02191579400096,
+      "fps": 5.9
+    },
+    {
+      "seconds": 13.014013685999089,
+      "fps": 5.9
+    },
+    {
+      "seconds": 14.018508019995352,
+      "fps": 5.9
+    },
+    {
+      "seconds": 15.02214404699771,
+      "fps": 5.9
+    },
+    {
+      "seconds": 16.01919807500235,
+      "fps": 5.9
+    },
+    {
+      "seconds": 17.01313289799873,
+      "fps": 6.9
+    },
+    {
+      "seconds": 18.022044011995604,
+      "fps": 5.9
+    },
+    {
+      "seconds": 19.015242296998622,
+      "fps": 5.9
+    },
+    {
+      "seconds": 20.020354644999315,
+      "fps": 5.9
+    },
+    {
+      "seconds": 21.0154952199955,
+      "fps": 5.9
+    },
+    {
+      "seconds": 22.01544572399871,
+      "fps": 6.9
+    },
+    {
+      "seconds": 23.021418172997073,
+      "fps": 5.9
+    },
+    {
+      "seconds": 24.017339277997962,
+      "fps": 5.9
+    },
+    {
+      "seconds": 25.013588752000942,
+      "fps": 5.9
+    },
+    {
+      "seconds": 26.017581080996024,
+      "fps": 5.9
+    },
+    {
+      "seconds": 27.021498779002286,
+      "fps": 5.9
+    },
+    {
+      "seconds": 28.02265489599813,
+      "fps": 5.9
+    },
+    {
+      "seconds": 29.01860796099936,
+      "fps": 6.9
+    },
+    {
+      "seconds": 30.01158955899882,
+      "fps": 5.9
+    },
+    {
+      "seconds": 31.022739130996342,
+      "fps": 5.9
+    },
+    {
+      "seconds": 32.02553492700099,
+      "fps": 5.9
+    },
+    {
+      "seconds": 33.01378386999568,
+      "fps": 6.0
+    },
+    {
+      "seconds": 34.019871235999744,
+      "fps": 5.9
+    },
+    {
+      "seconds": 35.01973991799605,
+      "fps": 5.9
+    },
+    {
+      "seconds": 36.01287841299927,
+      "fps": 5.9
+    },
+    {
+      "seconds": 37.01463613299711,
+      "fps": 5.9
+    },
+    {
+      "seconds": 38.018682966001506,
+      "fps": 6.9
+    },
+    {
+      "seconds": 39.0199410560017,
+      "fps": 5.9
+    },
+    {
+      "seconds": 40.01287103800132,
+      "fps": 5.9
+    },
+    {
+      "seconds": 41.01677973999904,
+      "fps": 5.9
+    },
+    {
+      "seconds": 42.01778634599759,
+      "fps": 5.9
+    },
+    {
+      "seconds": 43.015866139001446,
+      "fps": 5.9
+    },
+    {
+      "seconds": 44.02218722699763,
+      "fps": 6.9
+    },
+    {
+      "seconds": 45.018199033998826,
+      "fps": 5.9
+    },
+    {
+      "seconds": 46.013047319996986,
+      "fps": 5.9
+    },
+    {
+      "seconds": 47.01718975399854,
+      "fps": 5.9
+    },
+    {
+      "seconds": 48.02039869900182,
+      "fps": 5.9
+    },
+    {
+      "seconds": 49.015215897001326,
+      "fps": 5.9
+    },
+    {
+      "seconds": 50.0145274710012,
+      "fps": 6.9
+    },
+    {
+      "seconds": 51.02172979900206,
+      "fps": 5.9
+    },
+    {
+      "seconds": 52.01418963600008,
+      "fps": 5.9
+    },
+    {
+      "seconds": 53.021571651996055,
+      "fps": 5.9
+    },
+    {
+      "seconds": 54.016361538997444,
+      "fps": 5.9
+    },
+    {
+      "seconds": 55.02148496099835,
+      "fps": 5.9
+    },
+    {
+      "seconds": 56.015374050999526,
+      "fps": 5.9
+    },
+    {
+      "seconds": 57.019497219000186,
+      "fps": 6.9
+    },
+    {
+      "seconds": 58.01355931499711,
+      "fps": 5.9
+    },
+    {
+      "seconds": 59.01846439699875,
+      "fps": 5.9
+    },
+    {
+      "seconds": 60.01373188300204,
+      "fps": 5.9
+    }
+  ],
+  "fps": {
+    "median": 5.9,
+    "min": 5.9,
+    "max": 6.9,
+    "mean": 6.051666666666667
+  },
+  "ready_recent_at_end": true,
+  "measured": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "1294",
+    "device_us": "2683776661",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "41b7bd5e2cf62815b5104b0a764440bddedd7af9afa402dce8194a79b653eb2c"
+  },
+  "MEMORY": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=652419;sram_free=87135;sram_min=31980;sram_largest=32768;psram_total=16741200;psram_free=6278348;psram_min=5503988;psram_largest=6029312"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=28500;external=16682;peak_internal=28500;peak_external=28972;temporary_peak_internal=0;temporary_peak_external=4088;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=16400"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=28500;external=282"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "PERF FPS": [
+    {
+      "kind": "OK",
+      "payload": "presentation_fps_x10=59"
+    }
+  ],
+  "PACKAGES": [
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake-sd\tQuake SD\t0.4.0\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ]
+}

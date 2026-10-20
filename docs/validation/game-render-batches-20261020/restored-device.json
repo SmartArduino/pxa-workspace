@@ -1,0 +1,85 @@
+{
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "PACKAGES": [
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-jump-jump-3d\tJump Jump 3D\t0.1.9\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "MEMORY": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=652419;sram_free=128715;sram_min=10472;sram_largest=55296;psram_total=16741200;psram_free=15635516;psram_min=57844;psram_largest=15466496"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=27004;external=16564;peak_internal=44924;peak_external=225268;temporary_peak_internal=0;temporary_peak_external=50334;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=16400"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=27004;external=164"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=509952"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "restored_artifacts": [
+    {
+      "id": "pxa-quake2-sd",
+      "path": "local/game-render-q2-final/pxa-quake2-sd/artifacts/main.esp32-s31.aot",
+      "bytes": 4478376,
+      "sha256": "9ad5e1226c032e43f567f30de035f10e4d505a6636cb5c444d1f6348ac9da015"
+    },
+    {
+      "id": "pxa-jump-jump-3d",
+      "path": "local/game-render-migration-final/pxa-jump-jump-3d/artifacts/main.esp32-s31.aot",
+      "bytes": 593020,
+      "sha256": "247a35af905fcf3f95db3e8d8808aa3f5f55a43bb1fbd634343a94b4f0d9cf22"
+    }
+  ]
+}

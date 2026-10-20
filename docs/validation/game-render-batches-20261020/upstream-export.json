@@ -1,0 +1,9 @@
+{
+  "schema": "pxa-upstream-plan-1",
+  "engine": "quake",
+  "base": "b4c8c22bae3298b98c02166116eaeb91a34ffc24",
+  "target": "b4c8c22bae3298b98c02166116eaeb91a34ffc24",
+  "items": [],
+  "adaptations_patch_sha256": "f0120527734d9d09554e28404a2b4c544d021b3e2d6065591399622e159df606",
+  "new_hooks_exported": true
+}

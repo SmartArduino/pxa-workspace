@@ -1,0 +1,335 @@
+PACKAGES [('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake-sd\tQuake SD\t0.4.4\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('OK', '')]
+PACKAGE archive pxa-quake-sd [('OK', '')]
+MEMORY [('DATA', 'scope=heap;sram_total=652419;sram_free=134967;sram_min=23272;sram_largest=55296;psram_total=16741200;psram_free=15681236;psram_min=5502624;psram_largest=15204352'), ('DATA', 'scope=budget;internal=27004;external=16564;peak_internal=28500;peak_external=16697;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0'), ('DATA', 'scope=kind;name=raster;internal=0;external=0'), ('DATA', 'scope=kind;name=image;internal=0;external=0'), ('DATA', 'scope=kind;name=audio;internal=0;external=16400'), ('DATA', 'scope=kind;name=temporary;internal=0;external=0'), ('DATA', 'scope=kind;name=metadata;internal=27004;external=164'), ('DATA', 'scope=kind;name=frame;internal=0;external=0'), ('DATA', 'scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0'), ('OK', '')]
+staging: pxa-quake2-sd
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-q2-final/pxa-quake2-sd/artifacts/main.esp32-s31.aot -> PXA storage/pxa-state/inbox/.receiving-pxa-quake2-sd/artifacts/main.esp32-s31.aot (4478376 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-q2-final/pxa-quake2-sd/manifest.pxm -> PXA storage/pxa-state/inbox/.receiving-pxa-quake2-sd/manifest.pxm (913 bytes)
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-q2-final/pxa-quake2-sd/signature.pxs -> PXA storage/pxa-state/inbox/.receiving-pxa-quake2-sd/signature.pxs (108 bytes)
+upload 100%
+verifying and installing: pxa-quake2-sd
+installed: pxa-quake2-sd
+staging: pxa-jump-jump-3d
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/artifacts/main.esp32-s31.aot -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/artifacts/main.esp32-s31.aot (593020 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/combo1.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/combo1.s16 (18880 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/combo2.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/combo2.s16 (16960 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/combo3.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/combo3.s16 (17600 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/combo4.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/combo4.s16 (17600 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/combo5.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/combo5.s16 (16960 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/combo6.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/combo6.s16 (16960 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/combo7.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/combo7.s16 (16320 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/combo8.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/combo8.s16 (15040 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/fall.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/fall.s16 (22720 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/fall_2.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/fall_2.s16 (52800 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/icon.ogg -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/icon.ogg (13599 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/pop.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/pop.s16 (4930 bytes)
+upload 20%
+upload 40%
+upload 60%
+upload 80%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/scale_intro.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/scale_intro.s16 (70734 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/scale_loop.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/scale_loop.s16 (40000 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/sing.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/sing.s16 (430400 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/start.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/start.s16 (21440 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/store.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/store.s16 (148160 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/success.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/success.s16 (6080 bytes)
+upload 10%
+upload 30%
+upload 50%
+upload 60%
+upload 80%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/audio/water.s16 -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/audio/water.s16 (140480 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/fonts/j3_font_big_t0.pxr -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/fonts/j3_font_big_t0.pxr (1832 bytes)
+upload 50%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/fonts/j3_font_big_t1.pxr -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/fonts/j3_font_big_t1.pxr (7232 bytes)
+upload 10%
+upload 20%
+upload 40%
+upload 50%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/fonts/j3_font_big_t2.pxr -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/fonts/j3_font_big_t2.pxr (19958 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/fonts/j3_font_cjk_t0.pxr -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/fonts/j3_font_cjk_t0.pxr (1904 bytes)
+upload 50%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/fonts/j3_font_cjk_t1.pxr -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/fonts/j3_font_cjk_t1.pxr (3360 bytes)
+upload 30%
+upload 60%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/fonts/j3_font_cjk_t2.pxr -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/fonts/j3_font_cjk_t2.pxr (10680 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/fonts/j3_font_small_t0.pxr -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/fonts/j3_font_small_t0.pxr (1502 bytes)
+upload 60%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/fonts/j3_font_small_t1.pxr -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/fonts/j3_font_small_t1.pxr (5664 bytes)
+upload 10%
+upload 30%
+upload 50%
+upload 70%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/fonts/j3_font_small_t2.pxr -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/fonts/j3_font_small_t2.pxr (7622 bytes)
+upload 10%
+upload 20%
+upload 40%
+upload 50%
+upload 60%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/icon.png -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/icon.png (3751 bytes)
+upload 20%
+upload 50%
+upload 80%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/icon.svg -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/icon.svg (1284 bytes)
+upload 70%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/assets/resources.pxi -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/assets/resources.pxi (1528 bytes)
+upload 60%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/manifest.pxm -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/manifest.pxm (3530 bytes)
+upload 20%
+upload 50%
+upload 80%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-migration-final/pxa-jump-jump-3d/signature.pxs -> PXA storage/pxa-state/inbox/.receiving-pxa-jump-jump-3d/signature.pxs (108 bytes)
+upload 100%
+verifying and installing: pxa-jump-jump-3d
+installed: pxa-jump-jump-3d
