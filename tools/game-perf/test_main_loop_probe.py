@@ -41,11 +41,11 @@ class ProbeGuardTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             argv = ["probe", "--port", "never-open-a-port", "--serial", "expected", "--output", tmp]
             with patch.object(sys, "argv", argv), patch.object(probe.pxadb, "PxaDbClient", return_value=client):
-                with self.assertRaises(AssertionError):
+                with self.assertRaises(RuntimeError):
                     probe.main()
             report = json.loads((Path(tmp) / "report.json").read_text())
             self.assertFalse(report["qualified"])
-            self.assertEqual(report["failure"]["type"], "AssertionError")
+            self.assertEqual(report["failure"]["type"], "RuntimeError")
 
     def test_wrong_serial_never_reaches_cleanup_commands(self):
         client = Client("different-device")

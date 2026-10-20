@@ -12,6 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pxadb"))
 import pxadb
 
 
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True)
@@ -87,9 +92,10 @@ def main():
 
         try:
             report["hello"] = client.hello()
-            assert pxadb.info_properties(report["hello"])["serial"] == args.serial
+            require(pxadb.info_properties(report["hello"])["serial"] == args.serial,
+                    "Device serial does not match --serial")
             snapshot("before")
-            assert not active(), "Start with the probe stopped"
+            require(not active(), "Start with the probe stopped")
             client.subscribe_logs()
             prepared = True
             request("INPUT KEY HOME")
@@ -103,8 +109,9 @@ def main():
                 started = True
                 request(f"PACKAGE run {app}")
                 pump(8)
-                assert active()
-                assert any("MAINLOOP entered" in r["payload"] for r in records[begin:])
+                require(active(), "Probe is not active after launch")
+                require(any("MAINLOOP entered" in r["payload"] for r in records[begin:]),
+                        "Probe did not enter its retained VM call")
                 if cycle == 0:
                     for bits in (1, 2, 16):
                         request(f"INPUT CONTROLLER 0 1 {bits}"); pump(.2)
@@ -118,14 +125,15 @@ def main():
                     request(f"PACKAGE run {app}"); pump(3)
                     screenshot("resumed")
                 phase = records[begin:]
-                assert sum("MAINLOOP alive" in r["payload"] for r in phase) >= 3
+                require(sum("MAINLOOP alive" in r["payload"] for r in phase) >= 3,
+                        "Probe did not survive multiple waits")
                 report["phases"].append({"cycle": cycle, "heartbeats": sum("MAINLOOP alive" in r["payload"] for r in phase)})
                 if cycle == 1 and args.replace_with:
                     replacement_requested = True
                     request(f"PACKAGE run {args.replace_with}"); pump(5)
-                    assert not active(), "Replacement did not cancel the old native loop"
-                    assert any(f.kind == "PKG" and f":{args.replace_with}\t" in f.payload and "active=1" in f.payload
-                               for f in request("PACKAGES")), "Queued replacement was lost"
+                    require(not active(), "Replacement did not cancel the old native loop")
+                    require(any(f.kind == "PKG" and f":{args.replace_with}\t" in f.payload and "active=1" in f.payload
+                                for f in request("PACKAGES")), "Queued replacement was lost")
                     request(f"PACKAGE stop {args.replace_with}"); pump(2)
                     replacement_requested = False
                     report["replacement"] = args.replace_with
@@ -135,9 +143,9 @@ def main():
                 print(f"cycle {cycle}: start, retained waits and terminal stop passed", flush=True)
             probe_logs = [r["payload"] for r in records if "MAINLOOP " in r["payload"]]
             for kind in ("pointer", "controller", "lifecycle"):
-                assert any(f"MAINLOOP {kind}" in text for text in probe_logs), kind
-            assert any("MAINLOOP lifecycle value=0" in text for text in probe_logs)
-            assert any("MAINLOOP lifecycle value=1" in text for text in probe_logs)
+                require(any(f"MAINLOOP {kind}" in text for text in probe_logs), f"No {kind} event received")
+            require(any("MAINLOOP lifecycle value=0" in text for text in probe_logs), "No background transition")
+            require(any("MAINLOOP lifecycle value=1" in text for text in probe_logs), "No foreground transition")
             report["probe_logs"] = probe_logs
             report["qualified"] = True
         except BaseException as error:
