@@ -1,0 +1,48 @@
++ git diff --cached --quiet
++ git -C deps/pxa-system diff --quiet
++ git -C deps/pxa-system diff --cached --quiet
++ git -c submodule.recurse=false cherry-pick 9ef87b7f257cfd40ce3b3b9a4817c9a22609eab0
+[codex/apps-platforms fad27a0] feat(host): run Core 2.1 game loops on the existing runtime task
+ Date: Tue Oct 20 11:58:04 2026 +0800
+ 11 files changed, 629 insertions(+), 3 deletions(-)
+ create mode 100644 firmware/components/pxa/src/runtime/pxa_host_main_loop.h
+ create mode 100644 firmware/components/pxa/tests/pxa_host_main_loop_test.c
+ create mode 100644 tools/game-perf/profiles/main-loop-probe/CMakeLists.txt
+ create mode 100644 tools/game-perf/profiles/main-loop-probe/main.c
+ create mode 100644 tools/game-perf/profiles/main-loop-probe/package.json
+ create mode 100644 tools/game-perf/profiles/quake2-main-loop/CMakeLists.txt
+ create mode 100644 tools/game-perf/profiles/quake2-main-loop/package.json
+ create mode 100644 tools/game-perf/run_main_loop_probe.py
++ git -C deps/pxa-system merge --ff-only 5a6e1798b2f6b012ce4df481afeb3a6b0abdc998
+Updating ab461fd..5a6e179
+Fast-forward
+ libpxa/CMakeLists.txt                              |  17 ++
+ libpxa/adapters/include/pxa/wamr/pxa_wamr_engine.h |  19 +++
+ libpxa/adapters/tests/event_port_engine_test.c     | 170 +++++++++++++++++++
+ libpxa/adapters/tests/event_port_guest.c           |  83 +++++++++
+ libpxa/adapters/wamr/pxa_wamr_engine.c             | 185 ++++++++++++++++++++-
+ libpxa/include/pxa/event_port.h                    |  17 ++
+ libpxa/include/pxa/package.h                       |   7 +-
+ libpxa/include/pxa/runtime.h                       |   1 +
+ libpxa/include/pxa/wire.h                          |   4 +-
+ libpxa/src/package/inventory.c                     |   7 +
+ libpxa/src/package/manifest_decode.c               |   7 +
+ libpxa/tests/package_test.c                        |  28 ++++
+ sdk/guest-c/include/pxa.h                          |   2 +-
+ sdk/guest-c/include/pxa_event_port.h               |  52 ++++++
+ spec/draft/abi-2.1-main-loop.md                    |  76 +++++++++
+ spec/draft/core-wire.md                            |  16 +-
+ spec/draft/pxa-core.json                           |  35 +++-
+ spec/draft/tools/check_spec.py                     |   2 +-
+ tools/package/build_package_manifest.py            |   9 +
+ 19 files changed, 712 insertions(+), 25 deletions(-)
+ create mode 100644 libpxa/adapters/tests/event_port_engine_test.c
+ create mode 100644 libpxa/adapters/tests/event_port_guest.c
+ create mode 100644 libpxa/include/pxa/event_port.h
+ create mode 100644 sdk/guest-c/include/pxa_event_port.h
+ create mode 100644 spec/draft/abi-2.1-main-loop.md
++ git log -1 --oneline
+fad27a0 feat(host): run Core 2.1 game loops on the existing runtime task
++ git -C deps/pxa-system log -2 --oneline
+5a6e179 fix(sdk): report Core 2.1 from the guest C header
+c14ce9d feat(core): add opt-in main-loop event ports without continuation copies

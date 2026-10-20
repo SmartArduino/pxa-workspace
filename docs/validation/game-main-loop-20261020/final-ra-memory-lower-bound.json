@@ -1,0 +1,43 @@
+{
+  "schema": "pxa-aot-memory-lower-bound-1",
+  "reserved_linear_bytes": 10027008,
+  "observed_idle_psram_bytes": 15787188,
+  "artifacts": [
+    {
+      "path": "local/game-main-loop-final/pxa-ra-main-loop/artifacts/main.esp32-s31.aot",
+      "bytes": 4175748,
+      "sha256": "3284cf44b8cce9d724aa694d6566d72339ff622b6f1311b3f60f614962d20ff3",
+      "sections": [
+        {
+          "kind": 0,
+          "bytes": 48
+        },
+        {
+          "kind": 1,
+          "bytes": 151980
+        },
+        {
+          "kind": 2,
+          "bytes": 3259652
+        },
+        {
+          "kind": 3,
+          "bytes": 60944
+        },
+        {
+          "kind": 4,
+          "bytes": 187
+        },
+        {
+          "kind": 5,
+          "bytes": 702880
+        }
+      ],
+      "text_section_bytes": 3259652,
+      "text_plus_linear_bytes": 13286660,
+      "remaining_before_other_allocations_bytes": 2500528,
+      "text_section_reduction_from_first_bytes": 0
+    }
+  ],
+  "scope": "Static section-size diagnostic only. Text includes its literal prefix. Alignment, loader metadata, relocations, runtime heap, stacks and other allocations are excluded. Positive remaining space does not establish load admission, executable imports, correctness or device FPS."
+}

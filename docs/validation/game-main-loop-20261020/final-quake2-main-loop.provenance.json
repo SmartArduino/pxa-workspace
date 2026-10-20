@@ -1,0 +1,40 @@
+{
+  "artifact": {
+    "manifest_sha256": "159ade1ff810cd6057c2a051ee2f97ca033d12391b51d9e4f943d8e7a9adf1c7",
+    "path": "pxa-quake2-main-loop.pxa",
+    "sha256": "4a58629787bfb65d001908b83b34d0ebd1a4573406cbeeedd61f16c03bf5ea3a",
+    "size": 1878066
+  },
+  "inputs": {
+    "compile_sdk": [
+      2,
+      1
+    ],
+    "files": [
+      {
+        "path": "artifacts/main.esp32-s31.aot",
+        "sha256": "f21af1d477c41403d99144d2f5bd2e83f5c5a09b4368a86e8f48bb41ab131c6a",
+        "size": 2810152
+      }
+    ],
+    "i18n_catalogs": [],
+    "package_json_sha256": "7a64df757c8bcda532dc4437197ec650d52cf40323d2dfcd7199ceb6a4053977"
+  },
+  "package": {
+    "app_id": "pxa-quake2-sd",
+    "engine_abi": "wamr-pxa-aot-v6-core-1",
+    "manifest_format": "0.7",
+    "min_sdk": "2.1",
+    "publisher_key_id": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171",
+    "release_sequence": 15,
+    "target": "esp32-s31",
+    "target_sdk": "2.1"
+  },
+  "schema": "pxa-provenance-1",
+  "tools": {
+    "clang": "clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141)",
+    "python": "3.14.8",
+    "wamrc": "wamrc 2.4.3",
+    "wasi_sdk_dir": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/deps/pxa-system/.pxa/wasi-sdk-34.0-x86_64-linux"
+  }
+}

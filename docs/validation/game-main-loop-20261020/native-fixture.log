@@ -1,0 +1,9 @@
+(node:1564403) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PXA native main-loop ready; continuation copies disabled
+PXA Clock accepted period_us=8000
+Starting Runtime fixture
+PXA Clock accepted period_us=0
+PXA Clock accepted period_us=8000
+FIXTURE PASS
+{"frames":17,"ticks":2053,"calls":932,"bytes":917504}

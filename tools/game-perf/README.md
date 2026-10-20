@@ -97,4 +97,36 @@ The RA offline no-Asyncify comparison still has unresolved coroutine imports;
 it must never be installed as though the new execution model already existed.
 Measurements and limitations are in
 `docs/validation/game-render-followup-20261020`; the proposed execution and audio
-changes in `docs/design/pxa-game-execution.zh-CN.md` are explicitly unimplemented.
+changes in that report were unimplemented at its measurement date.
+
+## Core 2.1 main-loop candidates
+
+`main-loop-probe` validates native waits, pointer/controller events, lifecycle,
+terminal stop and queued replacement. `run_main_loop_probe.py` operates an
+already installed probe; it neither flashes nor installs firmware. Record the
+matching firmware image hash and run it before the game profiles. An optional
+`--replace-with` names an existing app to check that replacement survives the
+old call's cancellation.
+
+`quake-main-loop`, `quake2-main-loop`, `duke-main-loop`, `cnc-main-loop` and
+`ra-main-loop` retain the original game settings and select
+`PXA_RECROF_MAIN_LOOP=ON`. Set `PXA_GAME_APPS_ROOT` to the matching Apps checkout
+and `PXSYS_ROOT` to the Core 2.1 SDK. These signed packages require one `main`
+UI component with `execution_model: main-loop` and a Host advertising that
+engine execution model. The normal Apps build still defaults to callbacks.
+
+For example, from a checkout containing these profiles:
+
+```sh
+PXA_GAME_APPS_ROOT=/absolute/path/to/matching/pxa-apps \
+bash tools/app.sh build quake2-main-loop --board doit-gamekit \
+  --source-root tools/game-perf/profiles --target esp32s31 --aot-only \
+  --output local/main-loop-q2
+```
+
+Unlike the old offline import-stripping size experiment, these candidates use
+the real event-port SDK and omit the Asyncify pass and continuation buffer.
+The RISC-V package build verifies their imports and memory bounds. Successful
+compilation, desktop file/input tests, reduced AOT size and a positive static
+memory remainder do not qualify device loading, FPS or original audio fidelity.
+The existing 16 kHz mono audio output remains a separate unfinished change.

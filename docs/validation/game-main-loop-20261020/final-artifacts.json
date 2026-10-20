@@ -1,0 +1,165 @@
+{
+  "scope": "Signed ESP32-S31 candidates; offline Node actual levels and Clock-start gate passed; no device loading/FPS/audio qualification.",
+  "apps_commit": "71dc79604e3e851ab76bf7f89b967318bd770025",
+  "sdk_commit": "5a6e1798b2f6b012ce4df481afeb3a6b0abdc998",
+  "host_commit": "fad27a0",
+  "device_qualified": false,
+  "original_audio_qualified": false,
+  "artifacts": [
+    {
+      "game": "quake",
+      "profile": "quake-main-loop",
+      "app_id": "pxa-quake-sd",
+      "version": "0.4.9",
+      "release_sequence": 129,
+      "execution_model": "main-loop",
+      "min_sdk": [
+        2,
+        1
+      ],
+      "linear_memory": {
+        "maximum_bytes": 3670016,
+        "pinned": true
+      },
+      "wasm": {
+        "path": "local/game-main-loop-final-inputs/quake.wasm",
+        "sha256": "0dea6b7ef00ca6d97a459218a39b890d907a746c9fbf90c759d894ad125c6b56",
+        "bytes": 877415
+      },
+      "aot": {
+        "path": "local/game-main-loop-final/pxa-quake-main-loop/artifacts/main.esp32-s31.aot",
+        "bytes": 2992412,
+        "sha256": "66da9f9131c1f81e036de4831c697793190ed3fc14c56ba3c38b1bab994f2a05"
+      },
+      "container": {
+        "path": "local/game-main-loop-final/pxa-quake-main-loop.pxa",
+        "bytes": 1492438,
+        "sha256": "be9e233fc033d1d41fd8c7db952041e8d49776bec14827850d2ee91754126e88"
+      }
+    },
+    {
+      "game": "quake2",
+      "profile": "quake2-main-loop",
+      "app_id": "pxa-quake2-sd",
+      "version": "0.1.14",
+      "release_sequence": 15,
+      "execution_model": "main-loop",
+      "min_sdk": [
+        2,
+        1
+      ],
+      "linear_memory": {
+        "maximum_bytes": 10682368,
+        "pinned": true
+      },
+      "wasm": {
+        "path": "local/game-main-loop-final-inputs/quake2.wasm",
+        "sha256": "416d88235a48f7b844f59371d21920557a5c77da3eba08ec2695e15e1e38a212",
+        "bytes": 772331
+      },
+      "aot": {
+        "path": "local/game-main-loop-final/pxa-quake2-main-loop/artifacts/main.esp32-s31.aot",
+        "bytes": 2810152,
+        "sha256": "f21af1d477c41403d99144d2f5bd2e83f5c5a09b4368a86e8f48bb41ab131c6a"
+      },
+      "container": {
+        "path": "local/game-main-loop-final/pxa-quake2-main-loop.pxa",
+        "bytes": 1878066,
+        "sha256": "4a58629787bfb65d001908b83b34d0ebd1a4573406cbeeedd61f16c03bf5ea3a"
+      }
+    },
+    {
+      "game": "duke",
+      "profile": "duke-main-loop",
+      "app_id": "pxa-duke3d-sd",
+      "version": "0.1.31",
+      "release_sequence": 32,
+      "execution_model": "main-loop",
+      "min_sdk": [
+        2,
+        1
+      ],
+      "linear_memory": {
+        "maximum_bytes": 3670016,
+        "pinned": true
+      },
+      "wasm": {
+        "path": "local/game-main-loop-final-inputs/duke.wasm",
+        "sha256": "a0e1e16ec6f1af9116c85dbe9f9521d637e5f26bf54686ee73b71942959d0f2a",
+        "bytes": 995366
+      },
+      "aot": {
+        "path": "local/game-main-loop-final/pxa-duke-main-loop/artifacts/main.esp32-s31.aot",
+        "bytes": 2313336,
+        "sha256": "c700bb3d9e37e2cb029db192c91bd5bb647cf0a0eacd78492594047e1ffdaac1"
+      },
+      "container": {
+        "path": "local/game-main-loop-final/pxa-duke-main-loop.pxa",
+        "bytes": 1637943,
+        "sha256": "74dbadb5f72ccd3687f8f35feeb2be2a12ef104401bd5542a2e4a5697454ffc5"
+      }
+    },
+    {
+      "game": "cnc",
+      "profile": "cnc-main-loop",
+      "app_id": "pxa-command-conquer-sd",
+      "version": "0.1.11",
+      "release_sequence": 12,
+      "execution_model": "main-loop",
+      "min_sdk": [
+        2,
+        1
+      ],
+      "linear_memory": {
+        "maximum_bytes": 7340032,
+        "pinned": true
+      },
+      "wasm": {
+        "path": "local/game-main-loop-final-inputs/cnc.wasm",
+        "sha256": "2c8bc9516521c0a2030121808ac4c9ddc348f9b3b9a1303f60aac0aa7256f6b9",
+        "bytes": 808897
+      },
+      "aot": {
+        "path": "local/game-main-loop-final/pxa-cnc-main-loop/artifacts/main.esp32-s31.aot",
+        "bytes": 3148624,
+        "sha256": "a785e0f9599b2199d85c6f2017a3847fa1daef9005c1ecf24705eadd827969c4"
+      },
+      "container": {
+        "path": "local/game-main-loop-final/pxa-cnc-main-loop.pxa",
+        "bytes": 2058405,
+        "sha256": "7d61d30ddcbb9fbd2f12529b9187f1d77867435b095d44007df70d621f7a2241"
+      }
+    },
+    {
+      "game": "ra",
+      "profile": "ra-main-loop",
+      "app_id": "pxa-red-alert-sd",
+      "version": "0.1.4",
+      "release_sequence": 5,
+      "execution_model": "main-loop",
+      "min_sdk": [
+        2,
+        1
+      ],
+      "linear_memory": {
+        "maximum_bytes": 10027008,
+        "pinned": true
+      },
+      "wasm": {
+        "path": "local/game-main-loop-final-inputs/ra.wasm",
+        "sha256": "e45eafea521a30a8766f8e52d363198adc3dea90febdb178fe7e83171f7a785c",
+        "bytes": 1053474
+      },
+      "aot": {
+        "path": "local/game-main-loop-final/pxa-ra-main-loop/artifacts/main.esp32-s31.aot",
+        "bytes": 4175748,
+        "sha256": "3284cf44b8cce9d724aa694d6566d72339ff622b6f1311b3f60f614962d20ff3"
+      },
+      "container": {
+        "path": "local/game-main-loop-final/pxa-ra-main-loop.pxa",
+        "bytes": 2633983,
+        "sha256": "9c1b57a319b64ee2d366fb869df70bef05d03906da96d58717fe4f2dfc817ce3"
+      }
+    }
+  ]
+}

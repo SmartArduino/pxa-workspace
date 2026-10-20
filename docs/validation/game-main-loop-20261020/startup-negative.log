@@ -1,0 +1,17 @@
+(node:1563609) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PXA native main-loop ready; continuation copies disabled
+file:///home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/pxa-apps-main-loop/common/recrof/tests/host.mjs:55
+   throw Error('Engine started before a foreground Clock event');
+         ^
+
+Error: Engine started before a foreground Clock event
+    at pxa_call (file:///home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/pxa-apps-main-loop/common/recrof/tests/host.mjs:55:10)
+    at main.wasm.port_log (wasm://wasm/main.wasm-0005338a:wasm-function[46]:0x193d)
+    at main.wasm.run_game (wasm://wasm/main.wasm-0005338a:wasm-function[81]:0x476b)
+    at main.wasm.pump (wasm://wasm/main.wasm-0005338a:wasm-function[80]:0x4735)
+    at main.wasm.pxa_app_on_event (wasm://wasm/main.wasm-0005338a:wasm-function[79]:0x46a7)
+    at event (file:///home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/pxa-apps-main-loop/common/recrof/tests/host.mjs:162:31)
+    at file:///home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/pxa-apps-main-loop/common/recrof/tests/host.mjs:182:40
+
+Node.js v22.22.2

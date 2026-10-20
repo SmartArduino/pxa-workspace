@@ -1,0 +1,31 @@
+{
+  "apps_commit": "71dc79604e3e851ab76bf7f89b967318bd770025",
+  "sdk_commit": "5a6e1798b2f6b012ce4df481afeb3a6b0abdc998",
+  "artifacts": {
+    "quake": {
+      "path": "local/game-main-loop-final-inputs/quake.wasm",
+      "sha256": "0dea6b7ef00ca6d97a459218a39b890d907a746c9fbf90c759d894ad125c6b56",
+      "bytes": 877415
+    },
+    "quake2": {
+      "path": "local/game-main-loop-final-inputs/quake2.wasm",
+      "sha256": "416d88235a48f7b844f59371d21920557a5c77da3eba08ec2695e15e1e38a212",
+      "bytes": 772331
+    },
+    "duke": {
+      "path": "local/game-main-loop-final-inputs/duke.wasm",
+      "sha256": "a0e1e16ec6f1af9116c85dbe9f9521d637e5f26bf54686ee73b71942959d0f2a",
+      "bytes": 995366
+    },
+    "cnc": {
+      "path": "local/game-main-loop-final-inputs/cnc.wasm",
+      "sha256": "2c8bc9516521c0a2030121808ac4c9ddc348f9b3b9a1303f60aac0aa7256f6b9",
+      "bytes": 808897
+    },
+    "ra": {
+      "path": "local/game-main-loop-final-inputs/ra.wasm",
+      "sha256": "e45eafea521a30a8766f8e52d363198adc3dea90febdb178fe7e83171f7a785c",
+      "bytes": 1053474
+    }
+  }
+}

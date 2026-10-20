@@ -1,0 +1,4 @@
+PXA consolidated draft OK (52 Core vectors, 5 package payloads)
+Wrote /tmp/pxa-spec-test-tc0z7z6j/core-vectors.json
+Wrote /tmp/pxa-spec-test-tc0z7z6j/package-vectors.json
+PXA spec generation is reproducible
