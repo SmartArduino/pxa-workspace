@@ -1,0 +1,24 @@
+PACKAGES [('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('PKG', '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake-sd\tQuake SD\t0.4.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'), ('OK', '')]
+PACKAGE archive pxa-quake-sd [('OK', '')]
+MEMORY [('DATA', 'scope=heap;sram_total=652419;sram_free=128715;sram_min=6376;sram_largest=55296;psram_total=16741200;psram_free=15663784;psram_min=57844;psram_largest=8257536'), ('DATA', 'scope=budget;internal=27004;external=16564;peak_internal=44924;peak_external=225268;temporary_peak_internal=0;temporary_peak_external=50334;fixed=2224;denied=0;allocation_failures=0'), ('DATA', 'scope=kind;name=raster;internal=0;external=0'), ('DATA', 'scope=kind;name=image;internal=0;external=0'), ('DATA', 'scope=kind;name=audio;internal=0;external=16400'), ('DATA', 'scope=kind;name=temporary;internal=0;external=0'), ('DATA', 'scope=kind;name=metadata;internal=27004;external=164'), ('DATA', 'scope=kind;name=frame;internal=0;external=0'), ('DATA', 'scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=509952'), ('OK', '')]
+staging: pxa-quake2-sd
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-q2-final/pxa-quake2-sd/artifacts/main.esp32-s31.aot -> PXA storage/pxa-state/inbox/.receiving-pxa-quake2-sd/artifacts/main.esp32-s31.aot (4478376 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-q2-final/pxa-quake2-sd/manifest.pxm -> PXA storage/pxa-state/inbox/.receiving-pxa-quake2-sd/manifest.pxm (913 bytes)
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/game-render-q2-final/pxa-quake2-sd/signature.pxs -> PXA storage/pxa-state/inbox/.receiving-pxa-quake2-sd/signature.pxs (108 bytes)
+upload 100%
+verifying and installing: pxa-quake2-sd
+installed: pxa-quake2-sd
+staging: pxa-jump-jump-3d
+pxadb: error: insufficient device storage: free=1.90 MiB; upload needs about 1.94 MiB and installation another 0.12 MiB (peak=2.07 MiB). Free at least 0.17 MiB by uninstalling apps you no longer need, then retry. Upload has not started.

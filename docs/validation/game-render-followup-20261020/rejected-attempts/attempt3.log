@@ -1,0 +1,18 @@
+ACTION {'run_modes': [1, 3, 2, 0]}
+ACTION {'mode': 1}
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+upload 100%
+Traceback (most recent call last):
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 120, in <module>
+    req('INPUT CONTROLLER 0 1 0');pump(10);shot('attach')
+                                  ~~~~^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 41, in pump
+    try:action(a)
+        ~~~~~~^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 75, in action
+    action({'mode':mode})
+    ~~~~~~^^^^^^^^^^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 71, in action
+    assert time.monotonic()<deadline,(mode,probe_state)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (1, {'component': 65537, 'ready': 1, 'hp': 100, 'xyz': '544,288,50', 'n': 35, 'mode': 0, 'pn': 2, 'view': 112540, 'sv': 146733, 'prep': 47622, 'grad': 4910, 'rows': 29222, 'load': 22584, 'pack': 6237, 'io': 17778, 'hb': 0, 'hr': 0, 'hv': 0, 'hx': 0})

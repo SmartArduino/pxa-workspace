@@ -1,0 +1,78 @@
+{
+  "schema": "pxa-aot-memory-lower-bound-1",
+  "reserved_linear_bytes": 10027008,
+  "observed_idle_psram_bytes": 15684068,
+  "artifacts": [
+    {
+      "path": "local/game-render-ra-size-s31/pxa-ra-size/artifacts/main.esp32-s31.aot",
+      "bytes": 7155880,
+      "sha256": "8cbc894a5b5001bf483ba82527113722ae4bb458aa0e5d7a40a09fd5e1125e4a",
+      "sections": [
+        {
+          "kind": 0,
+          "bytes": 48
+        },
+        {
+          "kind": 1,
+          "bytes": 152712
+        },
+        {
+          "kind": 2,
+          "bytes": 6175548
+        },
+        {
+          "kind": 3,
+          "bytes": 66176
+        },
+        {
+          "kind": 4,
+          "bytes": 343
+        },
+        {
+          "kind": 5,
+          "bytes": 760996
+        }
+      ],
+      "text_section_bytes": 6175548,
+      "text_plus_linear_bytes": 16202556,
+      "remaining_before_other_allocations_bytes": -518488,
+      "text_section_reduction_from_first_bytes": 0
+    },
+    {
+      "path": "local/ra-no-asyncify-size/optimized-no-asyncify.aot",
+      "bytes": 4112612,
+      "sha256": "a284cfab70b2561756e9444653a01953699e1ca3464a0f041a34da3f6b9e84f0",
+      "sections": [
+        {
+          "kind": 0,
+          "bytes": 48
+        },
+        {
+          "kind": 1,
+          "bytes": 152704
+        },
+        {
+          "kind": 2,
+          "bytes": 3159212
+        },
+        {
+          "kind": 3,
+          "bytes": 65840
+        },
+        {
+          "kind": 4,
+          "bytes": 187
+        },
+        {
+          "kind": 5,
+          "bytes": 734564
+        }
+      ],
+      "text_section_bytes": 3159212,
+      "text_plus_linear_bytes": 13186220,
+      "remaining_before_other_allocations_bytes": 2497848,
+      "text_section_reduction_from_first_bytes": 3016336
+    }
+  ],
+  "scope": "Static section-size diagnostic only. Text includes its literal prefix. Alignment, loader metadata, relocations, runtime heap, stacks and other allocations are excluded. Positive remaining space does not establish load admission, executable imports, correctness or device FPS."
+}

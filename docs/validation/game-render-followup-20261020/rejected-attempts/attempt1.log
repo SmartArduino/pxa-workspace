@@ -1,0 +1,67 @@
+[serial] I (17095719) Pxadb: Package list finished: stack_free=6804B
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+upload 100%
+ACTION {'button': 64, 'seconds': 0.5}
+SHOT launch {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '76214', 'device_us': '17122769314', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': 'e7bd826c25baa257de6d47726f076f4e057a71e38b6e6d4a17aa1abc788de97e'}
+ACTION {'button': 16, 'seconds': 0.3}
+ACTION {'button': 16, 'seconds': 0.3}
+ACTION {'run_modes': [0, 1, 3, 2, 0]}
+ACTION {'mode': 0}
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+upload 100%
+ACTION {'measure': 'mode-0-0', 'seconds': 60, 'warmup': 20}
+SHOT mode-0-0-before {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '76358', 'device_us': '17144530505', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': 'c51988531e513d512cebea03e47b2a56d75d0404bd1b007f9b87f9edf81df113'}
+QUAKE PROBE FPS mode-0-0 10 6.9
+Traceback (most recent call last):
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 123, in <module>
+    while not done and time.monotonic()<end:pump(.5)
+                                            ~~~~^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 40, in pump
+    try:action(a)
+        ~~~~~~^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 75, in action
+    action({'measure':f'mode-{mode}-{index}','seconds':60,'warmup':20})
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 95, in action
+    pump(start+i+1-time.monotonic(),False)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 35, in pump
+    c.pump_logs()
+    ~~~~~~~~~~~^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/pxadb/pxadb.py", line 358, in pump_logs
+    while self.serial.in_waiting:
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/pxadb/pxadb.py", line 151, in in_waiting
+    return self.serial_port.in_waiting + len(self.buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/site-packages/serial/serialposix.py", line 549, in in_waiting
+    s = fcntl.ioctl(self.fd, TIOCINQ, TIOCM_zero_str)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.14/site-packages/serial/serialposix.py", line 621, in write
+    n = os.write(self.fd, d)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 125, in <module>
+    held=0;req('INPUT CONTROLLER 0 1 0')
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 27, in req
+    rec('COMMAND',cmd);fs=c.request(cmd,timeout=30)
+                          ~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/pxadb/pxadb.py", line 501, in request
+    return self.request_until(command, {"OK"}, timeout)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/pxadb/pxadb.py", line 414, in request_until
+    self._write_command(sequence, command)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/pxadb/pxadb.py", line 395, in _write_command
+    written = self.serial.write(payload[offset:burst_end])
+  File "/usr/lib/python3.14/site-packages/serial/serialposix.py", line 655, in write
+    raise SerialException('write failed: {}'.format(e))
+serial.serialutil.SerialException: write failed: [Errno 5] Input/output error

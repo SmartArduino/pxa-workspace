@@ -1,0 +1,1 @@
+PASS: preserved channels for all 65536 U8 pairs, U8/S16 ring wrap, empty/batched output and bit-exact legacy mono average

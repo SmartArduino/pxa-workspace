@@ -1,0 +1,21 @@
+Oct 20 10:04:35 lucinhu-code01 kernel: usb 1-4.1.4.3: USB disconnect, device number 100
+Oct 20 10:04:35 lucinhu-code01 kernel: usb 1-4.1.4.3: new full-speed USB device number 106 using xhci_hcd
+Oct 20 10:04:35 lucinhu-code01 kernel: usb 1-4.1.4.3: New USB device found, idVendor=1a86, idProduct=55d3, bcdDevice= 4.45
+Oct 20 10:04:35 lucinhu-code01 kernel: usb 1-4.1.4.3: New USB device strings: Mfr=0, Product=2, SerialNumber=3
+Oct 20 10:04:35 lucinhu-code01 kernel: usb 1-4.1.4.3: Product: USB Single Serial
+Oct 20 10:04:35 lucinhu-code01 kernel: usb 1-4.1.4.3: SerialNumber: 5CFF043509
+Oct 20 10:04:35 lucinhu-code01 kernel: cdc_acm 1-4.1.4.3:1.0: ttyACM0: USB ACM device
+Oct 20 10:05:59 lucinhu-code01 kernel: usb 1-4.1.4.3: USB disconnect, device number 106
+Oct 20 10:05:59 lucinhu-code01 kernel: usb 1-4.1.4.3: new full-speed USB device number 107 using xhci_hcd
+Oct 20 10:05:59 lucinhu-code01 kernel: usb 1-4.1.4.3: New USB device found, idVendor=1a86, idProduct=55d3, bcdDevice= 4.45
+Oct 20 10:05:59 lucinhu-code01 kernel: usb 1-4.1.4.3: New USB device strings: Mfr=0, Product=2, SerialNumber=3
+Oct 20 10:05:59 lucinhu-code01 kernel: usb 1-4.1.4.3: Product: USB Single Serial
+Oct 20 10:05:59 lucinhu-code01 kernel: usb 1-4.1.4.3: SerialNumber: 5CFF043509
+Oct 20 10:05:59 lucinhu-code01 kernel: cdc_acm 1-4.1.4.3:1.0: ttyACM0: USB ACM device
+Oct 20 10:06:01 lucinhu-code01 kernel: usb 1-4.1.4.3: USB disconnect, device number 107
+Oct 20 10:06:01 lucinhu-code01 kernel: usb 1-4.1.4.3: new full-speed USB device number 108 using xhci_hcd
+Oct 20 10:06:01 lucinhu-code01 kernel: usb 1-4.1.4.3: New USB device found, idVendor=1a86, idProduct=55d3, bcdDevice= 4.45
+Oct 20 10:06:01 lucinhu-code01 kernel: usb 1-4.1.4.3: New USB device strings: Mfr=0, Product=2, SerialNumber=3
+Oct 20 10:06:01 lucinhu-code01 kernel: usb 1-4.1.4.3: Product: USB Single Serial
+Oct 20 10:06:01 lucinhu-code01 kernel: usb 1-4.1.4.3: SerialNumber: 5CFF043509
+Oct 20 10:06:01 lucinhu-code01 kernel: cdc_acm 1-4.1.4.3:1.0: ttyACM0: USB ACM device

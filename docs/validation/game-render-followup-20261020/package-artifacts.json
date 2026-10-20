@@ -1,0 +1,18 @@
+{
+  "cnc": {
+    "package": "local/storage-controller-cnc-s31/pxa-command-conquer-sd",
+    "bytes": 5448616,
+    "sha256": "8533134193284aafb5c125307fabaa1c9ec8982b624022b82da3838f9773bd55",
+    "manifest_files": {
+      "manifest.pxm": "e7dac145feb3a42c4c518f583bc0ac822941af6206d09c4402222d4be2da8f6a"
+    }
+  },
+  "quake-probe": {
+    "package": "local/game-render-probe-s31/pxa-quake-probe",
+    "bytes": 5913612,
+    "sha256": "68e638ecba0fbf89fc569c023228ac2490bfd4f8f85bfff7a99e150ae596b296",
+    "manifest_files": {
+      "manifest.pxm": "b9c494cfc14ef528f13a3fba2bfc8a7e38e631dd3253a402d7965a8f07705f71"
+    }
+  }
+}

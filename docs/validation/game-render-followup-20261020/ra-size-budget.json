@@ -1,0 +1,36 @@
+{
+  "aot": "local/game-render-ra-size-s31/pxa-ra-size/artifacts/main.esp32-s31.aot",
+  "bytes": 7155880,
+  "sha256": "8cbc894a5b5001bf483ba82527113722ae4bb458aa0e5d7a40a09fd5e1125e4a",
+  "sections": [
+    {
+      "kind": 0,
+      "bytes": 48
+    },
+    {
+      "kind": 1,
+      "bytes": 152712
+    },
+    {
+      "kind": 2,
+      "bytes": 6175548
+    },
+    {
+      "kind": 3,
+      "bytes": 66176
+    },
+    {
+      "kind": 4,
+      "bytes": 343
+    },
+    {
+      "kind": 5,
+      "bytes": 760996
+    }
+  ],
+  "reserved_linear_bytes": 10027008,
+  "text_plus_linear_bytes": 16202556,
+  "best_measured_idle_psram": 15684068,
+  "remaining_before_module_metadata_bytes": -518488,
+  "scope": "Source -Oz only; original renderer, caches, units and existing audio backend. Not full-audio-fidelity qualified."
+}

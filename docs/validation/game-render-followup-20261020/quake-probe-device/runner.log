@@ -1,0 +1,63 @@
+[serial] I (17532532) Pxadb: Package list finished: stack_free=6804B
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+upload 100%
+SHOT launch {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '78210', 'device_us': '17558175265', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': 'aa746614aedfa3874e1dd47b2b829a311e5aedc588f29493d1532fcf8d228392'}
+ACTION {'button': 64, 'seconds': 0.5}
+ACTION {'button': 16, 'seconds': 0.3}
+ACTION {'button': 16, 'seconds': 0.3}
+ACTION {'run_modes': [1, 3, 2, 0]}
+ACTION {'mode': 1}
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+upload 100%
+ACTION {'measure': 'mode-1-0', 'seconds': 60, 'warmup': 20}
+SHOT mode-1-0-before {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '78468', 'device_us': '17594155467', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': '0b01c30a5ec3afb1ccd9b4727e5a557da5bb30b81c8a3f84c606c96c3ac13cea'}
+QUAKE PROBE FPS mode-1-0 10 6.9
+QUAKE PROBE FPS mode-1-0 20 6.9
+QUAKE PROBE FPS mode-1-0 30 5.9
+QUAKE PROBE FPS mode-1-0 40 5.9
+QUAKE PROBE FPS mode-1-0 50 6.9
+QUAKE PROBE FPS mode-1-0 60 6.9
+SHOT mode-1-0-after {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '79033', 'device_us': '17675921829', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': 'dc6a0b74b0b8b2a466bdb21ef6427a300bf6b33ab96c599ccf60875c76a0cfa8'}
+WINDOW mode-1-0 {'median': 6.9, 'mean': 6.833333333333334, 'min': 5.9, 'max': 7.9}
+ACTION {'mode': 3}
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+upload 100%
+ACTION {'measure': 'mode-3-1', 'seconds': 60, 'warmup': 20}
+SHOT mode-3-1-before {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '79100', 'device_us': '17686321241', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': '38a6725ba825e0ee0f01aa37dccae2fa1e47ff52d77e76622b1246d5703ed8b8'}
+QUAKE PROBE FPS mode-3-1 10 5.9
+QUAKE PROBE FPS mode-3-1 20 5.9
+QUAKE PROBE FPS mode-3-1 30 4.9
+QUAKE PROBE FPS mode-3-1 40 4.9
+QUAKE PROBE FPS mode-3-1 50 5.9
+QUAKE PROBE FPS mode-3-1 60 5.9
+SHOT mode-3-1-after {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '79612', 'device_us': '17768408515', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': '5f0066adaf6bac86703d6ef41139bdc8cd86a28ecc86176b70384a0fd2ccd8ee'}
+WINDOW mode-3-1 {'median': 5.9, 'mean': 6.15, 'min': 4.9, 'max': 6.9}
+ACTION {'mode': 2}
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+upload 100%
+ACTION {'measure': 'mode-2-2', 'seconds': 60, 'warmup': 20}
+SHOT mode-2-2-before {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '79669', 'device_us': '17777592397', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': '8f762e257769da8563b165a1065425f051b965875f393e05b30bfbaf70ffd8f3'}
+QUAKE PROBE FPS mode-2-2 10 5.9
+QUAKE PROBE FPS mode-2-2 20 5.9
+QUAKE PROBE FPS mode-2-2 30 4.9
+QUAKE PROBE FPS mode-2-2 40 4.9
+QUAKE PROBE FPS mode-2-2 50 5.9
+QUAKE PROBE FPS mode-2-2 60 6.9
+SHOT mode-2-2-after {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '80172', 'device_us': '17859839781', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': '9264a0e162686d76ca55d368a7454128e4b51120cfb6a0cd08bedef6b3a6f2a4'}
+WINDOW mode-2-2 {'median': 5.9, 'mean': 6.050000000000001, 'min': 4.9, 'max': 6.9}
+ACTION {'mode': 0}
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+upload 100%
+ACTION {'measure': 'mode-0-3', 'seconds': 60, 'warmup': 20}
+SHOT mode-0-3-before {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '80245', 'device_us': '17871009773', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': '2ccb8a4de2b960301ab6b9e259cf171fc00d3e7603f9b99e05feb9a1bb3e4262'}
+QUAKE PROBE FPS mode-0-3 10 6.9
+QUAKE PROBE FPS mode-0-3 20 6.9
+QUAKE PROBE FPS mode-0-3 30 6.9
+QUAKE PROBE FPS mode-0-3 40 6.9
+QUAKE PROBE FPS mode-0-3 50 5.9
+QUAKE PROBE FPS mode-0-3 60 3.9
+SHOT mode-0-3-after {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '80785', 'device_us': '17953015631', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': 'ef9993c193820b17396a07722edb82914b450207a1ff87b0ad93898af7a8cd42'}
+WINDOW mode-0-3 {'median': 6.9, 'mean': 6.446666666666667, 'min': 3.9, 'max': 7.9}
+ACTION {'status': True}
+STATUS [{'kind': 'PKG', 'payload': '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'}, {'kind': 'PKG', 'payload': '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'}, {'kind': 'PKG', 'payload': '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0'}, {'kind': 'PKG', 'payload': '17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake-sd\tQuake SD\t0.4.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=1'}, {'kind': 'OK', 'payload': ''}]
+ACTION {'finish': True}

@@ -1,0 +1,3 @@
+(node:1359706) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS: preserved channels for all 65536 U8 pairs, U8/S16 ring wrap, empty/batched output and bit-exact legacy mono average

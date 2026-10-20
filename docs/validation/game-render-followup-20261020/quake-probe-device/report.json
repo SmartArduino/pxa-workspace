@@ -1,0 +1,1532 @@
+{
+  "app": "pxa-quake-sd",
+  "windows": [
+    {
+      "label": "mode-1-0",
+      "qualified_actual_gameplay": true,
+      "qualification_note": "Visually reviewed both screenshots as actual START spawn, no demo/menu/loading/lock; raw fresh state records confirm hp100, xyz544,288,50 and selected mode. Profiler overhead remains; this is diagnostic AOT evidence.",
+      "fps_samples": [
+        {
+          "seconds": 1.0097203530021943,
+          "fps": 6.9
+        },
+        {
+          "seconds": 2.014764941006433,
+          "fps": 6.9
+        },
+        {
+          "seconds": 3.007823158011888,
+          "fps": 6.9
+        },
+        {
+          "seconds": 4.0128078240086325,
+          "fps": 6.9
+        },
+        {
+          "seconds": 5.0127330670075025,
+          "fps": 6.9
+        },
+        {
+          "seconds": 6.005816378004965,
+          "fps": 6.9
+        },
+        {
+          "seconds": 7.010775691000163,
+          "fps": 6.9
+        },
+        {
+          "seconds": 8.014787514010095,
+          "fps": 6.9
+        },
+        {
+          "seconds": 9.015689661013312,
+          "fps": 6.9
+        },
+        {
+          "seconds": 10.009700793001684,
+          "fps": 6.9
+        },
+        {
+          "seconds": 11.014729468006408,
+          "fps": 6.9
+        },
+        {
+          "seconds": 12.013493174003088,
+          "fps": 6.9
+        },
+        {
+          "seconds": 13.007691397011513,
+          "fps": 6.9
+        },
+        {
+          "seconds": 14.013418954011286,
+          "fps": 6.9
+        },
+        {
+          "seconds": 15.006255383006646,
+          "fps": 5.9
+        },
+        {
+          "seconds": 16.012243441000464,
+          "fps": 6.9
+        },
+        {
+          "seconds": 17.008147471002303,
+          "fps": 6.9
+        },
+        {
+          "seconds": 18.013615280011436,
+          "fps": 6.9
+        },
+        {
+          "seconds": 19.007954275002703,
+          "fps": 6.9
+        },
+        {
+          "seconds": 20.473974785010796,
+          "fps": 6.9
+        },
+        {
+          "seconds": 21.011918085001525,
+          "fps": 6.9
+        },
+        {
+          "seconds": 22.008016247011255,
+          "fps": 6.9
+        },
+        {
+          "seconds": 23.01253910800733,
+          "fps": 6.9
+        },
+        {
+          "seconds": 24.013075294002192,
+          "fps": 6.9
+        },
+        {
+          "seconds": 25.01114698201127,
+          "fps": 5.9
+        },
+        {
+          "seconds": 26.01474652500474,
+          "fps": 6.9
+        },
+        {
+          "seconds": 27.008535927001503,
+          "fps": 6.9
+        },
+        {
+          "seconds": 28.00964930000191,
+          "fps": 7.9
+        },
+        {
+          "seconds": 29.01782775200263,
+          "fps": 6.9
+        },
+        {
+          "seconds": 30.01201112900162,
+          "fps": 5.9
+        },
+        {
+          "seconds": 31.01379007101059,
+          "fps": 6.9
+        },
+        {
+          "seconds": 32.00846683100099,
+          "fps": 6.9
+        },
+        {
+          "seconds": 33.01117965100275,
+          "fps": 6.9
+        },
+        {
+          "seconds": 34.00702101101342,
+          "fps": 6.9
+        },
+        {
+          "seconds": 35.01389226800529,
+          "fps": 6.9
+        },
+        {
+          "seconds": 36.00679811699956,
+          "fps": 6.9
+        },
+        {
+          "seconds": 37.011318899007165,
+          "fps": 6.9
+        },
+        {
+          "seconds": 38.01019222100149,
+          "fps": 6.9
+        },
+        {
+          "seconds": 39.01538198601338,
+          "fps": 6.9
+        },
+        {
+          "seconds": 40.010621331006405,
+          "fps": 5.9
+        },
+        {
+          "seconds": 41.0143675290019,
+          "fps": 6.9
+        },
+        {
+          "seconds": 42.0160770680086,
+          "fps": 7.9
+        },
+        {
+          "seconds": 43.010741468999186,
+          "fps": 5.9
+        },
+        {
+          "seconds": 44.01557462000346,
+          "fps": 7.9
+        },
+        {
+          "seconds": 45.00981209501333,
+          "fps": 6.9
+        },
+        {
+          "seconds": 46.00981248500466,
+          "fps": 5.9
+        },
+        {
+          "seconds": 47.01479517199914,
+          "fps": 6.9
+        },
+        {
+          "seconds": 48.01048781600548,
+          "fps": 6.9
+        },
+        {
+          "seconds": 49.015203797011054,
+          "fps": 6.9
+        },
+        {
+          "seconds": 50.010940571009996,
+          "fps": 6.9
+        },
+        {
+          "seconds": 51.27337431300839,
+          "fps": 6.9
+        },
+        {
+          "seconds": 52.00825420601177,
+          "fps": 6.9
+        },
+        {
+          "seconds": 53.42071383500297,
+          "fps": 6.9
+        },
+        {
+          "seconds": 54.01406124600908,
+          "fps": 6.9
+        },
+        {
+          "seconds": 55.008331973003806,
+          "fps": 6.9
+        },
+        {
+          "seconds": 56.00708730700717,
+          "fps": 5.9
+        },
+        {
+          "seconds": 57.012005702010356,
+          "fps": 6.9
+        },
+        {
+          "seconds": 58.0156830670021,
+          "fps": 6.9
+        },
+        {
+          "seconds": 59.00943855800142,
+          "fps": 6.9
+        },
+        {
+          "seconds": 60.01090665500669,
+          "fps": 6.9
+        }
+      ],
+      "fps": {
+        "median": 6.9,
+        "mean": 6.833333333333334,
+        "min": 5.9,
+        "max": 7.9
+      },
+      "before": {
+        "format": "rgb565le",
+        "width": "320",
+        "height": "240",
+        "stride": "640",
+        "orientation": "logical",
+        "frame_id": "78468",
+        "device_us": "17594155467",
+        "source": "st7789-native-sw270-completed",
+        "bytes": "153600",
+        "sha256": "0b01c30a5ec3afb1ccd9b4727e5a557da5bb30b81c8a3f84c606c96c3ac13cea"
+      },
+      "after": {
+        "format": "rgb565le",
+        "width": "320",
+        "height": "240",
+        "stride": "640",
+        "orientation": "logical",
+        "frame_id": "79033",
+        "device_us": "17675921829",
+        "source": "st7789-native-sw270-completed",
+        "bytes": "153600",
+        "sha256": "dc6a0b74b0b8b2a466bdb21ef6427a300bf6b33ab96c599ccf60875c76a0cfa8"
+      },
+      "state_before": {
+        "component": 65537,
+        "ready": 1,
+        "hp": 100,
+        "xyz": "544,288,50",
+        "n": 35,
+        "mode": 1,
+        "pn": 2,
+        "view": 112815,
+        "sv": 146681,
+        "prep": 49327,
+        "grad": 5232,
+        "rows": 28177,
+        "load": 21592,
+        "pack": 7140,
+        "io": 18254,
+        "hb": 35,
+        "hr": 0,
+        "hv": 87,
+        "hx": 2297
+      },
+      "state_after": {
+        "component": 65537,
+        "ready": 1,
+        "hp": 100,
+        "xyz": "544,288,50",
+        "n": 35,
+        "mode": 1,
+        "pn": 2,
+        "view": 115128,
+        "sv": 150402,
+        "prep": 50303,
+        "grad": 4147,
+        "rows": 29429,
+        "load": 24711,
+        "pack": 6484,
+        "io": 18297,
+        "hb": 35,
+        "hr": 0,
+        "hv": 71,
+        "hx": 2265
+      },
+      "fresh_ready_before_and_after": true,
+      "audio_fidelity_qualified": false
+    },
+    {
+      "label": "mode-3-1",
+      "qualified_actual_gameplay": true,
+      "qualification_note": "Visually reviewed both screenshots as actual START spawn, no demo/menu/loading/lock; raw fresh state records confirm hp100, xyz544,288,50 and selected mode. Profiler overhead remains; this is diagnostic AOT evidence.",
+      "fps_samples": [
+        {
+          "seconds": 1.014739277001354,
+          "fps": 5.9
+        },
+        {
+          "seconds": 2.0121599639969645,
+          "fps": 5.9
+        },
+        {
+          "seconds": 3.0067851539934054,
+          "fps": 5.9
+        },
+        {
+          "seconds": 4.015531212993665,
+          "fps": 6.9
+        },
+        {
+          "seconds": 5.008460438999464,
+          "fps": 5.9
+        },
+        {
+          "seconds": 6.009073781999177,
+          "fps": 6.9
+        },
+        {
+          "seconds": 7.016783578001196,
+          "fps": 5.9
+        },
+        {
+          "seconds": 8.013360933997319,
+          "fps": 5.9
+        },
+        {
+          "seconds": 9.007596053997986,
+          "fps": 5.9
+        },
+        {
+          "seconds": 10.016420280997409,
+          "fps": 5.9
+        },
+        {
+          "seconds": 11.010067893992527,
+          "fps": 5.9
+        },
+        {
+          "seconds": 12.011955214999034,
+          "fps": 5.9
+        },
+        {
+          "seconds": 13.008089152994216,
+          "fps": 6.9
+        },
+        {
+          "seconds": 14.013753912993707,
+          "fps": 6.9
+        },
+        {
+          "seconds": 15.007220763000078,
+          "fps": 4.9
+        },
+        {
+          "seconds": 16.01519052698859,
+          "fps": 5.9
+        },
+        {
+          "seconds": 17.011678736002068,
+          "fps": 5.9
+        },
+        {
+          "seconds": 18.00721870099369,
+          "fps": 6.9
+        },
+        {
+          "seconds": 19.008926231996156,
+          "fps": 5.9
+        },
+        {
+          "seconds": 20.011092422995716,
+          "fps": 5.9
+        },
+        {
+          "seconds": 21.011387986989575,
+          "fps": 5.9
+        },
+        {
+          "seconds": 22.0103576459951,
+          "fps": 6.9
+        },
+        {
+          "seconds": 23.009329617998446,
+          "fps": 5.9
+        },
+        {
+          "seconds": 24.01237057999242,
+          "fps": 5.9
+        },
+        {
+          "seconds": 25.009755687991856,
+          "fps": 5.9
+        },
+        {
+          "seconds": 26.010429308997118,
+          "fps": 6.9
+        },
+        {
+          "seconds": 27.013066234998405,
+          "fps": 5.9
+        },
+        {
+          "seconds": 28.01065256400034,
+          "fps": 5.9
+        },
+        {
+          "seconds": 29.016344035000657,
+          "fps": 6.9
+        },
+        {
+          "seconds": 30.014106753995293,
+          "fps": 4.9
+        },
+        {
+          "seconds": 31.00740312799462,
+          "fps": 6.9
+        },
+        {
+          "seconds": 32.010268277997966,
+          "fps": 6.9
+        },
+        {
+          "seconds": 33.00909080800193,
+          "fps": 5.9
+        },
+        {
+          "seconds": 34.010445900989,
+          "fps": 5.9
+        },
+        {
+          "seconds": 35.009358424998936,
+          "fps": 5.9
+        },
+        {
+          "seconds": 36.01570005698886,
+          "fps": 6.9
+        },
+        {
+          "seconds": 37.01099442598934,
+          "fps": 5.9
+        },
+        {
+          "seconds": 38.011270873990725,
+          "fps": 6.9
+        },
+        {
+          "seconds": 39.00946777399804,
+          "fps": 5.9
+        },
+        {
+          "seconds": 40.01021436500014,
+          "fps": 4.9
+        },
+        {
+          "seconds": 41.010055280989036,
+          "fps": 6.9
+        },
+        {
+          "seconds": 42.00879004999297,
+          "fps": 5.9
+        },
+        {
+          "seconds": 43.00834988799761,
+          "fps": 6.9
+        },
+        {
+          "seconds": 44.00746407099359,
+          "fps": 5.9
+        },
+        {
+          "seconds": 45.007230287999846,
+          "fps": 5.9
+        },
+        {
+          "seconds": 46.01072882999142,
+          "fps": 5.9
+        },
+        {
+          "seconds": 47.01238037199073,
+          "fps": 5.9
+        },
+        {
+          "seconds": 48.00700605400198,
+          "fps": 6.9
+        },
+        {
+          "seconds": 49.0131664799992,
+          "fps": 5.9
+        },
+        {
+          "seconds": 50.00821654198808,
+          "fps": 5.9
+        },
+        {
+          "seconds": 51.014028762001544,
+          "fps": 5.9
+        },
+        {
+          "seconds": 52.0124360560003,
+          "fps": 6.9
+        },
+        {
+          "seconds": 53.01136647599924,
+          "fps": 5.9
+        },
+        {
+          "seconds": 54.014259157993365,
+          "fps": 5.9
+        },
+        {
+          "seconds": 55.01046906800184,
+          "fps": 5.9
+        },
+        {
+          "seconds": 56.01213592498971,
+          "fps": 5.9
+        },
+        {
+          "seconds": 57.015727395992144,
+          "fps": 6.9
+        },
+        {
+          "seconds": 58.01505941800133,
+          "fps": 5.9
+        },
+        {
+          "seconds": 59.01073964599345,
+          "fps": 6.9
+        },
+        {
+          "seconds": 60.01541342800192,
+          "fps": 5.9
+        }
+      ],
+      "fps": {
+        "median": 5.9,
+        "mean": 6.15,
+        "min": 4.9,
+        "max": 6.9
+      },
+      "before": {
+        "format": "rgb565le",
+        "width": "320",
+        "height": "240",
+        "stride": "640",
+        "orientation": "logical",
+        "frame_id": "79100",
+        "device_us": "17686321241",
+        "source": "st7789-native-sw270-completed",
+        "bytes": "153600",
+        "sha256": "38a6725ba825e0ee0f01aa37dccae2fa1e47ff52d77e76622b1246d5703ed8b8"
+      },
+      "after": {
+        "format": "rgb565le",
+        "width": "320",
+        "height": "240",
+        "stride": "640",
+        "orientation": "logical",
+        "frame_id": "79612",
+        "device_us": "17768408515",
+        "source": "st7789-native-sw270-completed",
+        "bytes": "153600",
+        "sha256": "5f0066adaf6bac86703d6ef41139bdc8cd86a28ecc86176b70384a0fd2ccd8ee"
+      },
+      "state_before": {
+        "component": 65537,
+        "ready": 1,
+        "hp": 100,
+        "xyz": "544,288,50",
+        "n": 32,
+        "mode": 3,
+        "pn": 2,
+        "view": 129173,
+        "sv": 182641,
+        "prep": 58088,
+        "grad": 4644,
+        "rows": 23876,
+        "load": 28430,
+        "pack": 7049,
+        "io": 18554,
+        "hb": 96,
+        "hr": 0,
+        "hv": 10851,
+        "hx": 14596
+      },
+      "state_after": {
+        "component": 65537,
+        "ready": 1,
+        "hp": 100,
+        "xyz": "544,288,50",
+        "n": 32,
+        "mode": 3,
+        "pn": 2,
+        "view": 126314,
+        "sv": 170929,
+        "prep": 50068,
+        "grad": 3850,
+        "rows": 23673,
+        "load": 21024,
+        "pack": 6675,
+        "io": 18233,
+        "hb": 96,
+        "hr": 0,
+        "hv": 10884,
+        "hx": 14558
+      },
+      "fresh_ready_before_and_after": true,
+      "audio_fidelity_qualified": false
+    },
+    {
+      "label": "mode-2-2",
+      "qualified_actual_gameplay": true,
+      "qualification_note": "Visually reviewed both screenshots as actual START spawn, no demo/menu/loading/lock; raw fresh state records confirm hp100, xyz544,288,50 and selected mode. Profiler overhead remains; this is diagnostic AOT evidence.",
+      "fps_samples": [
+        {
+          "seconds": 1.0075468759896467,
+          "fps": 5.9
+        },
+        {
+          "seconds": 2.01323217600293,
+          "fps": 6.9
+        },
+        {
+          "seconds": 3.0137662009947235,
+          "fps": 5.9
+        },
+        {
+          "seconds": 4.008402313003899,
+          "fps": 4.9
+        },
+        {
+          "seconds": 5.009894474991597,
+          "fps": 5.9
+        },
+        {
+          "seconds": 6.011646493992885,
+          "fps": 6.9
+        },
+        {
+          "seconds": 7.971398494002642,
+          "fps": 6.9
+        },
+        {
+          "seconds": 8.009017958989716,
+          "fps": 6.9
+        },
+        {
+          "seconds": 9.01245813499554,
+          "fps": 4.9
+        },
+        {
+          "seconds": 10.00722104900342,
+          "fps": 5.9
+        },
+        {
+          "seconds": 11.014391289994819,
+          "fps": 5.9
+        },
+        {
+          "seconds": 12.016654207996908,
+          "fps": 6.9
+        },
+        {
+          "seconds": 13.015440313,
+          "fps": 5.9
+        },
+        {
+          "seconds": 14.008812038999167,
+          "fps": 5.9
+        },
+        {
+          "seconds": 15.012694449993432,
+          "fps": 5.9
+        },
+        {
+          "seconds": 16.00873039099679,
+          "fps": 6.9
+        },
+        {
+          "seconds": 17.009499751991825,
+          "fps": 5.9
+        },
+        {
+          "seconds": 18.008847552991938,
+          "fps": 5.9
+        },
+        {
+          "seconds": 19.011202152003534,
+          "fps": 5.9
+        },
+        {
+          "seconds": 20.01321128899872,
+          "fps": 5.9
+        },
+        {
+          "seconds": 21.01458521799941,
+          "fps": 5.9
+        },
+        {
+          "seconds": 22.012232210996444,
+          "fps": 5.9
+        },
+        {
+          "seconds": 23.016565337995416,
+          "fps": 5.9
+        },
+        {
+          "seconds": 24.014883108990034,
+          "fps": 5.9
+        },
+        {
+          "seconds": 25.014565200996003,
+          "fps": 6.9
+        },
+        {
+          "seconds": 26.01285722600005,
+          "fps": 5.9
+        },
+        {
+          "seconds": 27.008810685991193,
+          "fps": 6.9
+        },
+        {
+          "seconds": 28.01035456599493,
+          "fps": 5.9
+        },
+        {
+          "seconds": 29.009571750997566,
+          "fps": 4.9
+        },
+        {
+          "seconds": 30.008441666999715,
+          "fps": 4.9
+        },
+        {
+          "seconds": 31.016078574990388,
+          "fps": 5.9
+        },
+        {
+          "seconds": 32.01063784699363,
+          "fps": 6.9
+        },
+        {
+          "seconds": 33.01119541199296,
+          "fps": 5.9
+        },
+        {
+          "seconds": 34.009459262990276,
+          "fps": 5.9
+        },
+        {
+          "seconds": 35.016921582995565,
+          "fps": 5.9
+        },
+        {
+          "seconds": 36.007282620994374,
+          "fps": 5.9
+        },
+        {
+          "seconds": 37.01163743500365,
+          "fps": 5.9
+        },
+        {
+          "seconds": 38.01537630800158,
+          "fps": 6.9
+        },
+        {
+          "seconds": 39.0156583749922,
+          "fps": 5.9
+        },
+        {
+          "seconds": 40.00756025199371,
+          "fps": 4.9
+        },
+        {
+          "seconds": 41.01433620399621,
+          "fps": 5.9
+        },
+        {
+          "seconds": 42.008910885997466,
+          "fps": 6.9
+        },
+        {
+          "seconds": 43.017218982000486,
+          "fps": 5.9
+        },
+        {
+          "seconds": 44.01411591400392,
+          "fps": 5.9
+        },
+        {
+          "seconds": 45.01352570799645,
+          "fps": 5.9
+        },
+        {
+          "seconds": 46.01246117299888,
+          "fps": 5.9
+        },
+        {
+          "seconds": 47.01328678299615,
+          "fps": 5.9
+        },
+        {
+          "seconds": 48.00752319500316,
+          "fps": 5.9
+        },
+        {
+          "seconds": 49.00583249000192,
+          "fps": 6.9
+        },
+        {
+          "seconds": 50.01460178599518,
+          "fps": 5.9
+        },
+        {
+          "seconds": 51.01179889299965,
+          "fps": 5.9
+        },
+        {
+          "seconds": 52.009665038989624,
+          "fps": 5.9
+        },
+        {
+          "seconds": 53.00927949199104,
+          "fps": 6.9
+        },
+        {
+          "seconds": 54.014300081995316,
+          "fps": 5.9
+        },
+        {
+          "seconds": 55.01160063999123,
+          "fps": 5.9
+        },
+        {
+          "seconds": 56.01980476499011,
+          "fps": 4.9
+        },
+        {
+          "seconds": 57.00688953899953,
+          "fps": 6.9
+        },
+        {
+          "seconds": 58.01443303699489,
+          "fps": 5.9
+        },
+        {
+          "seconds": 59.0162376829976,
+          "fps": 5.9
+        },
+        {
+          "seconds": 60.011133854990476,
+          "fps": 6.9
+        }
+      ],
+      "fps": {
+        "median": 5.9,
+        "mean": 6.050000000000001,
+        "min": 4.9,
+        "max": 6.9
+      },
+      "before": {
+        "format": "rgb565le",
+        "width": "320",
+        "height": "240",
+        "stride": "640",
+        "orientation": "logical",
+        "frame_id": "79669",
+        "device_us": "17777592397",
+        "source": "st7789-native-sw270-completed",
+        "bytes": "153600",
+        "sha256": "8f762e257769da8563b165a1065425f051b965875f393e05b30bfbaf70ffd8f3"
+      },
+      "after": {
+        "format": "rgb565le",
+        "width": "320",
+        "height": "240",
+        "stride": "640",
+        "orientation": "logical",
+        "frame_id": "80172",
+        "device_us": "17859839781",
+        "source": "st7789-native-sw270-completed",
+        "bytes": "153600",
+        "sha256": "9264a0e162686d76ca55d368a7454128e4b51120cfb6a0cd08bedef6b3a6f2a4"
+      },
+      "state_before": {
+        "component": 65537,
+        "ready": 1,
+        "hp": 100,
+        "xyz": "544,288,50",
+        "n": 31,
+        "mode": 2,
+        "pn": 2,
+        "view": 128962,
+        "sv": 186343,
+        "prep": 60140,
+        "grad": 4206,
+        "rows": 23135,
+        "load": 30789,
+        "pack": 6820,
+        "io": 18823,
+        "hb": 62,
+        "hr": 0,
+        "hv": 10832,
+        "hx": 12328
+      },
+      "state_after": {
+        "component": 65537,
+        "ready": 1,
+        "hp": 100,
+        "xyz": "544,288,50",
+        "n": 31,
+        "mode": 2,
+        "pn": 2,
+        "view": 126984,
+        "sv": 179130,
+        "prep": 57837,
+        "grad": 4325,
+        "rows": 22754,
+        "load": 29832,
+        "pack": 6986,
+        "io": 17896,
+        "hb": 62,
+        "hr": 0,
+        "hv": 10802,
+        "hx": 12265
+      },
+      "fresh_ready_before_and_after": true,
+      "audio_fidelity_qualified": false
+    },
+    {
+      "label": "mode-0-3",
+      "qualified_actual_gameplay": true,
+      "qualification_note": "Visually reviewed both screenshots as actual START spawn, no demo/menu/loading/lock; raw fresh state records confirm hp100, xyz544,288,50 and selected mode. Profiler overhead remains; this is diagnostic AOT evidence.",
+      "fps_samples": [
+        {
+          "seconds": 1.0127752980042715,
+          "fps": 6.9
+        },
+        {
+          "seconds": 2.0070994720008457,
+          "fps": 5.9
+        },
+        {
+          "seconds": 3.0139173890056554,
+          "fps": 6.9
+        },
+        {
+          "seconds": 4.563667121998151,
+          "fps": 7.9
+        },
+        {
+          "seconds": 5.01137482500053,
+          "fps": 5.9
+        },
+        {
+          "seconds": 6.0097002550028265,
+          "fps": 6.9
+        },
+        {
+          "seconds": 7.010539708004217,
+          "fps": 5.9
+        },
+        {
+          "seconds": 8.0128856980009,
+          "fps": 6.9
+        },
+        {
+          "seconds": 9.013423502998194,
+          "fps": 6.9
+        },
+        {
+          "seconds": 10.01508814500994,
+          "fps": 6.9
+        },
+        {
+          "seconds": 11.007850663008867,
+          "fps": 6.9
+        },
+        {
+          "seconds": 12.012073040998075,
+          "fps": 5.9
+        },
+        {
+          "seconds": 13.013432209001621,
+          "fps": 5.9
+        },
+        {
+          "seconds": 14.011310618996504,
+          "fps": 6.9
+        },
+        {
+          "seconds": 15.01216411900532,
+          "fps": 6.9
+        },
+        {
+          "seconds": 16.010436947006383,
+          "fps": 6.9
+        },
+        {
+          "seconds": 17.015405616999487,
+          "fps": 6.9
+        },
+        {
+          "seconds": 18.011063559999457,
+          "fps": 6.9
+        },
+        {
+          "seconds": 19.012582705996465,
+          "fps": 6.9
+        },
+        {
+          "seconds": 20.012294177999138,
+          "fps": 6.9
+        },
+        {
+          "seconds": 21.013746723998338,
+          "fps": 6.9
+        },
+        {
+          "seconds": 22.01352636399679,
+          "fps": 5.9
+        },
+        {
+          "seconds": 23.011322371006827,
+          "fps": 6.9
+        },
+        {
+          "seconds": 24.020518991004792,
+          "fps": 5.9
+        },
+        {
+          "seconds": 25.016458040001453,
+          "fps": 7.9
+        },
+        {
+          "seconds": 26.311021166009596,
+          "fps": 5.9
+        },
+        {
+          "seconds": 27.006555893996847,
+          "fps": 6.9
+        },
+        {
+          "seconds": 28.00978120000218,
+          "fps": 5.9
+        },
+        {
+          "seconds": 29.012241798001924,
+          "fps": 6.9
+        },
+        {
+          "seconds": 30.011848107998958,
+          "fps": 6.9
+        },
+        {
+          "seconds": 31.00918350700522,
+          "fps": 6.9
+        },
+        {
+          "seconds": 32.014397460006876,
+          "fps": 6.9
+        },
+        {
+          "seconds": 33.00939393299632,
+          "fps": 5.9
+        },
+        {
+          "seconds": 34.00905496699852,
+          "fps": 6.9
+        },
+        {
+          "seconds": 35.008526835998055,
+          "fps": 6.9
+        },
+        {
+          "seconds": 36.0101478810102,
+          "fps": 7.9
+        },
+        {
+          "seconds": 37.01313484199636,
+          "fps": 6.9
+        },
+        {
+          "seconds": 38.01722422600142,
+          "fps": 5.9
+        },
+        {
+          "seconds": 39.84592744000838,
+          "fps": 6.9
+        },
+        {
+          "seconds": 40.01187130699691,
+          "fps": 6.9
+        },
+        {
+          "seconds": 41.00966223800788,
+          "fps": 6.9
+        },
+        {
+          "seconds": 42.014184672996635,
+          "fps": 4.9
+        },
+        {
+          "seconds": 43.01458401000127,
+          "fps": 6.9
+        },
+        {
+          "seconds": 44.01041204499779,
+          "fps": 5.9
+        },
+        {
+          "seconds": 45.007186848000856,
+          "fps": 3.9
+        },
+        {
+          "seconds": 46.01634986700083,
+          "fps": 6.9
+        },
+        {
+          "seconds": 47.01038375200005,
+          "fps": 5.9
+        },
+        {
+          "seconds": 48.01198967300297,
+          "fps": 5.7
+        },
+        {
+          "seconds": 49.01759275300719,
+          "fps": 6.9
+        },
+        {
+          "seconds": 50.012987747002626,
+          "fps": 5.9
+        },
+        {
+          "seconds": 51.00854929799971,
+          "fps": 5.9
+        },
+        {
+          "seconds": 52.01437083900964,
+          "fps": 6.9
+        },
+        {
+          "seconds": 53.01346647900937,
+          "fps": 6.9
+        },
+        {
+          "seconds": 54.008365440007765,
+          "fps": 5.9
+        },
+        {
+          "seconds": 55.01474242500262,
+          "fps": 6.9
+        },
+        {
+          "seconds": 56.00896734799608,
+          "fps": 5.9
+        },
+        {
+          "seconds": 57.015497508997214,
+          "fps": 3.9
+        },
+        {
+          "seconds": 58.015541389002465,
+          "fps": 6.9
+        },
+        {
+          "seconds": 59.01421532999666,
+          "fps": 5.9
+        },
+        {
+          "seconds": 60.01609065600496,
+          "fps": 3.9
+        }
+      ],
+      "fps": {
+        "median": 6.9,
+        "mean": 6.446666666666667,
+        "min": 3.9,
+        "max": 7.9
+      },
+      "before": {
+        "format": "rgb565le",
+        "width": "320",
+        "height": "240",
+        "stride": "640",
+        "orientation": "logical",
+        "frame_id": "80245",
+        "device_us": "17871009773",
+        "source": "st7789-native-sw270-completed",
+        "bytes": "153600",
+        "sha256": "2ccb8a4de2b960301ab6b9e259cf171fc00d3e7603f9b99e05feb9a1bb3e4262"
+      },
+      "after": {
+        "format": "rgb565le",
+        "width": "320",
+        "height": "240",
+        "stride": "640",
+        "orientation": "logical",
+        "frame_id": "80785",
+        "device_us": "17953015631",
+        "source": "st7789-native-sw270-completed",
+        "bytes": "153600",
+        "sha256": "ef9993c193820b17396a07722edb82914b450207a1ff87b0ad93898af7a8cd42"
+      },
+      "state_before": {
+        "component": 65537,
+        "ready": 1,
+        "hp": 100,
+        "xyz": "544,288,50",
+        "n": 34,
+        "mode": 0,
+        "pn": 2,
+        "view": 113893,
+        "sv": 152431,
+        "prep": 51295,
+        "grad": 4997,
+        "rows": 28619,
+        "load": 21519,
+        "pack": 7130,
+        "io": 17958,
+        "hb": 0,
+        "hr": 0,
+        "hv": 0,
+        "hx": 0
+      },
+      "state_after": {
+        "component": 65537,
+        "ready": 1,
+        "hp": 100,
+        "xyz": "544,288,50",
+        "n": 31,
+        "mode": 0,
+        "pn": 2,
+        "view": 125803,
+        "sv": 153912,
+        "prep": 44991,
+        "grad": 4429,
+        "rows": 29506,
+        "load": 16175,
+        "pack": 7187,
+        "io": 26689,
+        "hb": 0,
+        "hr": 0,
+        "hv": 0,
+        "hx": 0
+      },
+      "fresh_ready_before_and_after": true,
+      "audio_fidelity_qualified": false
+    }
+  ],
+  "actions": [
+    {
+      "button": 64,
+      "seconds": 0.5
+    },
+    {
+      "button": 16,
+      "seconds": 0.3
+    },
+    {
+      "button": 16,
+      "seconds": 0.3
+    },
+    {
+      "run_modes": [
+        1,
+        3,
+        2,
+        0
+      ]
+    },
+    {
+      "mode": 1
+    },
+    {
+      "measure": "mode-1-0",
+      "seconds": 60,
+      "warmup": 20
+    },
+    {
+      "mode": 3
+    },
+    {
+      "measure": "mode-3-1",
+      "seconds": 60,
+      "warmup": 20
+    },
+    {
+      "mode": 2
+    },
+    {
+      "measure": "mode-2-2",
+      "seconds": 60,
+      "warmup": 20
+    },
+    {
+      "mode": 0
+    },
+    {
+      "measure": "mode-0-3",
+      "seconds": 60,
+      "warmup": 20
+    },
+    {
+      "status": true
+    },
+    {
+      "finish": true
+    }
+  ],
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "packages_before": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake-sd\tQuake SD\t0.4.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+  ],
+  "launched_at": 72946.368661324,
+  "screenshots": {
+    "launch": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "78210",
+      "device_us": "17558175265",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "aa746614aedfa3874e1dd47b2b829a311e5aedc588f29493d1532fcf8d228392"
+    },
+    "mode-1-0-before": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "78468",
+      "device_us": "17594155467",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "0b01c30a5ec3afb1ccd9b4727e5a557da5bb30b81c8a3f84c606c96c3ac13cea"
+    },
+    "mode-1-0-after": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "79033",
+      "device_us": "17675921829",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "dc6a0b74b0b8b2a466bdb21ef6427a300bf6b33ab96c599ccf60875c76a0cfa8"
+    },
+    "mode-3-1-before": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "79100",
+      "device_us": "17686321241",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "38a6725ba825e0ee0f01aa37dccae2fa1e47ff52d77e76622b1246d5703ed8b8"
+    },
+    "mode-3-1-after": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "79612",
+      "device_us": "17768408515",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "5f0066adaf6bac86703d6ef41139bdc8cd86a28ecc86176b70384a0fd2ccd8ee"
+    },
+    "mode-2-2-before": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "79669",
+      "device_us": "17777592397",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "8f762e257769da8563b165a1065425f051b965875f393e05b30bfbaf70ffd8f3"
+    },
+    "mode-2-2-after": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "80172",
+      "device_us": "17859839781",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "9264a0e162686d76ca55d368a7454128e4b51120cfb6a0cd08bedef6b3a6f2a4"
+    },
+    "mode-0-3-before": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "80245",
+      "device_us": "17871009773",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "2ccb8a4de2b960301ab6b9e259cf171fc00d3e7603f9b99e05feb9a1bb3e4262"
+    },
+    "mode-0-3-after": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "80785",
+      "device_us": "17953015631",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "ef9993c193820b17396a07722edb82914b450207a1ff87b0ad93898af7a8cd42"
+    }
+  },
+  "PACKAGES": [
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+    },
+    {
+      "kind": "PKG",
+      "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake-sd\tQuake SD\t0.4.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "MEMORY": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=652419;sram_free=87115;sram_min=6376;sram_largest=36864;psram_total=16741200;psram_free=6258632;psram_min=57844;psram_largest=3211264"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=28500;external=16682;peak_internal=44924;peak_external=225268;temporary_peak_internal=0;temporary_peak_external=50334;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=16400"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=28500;external=282"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=509952"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "cleanup_errors": []
+}

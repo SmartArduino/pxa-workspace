@@ -1,0 +1,52 @@
+{
+  "source": "pxa-state/packages/17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171~pxa-store",
+  "files": [
+    {
+      "path": "artifacts/main.esp32-s31.aot",
+      "bytes": 536264,
+      "sha256": "33fb5c36c665267b2a61464cae555065ced45db5cb52fa9a9b1772e4c34d6551"
+    },
+    {
+      "path": "assets/icon.png",
+      "bytes": 1862,
+      "sha256": "0265c783955dad03a6093c78e6daf1d45e286322add1b943a3861498367403d2"
+    },
+    {
+      "path": "assets/icon.svg",
+      "bytes": 401,
+      "sha256": "c8a08b0a90e61b833861dcbf47d13d472d7c7e01b76248097a912a40b1698f52"
+    },
+    {
+      "path": "assets/resources.pxi",
+      "bytes": 184,
+      "sha256": "87bc5e1f53298c6de671fd249cc65c7a0c2117650391428ec85224f5df4eea2c"
+    },
+    {
+      "path": "assets/search.pxr",
+      "bytes": 9248,
+      "sha256": "eeadf6e899f4b0119dcd6d86820f20cb9090f345d5436b199707bf0f45207d51"
+    },
+    {
+      "path": "assets/search.svg",
+      "bytes": 272,
+      "sha256": "aa9a3e60bcc5cb5a18f5e3937f5b5a90580ea80618d203045c85894698035bc6"
+    },
+    {
+      "path": "manifest.pxm",
+      "bytes": 1621,
+      "sha256": "f835b066df05a0ff90ffc1cae07f615bddf44eaed54a247a49ad7a12aec64317"
+    },
+    {
+      "path": "signature.pxs",
+      "bytes": 108,
+      "sha256": "4cfe3e56a800c69d163c33d5d755ccfc296cad5c925af069c66cd1b08f7077b9"
+    }
+  ],
+  "packages_before": [
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake2-sd\tQuake II SD\t0.1.13\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0",
+    "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"
+  ],
+  "verified_manifest_files": true
+}

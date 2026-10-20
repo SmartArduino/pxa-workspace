@@ -1,0 +1,40 @@
+staging: pxa-store
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/followup-store-backup/artifacts/main.esp32-s31.aot -> PXA storage/pxa-state/inbox/.receiving-pxa-store/artifacts/main.esp32-s31.aot (536264 bytes)
+upload 0%
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/followup-store-backup/assets/icon.png -> PXA storage/pxa-state/inbox/.receiving-pxa-store/assets/icon.png (1862 bytes)
+upload 50%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/followup-store-backup/assets/icon.svg -> PXA storage/pxa-state/inbox/.receiving-pxa-store/assets/icon.svg (401 bytes)
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/followup-store-backup/assets/resources.pxi -> PXA storage/pxa-state/inbox/.receiving-pxa-store/assets/resources.pxi (184 bytes)
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/followup-store-backup/assets/search.pxr -> PXA storage/pxa-state/inbox/.receiving-pxa-store/assets/search.pxr (9248 bytes)
+upload 10%
+upload 20%
+upload 30%
+upload 40%
+upload 50%
+upload 60%
+upload 70%
+upload 80%
+upload 90%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/followup-store-backup/assets/search.svg -> PXA storage/pxa-state/inbox/.receiving-pxa-store/assets/search.svg (272 bytes)
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/followup-store-backup/manifest.pxm -> PXA storage/pxa-state/inbox/.receiving-pxa-store/manifest.pxm (1621 bytes)
+upload 60%
+upload 100%
+uploading /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/followup-store-backup/signature.pxs -> PXA storage/pxa-state/inbox/.receiving-pxa-store/signature.pxs (108 bytes)
+upload 100%
+verifying and installing: pxa-store
+installed: pxa-store

@@ -1,0 +1,121 @@
+{"time": 72656.187315358, "kind": "COMMAND", "payload": "PACKAGES"}
+{"time": 72656.198804433, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-openlara\tOpenLara\t0.5.2\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 72656.198979126, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-store\tApp Store\t0.8.8\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 72656.199077459, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-voxel-craft\tVoxel Craft\t0.12.10\tbuiltin=0;installed=1;staged=0;enabled=1;active=0"}
+{"time": 72656.199125388, "kind": "PKG", "payload": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:pxa-quake-sd\tQuake SD\t0.4.6\tbuiltin=0;installed=1;staged=0;enabled=1;active=1"}
+{"time": 72656.199169369, "kind": "OK", "payload": ""}
+{"time": 72656.200210849, "kind": "LOG", "payload": "17244514\tI (17244514) Pxadb: Package list finished: stack_free=6804B"}
+{"time": 72656.205678413, "kind": "LOG", "payload": "17224622\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72656.207604103, "kind": "LOG", "payload": "17224623\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=35 mode=0 pn=2 view=111209 sv=147915 prep=52044 grad=4042 rows=29439 load=29019 pack=6241 io=17677 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72656.208944306, "kind": "LOG", "payload": "17229624\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=34 elapsed_us=5004414 draw_us=453368 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72656.209667627, "kind": "LOG", "payload": "17229624\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=97 wait_us=528647\u001b[0m"}
+{"time": 72656.210799134, "kind": "LOG", "payload": "17229625\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72656.212540402, "kind": "LOG", "payload": "17229626\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=34 mode=0 pn=2 view=113650 sv=154220 prep=49334 grad=4375 rows=27097 load=18929 pack=6477 io=18193 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72656.214763813, "kind": "LOG", "payload": "17234681\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=34 elapsed_us=5057332 draw_us=448351 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72656.21490827, "kind": "LOG", "payload": "17234681\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=97 wait_us=529579\u001b[0m"}
+{"time": 72656.215647651, "kind": "LOG", "payload": "17234683\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72656.21766512, "kind": "LOG", "payload": "17234683\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=34 mode=0 pn=2 view=114144 sv=156777 prep=52037 grad=4591 rows=30357 load=20819 pack=7840 io=18586 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72656.218775087, "kind": "LOG", "payload": "17239694\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=34 elapsed_us=5013056 draw_us=450082 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72656.220277712, "kind": "LOG", "payload": "17239694\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=97 wait_us=522701\u001b[0m"}
+{"time": 72656.22064873, "kind": "LOG", "payload": "17239697\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72656.222688761, "kind": "LOG", "payload": "17239699\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=34 mode=0 pn=3 view=113675 sv=153810 prep=48429 grad=4307 rows=28316 load=23386 pack=6929 io=17341 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72656.223171596, "kind": "LOG", "payload": "17244503\tI (17244503) Pxadb: PXADB control session connected"}
+{"time": 72656.22563406, "kind": "LOG", "payload": "17244514\tI (17244514) Pxadb: Package list finished: stack_free=6804B"}
+{"time": 72656.226447738, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72656.232350399, "kind": "OK", "payload": "event=5619;device_us=17243229879;status=processed"}
+{"time": 72656.232526876, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72656.238067876, "kind": "OK", "payload": "event=5620;device_us=17243235662;status=processed"}
+{"time": 72656.532432647, "kind": "LOG", "payload": "17244837\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=35 elapsed_us=5143077 draw_us=467528 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72656.53266096, "kind": "LOG", "payload": "17244838\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=99 wait_us=541629\u001b[0m"}
+{"time": 72656.532796492, "kind": "LOG", "payload": "17244839\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72656.532929348, "kind": "LOG", "payload": "17244840\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=35 mode=0 pn=2 view=112845 sv=150391 prep=50779 grad=4944 rows=29687 load=23218 pack=7228 io=18225 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72657.046677807, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72657.053451492, "kind": "OK", "payload": "event=5621;device_us=17244050862;status=processed"}
+{"time": 72657.856191123, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72657.862592437, "kind": "OK", "payload": "event=5622;device_us=17244859827;status=processed"}
+{"time": 72658.667633634, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72658.675300454, "kind": "OK", "payload": "event=5623;device_us=17245671809;status=processed"}
+{"time": 72659.484709828, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72659.491558832, "kind": "OK", "payload": "event=5624;device_us=17246488854;status=processed"}
+{"time": 72660.297824949, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72660.304420504, "kind": "OK", "payload": "event=5625;device_us=17247301831;status=processed"}
+{"time": 72661.107124709, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72661.11346484, "kind": "OK", "payload": "event=5626;device_us=17248110830;status=processed"}
+{"time": 72661.541854361, "kind": "LOG", "payload": "17249851\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=34 elapsed_us=5013640 draw_us=452224 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72661.542114853, "kind": "LOG", "payload": "17249851\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=95 wait_us=525817\u001b[0m"}
+{"time": 72661.542243993, "kind": "LOG", "payload": "17249853\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72661.543451671, "kind": "LOG", "payload": "17249854\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=34 mode=0 pn=2 view=113326 sv=154921 prep=46707 grad=4287 rows=28890 load=21607 pack=6753 io=17335 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72661.918844635, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72661.925916342, "kind": "OK", "payload": "event=5627;device_us=17248922848;status=processed"}
+{"time": 72662.727165751, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72662.733384567, "kind": "OK", "payload": "event=5628;device_us=17249730841;status=processed"}
+{"time": 72663.53930278, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72663.547673474, "kind": "OK", "payload": "event=5629;device_us=17250542835;status=processed"}
+{"time": 72664.347937677, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72664.356707452, "kind": "OK", "payload": "event=5630;device_us=17251351852;status=processed"}
+{"time": 72664.496837306, "kind": "COMMAND", "payload": "SCREENSHOT"}
+{"time": 72666.075051273, "kind": "META", "payload": "format=rgb565le;width=320;height=240;stride=640;orientation=logical;frame_id=77085;device_us=17251494494;source=st7789-native-sw270-completed;bytes=153600;sha256=b51e02492861077db1189a9aee313c82724bb3981046b1bfe7aba9038dee0c6e"}
+{"time": 72666.075252546, "kind": "OK", "payload": ""}
+{"time": 72666.433068732, "kind": "LOG", "payload": "17234683\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72666.436629702, "kind": "LOG", "payload": "17234683\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=34 mode=0 pn=2 view=114144 sv=156777 prep=52037 grad=4591 rows=30357 load=20819 pack=7840 io=18586 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72666.436802432, "kind": "LOG", "payload": "17239694\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=34 elapsed_us=5013056 draw_us=450082 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72666.436891027, "kind": "LOG", "payload": "17239694\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=97 wait_us=522701\u001b[0m"}
+{"time": 72666.437638863, "kind": "LOG", "payload": "17239697\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72666.439642216, "kind": "LOG", "payload": "17239699\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=34 mode=0 pn=3 view=113675 sv=153810 prep=48429 grad=4307 rows=28316 load=23386 pack=6929 io=17341 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72666.43986559, "kind": "LOG", "payload": "17244503\tI (17244503) Pxadb: PXADB control session connected"}
+{"time": 72666.441534914, "kind": "LOG", "payload": "17244514\tI (17244514) Pxadb: Package list finished: stack_free=6804B"}
+{"time": 72666.441739693, "kind": "LOG", "payload": "17244837\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=35 elapsed_us=5143077 draw_us=467528 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72666.44354014, "kind": "LOG", "payload": "17244838\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=99 wait_us=541629\u001b[0m"}
+{"time": 72666.443730703, "kind": "LOG", "payload": "17244839\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72666.450427125, "kind": "LOG", "payload": "17244840\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=35 mode=0 pn=2 view=112845 sv=150391 prep=50779 grad=4944 rows=29687 load=23218 pack=7228 io=18225 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72666.450599254, "kind": "LOG", "payload": "17249851\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=34 elapsed_us=5013640 draw_us=452224 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72666.450679052, "kind": "LOG", "payload": "17249851\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=95 wait_us=525817\u001b[0m"}
+{"time": 72666.45074818, "kind": "LOG", "payload": "17249853\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72666.451182034, "kind": "LOG", "payload": "17249854\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=34 mode=0 pn=2 view=113326 sv=154921 prep=46707 grad=4287 rows=28890 load=21607 pack=6753 io=17335 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72666.451791063, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72666.458126355, "kind": "OK", "payload": "event=5631;device_us=17253455804;status=processed"}
+{"time": 72666.684257379, "kind": "LOG", "payload": "17254989\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=35 elapsed_us=5138566 draw_us=470697 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72666.684512632, "kind": "LOG", "payload": "17254990\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=100 wait_us=557937\u001b[0m"}
+{"time": 72666.684634327, "kind": "LOG", "payload": "17254991\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72666.684748299, "kind": "LOG", "payload": "17254992\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=35 mode=0 pn=2 view=112404 sv=149765 prep=44215 grad=4273 rows=28047 load=20072 pack=6453 io=17830 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72667.267164891, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72667.273463335, "kind": "OK", "payload": "event=5632;device_us=17254270846;status=processed"}
+{"time": 72668.078163891, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72668.084479737, "kind": "OK", "payload": "event=5633;device_us=17255081839;status=processed"}
+{"time": 72668.892698733, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72668.899409802, "kind": "OK", "payload": "event=5634;device_us=17255896837;status=processed"}
+{"time": 72669.707178364, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72669.713702035, "kind": "OK", "payload": "event=5635;device_us=17256710949;status=processed"}
+{"time": 72670.518644028, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72670.525667246, "kind": "OK", "payload": "event=5636;device_us=17257522823;status=processed"}
+{"time": 72671.328988765, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72671.335949216, "kind": "OK", "payload": "event=5637;device_us=17258333000;status=processed"}
+{"time": 72671.713562335, "kind": "LOG", "payload": "17260022\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=33 elapsed_us=5032239 draw_us=434338 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72671.713756034, "kind": "LOG", "payload": "17260022\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=96 wait_us=532951\u001b[0m"}
+{"time": 72671.724235327, "kind": "LOG", "payload": "17260023\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72671.724434125, "kind": "LOG", "payload": "17260024\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=33 mode=0 pn=2 view=116833 sv=150072 prep=53001 grad=5235 rows=27886 load=23343 pack=6701 io=18853 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72672.145076056, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72672.151461561, "kind": "OK", "payload": "event=5638;device_us=17259148883;status=processed"}
+{"time": 72672.955334452, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72672.963552945, "kind": "OK", "payload": "event=5639;device_us=17259959911;status=processed"}
+{"time": 72673.765602838, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72673.772471909, "kind": "OK", "payload": "event=5640;device_us=17260769933;status=processed"}
+{"time": 72674.579392319, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72674.587195442, "kind": "OK", "payload": "event=5641;device_us=17261583851;status=processed"}
+{"time": 72675.395926518, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72675.402556025, "kind": "OK", "payload": "event=5642;device_us=17262399826;status=processed"}
+{"time": 72676.207309229, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72676.213414033, "kind": "OK", "payload": "event=5643;device_us=17263210826;status=processed"}
+{"time": 72676.750175376, "kind": "LOG", "payload": "17265062\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA GAME frames=35 elapsed_us=5040484 draw_us=462384 skipped=0 linear_bytes=3014656\u001b[0m"}
+{"time": 72676.750413808, "kind": "LOG", "payload": "17265062\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA SCHED yields=99 wait_us=522545\u001b[0m"}
+{"time": 72676.761321315, "kind": "LOG", "payload": "17265065\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA STACK engine=39320 callback=2154 continuation=6148\u001b[0m"}
+{"time": 72676.761543837, "kind": "LOG", "payload": "17265066\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=35 mode=0 pn=2 view=111786 sv=156094 prep=48989 grad=4148 rows=27759 load=22252 pack=8589 io=17723 hb=0 hr=0 hv=0 hx=0\u001b[0m"}
+{"time": 72677.021936172, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72677.028407947, "kind": "OK", "payload": "event=5644;device_us=17264025867;status=processed"}
+{"time": 72677.829995132, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72677.836342898, "kind": "OK", "payload": "event=5645;device_us=17264833859;status=processed"}
+{"time": 72678.64643703, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72678.653508026, "kind": "OK", "payload": "event=5646;device_us=17265650833;status=processed"}
+{"time": 72679.463777002, "kind": "COMMAND", "payload": "INPUT CONTROLLER 0 1 0"}
+{"time": 72679.464048896, "kind": "COMMAND", "payload": "PACKAGE stop pxa-quake-sd"}
+{"time": 72679.464187813, "kind": "COMMAND", "payload": "INPUT KEY HOME"}

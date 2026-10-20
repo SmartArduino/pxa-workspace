@@ -1,0 +1,49 @@
+[serial] I (16739938) Pxadb: Package list finished: stack_free=6804B
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+upload 100%
+SHOT launch {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '73566', 'device_us': '16765817599', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': '8829b89f83483dac3c65ec36253aedb107424d6e3e6c75b8be811fcf1842a88c'}
+ACTION {'button': 64, 'seconds': 0.5}
+ACTION {'button': 16, 'seconds': 0.3}
+ACTION {'button': 16, 'seconds': 0.3}
+ACTION {'shot': 'ready-check'}
+SHOT ready-check {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '75392', 'device_us': '16946353296', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': '6d9dbbd8ffe0a2b40c0b3e7e8fa4af8fb9d6f70697cd6e6253088e95f563e2e5'}
+ACTION {'run_modes': [0, 1, 3, 2, 0]}
+ACTION {'mode': 0}
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+upload 100%
+ACTION {'measure': 'mode-0-0', 'seconds': 60, 'warmup': 20}
+SHOT mode-0-0-before {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '75448', 'device_us': '16954678875', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': '44edd022243b38cb928ae91a9f083bd267ada90740d41be469129f6b05ed7657'}
+QUAKE PROBE FPS mode-0-0 10 6.9
+QUAKE PROBE FPS mode-0-0 20 5.9
+QUAKE PROBE FPS mode-0-0 30 6.9
+QUAKE PROBE FPS mode-0-0 40 5.9
+QUAKE PROBE FPS mode-0-0 50 5.9
+QUAKE PROBE FPS mode-0-0 60 6.9
+SHOT mode-0-0-after {'format': 'rgb565le', 'width': '320', 'height': '240', 'stride': '640', 'orientation': 'logical', 'frame_id': '76003', 'device_us': '17036664489', 'source': 'st7789-native-sw270-completed', 'bytes': '153600', 'sha256': '2eabee749a5b2c64c1a44bd3ef1fe8f90a0d7497a6bf43e008faf04da0677852'}
+WINDOW mode-0-0 {'median': 6.9, 'mean': 6.683333333333334, 'min': 5.9, 'max': 7.9}
+ACTION {'mode': 1}
+uploading local/quake-probe-device/mode-byte -> PXA storage/sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode (1 bytes)
+Traceback (most recent call last):
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 118, in <module>
+    while not done and time.monotonic()<end:pump(.5)
+                                            ~~~~^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 39, in pump
+    try:action(a)
+        ~~~~~~^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 69, in action
+    action({'mode':mode})
+    ~~~~~~^^^^^^^^^^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 62, in action
+    put_mode(mode)
+    ~~~~~~~~^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/local/quake-probe-run.py", line 44, in put_mode
+    pxadb.NormalFsClient(c).put(local,mode_path)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/pxadb/pxadb.py", line 1183, in put
+    frames = self.client.request_until(
+        command, {"READY", "OK"},
+        timeout=verify_timeout if len(chunk) == remaining else 10.0
+    )
+  File "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/tools/pxadb/pxadb.py", line 449, in request_until
+    raise PxaDbRejectedError(frame.payload or "device rejected the request")
+pxadb.PxaDbRejectedError: file_commit_failed
