@@ -1,6 +1,26 @@
 # PXA 音频接口与实现
 
-## 当前能播放什么
+## 原采样率 PCM：Audio 0.10
+
+游戏可通过 C SDK 的 `pxa_audio_open_pcm` / `pxa_audio_parse_pcm`，或 C++ SDK
+的 `AudioService::open_pcm`，请求明确的源采样率和单/双声道 S16LE 会话。
+Host 必须接受完整请求格式或返回错误，不会静默换成旧会话。当前共用混音器支持
+8–48 kHz 源输入、最高 48 kHz 单声道输出，只支持源采样率不高于输出的组合；
+具体设备可以拒绝不支持的组合。GameKit 的实际设备输出为 48 kHz 单声道。
+
+每次写入最多 20 ms 源 PCM，FIFO 为 4 包；提交、消费和排队计数均按源音频帧计数，
+双声道一对采样算一帧。PCM-only 会话沿用 gain/EQ、query、flush 和 close，
+不接受 tone、effect 或文件播放指令。`pxa_audio_write_pcm` 返回后即可复用输入缓冲；
+Host 已复制源 PCM，不会让音频线程继续读取 Guest 地址。
+
+现在复制/双声道合并在提交时完成，重采样在消费者音频线程完成。单 PCM、无 EQ、
+无并行音效时走专用快速路径；多会话、滤波和合成音沿用通用混音器。输出采样与此前
+同步重采样实现一致，ABI 无需为这项实现优化升级。设备对比与限制见
+[2026-10-20 音频验证](validation/2026-10-20-game-parallel-audio.zh-CN.md)。
+原引擎声部混音及 OPL/FM 迁移另见
+[Host 游戏音频设计稿](design/game-host-audio.zh-CN.md)，尚未发布这些新接口。
+
+## 传统会话和文件播放
 
 | 输入 | Pai Touch / Sensecap Watcher | 桌面模拟器 |
 | --- | --- | --- |
@@ -88,8 +108,8 @@ pxa_audio_play_sound(session, sound, -6 * 256);
 
 ## 实现与性能边界
 
-- `libpxa/src/services/audio/audio_mixer.c` 是桌面、ESP 共用的无分配混音核心。固定 workspace 为 **8,640 字节**，含 3×4 命令、计数器和 EQ 状态。正弦使用查表插值；EQ 系数只在 commit 时计算。
-- ESP 有音频时每 20 ms 混合一帧，空闲时等待任务通知；输出和解码线程空闲时等待命令，短时间 mutex 保护状态，不在关中断的临界区里运行滤波。输出队列满时回滚采样、噪声相位和 EQ 状态，下次重试，避免静默丢音。
+- `libpxa/src/services/audio/audio_mixer.c` 是桌面、ESP 共用的无分配混音核心。固定 workspace 为 **24,144 字节**，含 3×4 命令、最高采样率的有界 PCM 存储、计数器和 EQ 状态；ESP 将其放在 PSRAM。消费者重采样复用这些存储，没有另加队列。正弦使用查表插值；EQ 系数只在 commit 时计算。
+- ESP 拉取路径跟随设备节拍，GameKit 每块为 320 个 48 kHz 采样；旧推送路径每 20 ms 混合一帧。空闲时等待任务通知，短时间 mutex 保护状态，不在关中断的临界区里运行滤波。旧推送队列满时回滚采样游标、重采样/噪声相位和 EQ 状态，下次重试，避免静默丢音。
 - 共用 `PxaAudioOutput` 负责资源、解码、混合文件音频和物理输出；板级驱动只负责 RPC701 / ES8311。移除了 Pai 对完整 GMF pipeline 的依赖，直接使用 codec 包。
 - 桌面与 ESP 的音乐 PCM ring 都固定为 **8,192 个采样，即 16 KiB**。歌曲长度不影响该缓冲大小。解码器本身、线程栈、SDL converter 仍需额外内存，16 KiB 不是整个音频系统的 RAM 用量。
 - ESP 音乐输入仅保留文件位置、目录引用和取消状态；已去掉 4096 B 校验缓冲及 mbedTLS 哈希上下文。排队与当前输入都计入 TEMP，替换准入期间可以重叠。固定命令元素为 16 B。实际两板的新对象大小在完成固件构建后重新记录。
@@ -98,7 +118,7 @@ pxa_audio_play_sound(session, sound, -6 * 256);
 
 Sensecap 新增了文件解码线程和缓冲，相比原来只输出 PCM 的版本会增加 RAM 用量。
 
-这些是代码中的容量和行为约束，不是真机 CPU、延迟、功耗测量。当前没有连接 ESP 设备。
+这里的容量和行为约束不能替代真机 CPU、延迟和功耗测量。具体设备运行结果与尚未验证的项目在各次验证记录中单独列出。
 
 ## 验证
 

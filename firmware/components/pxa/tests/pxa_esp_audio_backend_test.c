@@ -254,10 +254,38 @@ int main(void) {
     assert(b.play_asset(b.context,c,&asset) == PXA_STATUS_UNSUPPORTED);
     b.close(b.context, c); b.close(b.context, d); assert(stopped >= 1);
     assert(music_closes==1 && b.playback_peek(b.context,&event)==PXA_STATUS_NOT_FOUND);
+    /* Source-rate PCM is expanded by the consumer. A rejected physical sink
+     * must restore its source cursor and packet-boundary interpolation state,
+     * including when one output block spans more than one source packet. */
+    pxa_audio_pcm_info_t info;
+    f = (pxa_audio_format_t){11025, 2, 20};
+    /* Legacy sinks do not publish OPEN_PCM; configure the shared renderer
+     * through its internal opener to exercise the existing rollback path. */
+    assert(!audio_open_format(b.context, &f, NULL, &a));
+    g.gain_db_q8 = -6 * 256;
+    assert(!b.commit(b.context, a, &g));
+    for (unsigned packet = 0; packet < 4; ++packet) {
+        for (unsigned i = 0; i < sizeof(pcm); ++i)
+            pcm[i] = (uint8_t)(i * 13753u + packet * 37219u);
+        assert(!b.submit(b.context, a, pcm, sizeof(pcm)));
+    }
+    while (g_audio.mixer->voices[0].count) {
+        pxa_audio_mixer_t before = *g_audio.mixer, after = before;
+        assert(pxa_audio_mixer_render(&after, expected, PXA_AUDIO_MIXER_FRAME));
+        reject = 1;
+        for (unsigned retry = 0; retry < 2; ++retry) {
+            audio_output_tick(&g_audio);
+            assert(!memcmp(&before, g_audio.mixer, sizeof(before)));
+        }
+        reject = 0;
+        audio_output_tick(&g_audio);
+        assert(!memcmp(expected, rendered, sizeof(expected)));
+        assert(!memcmp(&after, g_audio.mixer, sizeof(after)));
+    }
+    b.close(b.context, a);
     pxa_esp_audio_deinitialize();
     assert(!g_audio.mixer && !g_audio.task && !locked);
     assert(pxa_esp_audio_set_pull_device(48000, device_wake, &device_wakes));
-    pxa_audio_pcm_info_t info;
     f = (pxa_audio_format_t){22050, 2, 20};
     assert(!b.open_pcm(b.context, &f, &info, &a));
     assert(info.sink_rate == 48000 && info.sink_channels == 1 && info.queue_frames == 1764);

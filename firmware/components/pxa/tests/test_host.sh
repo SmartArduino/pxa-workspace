@@ -114,12 +114,15 @@ build_and_run lazy_storage \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_storage.c" \
   "$libpxa_build/libpxa.a" -lm
 
-c++ "${cxx_flags[@]}" -DESP_PLATFORM=1 \
-  -I"$tests_dir/audio_stubs" -I"$component_dir/include" -I"$component_dir/src/services" \
-  -I"$pxa_system_dir/libpxa/include" \
-  "$tests_dir/pxa_audio_output_test.cc" "$component_dir/src/services/pxa_codec_memory.cc" \
-  "$libpxa_build/libpxa.a" -o "$build_dir/audio_output"
-"$build_dir/audio_output"
+for affinity in -1 0 1; do
+  c++ "${cxx_flags[@]}" -DESP_PLATFORM=1 \
+    -DCONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY="$affinity" \
+    -I"$tests_dir/audio_stubs" -I"$component_dir/include" -I"$component_dir/src/services" \
+    -I"$pxa_system_dir/libpxa/include" \
+    "$tests_dir/pxa_audio_output_test.cc" "$component_dir/src/services/pxa_codec_memory.cc" \
+    "$libpxa_build/libpxa.a" -o "$build_dir/audio_output"
+  "$build_dir/audio_output"
+done
 
 c++ "${cxx_flags[@]}" -pthread \
   -I"$component_dir/src/services" -I"$pxa_system_dir/libpxa/include" \

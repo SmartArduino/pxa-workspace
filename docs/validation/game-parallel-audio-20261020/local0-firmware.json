@@ -1,0 +1,24 @@
+{
+  "root_commit": "9358bd8",
+  "sdk_commit": "b787d4a",
+  "preexisting_overlays": {
+    "firmware/boards/doit-gamekit/src/doit_gamekit_board.cc": "708275b397086e417e81268457f639d38a588433a112e8faf023f2d6d34cb8e9",
+    "firmware/components/pxa/include/pxa/pxa_esp_surface.h": "81e1d4eca8479538f456f7192385d53d8cce6ecf0cbddc6385c76811205a42dd",
+    "firmware/components/pxa/src/services/pxa_esp_surface.c": "4b70c63221a6bd812de2d1c8615d2c82c143eb17c8a6cbb4d4b03ee724803100",
+    "firmware/components/pxa/src/services/pxa_esp_services.c": "c4b8b2eb1630436e178f9b74a5e05ccf1eaa08db63a0dcc62ef7f817a7bfac24",
+    "firmware/components/pxadb/include/pxadb_pointer_samples.h": "61e9ae7bc5e9c6229535ea40a758cba4c26f69f618575ef47bfe88f88dabd310"
+  },
+  "variant": "local0",
+  "elf_sha256": "d28a4cde0e1e1a2c9de25bb44e07568e03c5434889a1cda13b26a01a8c5867cf",
+  "application_sha256": "0d1d29d3f17446b59ed97ba22cd2864c740501c10dba7f20889858adfb27e414",
+  "application_bytes": 3951248,
+  "sdkconfig_sha256": "d5e7fd1051d452fffcf4b7695395df24651bd841f86e039a284752df4d1b19a4",
+  "files": {
+    "firmware/components/pxa/Kconfig": "82e31821ee35144f2286208902aea16f50ab3c3b896f2474780a5f8da0cb264a",
+    "firmware/boards/doit-gamekit/sdkconfig.defaults": "c6e3ae45eb2c33875cd0688d5ef22a2e6c302f07fb2e270bb35c0714540a1fd7",
+    "firmware/components/pxa/src/services/pxa_audio_output.cc": "29162c19d38717ca84dc2d8a45b21dbb78b6b1d50167d66181c72ee05c9368ff",
+    "deps/pxa-system/libpxa/src/services/audio/audio_mixer.c": "d7c1f4d9c4f3f90976603577777f5659debc2d71bc1763ec71aa0a3f073259be",
+    "deps/pxa-system/libpxa/include/pxa/audio_mixer.h": "ffcca39f886031c66b2e24ab72bcda3a97f3a3a1315ba90c6a118f25316ad5a8"
+  },
+  "audio_mixer_commit": "ab1764bbf271dbc4b71fd1a94d4c166a86ad5c00"
+}

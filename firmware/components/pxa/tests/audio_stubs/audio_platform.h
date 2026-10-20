@@ -16,6 +16,7 @@ typedef uint32_t TickType_t;
 #define MALLOC_CAP_INTERNAL 4
 #define pdTRUE 1
 #define pdPASS 1
+#define tskNO_AFFINITY 0x7fffffff
 #define portMAX_DELAY UINT32_MAX
 #define pdMS_TO_TICKS(ms) (ms)
 #define ESP_LOGW(...) ((void)0)
@@ -38,6 +39,7 @@ void xSemaphoreGive(SemaphoreHandle_t);
 void vSemaphoreDelete(SemaphoreHandle_t);
 int xTaskCreate(void(*)(void*), const char*, unsigned, void*, unsigned, TaskHandle_t*);
 TaskHandle_t xTaskCreateStatic(void(*)(void*), const char*, uint32_t, void*, unsigned, StackType_t*, StaticTask_t*);
+TaskHandle_t xTaskCreateStaticPinnedToCore(void(*)(void*), const char*, uint32_t, void*, unsigned, StackType_t*, StaticTask_t*, int);
 void vTaskDelete(TaskHandle_t);
 TickType_t xTaskGetTickCount();
 void xTaskNotifyGive(TaskHandle_t);

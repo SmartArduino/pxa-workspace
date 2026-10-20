@@ -19,6 +19,10 @@
 #include <pxa/pxa_host.h>
 #include <pxa/audio.h>
 
+#ifndef CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY
+#define CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY -1
+#endif
+
 namespace {
 constexpr char kTag[] = "PxaAudioOutput";
 constexpr size_t kDecoderInputBytes = 768;
@@ -88,15 +92,18 @@ bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced, u
         write_ = nullptr; write_context_ = nullptr;
         return false;
     }
-    task_ = xTaskCreateStatic(AudioTask, "pxa_output", kOutputTaskStackBytes, this, 6,
-        runtime_storage_->output_stack, &runtime_storage_->output_task);
+    task_ = xTaskCreateStaticPinnedToCore(AudioTask, "pxa_output",
+        kOutputTaskStackBytes, this, 6, runtime_storage_->output_stack,
+        &runtime_storage_->output_task, CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY < 0
+            ? tskNO_AFFINITY : CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY);
     music_task_ = xTaskCreateStatic(MusicTask, "pxa_decode", kMusicTaskStackBytes, this, 5,
         music_stack_, &runtime_storage_->music_task);
     configASSERT(task_ && music_task_);
-    ESP_LOGI(kTag, "Audio device storage: RTOS=%u (stacks=%u), ring=%u bytes",
+    ESP_LOGI(kTag, "Audio device storage: RTOS=%u (stacks=%u), ring=%u bytes, output_core=%d",
         static_cast<unsigned>(sizeof(RuntimeStorage) + kMusicTaskStackBytes),
         static_cast<unsigned>(kOutputTaskStackBytes + kMusicTaskStackBytes),
-        static_cast<unsigned>(kMusicSamples * sizeof(int16_t)));
+        static_cast<unsigned>(kMusicSamples * sizeof(int16_t)),
+        CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY);
     pxa_host_set_audio_asset_sink(PlayAsset, ControlAsset, this);
     pxa_host_set_audio_sound_sink(PlaySound,this);
     pxa_host_set_audio_sound_track_sink(PlaySoundTrack, ControlSound, this);

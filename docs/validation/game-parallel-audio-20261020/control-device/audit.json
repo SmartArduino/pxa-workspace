@@ -1,0 +1,44 @@
+{
+  "fps": {
+    "median": 20.9,
+    "min": 19.8,
+    "max": 21.9,
+    "mean": 21.278333333333332
+  },
+  "samples": 60,
+  "window_seconds": 60.02699959700112,
+  "unique_level_records": 8,
+  "level_record_span_seconds": 50.219,
+  "ready_at_end": true,
+  "exact_pcm_negotiation": true,
+  "median_output_us_per_frame": 10398.10185185185,
+  "controls_checks": {
+    "measured": {
+      "white": 0,
+      "pixels": 196,
+      "expected_visible": false
+    }
+  },
+  "cleanup_errors": [
+    {
+      "command": "INPUT CONTROLLER 0 1 0",
+      "error": "SerialException('write failed: [Errno 5] Input/output error')"
+    },
+    {
+      "command": "PACKAGE stop pxa-duke3d-sd",
+      "error": "SerialException('write failed: [Errno 5] Input/output error')"
+    },
+    {
+      "command": "INPUT KEY HOME",
+      "error": "SerialException('write failed: [Errno 5] Input/output error')"
+    }
+  ],
+  "error": "SerialException('write failed: [Errno 5] Input/output error')",
+  "host": {
+    "counter_semantics": "cumulative",
+    "batches_begin": 1549,
+    "batches_end": 2622,
+    "max_rejected": 0,
+    "execution_us_per_batch": 3036.9934762348557
+  }
+}

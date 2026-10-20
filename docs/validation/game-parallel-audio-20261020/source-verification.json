@@ -1,0 +1,12 @@
+{
+  "selected_firmware": "local0-firmware.json",
+  "sdk_head": "ab1764bbf271dbc4b71fd1a94d4c166a86ad5c00",
+  "production_files_match_selected_image": {
+    "firmware/components/pxa/Kconfig": "82e31821ee35144f2286208902aea16f50ab3c3b896f2474780a5f8da0cb264a",
+    "firmware/boards/doit-gamekit/sdkconfig.defaults": "c6e3ae45eb2c33875cd0688d5ef22a2e6c302f07fb2e270bb35c0714540a1fd7",
+    "firmware/components/pxa/src/services/pxa_audio_output.cc": "29162c19d38717ca84dc2d8a45b21dbb78b6b1d50167d66181c72ee05c9368ff",
+    "deps/pxa-system/libpxa/src/services/audio/audio_mixer.c": "d7c1f4d9c4f3f90976603577777f5659debc2d71bc1763ec71aa0a3f073259be",
+    "deps/pxa-system/libpxa/include/pxa/audio_mixer.h": "ffcca39f886031c66b2e24ab72bcda3a97f3a3a1315ba90c6a118f25316ad5a8"
+  },
+  "caveat": "The selected image includes the frozen preexisting display/input overlays listed in local0-firmware.json. Those changes are not part of this audio commit."
+}

@@ -175,6 +175,17 @@ menu "PXA Development Apps"
                 allow FreeRTOS to schedule it on either core. CPU1 is invalid
                 on single-core targets.
 
+        config PXA_AUDIO_OUTPUT_TASK_AFFINITY
+            int "PXA audio output core affinity"
+            range -1 0 if FREERTOS_UNICORE
+            range -1 1 if !FREERTOS_UNICORE
+            default -1
+            help
+                Pin the existing audio output/mixing task to CPU0 (0) or
+                CPU1 (1), or leave scheduling unrestricted (-1). A dual-core
+                board can place it opposite the Guest runtime. This adds no
+                task, queue or stack. Music decoding keeps its own scheduling.
+
         config PXA_RASTER_INTERNAL_ALLOCATION_MAX_BYTES
             int "Largest raster asset to prefer internal SRAM (0: unlimited)"
             range 0 131072

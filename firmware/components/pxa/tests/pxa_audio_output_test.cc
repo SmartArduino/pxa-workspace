@@ -138,6 +138,14 @@ TaskHandle_t xTaskCreateStatic(void(*)(void*),const char*,uint32_t bytes,void* c
     assert(registered_codecs[0] && registered_codecs[1] && registered_codecs[2]);
     ++created_tasks; return tcb;
 }
+TaskHandle_t xTaskCreateStaticPinnedToCore(void(*fn)(void*), const char* name,
+    uint32_t bytes, void* ctx, unsigned priority, StackType_t* stack,
+    StaticTask_t* tcb, int core) {
+    assert(bytes == kOutputTaskStackBytes && !strcmp(name, "pxa_output") && priority == 6);
+    assert(core == (CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY < 0
+        ? tskNO_AFFINITY : CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY));
+    return xTaskCreateStatic(fn, name, bytes, ctx, priority, stack, tcb);
+}
 void vTaskDelete(TaskHandle_t) {}
 void xTaskNotifyGive(TaskHandle_t) {}
 uint32_t ulTaskNotifyTake(int,TickType_t) {throw Idle{};}
