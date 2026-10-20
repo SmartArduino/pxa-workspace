@@ -55,8 +55,8 @@ public:
             auto* previous = pressed_object_;
             const bool was_pressed = pressed_;
             pressed_ = false;
-            pressed_object_ = nullptr;
-            if (was_pressed && previous && lv_obj_is_valid(previous))
+            SetPressedObject(nullptr);
+            if (was_pressed && previous)
                 lv_obj_send_event(previous, LV_EVENT_PRESS_LOST, keypad_);
             lv_indev_reset(keypad_, nullptr);
             lv_indev_wait_release(keypad_);
@@ -106,7 +106,7 @@ public:
                 lv_obj_has_class(focused, &lv_textarea_class);
             if (pressed_ && key_ != LV_KEY_ENTER) Emit(key_, false);
             Emit(LV_KEY_ENTER, true);
-            if (activate_editor && lv_obj_is_valid(focused)) activate_text_(activate_context_, focused);
+            if (activate_editor && pressed_object_ == focused) activate_text_(activate_context_, focused);
         } else {
             const uint32_t directions = buttons & (Up | Down | Left | Right | L | R);
             const uint32_t direction = directions & (0u - directions);
@@ -212,10 +212,21 @@ private:
         else lv_obj_remove_style(object, &outline_, state);
     }
 
+    void SetPressedObject(lv_obj_t* object) {
+        if (pressed_object_ == object) return;
+        // Enter can delete its own target (unlock, dialogs, page changes).
+        // LVGL's widget-tree check follows parent pointers and cannot validate
+        // freed memory. Clear this reference during LV_EVENT_DELETE instead.
+        if (pressed_object_)
+            lv_obj_remove_event_cb_with_user_data(pressed_object_, nullptr, &pressed_object_);
+        pressed_object_ = object;
+        if (pressed_object_) lv_obj_null_on_delete(&pressed_object_);
+    }
+
     void Emit(uint32_t key, bool pressed) {
         key_ = key;
         pressed_ = pressed;
-        pressed_object_ = pressed ? focused() : nullptr;
+        SetPressedObject(pressed ? focused() : nullptr);
         lv_indev_read(keypad_);
     }
 

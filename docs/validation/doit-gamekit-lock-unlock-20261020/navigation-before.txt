@@ -1,0 +1,77 @@
+=================================================================
+==1683220==ERROR: AddressSanitizer: heap-use-after-free on address 0x7c6638be20f8 at pc 0x555d782649c3 bp 0x7ffe272b71d0 sp 0x7ffe272b71c8
+READ of size 8 at 0x7c6638be20f8 thread T0
+    #0 0x555d782649c2 in lv_obj_is_in_widget_tree /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/core/lv_obj.c:1305:18
+    #1 0x555d7824e42e in doit_gamekit::KeyNavigation::Cancel() /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/boards/doit-gamekit/include/doit_gamekit_navigation.h:59:44
+    #2 0x555d7824cf65 in main /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/boards/doit-gamekit/tests/navigation_test.cc:188:20
+    #3 0x7ff639a27780 in __libc_start_call_main /usr/src/debug/glibc/glibc/csu/../sysdeps/nptl/libc_start_call_main.h:59:16
+    #4 0x7ff639a278b8 in __libc_start_main /usr/src/debug/glibc/glibc/csu/../csu/libc-start.c:372:3
+    #5 0x555d78152a64 in _start (/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/tests/doit-gamekit/lock-unlock-20261020/navigation-before+0x554a64) (BuildId: 80958195159da42a17eca31233fe0dce7cb0c0e9)
+
+0x7c6638be20f8 is located 8 bytes inside of 80-byte region [0x7c6638be20f0,0x7c6638be2140)
+freed by thread T0 here:
+    #0 0x555d78205819 in free (/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/tests/doit-gamekit/lock-unlock-20261020/navigation-before+0x607819) (BuildId: 80958195159da42a17eca31233fe0dce7cb0c0e9)
+    #1 0x555d784b8494 in lv_free_core /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/stdlib/clib/lv_mem_core_clib.c:76:5
+    #2 0x555d784b8d78 in lv_free /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/stdlib/lv_mem.c:137:5
+    #3 0x555d782a57e0 in obj_delete_core /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/core/lv_obj_tree.c:754:5
+    #4 0x555d782a62a6 in lv_obj_delete /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/core/lv_obj_tree.c:72:5
+    #5 0x555d7824e096 in main::$_4::operator()(_lv_event_t*) const /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/boards/doit-gamekit/tests/navigation_test.cc:181:17
+    #6 0x555d7824e096 in main::$_4::__invoke(_lv_event_t*) /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/boards/doit-gamekit/tests/navigation_test.cc:178:35
+    #7 0x555d7849d146 in lv_event_send /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/misc/lv_event.c:132:13
+    #8 0x555d7826e34e in event_send_core /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/core/lv_obj_event.c:370:11
+    #9 0x555d7826e993 in lv_obj_send_event /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/core/lv_obj_event.c:70:23
+    #10 0x555d78254747 in lv_group_send_data /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/core/lv_group.c:312:12
+    #11 0x555d7840d8ea in indev_keypad_proc /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/indev/lv_indev.c:892:20
+    #12 0x555d7840d8ea in lv_indev_read /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/indev/lv_indev.c:251:13
+    #13 0x555d7824f08a in doit_gamekit::KeyNavigation::Emit(unsigned int, bool) /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/boards/doit-gamekit/include/doit_gamekit_navigation.h:219:9
+    #14 0x555d7824f08a in doit_gamekit::KeyNavigation::Update(_lv_obj_t*, bool, unsigned int, unsigned int) /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/boards/doit-gamekit/include/doit_gamekit_navigation.h:108:13
+    #15 0x555d7824cf5d in Update(doit_gamekit::KeyNavigation&, unsigned int, _lv_obj_t*, bool, unsigned int) /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/boards/doit-gamekit/tests/navigation_test.cc:26:16
+    #16 0x555d7824cf5d in main /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/boards/doit-gamekit/tests/navigation_test.cc:187:9
+    #17 0x7ff639a27780 in __libc_start_call_main /usr/src/debug/glibc/glibc/csu/../sysdeps/nptl/libc_start_call_main.h:59:16
+    #18 0x7ff639a278b8 in __libc_start_main /usr/src/debug/glibc/glibc/csu/../csu/libc-start.c:372:3
+    #19 0x555d78152a64 in _start (/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/tests/doit-gamekit/lock-unlock-20261020/navigation-before+0x554a64) (BuildId: 80958195159da42a17eca31233fe0dce7cb0c0e9)
+
+previously allocated by thread T0 here:
+    #0 0x555d78205e34 in malloc (/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/tests/doit-gamekit/lock-unlock-20261020/navigation-before+0x607e34) (BuildId: 80958195159da42a17eca31233fe0dce7cb0c0e9)
+    #1 0x555d784b847e in lv_malloc_core /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/stdlib/clib/lv_mem_core_clib.c:66:12
+    #2 0x555d784b8d0d in lv_malloc_zeroed /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/stdlib/lv_mem.c:97:20
+    #3 0x555d78265ee6 in lv_obj_class_create_obj /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/core/lv_obj_class.c:51:22
+    #4 0x555d78259f31 in lv_obj_create /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/core/lv_obj.c:374:22
+    #5 0x555d7824ce9c in main /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/boards/doit-gamekit/tests/navigation_test.cc:176:22
+    #6 0x7ff639a27780 in __libc_start_call_main /usr/src/debug/glibc/glibc/csu/../sysdeps/nptl/libc_start_call_main.h:59:16
+    #7 0x7ff639a278b8 in __libc_start_main /usr/src/debug/glibc/glibc/csu/../csu/libc-start.c:372:3
+    #8 0x555d78152a64 in _start (/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/tests/doit-gamekit/lock-unlock-20261020/navigation-before+0x554a64) (BuildId: 80958195159da42a17eca31233fe0dce7cb0c0e9)
+
+SUMMARY: AddressSanitizer: heap-use-after-free /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/firmware/managed_components/lvgl__lvgl/src/core/lv_obj.c:1305:18 in lv_obj_is_in_widget_tree
+Shadow bytes around the buggy address:
+  0x7c6638be1e00: fd fd fd fd fd fd fa fa fa fa fd fd fd fd fd fd
+  0x7c6638be1e80: fd fd fd fa fa fa fa fa fd fd fd fd fd fd fd fd
+  0x7c6638be1f00: fd fa fa fa fa fa fd fd fd fd fd fd fd fd fd fa
+  0x7c6638be1f80: fa fa fa fa 00 00 00 00 00 00 00 00 00 00 fa fa
+  0x7c6638be2000: fa fa fd fd fd fd fd fd fd fd fd fd fa fa fa fa
+=>0x7c6638be2080: 00 00 00 00 00 00 00 00 00 fa fa fa fa fa fd[fd]
+  0x7c6638be2100: fd fd fd fd fd fd fd fd fa fa fa fa fd fd fd fd
+  0x7c6638be2180: fd fd fd fd fd fa fa fa fa fa fa fa fa fa fa fa
+  0x7c6638be2200: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x7c6638be2280: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x7c6638be2300: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==1683220==ABORTING

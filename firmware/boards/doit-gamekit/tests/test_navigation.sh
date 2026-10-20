@@ -2,13 +2,19 @@
 set -euo pipefail
 test_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_dir="$(cd "$test_dir/../../../.." && pwd)"
-lvgl_source="$project_dir/local/doit-gamekit-build/firmware/managed_components/lvgl__lvgl"
-[[ -d "$lvgl_source" ]] || lvgl_source="$project_dir/firmware/managed_components/lvgl__lvgl"
-lvgl_library="$project_dir/build/tests/lvgl-align64/liblvgl.a"
-[[ -f "$lvgl_library" ]] || {
-    echo 'Build the real LVGL test library with tools/test-game-system-gestures.sh first.' >&2
-    exit 2
-}
+lvgl_source="$project_dir/firmware/managed_components/lvgl__lvgl"
+# Instrument LVGL too: a release archive hides use-after-free inside its
+# widget-tree helpers even when the board's test binary enables ASan.
+lvgl_build="$project_dir/build/tests/lvgl-navigation-asan"
+cmake -S "$lvgl_source" -B "$lvgl_build" -DCMAKE_BUILD_TYPE=Debug \
+    -DLV_BUILD_CONF_PATH="$project_dir/firmware/components/pxa_integration/tests/lv_conf_overlay.h" \
+    -DCONFIG_LV_BUILD_DEMOS=OFF -DCONFIG_LV_BUILD_EXAMPLES=OFF \
+    -DCONFIG_LV_USE_THORVG=OFF -DCONFIG_LV_USE_SDL=ON \
+    -DCONFIG_LV_USE_FREETYPE=ON -DLV_BUILD_INSTALL=OFF \
+    '-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer -O1' \
+    '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer -O1' >/dev/null
+cmake --build "$lvgl_build" --target lvgl -j "${PXA_TEST_JOBS:-6}" >/dev/null
+lvgl_library="$lvgl_build/liblvgl.a"
 test_build="$project_dir/build/tests/doit-gamekit"
 mkdir -p "$test_build"
 read -ra libraries <<< "$(pkg-config --libs sdl2 freetype2)"

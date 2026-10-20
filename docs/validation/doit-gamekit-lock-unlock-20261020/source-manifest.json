@@ -1,0 +1,14 @@
+{
+  "root_commit": "10f39c4212da6ee51c6bc5128401846633b3fe09",
+  "sdk_commit": "5a6e1798b2f6b012ce4df481afeb3a6b0abdc998",
+  "files": {
+    "firmware/boards/doit-gamekit/include/doit_gamekit_navigation.h": "f07220ee91ebb95e0492c78332e113fe7fe0450c170afc211e00df6155c6f6b5",
+    "firmware/boards/doit-gamekit/src/doit_gamekit_board.cc": "c03e0c8dfdabb043e5da592e30f748bf0db2482b4e19ef06d2418b3f1449cb95",
+    "firmware/components/pxa/src/services/pxa_esp_surface.c": "4b70c63221a6bd812de2d1c8615d2c82c143eb17c8a6cbb4d4b03ee724803100",
+    "firmware/components/pxa/include/pxa/pxa_esp_surface.h": "81e1d4eca8479538f456f7192385d53d8cce6ecf0cbddc6385c76811205a42dd"
+  },
+  "preexisting_other_changes": [
+    "firmware/components/pxa/src/services/pxa_esp_surface.c",
+    "firmware/components/pxa/include/pxa/pxa_esp_surface.h"
+  ]
+}

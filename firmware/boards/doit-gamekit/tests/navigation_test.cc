@@ -168,6 +168,72 @@ int main() {
     Tap(navigation, Right);
     assert(lv_buttonmatrix_get_selected_button(matrix) != selected);
 
+    // Unlock deletes the focused lock screen inside its own Enter event.
+    // The board resets its pointer there and cancels keypad input next poll.
+    for (unsigned iteration = 0; iteration < 100; ++iteration) {
+        lv_obj_clean(screen);
+        (void)MakeButton(screen, 10, 10);
+        auto* lock = lv_obj_create(lv_layer_top());
+        Plain(lock); lv_obj_set_size(lock, 320, 240); lv_obj_set_clickable(lock, true);
+        lv_obj_add_event_cb(lock, [](lv_event_t* event) {
+            if (lv_event_get_key(event) == LV_KEY_ENTER) {
+                auto* pointer = static_cast<lv_indev_t*>(lv_event_get_user_data(event));
+                lv_obj_delete(lv_event_get_target_obj(event));
+                lv_indev_reset(pointer, nullptr);
+            }
+        }, LV_EVENT_KEY, pointer);
+        Update(navigation, 0, lock, true, 60);
+        assert(navigation.focused() == lock);
+        Update(navigation, A, lock);
+        navigation.Cancel();
+        // Desktop retains focus navigation; a foreground game returns to
+        // controller mode. Both must release the deleted Enter target safely.
+        Update(navigation, 0, nullptr, iteration % 2 == 0);
+    }
+
+    // Releasing A must remove the previous target's delete observer. Deleting
+    // that old object while another is held must not cancel the new target.
+    lv_obj_clean(screen);
+    auto* old_target = MakeButton(screen, 10, 10);
+    auto* new_target = MakeButton(screen, 10, 50);
+    unsigned lost = 0;
+    lv_obj_add_event_cb(new_target, [](lv_event_t* event) {
+        ++*static_cast<unsigned*>(lv_event_get_user_data(event));
+    }, LV_EVENT_PRESS_LOST, &lost);
+    Update(navigation, 0, nullptr, true, 60);
+    const unsigned event_count = lv_obj_get_event_count(old_target);
+    for (unsigned repeat = 0; repeat < 20; ++repeat) {
+        Update(navigation, A);
+        assert(lv_obj_get_event_count(old_target) == event_count + 1);
+    }
+    Update(navigation, 0);
+    assert(lv_obj_get_event_count(old_target) == event_count);
+    Tap(navigation, Down);
+    assert(navigation.focused() == new_target);
+    Update(navigation, A);
+    lv_obj_delete(old_target);
+    navigation.Cancel();
+    assert(lost == 1);
+
+    // A text field can also disappear in its Enter callback. Do not activate
+    // the editor after that callback has destroyed its target.
+    lv_obj_clean(screen);
+    auto* text = lv_textarea_create(screen);
+    unsigned activations = 0;
+    navigation.SetTextActivation(&activations, [](void* context, lv_obj_t*) {
+        ++*static_cast<unsigned*>(context);
+    });
+    lv_obj_add_event_cb(text, [](lv_event_t* event) {
+        if (lv_event_get_key(event) == LV_KEY_ENTER)
+            lv_obj_delete(lv_event_get_target_obj(event));
+    }, LV_EVENT_KEY, nullptr);
+    Update(navigation, 0, nullptr, true, 60);
+    Update(navigation, A);
+    navigation.Cancel();
+    assert(activations == 0);
+    navigation.SetTextActivation(nullptr, nullptr);
+    const unsigned clicks_before_removal = clicks;
+
     // Removing a focused object while Enter is held must not click its successor.
     lv_obj_clean(screen);
     auto* removed = MakeButton(screen, 10, 10);
@@ -178,7 +244,7 @@ int main() {
     lv_obj_delete(removed);
     Update(navigation, A);
     Update(navigation);
-    assert(clicks == 2);
+    assert(clicks == clicks_before_removal);
 
     // A control can touch all four edges of its clipping parent, as desktop
     // tiles and settings rows do. Test both the native theme and plain rows.
