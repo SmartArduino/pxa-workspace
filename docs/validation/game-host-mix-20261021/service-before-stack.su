@@ -1,0 +1,10 @@
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-audio-20261021/audio_service_before.c:303:13:release_session	0	static
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-audio-20261021/audio_service_before.c:323:13:close_session	32	static
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-audio-20261021/audio_service_before.c:716:21:resolve_session	80	static
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-audio-20261021/audio_service_before.c:818:21:audio_control	288	static
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-audio-20261021/audio_service_before.c:42:6:pxa_audio_service_poll	96	static
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-audio-20261021/audio_service_before.c:334:16:audio_stream_io	208	static
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-audio-20261021/audio_service_before.c:84:8:pxa_audio_service_workspace_size	0	static
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-audio-20261021/audio_service_before.c:100:14:pxa_audio_service_init	48	static
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-audio-20261021/audio_service_before.c:906:14:pxa_audio_service_register	80	static
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-audio-20261021/audio_service_before.c:923:5:pxa_audio_has_active_sessions	0	static

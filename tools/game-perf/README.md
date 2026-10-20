@@ -131,6 +131,24 @@ compilation, desktop file/input tests, reduced AOT size and a positive static
 memory remainder do not qualify device loading, FPS or original audio fidelity.
 Those initial main-loop profiles used the legacy 16 kHz mono audio path.
 
+## Synchronous Host audio candidate
+
+`quake-host-audio` and `quake-host-audio-baseline` keep the native main loop,
+original-rate PCM, exact lighting cache and indexed Host output identical.
+Only the former enables `PXA_QUAKE_HOST_AUDIO_MIX`: Audio 0.11 accumulates
+sample spans into the engine's existing S32 stereo buffer synchronously.
+Both profiles use package version 0.4.15/sequence 135 and require Audio 0.11;
+keep artifacts in separate output directories and identify them by SHA-256.
+The ordinary Quake build keeps this option off pending device qualification.
+
+The Host kernel retains no Guest pointers and adds no persistent PCM copy.
+The engine still owns scheduling, loops, final volume and output quantization.
+This is not an asynchronous Host voice mixer or an OPL synthesizer. Run
+`local/pxa-apps/common/recrof/tests/run_quake_host_audio.py` after upstream
+updates: it extracts the current vendored mixing loop rather than relying on
+a separately copied reference. Correctness tests and successful AOT builds
+do not establish a frame-rate gain.
+
 ## Exact source PCM candidates
 
 `quake-native-pcm`, `quake2-native-pcm`, `duke-native-pcm`, `cnc-native-pcm`
