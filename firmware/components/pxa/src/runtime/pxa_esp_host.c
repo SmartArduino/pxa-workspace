@@ -3300,7 +3300,9 @@ static int start_verified(const char *identity) {
                 service_capabilities[index].features =
                     PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS |
                     PXA_GAME_RENDER_FEATURE_BORROWED_INDEXED_SPANS |
-        PXA_GAME_RENDER_FEATURE_PROJECTED_INDEXED_SPANS;
+                    PXA_GAME_RENDER_FEATURE_PROJECTED_INDEXED_SPANS |
+                    PXA_GAME_RENDER_FEATURE_INDEXED_FRAME_BATCHES |
+                    PXA_GAME_RENDER_FEATURE_BORROWED_INDEXED_BLIT;
             if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {
                 service_capabilities[index].features =
                     PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |

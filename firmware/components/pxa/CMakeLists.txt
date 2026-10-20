@@ -143,6 +143,7 @@ if(CONFIG_COMPILER_OPTIMIZATION_PERF AND
     set_property(SOURCE
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster.c"
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster_spans.c"
+        "${PXA_C_CORE_ROOT}/src/services/game_render/raster_blit.c"
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster_projected_spans.c"
         APPEND PROPERTY COMPILE_OPTIONS "-O3")
 endif()

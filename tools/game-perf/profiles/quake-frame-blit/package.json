@@ -1,0 +1,83 @@
+{
+  "format": "pxa-package-source-0.1",
+  "min_sdk": [
+    2,
+    0
+  ],
+  "target_sdk": [
+    2,
+    0
+  ],
+  "compile_sdk": [
+    2,
+    0
+  ],
+  "id": "pxa-quake-sd",
+  "version": "0.4.1",
+  "name": "Quake SD",
+  "description": "Engine with automatically bound fixed SD resources and internal saves",
+  "build": {
+    "system": "cmake",
+    "source_dir": ".",
+    "linear_memory": {
+      "maximum_bytes": 3670016,
+      "pinned": true
+    }
+  },
+  "components": [
+    {
+      "id": "main",
+      "kind": "ui",
+      "services": [
+        "surface",
+        "audio",
+        "clock",
+        "permission",
+        "window",
+        "log",
+        "ui",
+        {
+          "name": "fs",
+          "min_version": [
+            0,
+            3
+          ],
+          "features": [
+            "app-media-root",
+            "read-at",
+            "scoped-roots"
+          ]
+        },
+        {
+          "name": "game-render",
+          "min_version": [
+            1,
+            2
+          ],
+          "features": [
+            "borrowed-indexed-blit",
+            "indexed-frame-batches"
+          ]
+        }
+      ],
+      "cmake_target": "pxa_main",
+      "wasi": {
+        "version": "preview1",
+        "libc": "wasi-libc",
+        "features": [
+          "monotonic-clock",
+          "wall-clock"
+        ]
+      },
+      "artifact": "aot"
+    }
+  ],
+  "permissions": [
+    {
+      "name": "audio.playback",
+      "required": false,
+      "scope": "media"
+    }
+  ],
+  "release_sequence": 121
+}

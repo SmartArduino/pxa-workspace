@@ -36,3 +36,33 @@ For a game comparison, pass the isolated compiler through `WAMRC` when invoking
 `tools/app.sh`. Record the final AOT hash, original Wasm code-section hash, scene,
 firmware and native measurements. Keep experiments out of SDK defaults until the
 target-device comparison and broader compiler regression checks are complete.
+
+## GameRender comparison profiles
+
+Run from the workspace root with the App checkout at `local/pxa-apps`:
+
+```sh
+bash tools/app.sh build quake-frame-io --board doit-gamekit \
+  --source-root tools/game-perf/profiles --target esp32s31 --output local/replay-frame-io
+```
+
+| Profile | World rendering | Output | Producer |
+| --- | --- | --- | --- |
+| `quake-projected` | per-material projected rows | Guest | original codec |
+| `quake-frame` | multi-material packets | Guest | ordinary snapshot copies |
+| `quake-frame-blit` | multi-material packets | native indexed resolve | ordinary snapshot copies |
+| `quake-frame-bulk` | multi-material packets | native indexed resolve | bulk snapshots |
+| `quake-frame-io` | multi-material packets | native indexed resolve | bulk file/cache reads and layout-proven command codec |
+
+These are opt-in measurements. A profile name does not establish a performance
+improvement. Preserve the tested firmware, SDK/App revisions, AOT hash, actual
+level readiness and complete frame window. The validation report in
+`docs/validation/game-render-batches-20261020` records the comparisons.
+
+Profiles compile the **current** App sources by default. For historical replay,
+use the revisions recorded with that measurement. `PXA_GAME_APPS_ROOT` can point
+to an isolated App worktree and the existing `PXSYS_ROOT` option can select an SDK
+checkout, without switching the shared workspace. The original source embeds
+build-time strings; code-section hashes and full artifact hashes are recorded
+separately. Upstream updates should go through `common/recrof/tools/upstream.py`
+and the original-function differential checks before another device measurement.
