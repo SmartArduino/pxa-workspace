@@ -15,6 +15,7 @@
 #include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
 #include "pxa/audio_mixer.h"
+#include "pxa_esp_resource_memory.h"
 #include "freertos/task.h"
 
 #define PXA_ESP_AUDIO_TAG "PxaAudio"
@@ -51,7 +52,10 @@ typedef struct {
     pxa_audio_mixer_t *mixer;
     SemaphoreHandle_t mutex;
     StaticSemaphore_t mutex_storage;
-    TaskHandle_t task;
+    TaskHandle_t task; /* Legacy push adapter only; board output uses pull. */
+    uint32_t output_rate;
+    void (*device_wake)(void *);
+    void *device_context;
     portMUX_TYPE backend_lock;
     portMUX_TYPE sink_lock;
     pxa_esp_audio_slot_t slots[PXA_ESP_AUDIO_VOICE_COUNT];
@@ -140,19 +144,22 @@ static int asset_path_is_audio(const uint8_t *path, size_t size) {
            memcmp(path + size - 4u, ".ogg", 4u) == 0;
 }
 
-static pxa_status_t audio_open(void *context, uint16_t usage,
-                               pxa_audio_format_t *format,
-                               uint64_t *provider_session) {
+static pxa_status_t audio_open_format(void *context, const pxa_audio_format_t *format,
+    pxa_audio_pcm_info_t *info, uint64_t *provider_session) {
     pxa_esp_audio_state_t *audio = (pxa_esp_audio_state_t *)context;
     pxa_esp_audio_sink_t sink;
     uint16_t index;
-    if (audio != &g_audio || usage != PXA_AUDIO_USAGE_MEDIA ||
-        format == NULL || provider_session == NULL ||
-        !sink_snapshot(audio, &sink)) {
+    if (audio != &g_audio || format == NULL || provider_session == NULL ||
+        (!sink_snapshot(audio, &sink) && !audio->device_wake) ||
+        (info && !audio->device_wake)) {
         return PXA_STATUS_UNSUPPORTED;
     }
     if (!pxa_esp_audio_initialize()) return PXA_STATUS_RESOURCE_LIMIT;
     audio_lock(audio);
+    const uint32_t output_rate = audio->device_wake ? audio->output_rate : PXA_ESP_AUDIO_SAMPLE_RATE;
+    if (format->sample_rate > output_rate) {
+        audio_unlock(audio); return PXA_STATUS_UNSUPPORTED;
+    }
     for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index) {
         pxa_esp_audio_slot_t *slot = &audio->slots[index];
         if (!slot->active && !slot->closing) {
@@ -160,12 +167,17 @@ static pxa_status_t audio_open(void *context, uint16_t usage,
             if (session == 0) session = ++audio->next_provider_session;
             memset(slot, 0, sizeof(*slot));
             pxa_audio_mixer_reset(&audio->mixer->voices[index]);
+            pxa_status_t configured = pxa_audio_mixer_configure(&audio->mixer->voices[index],
+                format->sample_rate, format->channels, output_rate);
+            if (configured != PXA_STATUS_OK) {
+                audio_unlock(audio); return configured;
+            }
+            if (audio->device_wake) audio->mixer->voices[index].state.flags = 0;
             slot->active = 1;
             slot->provider_session = session;
             *provider_session = session;
-            format->sample_rate = PXA_ESP_AUDIO_SAMPLE_RATE;
-            format->channels = 1;
-            format->frame_ms = PXA_ESP_AUDIO_FRAME_MS;
+            if (info) *info = (pxa_audio_pcm_info_t){output_rate,
+                PXA_AUDIO_MIXER_PACKETS * (format->sample_rate * 20u / 1000u), 1};
             audio_unlock(audio);
             return PXA_STATUS_OK;
         }
@@ -175,6 +187,23 @@ static pxa_status_t audio_open(void *context, uint16_t usage,
     return PXA_STATUS_RESOURCE_LIMIT;
 }
 
+static pxa_status_t audio_open(void *context, uint16_t usage,
+    pxa_audio_format_t *format, uint64_t *session) {
+    if (!format || usage != PXA_AUDIO_USAGE_MEDIA) return PXA_STATUS_UNSUPPORTED;
+    *format = (pxa_audio_format_t){PXA_ESP_AUDIO_SAMPLE_RATE, 1, PXA_ESP_AUDIO_FRAME_MS};
+    return audio_open_format(context, format, NULL, session);
+}
+static pxa_status_t audio_open_pcm(void *context, const pxa_audio_format_t *format,
+    pxa_audio_pcm_info_t *info, uint64_t *session) {
+    if (!format || !info || format->frame_ms != 20 || format->sample_rate < 8000 ||
+        format->sample_rate > 48000 || (format->channels != 1 && format->channels != 2))
+        return PXA_STATUS_INVALID_ARGUMENT;
+    return audio_open_format(context, format, info, session);
+}
+static void audio_wake(pxa_esp_audio_state_t *audio) {
+    if (audio->device_wake) audio->device_wake(audio->device_context);
+    else if (audio->task) xTaskNotifyGive(audio->task);
+}
 static pxa_status_t audio_commit(void *context, uint64_t session,
                                   const pxa_audio_graph_t *graph) {
     pxa_esp_audio_state_t *audio = context;
@@ -209,7 +238,7 @@ static pxa_status_t audio_submit(void *context, uint64_t session,
     if (status == PXA_STATUS_OK) { ++audio->submitted_frames; update_queue_peak(audio); }
     if (status == PXA_STATUS_WOULD_BLOCK) ++audio->queue_full_frames;
     audio_unlock(audio);
-    if (status == PXA_STATUS_OK) xTaskNotifyGive(audio->task);
+    if (status == PXA_STATUS_OK) audio_wake(audio);
     return status;
 }
 
@@ -246,7 +275,7 @@ static pxa_status_t audio_play_tone(void *context, uint64_t session,
         ++audio->tone_dropped_commands;
     }
     audio_unlock(audio);
-    if (status == PXA_STATUS_OK) xTaskNotifyGive(audio->task);
+    if (status == PXA_STATUS_OK) audio_wake(audio);
     return status;
 }
 
@@ -296,7 +325,7 @@ static pxa_status_t audio_play_effect(void *context, uint64_t session,
         audio->tone_dropped_commands += count;
     }
     audio_unlock(audio);
-    if (status == PXA_STATUS_OK) xTaskNotifyGive(audio->task);
+    if (status == PXA_STATUS_OK) audio_wake(audio);
     return status;
 }
 static pxa_status_t audio_stop_effect(void *context, uint64_t session, uint8_t track) {
@@ -634,6 +663,7 @@ static void audio_output_tick(pxa_esp_audio_state_t *audio) {
             uint32_t position[PXA_AUDIO_MIXER_PACKETS];
             uint32_t phase[PXA_AUDIO_MIXER_PACKETS];
             uint32_t noise[PXA_AUDIO_MIXER_PACKETS];
+            uint32_t accounted[PXA_AUDIO_MIXER_PACKETS], source_phase[PXA_AUDIO_MIXER_PACKETS];
             pxa_audio_biquad_t eq[PXA_AUDIO_MAX_EQ_BANDS];
             pxa_audio_state_t state;
             uint8_t read, count;
@@ -647,6 +677,8 @@ static void audio_output_tick(pxa_esp_audio_state_t *audio) {
                 checkpoint[i].position[j] = v->packets[j].position;
                 checkpoint[i].phase[j] = v->packets[j].phase;
                 checkpoint[i].noise[j] = v->packets[j].noise;
+                checkpoint[i].accounted[j] = v->packets[j].accounted_frames;
+                checkpoint[i].source_phase[j] = v->packets[j].source_phase;
             }
         }
         int had_tone = 0;
@@ -686,6 +718,8 @@ static void audio_output_tick(pxa_esp_audio_state_t *audio) {
                     v->packets[j].position = checkpoint[i].position[j];
                     v->packets[j].phase = checkpoint[i].phase[j];
                     v->packets[j].noise = checkpoint[i].noise[j];
+                    v->packets[j].accounted_frames = checkpoint[i].accounted[j];
+                    v->packets[j].source_phase = checkpoint[i].source_phase[j];
                 }
             }
         } else if (count != 0) {
@@ -723,19 +757,49 @@ static void audio_output_task(void *argument) {
     }
 }
 
+int pxa_esp_audio_set_pull_device(uint32_t rate, void (*wake)(void *), void *context) {
+    if (rate < 16000 || rate > 48000 || !wake) return 0;
+    audio_lock(&g_audio);
+    if (g_audio.mixer || g_audio.task) { audio_unlock(&g_audio); return 0; }
+    g_audio.output_rate = rate; g_audio.device_wake = wake; g_audio.device_context = context;
+    audio_unlock(&g_audio);
+    return 1;
+}
+size_t pxa_esp_audio_render(int16_t *output, size_t capacity) {
+    if (!output || !capacity || capacity > PXA_AUDIO_MIXER_FRAME) return 0;
+    audio_lock(&g_audio);
+    size_t rendered = 0;
+    if (!g_audio.suspended && g_audio.mixer) {
+        int tone = 0;
+        for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i)
+            for (unsigned j = 0; j < PXA_AUDIO_MIXER_PACKETS; ++j) {
+                const pxa_audio_mixer_packet_t *p = &g_audio.mixer->voices[i].packets[j];
+                tone |= p->position < p->length && p->kind != PXA_AUDIO_PACKET_PCM;
+            }
+        rendered = pxa_audio_mixer_render(g_audio.mixer, output, capacity);
+        if (rendered) { ++g_audio.rendered_frames; g_audio.tone_frames += tone; }
+    } else memset(output, 0, capacity * sizeof(*output));
+    audio_unlock(&g_audio);
+    return rendered;
+}
 int pxa_esp_audio_initialize(void) {
-    if (g_audio.mixer != NULL && g_audio.task != NULL) return 1;
-    g_audio.mixer = heap_caps_calloc(1, sizeof(*g_audio.mixer),
-                                    MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (g_audio.mixer == NULL) return 0;
-    if (xTaskCreateWithCaps(audio_output_task, "pxa_audio",
+    audio_lock(&g_audio);
+    if (g_audio.mixer != NULL) { audio_unlock(&g_audio); return 1; }
+    if (pxa_esp_resource_memory_initialize() != PXA_STATUS_OK) {
+        audio_unlock(&g_audio); return 0;
+    }
+    g_audio.mixer = pxa_memory_allocate(pxa_esp_device_resource_allocator(
+        PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO), sizeof(*g_audio.mixer));
+    if (g_audio.mixer == NULL) { audio_unlock(&g_audio); return 0; }
+    memset(g_audio.mixer, 0, sizeof(*g_audio.mixer));
+    if (!g_audio.device_wake && xTaskCreateWithCaps(audio_output_task, "pxa_audio",
             PXA_ESP_AUDIO_TASK_STACK_SIZE, &g_audio,
             PXA_ESP_AUDIO_TASK_PRIORITY, &g_audio.task,
             MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
-        heap_caps_free(g_audio.mixer);
-        g_audio.mixer = NULL;
-        return 0;
+        pxa_memory_release(g_audio.mixer); g_audio.mixer = NULL;
+        audio_unlock(&g_audio); return 0;
     }
+    audio_unlock(&g_audio);
     return 1;
 }
 
@@ -747,8 +811,11 @@ void pxa_esp_audio_deinitialize(void) {
     }
     audio_unlock(&g_audio);
     pxa_esp_audio_reset_sessions();
-    heap_caps_free(g_audio.mixer);
+    audio_lock(&g_audio);
+    pxa_audio_mixer_t *retired = g_audio.mixer;
     g_audio.mixer = NULL;
+    audio_unlock(&g_audio);
+    pxa_memory_release(retired);
 }
 
 void pxa_esp_audio_reset_sessions(void) {
@@ -801,7 +868,6 @@ void pxa_esp_audio_set_suspended(bool suspended) {
         return;
     }
     g_audio.suspended = suspended ? 1u : 0u;
-    if (!suspended && g_audio.task) xTaskNotifyGive(g_audio.task);
     for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index) {
         if (g_audio.slots[index].active) pcm_mask |= UINT16_C(1) << index;
         if (g_audio.slots[index].asset_active &&
@@ -818,6 +884,7 @@ void pxa_esp_audio_set_suspended(bool suspended) {
                     0);
         }
     }
+    if (!suspended) audio_wake(&g_audio);
     if (suspended && sink_snapshot(&g_audio, &pcm_sink) &&
         pcm_sink.flush != NULL) {
         for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index) {
@@ -833,6 +900,7 @@ void pxa_esp_audio_backend(pxa_audio_backend_t *output) {
     output->struct_size = sizeof(*output);
     output->context = &g_audio;
     output->open = audio_open;
+    output->open_pcm = audio_open_pcm;
     output->commit = audio_commit;
     output->submit = audio_submit;
     output->query = audio_query;

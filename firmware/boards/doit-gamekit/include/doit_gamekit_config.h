@@ -10,7 +10,7 @@ inline constexpr int kNativeWidth = kHeight, kNativeHeight = kWidth;
 inline constexpr int kLcdBacklight = 7, kLcdReset = 8, kLcdDc = 9;
 inline constexpr int kLcdCs = 10, kLcdMosi = 11, kLcdClock = 12;
 inline constexpr int kAudioBclk = 4, kAudioWs = 5, kAudioDout = 6;
-inline constexpr int kAudioSampleRate = 16000;
+inline constexpr int kAudioSampleRate = 48000;
 // V0.6 routes these signals differently from S31's fixed SDMMC IO MUX.
 // Use SD SPI mode: CMD=MOSI, DAT0=MISO, DAT3=CS; DAT1/2 stay pulled up.
 inline constexpr int kSdClock = 20, kSdMosi = 21, kSdMiso = 22;

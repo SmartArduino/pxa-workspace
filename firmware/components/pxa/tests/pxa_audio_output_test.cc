@@ -134,7 +134,7 @@ TaskHandle_t xTaskCreateStatic(void(*)(void*),const char*,uint32_t bytes,void* c
                               StackType_t* stack,StaticTask_t* tcb) {
     auto* audio = static_cast<PxaAudioOutput*>(ctx);
     assert(bytes == kMusicTaskStackBytes || bytes == kOutputTaskStackBytes);
-    assert(stack && tcb && audio->runtime_storage_ && live_queues == 2 && live_mutexes == 1);
+    assert(stack && tcb && audio->runtime_storage_ && live_queues == 1 && live_mutexes == 1);
     assert(registered_codecs[0] && registered_codecs[1] && registered_codecs[2]);
     ++created_tasks; return tcb;
 }
@@ -195,6 +195,12 @@ int esp_audio_simple_dec_process(esp_audio_simple_dec_handle_t,esp_audio_simple_
     out->decoded_size=640;raw->consumed=raw->len;return ESP_AUDIO_ERR_OK;
 }
 int esp_audio_simple_dec_get_info(esp_audio_simple_dec_handle_t,esp_audio_simple_dec_info_t* info){*info={16,16000,1};return ESP_AUDIO_ERR_OK;}
+static uint32_t sink_rate;
+extern "C" int pxa_esp_audio_set_pull_device(uint32_t rate, void (*wake)(void*), void* context) {
+    assert(rate >= 16000 && rate <= 48000 && wake && context);
+    sink_rate = rate; return 1;
+}
+extern "C" size_t pxa_esp_audio_render(int16_t *out, size_t n) { memset(out, 0, n*sizeof(*out)); return 0; }
 void pxa_host_set_audio_sink(pxa_host_audio_submit_fn,pxa_host_audio_flush_fn,void*){}
 void pxa_host_set_audio_asset_sink(pxa_host_audio_asset_play_fn,pxa_host_audio_asset_control_fn,void*){}
 void pxa_host_set_audio_sound_sink(pxa_host_audio_sound_fn,void*){}
@@ -225,6 +231,12 @@ static bool write_clocked_pcm(void*,const int16_t* pcm,size_t n) {
     ++output_clock.queued;
     output_clock.high_water=std::max(output_clock.high_water,output_clock.queued);
     if (++output_clock.writes == 320) throw Tick{};
+    return true;
+}
+static std::vector<int16_t> captured;
+static bool capture_pcm(void*, const int16_t *pcm, size_t n) {
+    assert(n == 320); captured.insert(captured.end(), pcm, pcm+n);
+    if (captured.size() == 2560) throw Tick{};
     return true;
 }
 static void tick(PxaAudioOutput& a){try {a.Run();}catch(Tick&){}catch(Idle&){} }
@@ -543,12 +555,43 @@ int main(){
     a.music_token_.store(2);a.music_voice_.store(1);a.music_active_.store(true);
     a.FinishMusic(1);assert(a.music_active_.load() && a.music_voice_.load()==1);
     a.FinishMusic(2);assert(!a.music_active_.load() && a.music_voice_.load()==-1);
+    // A 50-ms legacy sound must retain its source clock at 48 kHz. Compare
+    // every physical sample with an independent, wide-integer reference.
+    pxa_asset_info_t legacy_info = {}; legacy_info.kind = PXA_ASSET_AUDIO;
+    legacy_info.encoding = PXA_ASSET_ENCODING_PCM_S16LE_16K_MONO;
+    legacy_info.stored_bytes = legacy_info.decoded_bytes = 1600;
+    pxa_asset_object_t *legacy = nullptr; uint8_t *legacy_bytes = nullptr;
+    assert(!pxa_asset_object_create(&legacy_info, sound_allocate, sound_free, nullptr,
+        &legacy, &legacy_bytes));
+    for (unsigned i=0; i<800; ++i) {
+        const int16_t sample = static_cast<int16_t>(i*3751u);
+        legacy_bytes[i*2] = static_cast<uint8_t>(sample);
+        legacy_bytes[i*2+1] = static_cast<uint16_t>(sample) >> 8;
+    }
+    pxa_asset_object_finish_loading(legacy);
+    pxa_audio_sound_voice_t reference = {};
+    assert(pxa_audio_sound_start(&reference, legacy, 0, PXA_AUDIO_SOUND_APPEND, 0, 32768));
+    int32_t previous = 0, current = pxa_audio_sound_render(&reference);
+    uint32_t phase = 0; std::vector<int16_t> expected_pcm;
+    for (unsigned i=0; i<2560; ++i) {
+        phase += 16000;
+        if (phase > 48000) { phase -= 48000; previous = current; current = pxa_audio_sound_render(&reference); }
+        expected_pcm.push_back(pxa_audio_output_limit(previous +
+            static_cast<int64_t>(current-previous)*phase/48000));
+    }
+    assert(!reference.asset);
+    assert(a.PlaySound(&a,0,legacy,0));
+    a.sample_rate_ = 48000; a.device_paced_ = true; a.write_ = capture_pcm;
+    tick(a);
+    assert(captured == expected_pcm && pxa_asset_object_reference_count(legacy) == 1);
+    pxa_asset_object_release(legacy);
+    puts("48 kHz output: legacy 16 kHz clock, interpolation, full-scale transitions and source pin retirement passed");
     assert(!pxa_memory_owner_close(&resource_budget, owners[1]));
     const auto still_resident=budget_stats(owners[2]);
     assert(still_resident.charged[0] == device_resident.charged[0] &&
            still_resident.charged[1] == device_resident.charged[1]);
     rmdir(root);
-    vQueueDelete(a.output_queue_);vQueueDelete(a.music_commands_);vSemaphoreDelete(a.music_mutex_);
+    vQueueDelete(a.music_commands_);vSemaphoreDelete(a.music_mutex_);
     // Mock tasks never ran: dispose their board-lifetime backing only in this fixture.
     pxa_memory_release(a.music_ring_);
     pxa_memory_release(a.runtime_storage_);

@@ -34,6 +34,27 @@ void xTaskNotifyGive(TaskHandle_t task) { (void)task; }
 uint32_t ulTaskNotifyTake(int clear, TickType_t wait) { (void)clear; (void)wait; return 0; }
 TickType_t xTaskGetTickCount(void) { return 0; }
 void vTaskDelayUntil(TickType_t *a, TickType_t b) { (void)a; (void)b; }
+static pxa_memory_budget_t audio_budget;
+static pxa_memory_allocator_t audio_allocator;
+static void *budget_allocate(void *c, size_t bytes) { (void)c; return fail_alloc ? NULL : malloc(bytes); }
+static void budget_free(void *c, void *ptr) { (void)c; free(ptr); }
+pxa_status_t pxa_esp_resource_memory_initialize(void) {
+    if (audio_allocator.budget) return PXA_STATUS_OK;
+    pxa_memory_budget_config_t config = {0};
+    config.limit[PXA_MEMORY_EXTERNAL] = 32768;
+    pxa_status_t status = pxa_memory_budget_init(&audio_budget, &config);
+    pxa_memory_owner_t owner; const size_t limits[2] = {0, 32768};
+    if (!status) status = pxa_memory_owner_open(&audio_budget, limits, &owner);
+    if (!status) audio_allocator = (pxa_memory_allocator_t){&audio_budget, owner,
+        PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO, NULL, budget_allocate, budget_free};
+    return status;
+}
+const pxa_memory_allocator_t *pxa_esp_device_resource_allocator(unsigned cls, unsigned kind) {
+    assert(cls == PXA_MEMORY_EXTERNAL && kind == PXA_MEMORY_AUDIO);
+    return &audio_allocator;
+}
+static unsigned device_wakes;
+static void device_wake(void *c) { assert(c == &device_wakes && !locked); ++device_wakes; }
 static bool submit(void *context, uint8_t voice, const int16_t *pcm, size_t n) {
     (void)context; assert(!depth && voice == 0 && n == 320);
     if (reject) return false;
@@ -235,5 +256,29 @@ int main(void) {
     assert(music_closes==1 && b.playback_peek(b.context,&event)==PXA_STATUS_NOT_FOUND);
     pxa_esp_audio_deinitialize();
     assert(!g_audio.mixer && !g_audio.task && !locked);
+    assert(pxa_esp_audio_set_pull_device(48000, device_wake, &device_wakes));
+    pxa_audio_pcm_info_t info;
+    f = (pxa_audio_format_t){22050, 2, 20};
+    assert(!b.open_pcm(b.context, &f, &info, &a));
+    assert(info.sink_rate == 48000 && info.sink_channels == 1 && info.queue_frames == 1764);
+    assert(g_audio.mixer && !g_audio.task); /* No extra internal task stack. */
+    assert(!pxa_esp_audio_set_pull_device(16000, device_wake, &device_wakes));
+    assert(!b.commit(b.context, a, &g));
+    assert(!b.submit(b.context, a, pcm, sizeof(pcm)) && device_wakes == 1);
+    assert(!b.query(b.context, a, &state) && state.submitted_samples == 160 && !state.flags);
+    pxa_esp_audio_set_suspended(true);
+    memset(rendered, 1, sizeof(rendered));
+    assert(!pxa_esp_audio_render(rendered, 320));
+    for (unsigned i = 0; i < 320; ++i) assert(!rendered[i]);
+    pxa_esp_audio_set_suspended(false);
+    size_t count = 0;
+    while ((count += pxa_esp_audio_render(rendered, 320)), g_audio.mixer->voices[0].count) {}
+    assert(count == 160u*48000u/22050u);
+    assert(!b.query(b.context, a, &state) && state.accepted_samples == 160 && !state.queued_samples);
+    b.close(b.context, a);
+    pxa_esp_audio_deinitialize();
+    pxa_memory_stats_t stats;
+    assert(!pxa_memory_budget_stats(&audio_budget, audio_allocator.owner, &stats));
+    assert(!stats.charged[PXA_MEMORY_INTERNAL] && !stats.charged[PXA_MEMORY_EXTERNAL]);
     return 0;
 }

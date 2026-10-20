@@ -37,6 +37,10 @@ typedef struct {
     uint16_t active_sessions;
 } pxa_esp_audio_snapshot_t;
 
+/* Board lifetime, before any session opens. The existing output worker calls
+ * render at its physical sample clock; wake must not render or enter a Guest. */
+int pxa_esp_audio_set_pull_device(uint32_t sample_rate, void (*wake)(void *), void *context);
+size_t pxa_esp_audio_render(int16_t *output, size_t capacity);
 int pxa_esp_audio_initialize(void);
 void pxa_esp_audio_deinitialize(void);
 

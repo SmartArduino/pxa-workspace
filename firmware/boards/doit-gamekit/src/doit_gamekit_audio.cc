@@ -25,8 +25,8 @@ bool DoitGamekitAudio::Initialize() {
         i2s_channel_enable(channel_) != ESP_OK) return false;
     if (!output_.Initialize([](void* self, const int16_t* pcm, size_t count) {
             return static_cast<DoitGamekitAudio*>(self)->Write(pcm, count);
-        }, this, true)) return false;
-    ESP_LOGI("doit_audio", "MAX98357A: 16 kHz, 16-bit stereo slots, software volume");
+        }, this, true, doit_gamekit::kAudioSampleRate)) return false;
+    ESP_LOGI("doit_audio", "MAX98357A: 48 kHz, 16-bit stereo slots, software volume");
     return true;
 }
 

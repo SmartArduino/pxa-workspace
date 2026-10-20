@@ -23,7 +23,8 @@ public:
     // Guest submit never calls the physical device or decoder directly.
     // device_paced requires Write to block when its bounded hardware buffer
     // is full, including silence. It replaces the software 20-ms timer.
-    bool Initialize(Write write, void* context, bool device_paced = false);
+    bool Initialize(Write write, void* context, bool device_paced = false,
+                    uint32_t sample_rate = 16000);
     struct MusicStats {
         pxa_audio_buffer_t buffer = {};
         uint64_t ready_max_us = 0;
@@ -56,11 +57,10 @@ private:
     Write write_ = nullptr;
     void* write_context_ = nullptr;
     bool device_paced_ = false;
+    uint32_t sample_rate_ = 16000;
     void ReleaseSound(PlayingSound& sound);
 
-    static bool Submit(void* context, uint8_t voice, const int16_t* pcm,
-                       size_t samples);
-    static void Flush(void* context, uint8_t voice);
+    static void WakeDevice(void* context);
     static bool PlaySound(void*, uint8_t, pxa_asset_object_t*, int16_t);
     static bool PlaySoundTrack(void*, uint8_t, pxa_asset_object_t*, const pxa_audio_sound_options_t*);
     static bool ControlSound(void*, uint8_t, const pxa_audio_sound_control_t*);
@@ -84,7 +84,6 @@ private:
     bool QueueMusic(const int16_t* samples, size_t count, uint32_t token);
     bool PublishMusicLocked();
 
-    QueueHandle_t output_queue_ = nullptr;
     struct RuntimeStorage;
     RuntimeStorage* runtime_storage_ = nullptr;
     StackType_t* music_stack_ = nullptr;

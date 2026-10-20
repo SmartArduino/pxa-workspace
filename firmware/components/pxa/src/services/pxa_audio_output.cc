@@ -1,4 +1,5 @@
 #include "pxa_esp_assets.h"
+#include "pxa_esp_audio.h"
 #include "pxa/pxa_audio_output.h"
 #include "pxa_esp_resource_memory.h"
 #include "pxa_codec_memory.h"
@@ -31,27 +32,26 @@ constexpr uint32_t kOutputTaskStackBytes = 4096;
 // before creating any task; static creation cannot fail from heap pressure.
 // This block and both tasks have the board's lifetime, not an app's lifetime.
 struct PxaAudioOutput::RuntimeStorage {
-    StaticQueue_t output_queue;
     StaticQueue_t music_commands;
     StaticSemaphore_t music_mutex;
     StaticTask_t output_task;
     StaticTask_t music_task;
-    uint8_t output_frames[3 * sizeof(OutputFrame)];
     uint8_t music_command[sizeof(MusicCommand)];
     StackType_t output_stack[kOutputTaskStackBytes / sizeof(StackType_t)];
 };
 static_assert(kMusicTaskStackBytes % sizeof(StackType_t) == 0, "whole stack elements required");
 static_assert(kOutputTaskStackBytes % sizeof(StackType_t) == 0, "whole stack elements required");
 
-bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced) {
+bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced, uint32_t sample_rate) {
     if (task_ != nullptr) return true;
-    if (!write) return false;
+    if (!write || sample_rate < 16000 || sample_rate > 48000) return false;
     if (pxa_esp_resource_memory_initialize() != PXA_STATUS_OK) return false;
     PxaCodecMemoryScope codec_scope(pxa_esp_device_resource_allocator(
         PXA_MEMORY_EXTERNAL, PXA_MEMORY_METADATA));
     write_ = write;
     write_context_ = context;
     device_paced_ = device_paced;
+    sample_rate_ = sample_rate;
     runtime_storage_ = static_cast<RuntimeStorage*>(pxa_memory_allocate(
         pxa_esp_device_resource_allocator(PXA_MEMORY_INTERNAL, PXA_MEMORY_METADATA),
         sizeof(RuntimeStorage)));
@@ -64,27 +64,26 @@ bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced) {
         pxa_esp_device_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO),
         kMusicSamples * sizeof(int16_t)));
     if (runtime_storage_) {
-        output_queue_ = xQueueCreateStatic(3, sizeof(OutputFrame),
-            runtime_storage_->output_frames, &runtime_storage_->output_queue);
         music_commands_ = xQueueCreateStatic(1, sizeof(MusicCommand),
             runtime_storage_->music_command, &runtime_storage_->music_commands);
         music_mutex_ = xSemaphoreCreateMutexStatic(&runtime_storage_->music_mutex);
     }
-    bool vorbis_registered = false, opus_registered = false;
-    if (!runtime_storage_ || !music_stack_ || !output_queue_ || !music_commands_ || !music_mutex_ ||
+    bool vorbis_registered = false, opus_registered = false, ogg_registered = false;
+    if (!runtime_storage_ || !music_stack_ || !music_commands_ || !music_mutex_ ||
         !music_ring_ ||
         !(vorbis_registered = esp_vorbis_dec_register() == ESP_AUDIO_ERR_OK) ||
         !(opus_registered = esp_opus_dec_register() == ESP_AUDIO_ERR_OK) ||
-        esp_ogg_dec_register() != ESP_AUDIO_ERR_OK) {
+        !(ogg_registered = esp_ogg_dec_register() == ESP_AUDIO_ERR_OK) ||
+        !pxa_esp_audio_set_pull_device(sample_rate_, WakeDevice, this)) {
+        if (ogg_registered) esp_ogg_dec_unregister();
         if (opus_registered) esp_audio_dec_unregister(ESP_AUDIO_TYPE_OPUS);
         if (vorbis_registered) esp_audio_dec_unregister(ESP_AUDIO_TYPE_VORBIS);
-        if (output_queue_) vQueueDelete(output_queue_);
         if (music_commands_) vQueueDelete(music_commands_);
         if (music_mutex_) vSemaphoreDelete(music_mutex_);
         pxa_memory_release(music_ring_);
         pxa_memory_release(runtime_storage_); runtime_storage_ = nullptr;
         pxa_memory_release(music_stack_); music_stack_ = nullptr;
-        output_queue_ = music_commands_ = nullptr;
+        music_commands_ = nullptr;
         music_mutex_ = nullptr; music_ring_ = nullptr;
         write_ = nullptr; write_context_ = nullptr;
         return false;
@@ -98,7 +97,6 @@ bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced) {
         static_cast<unsigned>(sizeof(RuntimeStorage) + kMusicTaskStackBytes),
         static_cast<unsigned>(kOutputTaskStackBytes + kMusicTaskStackBytes),
         static_cast<unsigned>(kMusicSamples * sizeof(int16_t)));
-    pxa_host_set_audio_sink(Submit, Flush, this);
     pxa_host_set_audio_asset_sink(PlayAsset, ControlAsset, this);
     pxa_host_set_audio_sound_sink(PlaySound,this);
     pxa_host_set_audio_sound_track_sink(PlaySoundTrack, ControlSound, this);
@@ -108,35 +106,13 @@ bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced) {
 }
 
 void PxaAudioOutput::WakeOutput() {
-    const OutputFrame wake = {};
-    // A full queue already guarantees that the output worker will wake.
-    (void)xQueueSend(output_queue_, &wake, 0);
+    if (task_) xTaskNotifyGive(task_);
 }
-
+void PxaAudioOutput::WakeDevice(void* context) {
+    static_cast<PxaAudioOutput*>(context)->WakeOutput();
+}
 void PxaAudioOutput::ReleaseSound(PlayingSound& sound) {
     pxa_audio_sound_release(&sound);
-}
-
-bool PxaAudioOutput::Submit(void* context, uint8_t voice, const int16_t* pcm,
-                         size_t samples) {
-    auto* self = static_cast<PxaAudioOutput*>(context);
-    if (self == nullptr || self->output_queue_ == nullptr || pcm == nullptr ||
-        samples == 0 || samples > kFrameSamples) {
-        return false;
-    }
-    OutputFrame frame = {};
-    frame.samples = static_cast<uint16_t>(samples);
-    std::memcpy(frame.pcm, pcm, samples * sizeof(*pcm));
-    (void)voice;
-    return xQueueSend(self->output_queue_, &frame, 0) == pdTRUE;
-}
-
-void PxaAudioOutput::Flush(void* context, uint8_t voice) {
-    auto* self = static_cast<PxaAudioOutput*>(context);
-    (void)voice;
-    if (self != nullptr && self->output_queue_ != nullptr) {
-        xQueueReset(self->output_queue_);
-    }
 }
 
 bool PxaAudioOutput::PlaySound(void* context,uint8_t voice,pxa_asset_object_t* asset,int16_t gain) {
@@ -632,6 +608,9 @@ void PxaAudioOutput::Run() {
     int32_t source_music_gain_q15 = 0;
     int16_t last_music_sample = 0;
     uint32_t rendered_token = 0;
+    uint32_t legacy_phase = 0, timer_phase = 0;
+    int32_t legacy_previous = 0, legacy_current = 0;
+    bool legacy_primed = false;
     for (;;) {
         uint32_t frame_music_token=0;
         bool sounds_active = false;
@@ -645,27 +624,27 @@ void PxaAudioOutput::Run() {
             output_music_gain_q15 = source_music_gain_q15 = 0;
         }
         const bool music_active = music_active_.load();
-        if (xQueueReceive(output_queue_, &frame,
-                          (music_active && !music_paused_.load()) || sounds_active ||
-                              source_music_gain_q15 != 0
-                              ? 0 : portMAX_DELAY) != pdTRUE) {
-            if ((!music_active || music_paused_.load()) && !sounds_active &&
-                source_music_gain_q15 == 0) {
-                last_send = xTaskGetTickCount();
-                continue;
-            }
-            frame.samples = kFrameSamples;
-            memset(frame.pcm, 0, sizeof(frame.pcm));
+        frame.samples = kFrameSamples;
+        const size_t pcm_extent = pxa_esp_audio_render(frame.pcm, frame.samples);
+        if (!pcm_extent && (!music_active || music_paused_.load()) &&
+            !sounds_active && source_music_gain_q15 == 0 && !legacy_current && !legacy_previous) {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            last_send = xTaskGetTickCount();
+            continue;
         }
-        if (!frame.samples) continue;
+        if (music_active || sounds_active || source_music_gain_q15 ||
+            legacy_current || legacy_previous) {
+        const size_t legacy_samples =
+            (legacy_phase + frame.samples * 16000u + sample_rate_ - 1) / sample_rate_ -
+            (legacy_primed ? 1u : 0u);
         {
             const bool music_playing = music_active && !music_paused_.load();
-            int16_t music[kFrameSamples] = {};
+            int32_t music[kFrameSamples] = {};
             size_t available = 0;
             if (music_playing &&
                 xSemaphoreTake(music_mutex_, pdMS_TO_TICKS(2)) == pdTRUE) {
                 if (music_active_.load() && !music_paused_.load())
-                    available=pxa_audio_buffer_take(&music_stats_.buffer,music_count_,frame.samples,music_eof_);
+                    available=pxa_audio_buffer_take(&music_stats_.buffer,music_count_,legacy_samples,music_eof_);
                 for (size_t index = 0; index < available; ++index) {
                     music[index] = music_ring_[music_read_];
                     music_read_ = (music_read_ + 1) % kMusicSamples;
@@ -677,7 +656,7 @@ void PxaAudioOutput::Run() {
             const int32_t target_gain = music_playing
                 ? music_gain_q15_.load() : 0;
             xSemaphoreTake(music_mutex_, portMAX_DELAY);
-            for (size_t index = 0; index < frame.samples; ++index) {
+            for (size_t index = 0; index < legacy_samples; ++index) {
                 if (output_music_gain_q15 < target_gain) {
                     output_music_gain_q15 = std::min(
                         output_music_gain_q15 + 256, target_gain);
@@ -697,16 +676,34 @@ void PxaAudioOutput::Run() {
                 const int32_t music_sample =
                     (static_cast<int32_t>(last_music_sample) *
                      source_music_gain_q15) >> 15;
-                int32_t mixed = frame.pcm[index] +
-                    static_cast<int32_t>((static_cast<int64_t>(music_sample) * output_music_gain_q15) >> 15);
+                int32_t mixed = static_cast<int32_t>((static_cast<int64_t>(music_sample) * output_music_gain_q15) >> 15);
                 for (auto& sound : sounds_) {
                     if (!sound.asset || sound_paused_[sound.voice]) continue;
                     mixed += pxa_audio_sound_render(&sound);
                 }
-                frame.pcm[index] = pxa_audio_output_limit(mixed);
+                music[index] = mixed;
             }
+            size_t used = 0;
+            if (!legacy_primed) { legacy_current = music[used++]; legacy_primed = true; }
+            for (size_t index = 0; index < frame.samples; ++index) {
+                legacy_phase += 16000u;
+                if (legacy_phase > sample_rate_) {
+                    legacy_phase -= sample_rate_;
+                    legacy_previous = legacy_current;
+                    legacy_current = music[used++];
+                }
+                const int32_t delta = static_cast<int32_t>(legacy_current) - legacy_previous;
+                const uint32_t magnitude = static_cast<uint32_t>(delta < 0 ? -delta : delta);
+                const int32_t offset = legacy_phase == sample_rate_ ? delta :
+                    static_cast<int32_t>(static_cast<uint64_t>(magnitude) * legacy_phase / sample_rate_) *
+                    (delta < 0 ? -1 : 1);
+                frame.pcm[index] = pxa_audio_output_limit(frame.pcm[index] + legacy_previous +
+                    offset);
+            }
+            configASSERT(used == legacy_samples);
         }
         xSemaphoreGive(music_mutex_);
+        }
         const bool written=write_(write_context_, frame.pcm, frame.samples);
         if (!written)
             ESP_LOGW(kTag, "Physical audio write failed");
@@ -725,7 +722,10 @@ void PxaAudioOutput::Run() {
             if (!written) vTaskDelay(pdMS_TO_TICKS(20));
             continue;
         }
-        vTaskDelayUntil(&last_send, pdMS_TO_TICKS(20));
+        timer_phase += kFrameSamples * 1000u;
+        const uint32_t period_ms = timer_phase / sample_rate_;
+        timer_phase %= sample_rate_;
+        vTaskDelayUntil(&last_send, std::max(TickType_t(1), pdMS_TO_TICKS(period_ms)));
         if ((TickType_t)(xTaskGetTickCount() - last_send) > pdMS_TO_TICKS(20))
             last_send = xTaskGetTickCount();
     }
