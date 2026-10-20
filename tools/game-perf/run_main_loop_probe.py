@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -18,11 +19,14 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--replace-with", help="Installed app to validate queued replacement after native cancellation")
     args = parser.parse_args()
+    if args.replace_with and not re.fullmatch(r"[a-z][a-z0-9._-]{0,63}", args.replace_with):
+        parser.error("--replace-with requires a bare package ID")
     os.environ.setdefault("PXADB_BAUD", "2000000")
     args.output.mkdir(parents=True, exist_ok=True)
     report = {"qualified": False, "snapshots": {}, "phases": []}
     records = []
     app = "pxa-main-loop-probe"
+    prepared = started = replacement_requested = False
     with (args.output / "serial.jsonl").open("w", buffering=1) as log, pxadb.PxaDbClient(args.port, 10) as client:
         def record(kind, payload):
             row = {"time": time.monotonic(), "kind": kind, "payload": payload}
@@ -87,6 +91,7 @@ def main():
             snapshot("before")
             assert not active(), "Start with the probe stopped"
             client.subscribe_logs()
+            prepared = True
             request("INPUT KEY HOME")
             request("INPUT POINTER DOWN 160 185 0")
             for y in (163, 139, 115, 91, 67, 53):
@@ -95,6 +100,7 @@ def main():
             pump(.3)
             for cycle in range(3):
                 begin = len(records)
+                started = True
                 request(f"PACKAGE run {app}")
                 pump(8)
                 assert active()
@@ -115,11 +121,13 @@ def main():
                 assert sum("MAINLOOP alive" in r["payload"] for r in phase) >= 3
                 report["phases"].append({"cycle": cycle, "heartbeats": sum("MAINLOOP alive" in r["payload"] for r in phase)})
                 if cycle == 1 and args.replace_with:
+                    replacement_requested = True
                     request(f"PACKAGE run {args.replace_with}"); pump(5)
                     assert not active(), "Replacement did not cancel the old native loop"
                     assert any(f.kind == "PKG" and f":{args.replace_with}\t" in f.payload and "active=1" in f.payload
                                for f in request("PACKAGES")), "Queued replacement was lost"
                     request(f"PACKAGE stop {args.replace_with}"); pump(2)
+                    replacement_requested = False
                     report["replacement"] = args.replace_with
                 else:
                     stop(); pump(1)
@@ -136,13 +144,19 @@ def main():
             report["failure"] = {"type": type(error).__name__, "message": str(error)}
             raise
         finally:
-            try:
-                request("INPUT CONTROLLER 0 1 0")
-                request(f"PACKAGE stop {app}")
-                pump(1)
-                request("INPUT KEY HOME")
-            except Exception as error:
-                report["cleanup_error"] = str(error)
+            # Failed identity/initial-state guards are read-only. Cleanup only
+            # touches input/apps after this invocation started using them.
+            if prepared:
+                try:
+                    request("INPUT CONTROLLER 0 1 0")
+                    if started:
+                        request(f"PACKAGE stop {app}")
+                    if replacement_requested:
+                        request(f"PACKAGE stop {args.replace_with}")
+                    pump(1)
+                    request("INPUT KEY HOME")
+                except Exception as error:
+                    report["cleanup_error"] = str(error)
             (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
 
 
