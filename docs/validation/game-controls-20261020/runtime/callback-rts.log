@@ -1,0 +1,30 @@
+(node:1919868) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Starting Input fixture
+PXA PAD controller=0 connected=1 buttons=0
+INPUT FIXTURE key=202 down=1
+PXA CONTROLS source=controller visible=0
+INPUT FIXTURE key=201 down=1
+INPUT FIXTURE key=202 down=0
+PXA PAD controller=0 connected=1 buttons=16
+INPUT FIXTURE key=201 down=0
+PXA PAD controller=0 connected=1 buttons=0
+PXA CONTROLS source=touch visible=1
+INPUT FIXTURE key=202 down=1
+PXA CONTROLS source=controller visible=0
+INPUT FIXTURE key=201 down=1
+INPUT FIXTURE key=202 down=0
+PXA PAD controller=0 connected=1 buttons=16
+PXA CONTROLS source=touch visible=1
+INPUT FIXTURE key=201 down=0
+PXA PAD controller=0 connected=1 buttons=0
+PXA CONTROLS source=controller visible=0
+INPUT FIXTURE key=203 down=1
+PXA PAD controller=0 connected=1 buttons=32
+INPUT FIXTURE key=203 down=0
+PXA PAD controller=0 connected=1 buttons=0
+PXA CONTROLS source=disconnect visible=1
+PXA GAME frames=103 elapsed_us=5008172 draw_us=28287 skipped=0 linear_bytes=1245184
+PXA SCHED yields=205 wait_us=4981177
+PXA STACK engine=2319 callback=2139 continuation=64
+{"frames":107,"ticks":258,"calls":41,"bytes":1245184}

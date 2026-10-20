@@ -1,0 +1,166 @@
+{
+  "audioOpens": 0,
+  "audioRetries": 0,
+  "audioBytes": 0,
+  "frames": 233,
+  "ticks": 261,
+  "calls": 43,
+  "callOps": {
+    "1:5": 1,
+    "2:1": 1,
+    "2:2": 1,
+    "3:1": 1,
+    "3:2": 3,
+    "3:3": 1,
+    "16:1": 1,
+    "11:2": 1,
+    "19:1": 28,
+    "16:2": 1,
+    "4:1": 3,
+    "5:5": 1
+  },
+  "ioOps": {
+    "256": 1,
+    "257": 233,
+    "258": 233,
+    "513": 741
+  },
+  "pathOps": {
+    "data": 1
+  },
+  "mainLoop": true,
+  "requireTickStart": true,
+  "nativeWaits": 741,
+  "bytes": 983040,
+  "dataEnd": 973912,
+  "heapBase": 973920,
+  "elapsedMs": 5231,
+  "firstFrameMs": 7,
+  "frameWindows": {
+    "0": 55,
+    "1": 1,
+    "2": 55,
+    "3": 56,
+    "4": 56,
+    "5": 10
+  },
+  "captures": [
+    {
+      "requested": 0.1,
+      "seconds": 0.115,
+      "frames": 7,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-0.rgb565"
+    },
+    {
+      "requested": 0.3,
+      "seconds": 0.313,
+      "frames": 18,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-1.rgb565"
+    },
+    {
+      "requested": 0.5,
+      "seconds": 0.513,
+      "frames": 29,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-2.rgb565"
+    },
+    {
+      "requested": 0.7,
+      "seconds": 0.713,
+      "frames": 40,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-3.rgb565"
+    },
+    {
+      "requested": 0.9,
+      "seconds": 0.911,
+      "frames": 51,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-4.rgb565"
+    },
+    {
+      "requested": 2.15,
+      "seconds": 2.164,
+      "frames": 65,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-5.rgb565"
+    },
+    {
+      "requested": 2.8,
+      "seconds": 2.812,
+      "frames": 101,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-6.rgb565"
+    },
+    {
+      "requested": 3.1,
+      "seconds": 3.102,
+      "frames": 117,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-7.rgb565"
+    },
+    {
+      "requested": 3.3,
+      "seconds": 3.302,
+      "frames": 128,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-8.rgb565"
+    },
+    {
+      "requested": 3.7,
+      "seconds": 3.716,
+      "frames": 151,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-9.rgb565"
+    },
+    {
+      "requested": 3.9,
+      "seconds": 3.912,
+      "frames": 162,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-10.rgb565"
+    },
+    {
+      "requested": 4.3,
+      "seconds": 4.304,
+      "frames": 184,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-11.rgb565"
+    },
+    {
+      "requested": 4.7,
+      "seconds": 4.714,
+      "frames": 207,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-12.rgb565"
+    },
+    {
+      "requested": 4.9,
+      "seconds": 4.915,
+      "frames": 218,
+      "file": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/runtime-tests-fixed/native-rts.frame-13.rgb565"
+    }
+  ],
+  "ioBoundaryChecks": 0,
+  "scope": "Node protocol host, not device FPS",
+  "logs": [
+    "PXA native main-loop ready; continuation copies disabled",
+    "Starting Input fixture",
+    "PXA PAD controller=0 connected=1 buttons=0",
+    "INPUT FIXTURE key=202 down=1",
+    "PXA CONTROLS source=controller visible=0",
+    "INPUT FIXTURE key=201 down=1",
+    "INPUT FIXTURE key=202 down=0",
+    "PXA PAD controller=0 connected=1 buttons=16",
+    "INPUT FIXTURE key=201 down=0",
+    "BACKGROUND RESUME PASS",
+    "PXA PAD controller=0 connected=1 buttons=0",
+    "PXA CONTROLS source=touch visible=1",
+    "INPUT FIXTURE key=202 down=1",
+    "PXA CONTROLS source=controller visible=0",
+    "INPUT FIXTURE key=201 down=1",
+    "INPUT FIXTURE key=202 down=0",
+    "PXA PAD controller=0 connected=1 buttons=16",
+    "PXA CONTROLS source=touch visible=1",
+    "INPUT FIXTURE key=201 down=0",
+    "PXA PAD controller=0 connected=1 buttons=0",
+    "PXA CONTROLS source=controller visible=0",
+    "INPUT FIXTURE key=203 down=1",
+    "PXA PAD controller=0 connected=1 buttons=32",
+    "INPUT FIXTURE key=203 down=0",
+    "PXA PAD controller=0 connected=1 buttons=0",
+    "PXA CONTROLS source=disconnect visible=1",
+    "PXA GAME frames=224 elapsed_us=5016259 draw_us=70267 skipped=0 linear_bytes=983040",
+    "PXA SCHED yields=447 wait_us=4945653",
+    "PXA STACK engine=2683 callback=400 continuation=0"
+  ]
+}

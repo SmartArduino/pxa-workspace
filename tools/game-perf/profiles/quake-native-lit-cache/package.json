@@ -13,7 +13,7 @@
     1
   ],
   "id": "pxa-quake-sd",
-  "version": "0.4.12",
+  "version": "0.4.13",
   "name": "Quake SD",
   "description": "Engine with automatically bound fixed SD resources and app-private saves",
   "build": {
@@ -85,5 +85,5 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 132
+  "release_sequence": 133
 }

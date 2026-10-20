@@ -1,0 +1,450 @@
+[
+  {
+    "source": "callback-fps.frame-0.rgb565",
+    "file": "callback-fps-0.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 0.1,
+    "actual_seconds": 0.12
+  },
+  {
+    "source": "callback-fps.frame-1.rgb565",
+    "file": "callback-fps-1.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 0.3,
+    "actual_seconds": 0.318
+  },
+  {
+    "source": "callback-fps.frame-2.rgb565",
+    "file": "callback-fps-2.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 0.5,
+    "actual_seconds": 0.513
+  },
+  {
+    "source": "callback-fps.frame-3.rgb565",
+    "file": "callback-fps-3.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 0.7,
+    "actual_seconds": 0.726
+  },
+  {
+    "source": "callback-fps.frame-4.rgb565",
+    "file": "callback-fps-4.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 0.9,
+    "actual_seconds": 0.91
+  },
+  {
+    "source": "callback-fps.frame-5.rgb565",
+    "file": "callback-fps-5.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 2.15,
+    "actual_seconds": 2.181
+  },
+  {
+    "source": "callback-fps.frame-6.rgb565",
+    "file": "callback-fps-6.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 2.8,
+    "actual_seconds": 2.805
+  },
+  {
+    "source": "callback-fps.frame-7.rgb565",
+    "file": "callback-fps-7.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 3.1,
+    "actual_seconds": 3.147
+  },
+  {
+    "source": "callback-fps.frame-8.rgb565",
+    "file": "callback-fps-8.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 3.3,
+    "actual_seconds": 3.311
+  },
+  {
+    "source": "callback-fps.frame-9.rgb565",
+    "file": "callback-fps-9.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 3.7,
+    "actual_seconds": 3.732
+  },
+  {
+    "source": "callback-fps.frame-10.rgb565",
+    "file": "callback-fps-10.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 3.9,
+    "actual_seconds": 3.944
+  },
+  {
+    "source": "callback-fps.frame-11.rgb565",
+    "file": "callback-fps-11.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 4.3,
+    "actual_seconds": 4.302
+  },
+  {
+    "source": "callback-fps.frame-12.rgb565",
+    "file": "callback-fps-12.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 4.7,
+    "actual_seconds": 4.709
+  },
+  {
+    "source": "callback-fps.frame-13.rgb565",
+    "file": "callback-fps-13.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 4.9,
+    "actual_seconds": 4.92
+  },
+  {
+    "source": "callback-rts.frame-0.rgb565",
+    "file": "callback-rts-0.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 0.1,
+    "actual_seconds": 0.123
+  },
+  {
+    "source": "callback-rts.frame-1.rgb565",
+    "file": "callback-rts-1.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 0.3,
+    "actual_seconds": 0.321
+  },
+  {
+    "source": "callback-rts.frame-2.rgb565",
+    "file": "callback-rts-2.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 0.5,
+    "actual_seconds": 0.517
+  },
+  {
+    "source": "callback-rts.frame-3.rgb565",
+    "file": "callback-rts-3.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 0.7,
+    "actual_seconds": 0.713
+  },
+  {
+    "source": "callback-rts.frame-4.rgb565",
+    "file": "callback-rts-4.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 0.9,
+    "actual_seconds": 0.926
+  },
+  {
+    "source": "callback-rts.frame-5.rgb565",
+    "file": "callback-rts-5.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 2.15,
+    "actual_seconds": 2.164
+  },
+  {
+    "source": "callback-rts.frame-6.rgb565",
+    "file": "callback-rts-6.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 2.8,
+    "actual_seconds": 2.819
+  },
+  {
+    "source": "callback-rts.frame-7.rgb565",
+    "file": "callback-rts-7.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 3.1,
+    "actual_seconds": 3.111
+  },
+  {
+    "source": "callback-rts.frame-8.rgb565",
+    "file": "callback-rts-8.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 3.3,
+    "actual_seconds": 3.308
+  },
+  {
+    "source": "callback-rts.frame-9.rgb565",
+    "file": "callback-rts-9.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 3.7,
+    "actual_seconds": 3.716
+  },
+  {
+    "source": "callback-rts.frame-10.rgb565",
+    "file": "callback-rts-10.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 3.9,
+    "actual_seconds": 3.927
+  },
+  {
+    "source": "callback-rts.frame-11.rgb565",
+    "file": "callback-rts-11.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 4.3,
+    "actual_seconds": 4.332
+  },
+  {
+    "source": "callback-rts.frame-12.rgb565",
+    "file": "callback-rts-12.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 4.7,
+    "actual_seconds": 4.707
+  },
+  {
+    "source": "callback-rts.frame-13.rgb565",
+    "file": "callback-rts-13.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 4.9,
+    "actual_seconds": 4.902
+  },
+  {
+    "source": "native-fps.frame-0.rgb565",
+    "file": "native-fps-0.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 0.1,
+    "actual_seconds": 0.117
+  },
+  {
+    "source": "native-fps.frame-1.rgb565",
+    "file": "native-fps-1.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 0.3,
+    "actual_seconds": 0.316
+  },
+  {
+    "source": "native-fps.frame-2.rgb565",
+    "file": "native-fps-2.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 0.5,
+    "actual_seconds": 0.516
+  },
+  {
+    "source": "native-fps.frame-3.rgb565",
+    "file": "native-fps-3.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 0.7,
+    "actual_seconds": 0.714
+  },
+  {
+    "source": "native-fps.frame-4.rgb565",
+    "file": "native-fps-4.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 0.9,
+    "actual_seconds": 0.913
+  },
+  {
+    "source": "native-fps.frame-5.rgb565",
+    "file": "native-fps-5.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 2.15,
+    "actual_seconds": 2.163
+  },
+  {
+    "source": "native-fps.frame-6.rgb565",
+    "file": "native-fps-6.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 2.8,
+    "actual_seconds": 2.809
+  },
+  {
+    "source": "native-fps.frame-7.rgb565",
+    "file": "native-fps-7.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 3.1,
+    "actual_seconds": 3.116
+  },
+  {
+    "source": "native-fps.frame-8.rgb565",
+    "file": "native-fps-8.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 3.3,
+    "actual_seconds": 3.316
+  },
+  {
+    "source": "native-fps.frame-9.rgb565",
+    "file": "native-fps-9.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 3.7,
+    "actual_seconds": 3.709
+  },
+  {
+    "source": "native-fps.frame-10.rgb565",
+    "file": "native-fps-10.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 3.9,
+    "actual_seconds": 3.905
+  },
+  {
+    "source": "native-fps.frame-11.rgb565",
+    "file": "native-fps-11.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 4.3,
+    "actual_seconds": 4.316
+  },
+  {
+    "source": "native-fps.frame-12.rgb565",
+    "file": "native-fps-12.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 4.7,
+    "actual_seconds": 4.705
+  },
+  {
+    "source": "native-fps.frame-13.rgb565",
+    "file": "native-fps-13.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "9bed165e2787f94763d86bf2d204b5ee2b72423452f5d1f6808589571c760bd6",
+    "requested": 4.9,
+    "actual_seconds": 4.905
+  },
+  {
+    "source": "native-rts.frame-0.rgb565",
+    "file": "native-rts-0.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 0.1,
+    "actual_seconds": 0.115
+  },
+  {
+    "source": "native-rts.frame-1.rgb565",
+    "file": "native-rts-1.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 0.3,
+    "actual_seconds": 0.313
+  },
+  {
+    "source": "native-rts.frame-2.rgb565",
+    "file": "native-rts-2.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 0.5,
+    "actual_seconds": 0.513
+  },
+  {
+    "source": "native-rts.frame-3.rgb565",
+    "file": "native-rts-3.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 0.7,
+    "actual_seconds": 0.713
+  },
+  {
+    "source": "native-rts.frame-4.rgb565",
+    "file": "native-rts-4.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 0.9,
+    "actual_seconds": 0.911
+  },
+  {
+    "source": "native-rts.frame-5.rgb565",
+    "file": "native-rts-5.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 2.15,
+    "actual_seconds": 2.164
+  },
+  {
+    "source": "native-rts.frame-6.rgb565",
+    "file": "native-rts-6.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 2.8,
+    "actual_seconds": 2.812
+  },
+  {
+    "source": "native-rts.frame-7.rgb565",
+    "file": "native-rts-7.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 3.1,
+    "actual_seconds": 3.102
+  },
+  {
+    "source": "native-rts.frame-8.rgb565",
+    "file": "native-rts-8.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 3.3,
+    "actual_seconds": 3.302
+  },
+  {
+    "source": "native-rts.frame-9.rgb565",
+    "file": "native-rts-9.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 3.7,
+    "actual_seconds": 3.716
+  },
+  {
+    "source": "native-rts.frame-10.rgb565",
+    "file": "native-rts-10.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 3.9,
+    "actual_seconds": 3.912
+  },
+  {
+    "source": "native-rts.frame-11.rgb565",
+    "file": "native-rts-11.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 4.3,
+    "actual_seconds": 4.304
+  },
+  {
+    "source": "native-rts.frame-12.rgb565",
+    "file": "native-rts-12.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+    "requested": 4.7,
+    "actual_seconds": 4.714
+  },
+  {
+    "source": "native-rts.frame-13.rgb565",
+    "file": "native-rts-13.rgb565.gz",
+    "raw_bytes": 153600,
+    "raw_sha256": "3750d652bca7b2e1cd0d0db2bf737b9fc951d6758ce9120858440fb55b029a0e",
+    "requested": 4.9,
+    "actual_seconds": 4.915
+  }
+]

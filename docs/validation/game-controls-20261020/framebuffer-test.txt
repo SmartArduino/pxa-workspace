@@ -1,0 +1,5 @@
+PASS: 70 sampling/cursor/control cases match original pixels
+PASS: unaligned RGB565 destination retains identical output
+PASS: shared safe-area drawing and hit-testing, including tiny viewports
+PASS: hidden controls leave every game pixel and hit target untouched
+{"iterations":500,"reference_us":3172.9,"direct_us":782.8,"scope":"native CPU blit only"}

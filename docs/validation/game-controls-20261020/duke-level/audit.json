@@ -1,0 +1,17 @@
+{
+  "fps": {
+    "median": 18.35,
+    "min": 17.8,
+    "max": 18.9,
+    "mean": 18.383333333333333
+  },
+  "samples": 60,
+  "unique_level_records_in_window": 10,
+  "level_record_span_seconds": 50.30574348100345,
+  "ready_window": true,
+  "exact_pcm_negotiation": true,
+  "first_touch_ammo_hud_identical": true,
+  "logical_input_route": "PXADB controller 0 and pointer events",
+  "post_window_error": "PXADB rejects controller 1 on this board; no claim of another physical controller test",
+  "cleanup_errors": []
+}

@@ -1,0 +1,87 @@
+{
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "firmware_info": {
+    "target": "esp32s31",
+    "serial": "1c:29:04:d0:af:5e",
+    "version": "0.4.0",
+    "free_heap": "15755283",
+    "pxa": "ready",
+    "package_directory_adopt": "1",
+    "package_receive": "1",
+    "board": "doit-gamekit",
+    "pxa_version": "0.4.0",
+    "pxa_core": "2.1",
+    "storage_total": "11468800",
+    "storage_used": "6447104",
+    "storage_free": "5021696",
+    "presentation_fps_x10": "0",
+    "elf_sha256": "c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845"
+  },
+  "launch": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "48402",
+    "device_us": "4545783371",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "e7e455a7f229b630b414be80abf6e1315a71696732c141496b9edb97a0d27be5"
+  },
+  "controller-hidden": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "48513",
+    "device_us": "4550329933",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "4a981b26f554494121c2ca84edc5a8937e8f5622166ced72eb2523511a537b7f"
+  },
+  "controls_checks": {
+    "controller-hidden": {
+      "white": 0,
+      "pixels": 196,
+      "expected_visible": false
+    },
+    "release-stays-hidden": {
+      "white": 0,
+      "pixels": 196,
+      "expected_visible": false
+    },
+    "disconnect-restored": {
+      "white": 0,
+      "pixels": 196,
+      "expected_visible": true
+    }
+  },
+  "release-stays-hidden": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "48629",
+    "device_us": "4555099734",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "9f09b0ca8f74c97bebc66beaf7d8d1c9b4560247817782f19c34d4d5d4f34bfb"
+  },
+  "disconnect-restored": {
+    "format": "rgb565le",
+    "width": "320",
+    "height": "240",
+    "stride": "640",
+    "orientation": "logical",
+    "frame_id": "48720",
+    "device_us": "4558860726",
+    "source": "st7789-native-sw270-completed",
+    "bytes": "153600",
+    "sha256": "8ed48e9190c79126e8b024a3303f6efd93bbb380e264e968f04b530a6f0cd70f"
+  },
+  "error": "RuntimeError(('Unexpected FIRE overlay', 'disconnect-restored', 0, 196))",
+  "traceback": "Traceback (most recent call last):\n  File \"/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/check_duke_disconnect.py\", line 88, in <module>\n    req('INPUT CONTROLLER 0 0 0');pump(2);shot('disconnect-restored')\n                                          ~~~~^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-controls-20261020/check_duke_disconnect.py\", line 55, in shot\n    if (white==len(border))!=visible:raise RuntimeError(('Unexpected FIRE overlay',name,white,len(border)))\n                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nRuntimeError: ('Unexpected FIRE overlay', 'disconnect-restored', 0, 196)\n"
+}

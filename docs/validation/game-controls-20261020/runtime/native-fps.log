@@ -1,0 +1,27 @@
+(node:1920086) ExperimentalWarning: WASI is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PXA native main-loop ready; continuation copies disabled
+Starting Input fixture
+PXA PAD controller=0 connected=1 buttons=0
+INPUT FIXTURE key=200 down=1
+PXA CONTROLS source=controller visible=0
+PXA PAD controller=0 connected=1 buttons=16
+INPUT FIXTURE key=200 down=0
+PXA PAD controller=0 connected=1 buttons=0
+PXA CONTROLS source=touch visible=1
+INPUT FIXTURE key=200 down=1
+PXA CONTROLS source=controller visible=0
+PXA PAD controller=0 connected=1 buttons=16
+PXA CONTROLS source=touch visible=1
+INPUT FIXTURE key=200 down=0
+PXA PAD controller=0 connected=1 buttons=0
+PXA CONTROLS source=controller visible=0
+INPUT FIXTURE key=32 down=1
+PXA PAD controller=0 connected=1 buttons=32
+INPUT FIXTURE key=32 down=0
+PXA PAD controller=0 connected=1 buttons=0
+PXA CONTROLS source=disconnect visible=1
+PXA GAME frames=224 elapsed_us=5004611 draw_us=71084 skipped=0 linear_bytes=983040
+PXA SCHED yields=447 wait_us=4933250
+PXA STACK engine=2683 callback=400 continuation=0
+{"frames":234,"ticks":261,"calls":39,"bytes":983040}
