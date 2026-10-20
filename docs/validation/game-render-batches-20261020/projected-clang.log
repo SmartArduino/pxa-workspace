@@ -1,1 +1,0 @@
-PASS: 40000 original projection/light/depth comparisons; split ranges, overlap, negative offsets, eight kernels

@@ -1,9 +1,0 @@
-I (1375) main_task: Calling app_main()
-I (1449) pxa_integration: Startup storage ready at 1449 ms
-I (1578) doit_gamekit: Software landscape: logical=320x240 native=240x320 rotation=270, MADCTL MV/MX/MY=0, double-buffered 80 MHz SPI, no TE
-I (1634) doit_gamekit: Boot frame visible at 1634 ms
-I (1662) doit_gamekit: First LVGL timer handler returned
-I (2027) doit_gamekit: SD mounted at /pxa/sdcard: 1876 MiB, SPI3 20 MHz
-I (2029) doit_gamekit: SD metadata ready at 2029 ms
-I (4149) doit_gamekit: Verified system font: /pxa/sdcard/PXA/system/fonts/noto_sans_cjk_common.ttf
-I (4534) pxa_integration: Startup board ready at 4534 ms

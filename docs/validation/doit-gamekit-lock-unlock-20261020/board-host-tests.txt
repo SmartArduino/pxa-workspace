@@ -1,2 +1,0 @@
-DOIT GameKit native portrait rotation tests passed
-DOIT GameKit input, compositor and rotation tests passed

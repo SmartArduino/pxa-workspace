@@ -1,2 +1,0 @@
-id=pxa-openlara;root=/tmp/pxa-publish-q58900ah/state/packages/pxa-openlara;disposition=installed
-{"app_id": "pxa-openlara", "sha256": "b49b4bc43387a12b6e928533a0728ddcf3a3cf7824fdad967951cfd3632a35e4", "size": 597897, "verified": true}

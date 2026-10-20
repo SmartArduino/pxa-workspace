@@ -1,3 +1,0 @@
-clip: nonzero mesh offset, screen edges, early backface/offscreen rejection, safety range, near plane, hidden face passed
-depth: crossing faces, transparency, read-only pass, far depth passed
-scale:240x180 and160x120 match independent nearest-neighbor reference; in-place guards intact

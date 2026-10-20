@@ -1,6 +1,0 @@
-{
-  "flashed": false,
-  "reason": "Pre-flash guard found an active pxa-nes 0.1.22 on the same GameKit. Existing runtime and firmware left unchanged. Awaiting task priority.",
-  "serial": "1c:29:04:d0:af:5e",
-  "candidate": "local/game-main-loop-firmware-v10.json"
-}

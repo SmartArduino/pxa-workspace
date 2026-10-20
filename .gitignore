@@ -28,3 +28,4 @@
 
 # Python bytecode is local build state at any tool depth.
 **/__pycache__/
+**/.pytest_cache/

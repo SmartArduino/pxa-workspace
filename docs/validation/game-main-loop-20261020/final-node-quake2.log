@@ -1,253 +1,0 @@
-(node:1569329) ExperimentalWarning: WASI is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-PXA native main-loop ready; continuation copies disabled
-PXA Clock accepted period_us=8000
-Starting Quake II
-PXA SD fixed app media root ready; no directory picker
-I ARENA: 7864320 bytes at 0x268070
-
-TRY pak: /data/baseq2/pak0.pak
-
-Added packfile /data/baseq2/pak0.pak (1106 files)
-
-pak loaded: /data/baseq2/pak0.pak (1106 files)
-
-TRY pak: /data/baseq2/pak1.pak
-
-FS_LoadPackFile fopen FAILED: /data/baseq2/pak1.pak
-
-pak not loaded: /data/baseq2/pak1.pak
-
-TRY pak: /data/baseq2/pak2.pak
-
-FS_LoadPackFile fopen FAILED: /data/baseq2/pak2.pak
-
-pak not loaded: /data/baseq2/pak2.pak
-
-TRY pak: /data/baseq2/pak3.pak
-
-FS_LoadPackFile fopen FAILED: /data/baseq2/pak3.pak
-
-pak not loaded: /data/baseq2/pak3.pak
-
-TRY pak: /data/baseq2/pak4.pak
-
-FS_LoadPackFile fopen FAILED: /data/baseq2/pak4.pak
-
-pak not loaded: /data/baseq2/pak4.pak
-
-TRY pak: /data/baseq2/pak5.pak
-
-FS_LoadPackFile fopen FAILED: /data/baseq2/pak5.pak
-
-pak not loaded: /data/baseq2/pak5.pak
-
-TRY pak: /data/baseq2/pak6.pak
-
-FS_LoadPackFile fopen FAILED: /data/baseq2/pak6.pak
-
-pak not loaded: /data/baseq2/pak6.pak
-
-TRY pak: /data/baseq2/pak7.pak
-
-FS_LoadPackFile fopen FAILED: /data/baseq2/pak7.pak
-
-pak not loaded: /data/baseq2/pak7.pak
-
-TRY pak: /data/baseq2/pak8.pak
-
-FS_LoadPackFile fopen FAILED: /data/baseq2/pak8.pak
-
-pak not loaded: /data/baseq2/pak8.pak
-
-TRY pak: /data/baseq2/pak9.pak
-
-FS_LoadPackFile fopen FAILED: /data/baseq2/pak9.pak
-
-pak not loaded: /data/baseq2/pak9.pak
-
-execing default.cfg
-
-couldn't exec config.cfg
-
-basedir is write protected.
-
-Console initialized.
-
-------- Loading ref_soft.so -------
-
-...setting mode 0: 320 240
-
-256k surface cache
-
-ref_soft version: SOFT 0.01
-
-------------------------------------
-
-
-------- sound initialization -------
-
-sound sampling rate: 11025
-
-------------------------------------
-
-====== Quake2 Initialized ======
-
-
-PXA PAD controller=0 connected=1 buttons=16
-PXA PAD controller=0 connected=1 buttons=0
-PXA PAD controller=0 connected=1 buttons=16
-==== InitGame ====
-
-Z_BIG: 913424 bytes
-
-------- Server Initialization -------
-
-0 entities inhibited
-
-0 teams with 0 entities
-
--------------------------------------
-
-loopback: client_connect
-
-------- Server Initialization -------
-
-PXA PAD controller=0 connected=1 buttons=0
-41 entities inhibited
-
-1 teams with 2 entities
-
--------------------------------------
-
-
-Changing map...
-
-PXA PAD controller=0 connected=1 buttons=16
-PXA PAD controller=0 connected=1 buttons=0
-reconnecting...
-
-
-
-
-
-
-Outer Base
-
-Map: demo1
-                                     
-pics
-                                     
-maps/demo1.bsp
-                                     
-models/weapons/v_blast/tris.md2
-                                     
-#w_blaster.md2
-                                     
-#w_shotgun.md2
-                                     
-#w_sshotgun.md2
-                                     
-#w_machinegun.md2
-                                     
-#w_chaingun.md2
-                                     
-#a_grenades.md2
-                                     
-#w_glauncher.md2
-                                     
-#w_rlauncher.md2
-                                     
-#w_hyperblaster.md2
-                                     
-#w_railgun.md2
-                                     
-#w_bfg.md2
-                                     
-models/objects/gibs/sm_meat/tris.md2
-                                     
-models/objects/gibs/arm/tris.md2
-                                     
-models/objects/gibs/bone/tris.md2
-                                     
-models/objects/gibs/bone2/tris.md2
-                                     
-models/objects/gibs/chest/tris.md2
-                                     
-models/objects/gibs/skull/tris.md2
-                                     
-models/objects/gibs/head2/tris.md2
-                                     
-models/monsters/soldier/tris.md2
-                                     
-models/deadbods/dude/tris.md2
-                                     
-models/items/healing/stimpack/tris.md
-                                     
-models/ships/strogg1/tris.md2
-                                     
-models/items/armor/shard/tris.md2
-                                     
-models/items/ammo/grenades/medium/tri
-                                     
-models/weapons/v_handgr/tris.md2
-                                     
-models/items/healing/large/tris.md2
-                                     
-models/items/adrenal/tris.md2
-                                     
-models/items/ammo/shells/medium/tris.
-                                     
-models/items/healing/medium/tris.md2
-                                     
-models/items/silencer/tris.md2
-                                     
-models/objects/debris1/tris.md2
-                                     
-models/objects/debris2/tris.md2
-                                     
-models/objects/debris3/tris.md2
-                                     
-models/objects/barrels/tris.md2
-                                     
-models/objects/gibs/head/tris.md2
-                                     
-models/objects/banner/tris.md2
-                                     
-models/objects/laser/tris.md2
-                                     
-models/weapons/g_shotg/tris.md2
-                                     
-models/weapons/v_shotg/tris.md2
-                                     
-models/items/armor/jacket/tris.md2
-                                     
-models/monsters/infantry/tris.md2
-                                     
-images
-                                     
-sky
-                                     
-PXA GAME frames=171 elapsed_us=7344026 draw_us=238313 skipped=0 linear_bytes=10682368
-PXA SCHED yields=4428 wait_us=5036488
-PXA STACK engine=11832 callback=416 continuation=0
-PXA Q2 INPUT x=1024 y=-2560 z=336 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6571216 peak=7862992 largest=1040640 frames=3203 frame_us=2475931
-PXA GAME frames=255 elapsed_us=5004998 draw_us=527882 skipped=0 linear_bytes=10682368
-PXA SCHED yields=307 wait_us=599862
-PXA STACK engine=11832 callback=416 continuation=0
-PXA Q2 INPUT x=1024 y=-2560 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6658976 peak=7862992 largest=952880 frames=293 frame_us=4474688
-PXA PAD controller=0 connected=1 buttons=1
-PXA GAME frames=272 elapsed_us=5009444 draw_us=366468 skipped=0 linear_bytes=10682368
-PXA SCHED yields=439 wait_us=828265
-PXA STACK engine=11832 callback=416 continuation=0
-PXA Q2 INPUT x=193 y=-1729 z=193 destination=0 up=1 down=0 hp=100 arena_total=7864320 used=6822608 peak=7862992 largest=789296 frames=423 frame_us=4177201
-PXA PAD controller=0 connected=1 buttons=0
-PXA GAME frames=252 elapsed_us=5003647 draw_us=616382 skipped=0 linear_bytes=10682368
-PXA SCHED yields=313 wait_us=707397
-PXA STACK engine=11832 callback=416 continuation=0
-PXA Q2 INPUT x=-146 y=-1372 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6979104 peak=7862992 largest=632800 frames=305 frame_us=4292811
-PXA GAME frames=276 elapsed_us=5000118 draw_us=458867 skipped=0 linear_bytes=10682368
-PXA SCHED yields=357 wait_us=681005
-PXA STACK engine=11832 callback=416 continuation=0
-PXA Q2 INPUT x=-146 y=-1372 z=193 destination=0 up=0 down=0 hp=100 arena_total=7864320 used=6993328 peak=7862992 largest=618576 frames=355 frame_us=4309532
-{"frames":1354,"ticks":2008,"calls":2038,"bytes":10682368}

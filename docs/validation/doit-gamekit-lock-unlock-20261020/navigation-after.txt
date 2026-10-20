@@ -1,3 +1,0 @@
-DOIT GameKit real LVGL focus navigation tests passed
-DOIT GameKit real LVGL diagnostic/content refresh tests passed
-DOIT GameKit local and PXA Provider keypad IME tests passed

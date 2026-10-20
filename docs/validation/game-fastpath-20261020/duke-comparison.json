@@ -1,9 +1,0 @@
-{
-  "baseline": "docs/validation/game-controls-20261020/duke-level",
-  "baseline_mean_fps": 18.383333333333333,
-  "baseline_median_output_us": 12923.520628798506,
-  "candidate_mean_fps": 19.763333333333332,
-  "candidate_median_output_us": 10235.097777777777,
-  "fps_mean_gain_percent": 7.506799637352679,
-  "output_time_reduction_percent": 20.80255781872552
-}

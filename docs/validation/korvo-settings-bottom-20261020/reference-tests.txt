@@ -1,2 +1,0 @@
-Reference feature masks: role registration, chrome, startup, settings, theme, recents and repeated teardown passed
-Reference feature masks: role registration, chrome, startup, settings, theme, recents and repeated teardown passed

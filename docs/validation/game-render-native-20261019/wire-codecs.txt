@@ -1,2 +1,0 @@
-39 Core messages, 13 record lists, envelope, Device and Window payloads OK
-39 Core messages, 13 record lists, envelope, Device and Window payloads OK
