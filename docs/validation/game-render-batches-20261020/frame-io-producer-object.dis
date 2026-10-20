@@ -11,7 +11,7 @@ Disassembly of section CODE:
        a:      	global.get	0
 			0000000b:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
       10:      	i32.const	1296
-      13:      	i32.sub 
+      13:      	i32.sub
       14:      	local.tee	0
       16:      	global.set	0
 			00000017:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
@@ -33,79 +33,79 @@ Disassembly of section CODE:
       45:      	i32.const	0
 			00000046:  R_WASM_MEMORY_ADDR_SLEB	d_zbuffer+0
       4b:      	local.get	1
-      4d:      	i32.add 
+      4d:      	i32.add
       4e:      	local.tee	5
       50:      	local.get	2
       52:      	local.get	1
-      54:      	i32.add 
+      54:      	i32.add
       55:      	local.tee	6
       57:      	i64.load	0
       5a:      	i64.store	0
       5d:      	local.get	5
       5f:      	i32.const	8
-      61:      	i32.add 
+      61:      	i32.add
       62:      	local.get	6
       64:      	i32.const	8
-      66:      	i32.add 
+      66:      	i32.add
       67:      	i64.load	0
       6a:      	i64.store	0
       6d:      	local.get	5
       6f:      	i32.const	16
-      71:      	i32.add 
+      71:      	i32.add
       72:      	local.get	6
       74:      	i32.const	16
-      76:      	i32.add 
+      76:      	i32.add
       77:      	i64.load	0
       7a:      	i64.store	0
       7d:      	local.get	5
       7f:      	i32.const	24
-      81:      	i32.add 
+      81:      	i32.add
       82:      	local.get	6
       84:      	i32.const	24
-      86:      	i32.add 
+      86:      	i32.add
       87:      	i64.load	0
       8a:      	i64.store	0
       8d:      	local.get	5
       8f:      	i32.const	32
-      91:      	i32.add 
+      91:      	i32.add
       92:      	local.get	6
       94:      	i32.const	32
-      96:      	i32.add 
+      96:      	i32.add
       97:      	i64.load	0
       9a:      	i64.store	0
       9d:      	local.get	5
       9f:      	i32.const	40
-      a1:      	i32.add 
+      a1:      	i32.add
       a2:      	local.get	6
       a4:      	i32.const	40
-      a6:      	i32.add 
+      a6:      	i32.add
       a7:      	i64.load	0
       aa:      	i64.store	0
       ad:      	local.get	5
       af:      	i32.const	48
-      b1:      	i32.add 
+      b1:      	i32.add
       b2:      	local.get	6
       b4:      	i32.const	48
-      b6:      	i32.add 
+      b6:      	i32.add
       b7:      	i64.load	0
       ba:      	i64.store	0
       bd:      	local.get	5
       bf:      	i32.const	56
-      c1:      	i32.add 
+      c1:      	i32.add
       c2:      	local.get	6
       c4:      	i32.const	56
-      c6:      	i32.add 
+      c6:      	i32.add
       c7:      	i64.load	0
       ca:      	i64.store	0
       cd:      	local.get	1
       cf:      	i32.const	64
-      d2:      	i32.add 
+      d2:      	i32.add
       d3:      	local.tee	1
       d5:      	i32.const	48640
-      d9:      	i32.ne  
+      d9:      	i32.ne
       da:      	br_if   	0                       # 0: up to label0
       dc:      	end
-      dd:      	block   	
+      dd:      	block
       df:      	i32.const	6
       e1:      	i32.load16_s	0
 			000000e3:  R_WASM_MEMORY_ADDR_LEB	scr_vrect+0
@@ -117,28 +117,28 @@ Disassembly of section CODE:
       f1:      	f32.convert_i32_s
       f2:      	local.get	3
       f4:      	i32.const	6
-      f6:      	i32.add 
+      f6:      	i32.add
       f7:      	f32.convert_i32_s
-      f8:      	f32.div 
+      f8:      	f32.div
       f9:      	local.set	8
       fb:      	i32.const	0
       fd:      	local.set	1
-      ff:      	block   	
+      ff:      	block
      101:      	local.get	7
      103:      	i32.const	-5
-     105:      	i32.eq  
+     105:      	i32.eq
      106:      	br_if   	0                       # 0: down to label2
      108:      	local.get	7
      10a:      	i32.const	-2
-     10c:      	i32.and 
+     10c:      	i32.and
      10d:      	i32.const	4
-     10f:      	i32.add 
+     10f:      	i32.add
      110:      	local.set	2
      112:      	i32.const	0
      114:      	local.set	1
      116:      	local.get	0
      118:      	i32.const	656
-     11b:      	i32.add 
+     11b:      	i32.add
      11c:      	local.set	5
      11e:      	loop    	                        # label3:
      120:      	local.get	5
@@ -148,67 +148,67 @@ Disassembly of section CODE:
      12a:      	local.get	1
      12c:      	local.tee	6
      12e:      	f32.convert_i32_u
-     12f:      	f32.mul 
+     12f:      	f32.mul
      130:      	i32.trunc_sat_f32_s
      132:      	i32.const	320
-     135:      	i32.mul 
-     136:      	i32.add 
+     135:      	i32.mul
+     136:      	i32.add
      137:      	i32.store	0
      13a:      	local.get	5
      13c:      	i32.const	4
-     13e:      	i32.add 
+     13e:      	i32.add
      13f:      	i32.const	0
 			00000140:  R_WASM_MEMORY_ADDR_SLEB	d_zbuffer+0
      145:      	local.get	8
      147:      	local.get	6
      149:      	i32.const	1
-     14b:      	i32.add 
+     14b:      	i32.add
      14c:      	f32.convert_i32_u
-     14d:      	f32.mul 
+     14d:      	f32.mul
      14e:      	i32.trunc_sat_f32_s
      150:      	i32.const	320
-     153:      	i32.mul 
-     154:      	i32.add 
+     153:      	i32.mul
+     154:      	i32.add
      155:      	i32.store	0
      158:      	local.get	6
      15a:      	i32.const	2
-     15c:      	i32.add 
+     15c:      	i32.add
      15d:      	local.set	1
      15f:      	local.get	5
      161:      	i32.const	8
-     163:      	i32.add 
+     163:      	i32.add
      164:      	local.set	5
      166:      	local.get	6
      168:      	local.get	2
-     16a:      	i32.ne  
+     16a:      	i32.ne
      16b:      	br_if   	0                       # 0: up to label3
      16d:      	end
      16e:      	local.get	7
      170:      	i32.const	1
-     172:      	i32.and 
+     172:      	i32.and
      173:      	i32.eqz
      174:      	br_if   	1                       # 1: down to label2
      176:      	end
      177:      	local.get	0
      179:      	i32.const	656
-     17c:      	i32.add 
+     17c:      	i32.add
      17d:      	local.get	1
      17f:      	i32.const	2
-     181:      	i32.shl 
-     182:      	i32.add 
+     181:      	i32.shl
+     182:      	i32.add
      183:      	i32.const	0
 			00000184:  R_WASM_MEMORY_ADDR_SLEB	d_zbuffer+0
      189:      	local.get	8
      18b:      	local.get	1
      18d:      	f32.convert_i32_u
-     18e:      	f32.mul 
+     18e:      	f32.mul
      18f:      	i32.trunc_sat_f32_s
      191:      	i32.const	320
-     194:      	i32.mul 
-     195:      	i32.add 
+     194:      	i32.mul
+     195:      	i32.add
      196:      	i32.store	0
      199:      	end
-     19a:      	block   	
+     19a:      	block
      19c:      	i32.const	4
      19e:      	i32.load16_s	0
 			000001a0:  R_WASM_MEMORY_ADDR_LEB	scr_vrect+0
@@ -220,29 +220,29 @@ Disassembly of section CODE:
      1ae:      	f32.convert_i32_s
      1af:      	local.get	4
      1b1:      	i32.const	6
-     1b3:      	i32.add 
+     1b3:      	i32.add
      1b4:      	f32.convert_i32_s
-     1b5:      	f32.div 
+     1b5:      	f32.div
      1b6:      	local.set	8
      1b8:      	local.get	6
      1ba:      	i32.const	6
-     1bc:      	i32.add 
+     1bc:      	i32.add
      1bd:      	local.tee	2
      1bf:      	i32.const	3
-     1c1:      	i32.and 
+     1c1:      	i32.and
      1c2:      	local.set	1
      1c4:      	i32.const	0
      1c6:      	local.set	5
-     1c8:      	block   	
+     1c8:      	block
      1ca:      	local.get	6
      1cc:      	i32.const	5
-     1ce:      	i32.add 
+     1ce:      	i32.add
      1cf:      	i32.const	3
      1d1:      	i32.lt_u
      1d2:      	br_if   	0                       # 0: down to label5
      1d4:      	local.get	2
      1d6:      	i32.const	-4
-     1d8:      	i32.and 
+     1d8:      	i32.and
      1d9:      	local.set	2
      1db:      	i32.const	0
      1dd:      	local.set	5
@@ -253,52 +253,52 @@ Disassembly of section CODE:
      1e7:      	local.get	8
      1e9:      	local.get	5
      1eb:      	f32.convert_i32_u
-     1ec:      	f32.mul 
+     1ec:      	f32.mul
      1ed:      	i32.trunc_sat_f32_s
      1ef:      	i32.store16	0
      1f2:      	local.get	6
      1f4:      	i32.const	6
-     1f6:      	i32.add 
+     1f6:      	i32.add
      1f7:      	local.get	8
      1f9:      	local.get	5
      1fb:      	i32.const	3
-     1fd:      	i32.add 
+     1fd:      	i32.add
      1fe:      	f32.convert_i32_u
-     1ff:      	f32.mul 
+     1ff:      	f32.mul
      200:      	i32.trunc_sat_f32_s
      202:      	i32.store16	0
      205:      	local.get	6
      207:      	i32.const	4
-     209:      	i32.add 
+     209:      	i32.add
      20a:      	local.get	8
      20c:      	local.get	5
      20e:      	i32.const	2
-     210:      	i32.add 
+     210:      	i32.add
      211:      	f32.convert_i32_u
-     212:      	f32.mul 
+     212:      	f32.mul
      213:      	i32.trunc_sat_f32_s
      215:      	i32.store16	0
      218:      	local.get	6
      21a:      	i32.const	2
-     21c:      	i32.add 
+     21c:      	i32.add
      21d:      	local.get	8
      21f:      	local.get	5
      221:      	i32.const	1
-     223:      	i32.add 
+     223:      	i32.add
      224:      	f32.convert_i32_u
-     225:      	f32.mul 
+     225:      	f32.mul
      226:      	i32.trunc_sat_f32_s
      228:      	i32.store16	0
      22b:      	local.get	6
      22d:      	i32.const	8
-     22f:      	i32.add 
+     22f:      	i32.add
      230:      	local.set	6
      232:      	local.get	5
      234:      	i32.const	4
-     236:      	i32.add 
+     236:      	i32.add
      237:      	local.tee	5
      239:      	local.get	2
-     23b:      	i32.ne  
+     23b:      	i32.ne
      23c:      	br_if   	0                       # 0: up to label6
      23e:      	end
      23f:      	local.get	1
@@ -308,28 +308,28 @@ Disassembly of section CODE:
      245:      	local.get	0
      247:      	local.get	5
      249:      	i32.const	1
-     24b:      	i32.shl 
-     24c:      	i32.add 
+     24b:      	i32.shl
+     24c:      	i32.add
      24d:      	local.set	6
      24f:      	loop    	                        # label7:
      251:      	local.get	6
      253:      	local.get	8
      255:      	local.get	5
      257:      	f32.convert_i32_u
-     258:      	f32.mul 
+     258:      	f32.mul
      259:      	i32.trunc_sat_f32_s
      25b:      	i32.store16	0
      25e:      	local.get	6
      260:      	i32.const	2
-     262:      	i32.add 
+     262:      	i32.add
      263:      	local.set	6
      265:      	local.get	5
      267:      	i32.const	1
-     269:      	i32.add 
+     269:      	i32.add
      26a:      	local.set	5
      26c:      	local.get	1
      26e:      	i32.const	-1
-     270:      	i32.add 
+     270:      	i32.add
      271:      	local.tee	1
      273:      	br_if   	0                       # 0: up to label7
      275:      	end
@@ -337,14 +337,14 @@ Disassembly of section CODE:
      277:      	i32.const	0
 			00000278:  R_WASM_MEMORY_ADDR_SLEB	d_zbuffer+0
      27d:      	i32.const	48640
-     281:      	i32.add 
+     281:      	i32.add
      282:      	local.tee	5
      284:      	i32.const	0
 			00000285:  R_WASM_MEMORY_ADDR_SLEB	intsintable+0
      28a:      	i32.const	448
      28d:      	call	0
 			0000028e:  R_WASM_FUNCTION_INDEX_LEB	Q_memcpy+0
-     293:      	block   	
+     293:      	block
      295:      	i32.const	6
      297:      	i32.load16_s	0
 			00000299:  R_WASM_MEMORY_ADDR_LEB	scr_vrect+0
@@ -356,17 +356,17 @@ Disassembly of section CODE:
      2a8:      	f32.load	0
 			000002aa:  R_WASM_MEMORY_ADDR_LEB	global+0
      2af:      	f32.const	0x1.4p4
-     2b4:      	f32.mul 
+     2b4:      	f32.mul
      2b5:      	i32.trunc_sat_f32_s
      2b7:      	i32.const	127
-     2ba:      	i32.and 
+     2ba:      	i32.and
      2bb:      	local.tee	6
-     2bd:      	i32.add 
+     2bd:      	i32.add
      2be:      	local.set	9
      2c0:      	i32.const	0
 			000002c1:  R_WASM_MEMORY_ADDR_SLEB	d_zbuffer+0
      2c6:      	local.get	6
-     2c8:      	i32.add 
+     2c8:      	i32.add
      2c9:      	local.set	7
      2cb:      	i32.const	0
      2cd:      	local.set	10
@@ -377,181 +377,181 @@ Disassembly of section CODE:
      2da:      	loop    	                        # label9:
      2dc:      	local.get	0
      2de:      	i32.const	656
-     2e1:      	i32.add 
+     2e1:      	i32.add
      2e2:      	local.get	10
      2e4:      	i32.const	2
-     2e6:      	i32.shl 
-     2e7:      	i32.add 
+     2e6:      	i32.shl
+     2e7:      	i32.add
      2e8:      	local.set	6
      2ea:      	local.get	0
      2ec:      	local.get	9
      2ee:      	local.get	10
-     2f0:      	i32.add 
+     2f0:      	i32.add
      2f1:      	i32.load8_u	0
      2f4:      	i32.const	1
-     2f6:      	i32.shl 
-     2f7:      	i32.add 
+     2f6:      	i32.shl
+     2f7:      	i32.add
      2f8:      	local.set	5
      2fa:      	i32.const	-8
      2fc:      	local.set	2
      2fe:      	loop    	                        # label10:
      300:      	local.get	4
      302:      	local.get	2
-     304:      	i32.add 
+     304:      	i32.add
      305:      	local.tee	3
      307:      	i32.const	8
-     309:      	i32.add 
+     309:      	i32.add
      30a:      	local.get	6
      30c:      	local.get	7
      30e:      	local.get	2
-     310:      	i32.add 
+     310:      	i32.add
      311:      	local.tee	1
      313:      	i32.const	48649
-     317:      	i32.add 
+     317:      	i32.add
      318:      	i32.load8_u	0
      31b:      	i32.const	2
-     31d:      	i32.shl 
-     31e:      	i32.add 
+     31d:      	i32.shl
+     31e:      	i32.add
      31f:      	i32.load	0
      322:      	local.get	5
      324:      	i32.const	2
-     326:      	i32.add 
+     326:      	i32.add
      327:      	i32.load16_s	0
-     32a:      	i32.add 
+     32a:      	i32.add
      32b:      	i32.load8_u	0
      32e:      	i32.const	8
-     330:      	i32.shl 
+     330:      	i32.shl
      331:      	local.get	6
      333:      	local.get	1
      335:      	i32.const	48648
-     339:      	i32.add 
+     339:      	i32.add
      33a:      	i32.load8_u	0
      33d:      	i32.const	2
-     33f:      	i32.shl 
-     340:      	i32.add 
+     33f:      	i32.shl
+     340:      	i32.add
      341:      	i32.load	0
      344:      	local.get	5
      346:      	i32.load16_s	0
-     349:      	i32.add 
+     349:      	i32.add
      34a:      	i32.load8_u	0
-     34d:      	i32.or  
+     34d:      	i32.or
      34e:      	local.get	6
      350:      	local.get	1
      352:      	i32.const	48650
-     356:      	i32.add 
+     356:      	i32.add
      357:      	i32.load8_u	0
      35a:      	i32.const	2
-     35c:      	i32.shl 
-     35d:      	i32.add 
+     35c:      	i32.shl
+     35d:      	i32.add
      35e:      	i32.load	0
      361:      	local.get	5
      363:      	i32.const	4
-     365:      	i32.add 
+     365:      	i32.add
      366:      	i32.load16_s	0
-     369:      	i32.add 
+     369:      	i32.add
      36a:      	i32.load8_u	0
      36d:      	i32.const	16
-     36f:      	i32.shl 
-     370:      	i32.or  
+     36f:      	i32.shl
+     370:      	i32.or
      371:      	local.get	6
      373:      	local.get	1
      375:      	i32.const	48651
-     379:      	i32.add 
+     379:      	i32.add
      37a:      	i32.load8_u	0
      37d:      	i32.const	2
-     37f:      	i32.shl 
-     380:      	i32.add 
+     37f:      	i32.shl
+     380:      	i32.add
      381:      	i32.load	0
      384:      	local.get	5
      386:      	i32.const	6
-     388:      	i32.add 
+     388:      	i32.add
      389:      	i32.load16_s	0
-     38c:      	i32.add 
+     38c:      	i32.add
      38d:      	i32.load8_u	0
      390:      	i32.const	24
-     392:      	i32.shl 
-     393:      	i32.or  
+     392:      	i32.shl
+     393:      	i32.or
      394:      	i32.store	0
      397:      	local.get	3
      399:      	i32.const	12
-     39b:      	i32.add 
+     39b:      	i32.add
      39c:      	local.get	6
      39e:      	local.get	1
      3a0:      	i32.const	48653
-     3a4:      	i32.add 
+     3a4:      	i32.add
      3a5:      	i32.load8_u	0
      3a8:      	i32.const	2
-     3aa:      	i32.shl 
-     3ab:      	i32.add 
+     3aa:      	i32.shl
+     3ab:      	i32.add
      3ac:      	i32.load	0
      3af:      	local.get	5
      3b1:      	i32.const	10
-     3b3:      	i32.add 
+     3b3:      	i32.add
      3b4:      	i32.load16_s	0
-     3b7:      	i32.add 
+     3b7:      	i32.add
      3b8:      	i32.load8_u	0
      3bb:      	i32.const	8
-     3bd:      	i32.shl 
+     3bd:      	i32.shl
      3be:      	local.get	6
      3c0:      	local.get	1
      3c2:      	i32.const	48652
-     3c6:      	i32.add 
+     3c6:      	i32.add
      3c7:      	i32.load8_u	0
      3ca:      	i32.const	2
-     3cc:      	i32.shl 
-     3cd:      	i32.add 
+     3cc:      	i32.shl
+     3cd:      	i32.add
      3ce:      	i32.load	0
      3d1:      	local.get	5
      3d3:      	i32.const	8
-     3d5:      	i32.add 
+     3d5:      	i32.add
      3d6:      	i32.load16_s	0
-     3d9:      	i32.add 
+     3d9:      	i32.add
      3da:      	i32.load8_u	0
-     3dd:      	i32.or  
+     3dd:      	i32.or
      3de:      	local.get	6
      3e0:      	local.get	1
      3e2:      	i32.const	48654
-     3e6:      	i32.add 
+     3e6:      	i32.add
      3e7:      	i32.load8_u	0
      3ea:      	i32.const	2
-     3ec:      	i32.shl 
-     3ed:      	i32.add 
+     3ec:      	i32.shl
+     3ed:      	i32.add
      3ee:      	i32.load	0
      3f1:      	local.get	5
      3f3:      	i32.const	12
-     3f5:      	i32.add 
+     3f5:      	i32.add
      3f6:      	i32.load16_s	0
-     3f9:      	i32.add 
+     3f9:      	i32.add
      3fa:      	i32.load8_u	0
      3fd:      	i32.const	16
-     3ff:      	i32.shl 
-     400:      	i32.or  
+     3ff:      	i32.shl
+     400:      	i32.or
      401:      	local.get	6
      403:      	local.get	1
      405:      	i32.const	48655
-     409:      	i32.add 
+     409:      	i32.add
      40a:      	i32.load8_u	0
      40d:      	i32.const	2
-     40f:      	i32.shl 
-     410:      	i32.add 
+     40f:      	i32.shl
+     410:      	i32.add
      411:      	i32.load	0
      414:      	local.get	5
      416:      	i32.const	14
-     418:      	i32.add 
+     418:      	i32.add
      419:      	i32.load16_s	0
-     41c:      	i32.add 
+     41c:      	i32.add
      41d:      	i32.load8_u	0
      420:      	i32.const	24
-     422:      	i32.shl 
-     423:      	i32.or  
+     422:      	i32.shl
+     423:      	i32.or
      424:      	i32.store	0
      427:      	local.get	5
      429:      	i32.const	16
-     42b:      	i32.add 
+     42b:      	i32.add
      42c:      	local.set	5
      42e:      	local.get	2
      430:      	i32.const	8
-     432:      	i32.add 
+     432:      	i32.add
      433:      	local.tee	2
      435:      	i32.const	312
      438:      	i32.lt_u
@@ -559,13 +559,13 @@ Disassembly of section CODE:
      43b:      	end
      43c:      	local.get	4
      43e:      	local.get	2
-     440:      	i32.add 
+     440:      	i32.add
      441:      	i32.const	8
-     443:      	i32.add 
+     443:      	i32.add
      444:      	local.set	4
      446:      	local.get	10
      448:      	i32.const	1
-     44a:      	i32.add 
+     44a:      	i32.add
      44b:      	local.tee	10
      44d:      	i32.const	6
      44f:      	i32.load16_s	0
@@ -576,7 +576,7 @@ Disassembly of section CODE:
      45a:      	end
      45b:      	local.get	0
      45d:      	i32.const	1296
-     460:      	i32.add 
+     460:      	i32.add
      461:      	global.set	0
 			00000462:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
      467:      	end
@@ -588,21 +588,21 @@ Disassembly of section CODE:
 			0000047e:  R_WASM_MEMORY_ADDR_LEB	global+0
      483:      	local.tee	1
      485:      	f32.const	0x1p4
-     48a:      	f32.mul 
+     48a:      	f32.mul
      48b:      	local.set	2
      48d:      	i32.const	684
      490:      	f32.load	0
 			00000492:  R_WASM_MEMORY_ADDR_LEB	global+0
      497:      	local.tee	3
      499:      	f32.const	0x1p4
-     49e:      	f32.mul 
+     49e:      	f32.mul
      49f:      	local.set	4
      4a1:      	i32.const	680
      4a4:      	f32.load	0
 			000004a6:  R_WASM_MEMORY_ADDR_LEB	global+0
      4ab:      	local.tee	5
      4ad:      	f32.const	0x1p4
-     4b2:      	f32.mul 
+     4b2:      	f32.mul
      4b3:      	local.set	6
      4b5:      	i32.const	0
 			000004b6:  R_WASM_MEMORY_ADDR_SLEB	sintable+0
@@ -610,13 +610,13 @@ Disassembly of section CODE:
      4be:      	f32.load	0
 			000004c0:  R_WASM_MEMORY_ADDR_LEB	global+0
      4c5:      	f32.const	0x1.4p4
-     4ca:      	f32.mul 
+     4ca:      	f32.mul
      4cb:      	i32.trunc_sat_f32_s
      4cd:      	i32.const	127
-     4d0:      	i32.and 
+     4d0:      	i32.and
      4d1:      	i32.const	2
-     4d3:      	i32.shl 
-     4d4:      	i32.add 
+     4d3:      	i32.shl
+     4d4:      	i32.add
      4d5:      	local.set	7
      4d7:      	i32.const	368
      4da:      	i32.load	0
@@ -644,21 +644,21 @@ Disassembly of section CODE:
      516:      	i32.const	13
      518:      	i32.shr_u
      519:      	i32.const	511
-     51c:      	i32.and 
+     51c:      	i32.and
      51d:      	local.tee	14
      51f:      	f32.convert_i32_u
      520:      	local.tee	15
      522:      	local.get	3
-     524:      	f32.mul 
+     524:      	f32.mul
      525:      	i32.const	372
      528:      	i32.load	0
 			0000052a:  R_WASM_MEMORY_ADDR_LEB	global+0
      52f:      	local.get	0
      531:      	local.get	8
-     533:      	i32.sub 
+     533:      	i32.sub
      534:      	i32.const	2
      536:      	i32.shr_s
-     537:      	i32.add 
+     537:      	i32.add
      538:      	i32.load8_u	0
      53b:      	local.tee	16
      53d:      	f32.convert_i32_u
@@ -666,35 +666,35 @@ Disassembly of section CODE:
      540:      	i32.const	696
      543:      	f32.load	0
 			00000545:  R_WASM_MEMORY_ADDR_LEB	global+0
-     54a:      	f32.mul 
+     54a:      	f32.mul
      54b:      	i32.const	708
      54e:      	f32.load	0
 			00000550:  R_WASM_MEMORY_ADDR_LEB	global+0
-     555:      	f32.add 
-     556:      	f32.add 
+     555:      	f32.add
+     556:      	f32.add
      557:      	local.tee	3
      559:      	f32.const	0x1p0
      55e:      	local.get	15
      560:      	local.get	1
-     562:      	f32.mul 
+     562:      	f32.mul
      563:      	local.get	17
      565:      	i32.const	700
      568:      	f32.load	0
 			0000056a:  R_WASM_MEMORY_ADDR_LEB	global+0
-     56f:      	f32.mul 
+     56f:      	f32.mul
      570:      	i32.const	712
      573:      	f32.load	0
 			00000575:  R_WASM_MEMORY_ADDR_LEB	global+0
-     57a:      	f32.add 
-     57b:      	f32.add 
+     57a:      	f32.add
+     57b:      	f32.add
      57c:      	local.tee	1
-     57e:      	f32.div 
+     57e:      	f32.div
      57f:      	f32.const	0x1p16
-     584:      	f32.mul 
+     584:      	f32.mul
      585:      	local.tee	18
-     587:      	f32.mul 
+     587:      	f32.mul
      588:      	i32.trunc_sat_f32_s
-     58a:      	i32.add 
+     58a:      	i32.add
      58b:      	local.tee	8
      58d:      	i32.const	0
      58f:      	local.get	8
@@ -715,22 +715,22 @@ Disassembly of section CODE:
 			000005ae:  R_WASM_MEMORY_ADDR_LEB	global+0
      5b3:      	local.get	15
      5b5:      	local.get	5
-     5b7:      	f32.mul 
+     5b7:      	f32.mul
      5b8:      	local.get	17
      5ba:      	i32.const	692
      5bd:      	f32.load	0
 			000005bf:  R_WASM_MEMORY_ADDR_LEB	global+0
-     5c4:      	f32.mul 
+     5c4:      	f32.mul
      5c5:      	i32.const	704
      5c8:      	f32.load	0
 			000005ca:  R_WASM_MEMORY_ADDR_LEB	global+0
-     5cf:      	f32.add 
-     5d0:      	f32.add 
+     5cf:      	f32.add
+     5d0:      	f32.add
      5d1:      	local.tee	15
      5d3:      	local.get	18
-     5d5:      	f32.mul 
+     5d5:      	f32.mul
      5d6:      	i32.trunc_sat_f32_s
-     5d8:      	i32.add 
+     5d8:      	i32.add
      5d9:      	local.tee	12
      5db:      	i32.const	0
      5dd:      	local.get	12
@@ -747,20 +747,20 @@ Disassembly of section CODE:
 			000005f0:  R_WASM_MEMORY_ADDR_LEB	global+0
      5f5:      	local.get	16
      5f7:      	i32.const	320
-     5fa:      	i32.mul 
-     5fb:      	i32.add 
+     5fa:      	i32.mul
+     5fb:      	i32.add
      5fc:      	local.get	14
-     5fe:      	i32.add 
+     5fe:      	i32.add
      5ff:      	local.set	14
      601:      	local.get	13
      603:      	i32.const	22
      605:      	i32.shr_u
      606:      	i32.const	511
-     609:      	i32.and 
+     609:      	i32.and
      60a:      	local.set	13
      60c:      	loop    	                        # label12:
-     60e:      	block   	
-     610:      	block   	
+     60e:      	block
+     610:      	block
      612:      	local.get	13
      614:      	local.get	13
      616:      	i32.const	16
@@ -769,7 +769,7 @@ Disassembly of section CODE:
      61c:      	i32.lt_u
      61d:      	f32.select
      61e:      	local.tee	16
-     620:      	i32.sub 
+     620:      	i32.sub
      621:      	local.tee	19
      623:      	i32.eqz
      624:      	br_if   	0                       # 0: down to label14
@@ -782,20 +782,20 @@ Disassembly of section CODE:
 			00000637:  R_WASM_MEMORY_ADDR_LEB	global+0
      63c:      	local.get	4
      63e:      	local.get	3
-     640:      	f32.add 
+     640:      	f32.add
      641:      	local.tee	3
      643:      	f32.const	0x1p0
      648:      	local.get	2
      64a:      	local.get	1
-     64c:      	f32.add 
+     64c:      	f32.add
      64d:      	local.tee	1
-     64f:      	f32.div 
+     64f:      	f32.div
      650:      	f32.const	0x1p16
-     655:      	f32.mul 
+     655:      	f32.mul
      656:      	local.tee	17
-     658:      	f32.mul 
+     658:      	f32.mul
      659:      	i32.trunc_sat_f32_s
-     65b:      	i32.add 
+     65b:      	i32.add
      65c:      	local.tee	13
      65e:      	i32.const	16
      660:      	local.get	13
@@ -808,7 +808,7 @@ Disassembly of section CODE:
      66b:      	f32.select
      66c:      	local.tee	20
      66e:      	local.get	8
-     670:      	i32.sub 
+     670:      	i32.sub
      671:      	i32.const	4
      673:      	i32.shr_s
      674:      	local.set	10
@@ -821,12 +821,12 @@ Disassembly of section CODE:
 			00000687:  R_WASM_MEMORY_ADDR_LEB	global+0
      68c:      	local.get	6
      68e:      	local.get	15
-     690:      	f32.add 
+     690:      	f32.add
      691:      	local.tee	15
      693:      	local.get	17
-     695:      	f32.mul 
+     695:      	f32.mul
      696:      	i32.trunc_sat_f32_s
-     698:      	i32.add 
+     698:      	i32.add
      699:      	local.tee	13
      69b:      	i32.const	16
      69d:      	local.get	13
@@ -839,7 +839,7 @@ Disassembly of section CODE:
      6a8:      	f32.select
      6a9:      	local.tee	21
      6ab:      	local.get	12
-     6ad:      	i32.sub 
+     6ad:      	i32.sub
      6ae:      	i32.const	4
      6b0:      	i32.shr_s
      6b1:      	local.set	11
@@ -857,30 +857,30 @@ Disassembly of section CODE:
 			000006d1:  R_WASM_MEMORY_ADDR_LEB	global+0
      6d6:      	local.get	16
      6d8:      	i32.const	-1
-     6da:      	i32.add 
+     6da:      	i32.add
      6db:      	local.tee	22
      6dd:      	f32.convert_i32_s
      6de:      	local.tee	17
-     6e0:      	f32.mul 
+     6e0:      	f32.mul
      6e1:      	local.get	3
-     6e3:      	f32.add 
+     6e3:      	f32.add
      6e4:      	local.tee	3
      6e6:      	f32.const	0x1p0
      6eb:      	i32.const	688
      6ee:      	f32.load	0
 			000006f0:  R_WASM_MEMORY_ADDR_LEB	global+0
      6f5:      	local.get	17
-     6f7:      	f32.mul 
+     6f7:      	f32.mul
      6f8:      	local.get	1
-     6fa:      	f32.add 
+     6fa:      	f32.add
      6fb:      	local.tee	1
-     6fd:      	f32.div 
+     6fd:      	f32.div
      6fe:      	f32.const	0x1p16
-     703:      	f32.mul 
+     703:      	f32.mul
      704:      	local.tee	5
-     706:      	f32.mul 
+     706:      	f32.mul
      707:      	i32.trunc_sat_f32_s
-     709:      	i32.add 
+     709:      	i32.add
      70a:      	local.tee	20
      70c:      	i32.const	16
      70e:      	local.get	20
@@ -903,14 +903,14 @@ Disassembly of section CODE:
      735:      	f32.load	0
 			00000737:  R_WASM_MEMORY_ADDR_LEB	global+0
      73c:      	local.get	17
-     73e:      	f32.mul 
+     73e:      	f32.mul
      73f:      	local.get	15
-     741:      	f32.add 
+     741:      	f32.add
      742:      	local.tee	15
      744:      	local.get	5
-     746:      	f32.mul 
+     746:      	f32.mul
      747:      	i32.trunc_sat_f32_s
-     749:      	i32.add 
+     749:      	i32.add
      74a:      	local.tee	21
      74c:      	i32.const	16
      74e:      	local.get	21
@@ -928,17 +928,17 @@ Disassembly of section CODE:
      761:      	br_if   	0                       # 0: down to label14
      763:      	local.get	20
      765:      	local.get	8
-     767:      	i32.sub 
+     767:      	i32.sub
      768:      	i64.extend_i32_s
      769:      	i32.const	0
 			0000076a:  R_WASM_MEMORY_ADDR_SLEB	fixedReciprocal256+0
      76f:      	local.get	22
      771:      	i32.const	2
-     773:      	i32.shl 
-     774:      	i32.add 
+     773:      	i32.shl
+     774:      	i32.add
      775:      	i64.load32_s	0
      778:      	local.tee	24
-     77a:      	i64.mul 
+     77a:      	i64.mul
      77b:      	i64.const	16
      77d:      	i64.shr_u
      77e:      	i32.wrap_i64
@@ -946,15 +946,15 @@ Disassembly of section CODE:
      781:      	local.get	24
      783:      	local.get	21
      785:      	local.get	12
-     787:      	i32.sub 
+     787:      	i32.sub
      788:      	i64.extend_i32_s
-     789:      	i64.mul 
+     789:      	i64.mul
      78a:      	i64.const	16
      78c:      	i64.shr_u
      78d:      	i32.wrap_i64
      78e:      	local.set	11
      790:      	end
-     791:      	block   	
+     791:      	block
      793:      	local.get	16
      795:      	i32.const	1
      797:      	i32.shr_u
@@ -970,97 +970,97 @@ Disassembly of section CODE:
      7a9:      	i32.const	14
      7ab:      	i32.shr_u
      7ac:      	i32.const	508
-     7af:      	i32.and 
-     7b0:      	i32.add 
+     7af:      	i32.and
+     7b0:      	i32.add
      7b1:      	i32.load	0
-     7b4:      	i32.add 
+     7b4:      	i32.add
      7b5:      	i32.const	10
      7b7:      	i32.shr_u
      7b8:      	i32.const	4032
-     7bb:      	i32.and 
-     7bc:      	i32.add 
+     7bb:      	i32.and
+     7bc:      	i32.add
      7bd:      	local.get	12
      7bf:      	local.get	7
      7c1:      	local.get	8
      7c3:      	i32.const	14
      7c5:      	i32.shr_u
      7c6:      	i32.const	508
-     7c9:      	i32.and 
-     7ca:      	i32.add 
+     7c9:      	i32.and
+     7ca:      	i32.add
      7cb:      	i32.load	0
-     7ce:      	i32.add 
+     7ce:      	i32.add
      7cf:      	i32.const	16
      7d1:      	i32.shr_u
      7d2:      	i32.const	63
-     7d4:      	i32.and 
-     7d5:      	i32.add 
+     7d4:      	i32.and
+     7d5:      	i32.add
      7d6:      	i32.load8_u	0
      7d9:      	i32.store8	0
      7dc:      	local.get	14
      7de:      	i32.const	1
-     7e0:      	i32.add 
+     7e0:      	i32.add
      7e1:      	local.get	9
      7e3:      	local.get	8
      7e5:      	local.get	10
-     7e7:      	i32.add 
+     7e7:      	i32.add
      7e8:      	local.tee	8
      7ea:      	local.get	7
      7ec:      	local.get	12
      7ee:      	local.get	11
-     7f0:      	i32.add 
+     7f0:      	i32.add
      7f1:      	local.tee	12
      7f3:      	i32.const	14
      7f5:      	i32.shr_u
      7f6:      	i32.const	508
-     7f9:      	i32.and 
-     7fa:      	i32.add 
+     7f9:      	i32.and
+     7fa:      	i32.add
      7fb:      	i32.load	0
-     7fe:      	i32.add 
+     7fe:      	i32.add
      7ff:      	i32.const	10
      801:      	i32.shr_u
      802:      	i32.const	4032
-     805:      	i32.and 
-     806:      	i32.add 
+     805:      	i32.and
+     806:      	i32.add
      807:      	local.get	12
      809:      	local.get	7
      80b:      	local.get	8
      80d:      	i32.const	14
      80f:      	i32.shr_u
      810:      	i32.const	508
-     813:      	i32.and 
-     814:      	i32.add 
+     813:      	i32.and
+     814:      	i32.add
      815:      	i32.load	0
-     818:      	i32.add 
+     818:      	i32.add
      819:      	i32.const	16
      81b:      	i32.shr_u
      81c:      	i32.const	63
-     81e:      	i32.and 
-     81f:      	i32.add 
+     81e:      	i32.and
+     81f:      	i32.add
      820:      	i32.load8_u	0
      823:      	i32.store8	0
      826:      	local.get	14
      828:      	i32.const	2
-     82a:      	i32.add 
+     82a:      	i32.add
      82b:      	local.set	14
      82d:      	local.get	8
      82f:      	local.get	10
-     831:      	i32.add 
+     831:      	i32.add
      832:      	local.set	8
      834:      	local.get	12
      836:      	local.get	11
-     838:      	i32.add 
+     838:      	i32.add
      839:      	local.set	12
      83b:      	local.get	13
      83d:      	i32.const	-1
-     83f:      	i32.add 
+     83f:      	i32.add
      840:      	local.tee	13
      842:      	br_if   	0                       # 0: up to label16
      844:      	end
      845:      	end
-     846:      	block   	
+     846:      	block
      848:      	local.get	16
      84a:      	i32.const	1
-     84c:      	i32.and 
+     84c:      	i32.and
      84d:      	i32.eqz
      84e:      	br_if   	0                       # 0: down to label17
      850:      	local.get	14
@@ -1070,36 +1070,36 @@ Disassembly of section CODE:
      858:      	i32.const	14
      85a:      	i32.shr_u
      85b:      	i32.const	508
-     85e:      	i32.and 
-     85f:      	i32.add 
+     85e:      	i32.and
+     85f:      	i32.add
      860:      	i32.load	0
      863:      	local.get	8
-     865:      	i32.add 
+     865:      	i32.add
      866:      	i32.const	10
      868:      	i32.shr_u
      869:      	i32.const	4032
-     86c:      	i32.and 
-     86d:      	i32.add 
+     86c:      	i32.and
+     86d:      	i32.add
      86e:      	local.get	7
      870:      	local.get	8
      872:      	i32.const	14
      874:      	i32.shr_u
      875:      	i32.const	508
-     878:      	i32.and 
-     879:      	i32.add 
+     878:      	i32.and
+     879:      	i32.add
      87a:      	i32.load	0
      87d:      	local.get	12
-     87f:      	i32.add 
+     87f:      	i32.add
      880:      	i32.const	16
      882:      	i32.shr_u
      883:      	i32.const	63
-     885:      	i32.and 
-     886:      	i32.add 
+     885:      	i32.and
+     886:      	i32.add
      887:      	i32.load8_u	0
      88a:      	i32.store8	0
      88d:      	local.get	14
      88f:      	i32.const	1
-     891:      	i32.add 
+     891:      	i32.add
      892:      	local.set	14
      894:      	end
      895:      	local.get	20
@@ -1113,11 +1113,11 @@ Disassembly of section CODE:
      8a5:      	i32.gt_s
      8a6:      	br_if   	0                       # 0: down to label17
      8a8:      	end
-     8a9:      	block   	
+     8a9:      	block
      8ab:      	local.get	0
      8ad:      	i32.load	0
      8b0:      	i32.const	8191
-     8b3:      	i32.and 
+     8b3:      	i32.and
      8b4:      	local.tee	12
      8b6:      	i32.eqz
      8b7:      	br_if   	0                       # 0: down to label18
@@ -1127,8 +1127,8 @@ Disassembly of section CODE:
      8c3:      	local.tee	8
      8c5:      	local.get	12
      8c7:      	i32.const	2
-     8c9:      	i32.shl 
-     8ca:      	i32.add 
+     8c9:      	i32.shl
+     8ca:      	i32.add
      8cb:      	local.set	0
      8cd:      	i32.const	688
      8d0:      	f32.load	0
@@ -1152,19 +1152,19 @@ Disassembly of section CODE:
      90b:      	global.get	0
 			0000090c:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
      911:      	i32.const	80
-     914:      	i32.sub 
+     914:      	i32.sub
      915:      	local.tee	0
      917:      	global.set	0
 			00000918:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
-     91d:      	block   	
+     91d:      	block
      91f:      	i32.const	0
      921:      	i32.load	16
 			00000923:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+16
      928:      	local.tee	1
      92a:      	i32.eqz
      92b:      	br_if   	0                       # 0: down to label19
-     92d:      	block   	
-     92f:      	block   	
+     92d:      	block
+     92f:      	block
      931:      	i32.const	0
      933:      	i64.load	0
 			00000935:  R_WASM_MEMORY_ADDR_LEB	port_game_render_context+0
@@ -1178,7 +1178,7 @@ Disassembly of section CODE:
      946:      	end
      947:      	i32.const	0
      949:      	local.set	4
-     94b:      	block   	
+     94b:      	block
      94d:      	i32.const	0
      94f:      	i32.load	20
 			00000951:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+20
@@ -1195,7 +1195,7 @@ Disassembly of section CODE:
      970:      	i32.load	8
 			00000972:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+8
      977:      	i32.store	28
-     97a:      	block   	
+     97a:      	block
      97c:      	i32.const	0
      97e:      	i32.load	0
 			00000980:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+0
@@ -1205,7 +1205,7 @@ Disassembly of section CODE:
      98a:      	local.get	1
      98c:      	local.get	0
      98e:      	i32.const	16
-     990:      	i32.add 
+     990:      	i32.add
      991:      	i32.const	16
      993:      	call	10
 			00000994:  R_WASM_FUNCTION_INDEX_LEB	pxa_game_render_wire_copy+0
@@ -1230,7 +1230,7 @@ Disassembly of section CODE:
      9c4:      	i32.const	0
      9c6:      	i32.load	4
 			000009c8:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+4
-     9cd:      	i32.eq  
+     9cd:      	i32.eq
      9ce:      	br_if   	0                       # 0: down to label23
      9d0:      	i32.const	-15
      9d2:      	local.set	3
@@ -1359,7 +1359,7 @@ Disassembly of section CODE:
      b2f:      	local.set	23
      b31:      	i32.const	0
      b33:      	local.set	1
-     b35:      	block   	
+     b35:      	block
      b37:      	i32.const	0
      b39:      	i32.load	16
 			00000b3b:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+16
@@ -1369,12 +1369,12 @@ Disassembly of section CODE:
      b45:      	i32.load	0
 			00000b47:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+0
      b4c:      	i32.const	16
-     b4e:      	i32.add 
+     b4e:      	i32.add
      b4f:      	local.set	24
      b51:      	i32.const	0
      b53:      	local.set	25
      b55:      	loop    	                        # label25:
-     b57:      	block   	
+     b57:      	block
      b59:      	local.get	24
      b5b:      	i32.eqz
      b5c:      	br_if   	0                       # 0: down to label26
@@ -1525,16 +1525,16 @@ Disassembly of section CODE:
      cdb:      	i32.const	1
      cdd:      	i32.shr_u
      cde:      	i32.const	1
-     ce0:      	i32.and 
+     ce0:      	i32.and
      ce1:      	i32.store8	0
 			00000ce3:  R_WASM_MEMORY_ADDR_LEB	r_fullbright+0
      ce8:      	i32.const	24
      cea:      	i32.const	4
      cec:      	local.get	29
      cee:      	i32.const	255
-     cf1:      	i32.and 
+     cf1:      	i32.and
      cf2:      	local.tee	39
-     cf4:      	i32.sub 
+     cf4:      	i32.sub
      cf5:      	i32.store	0
 			00000cf7:  R_WASM_MEMORY_ADDR_LEB	r_drawsurf+0
      cfc:      	i32.const	4
@@ -1543,32 +1543,32 @@ Disassembly of section CODE:
 			00000d02:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+0
      d07:      	local.tee	49
      d09:      	local.get	35
-     d0b:      	i32.add 
+     d0b:      	i32.add
      d0c:      	i32.store	0
 			00000d0e:  R_WASM_MEMORY_ADDR_LEB	sdd+0
      d13:      	i32.const	60
      d15:      	local.get	49
      d17:      	local.get	30
-     d19:      	i32.add 
+     d19:      	i32.add
      d1a:      	i32.store	0
 			00000d1c:  R_WASM_MEMORY_ADDR_LEB	sdd+0
      d21:      	i32.const	48
      d23:      	local.get	31
      d25:      	i32.const	65535
-     d29:      	i32.and 
+     d29:      	i32.and
      d2a:      	local.tee	50
      d2c:      	i32.store	0
 			00000d2e:  R_WASM_MEMORY_ADDR_LEB	sdd+0
      d33:      	i32.const	36
      d35:      	local.get	33
      d37:      	i32.const	65535
-     d3b:      	i32.and 
+     d3b:      	i32.and
      d3c:      	i32.store	0
 			00000d3e:  R_WASM_MEMORY_ADDR_LEB	sdd+0
      d43:      	i32.const	24
      d45:      	local.get	34
      d47:      	i32.const	65535
-     d4b:      	i32.and 
+     d4b:      	i32.and
      d4c:      	i32.store	0
 			00000d4e:  R_WASM_MEMORY_ADDR_LEB	sdd+0
      d53:      	i32.const	28
@@ -1590,9 +1590,9 @@ Disassembly of section CODE:
      d7f:      	i32.const	20
      d81:      	local.get	28
      d83:      	i32.const	-1
-     d85:      	i32.xor 
+     d85:      	i32.xor
      d86:      	i32.const	1
-     d88:      	i32.and 
+     d88:      	i32.and
      d89:      	i32.store	0
 			00000d8b:  R_WASM_MEMORY_ADDR_LEB	sdd+0
      d90:      	i32.const	0
@@ -1602,27 +1602,27 @@ Disassembly of section CODE:
      d98:      	local.get	39
      d9a:      	i32.shr_s
      d9b:      	local.get	50
-     d9d:      	i32.mul 
+     d9d:      	i32.mul
      d9e:      	local.get	4
      da0:      	local.get	39
      da2:      	i32.shr_s
-     da3:      	i32.add 
+     da3:      	i32.add
      da4:      	i32.const	2
-     da6:      	i32.shl 
-     da7:      	i32.sub 
-     da8:      	i32.add 
+     da6:      	i32.shl
+     da7:      	i32.sub
+     da8:      	i32.add
      da9:      	i32.store	0
 			00000dab:  R_WASM_MEMORY_ADDR_LEB	sdd+0
-     db0:      	block   	
+     db0:      	block
      db2:      	local.get	37
      db4:      	i32.eqz
      db5:      	br_if   	0                       # 0: down to label27
      db7:      	i32.const	0
      db9:      	local.set	1
-     dbb:      	block   	
+     dbb:      	block
      dbd:      	local.get	37
      dbf:      	i32.const	1
-     dc1:      	i32.eq  
+     dc1:      	i32.eq
      dc2:      	br_if   	0                       # 0: down to label28
      dc4:      	i32.const	1
      dc6:      	local.set	4
@@ -1634,97 +1634,97 @@ Disassembly of section CODE:
      dd4:      	loop    	                        # label29:
      dd6:      	local.get	1
      dd8:      	i32.const	152
-     ddb:      	i32.add 
+     ddb:      	i32.add
      ddc:      	i32.load8_u	0
      ddf:      	local.set	49
      de1:      	local.get	1
      de3:      	i32.const	153
-     de6:      	i32.add 
+     de6:      	i32.add
      de7:      	i32.load8_u	0
      dea:      	local.set	50
      dec:      	local.get	1
      dee:      	i32.const	156
-     df1:      	i32.add 
+     df1:      	i32.add
      df2:      	i32.load8_u	0
      df5:      	local.set	51
      df7:      	local.get	1
      df9:      	i32.const	157
-     dfc:      	i32.add 
+     dfc:      	i32.add
      dfd:      	i32.load8_u	0
      e00:      	local.set	52
      e02:      	local.get	4
      e04:      	i32.const	1136
 			00000e05:  R_WASM_MEMORY_ADDR_SLEB	Pxa_ReplayProjectedFrame.ys+0
-     e0a:      	i32.add 
+     e0a:      	i32.add
      e0b:      	local.get	1
      e0d:      	i32.const	154
-     e10:      	i32.add 
+     e10:      	i32.add
      e11:      	i32.load8_u	0
      e14:      	i32.store8	0
      e17:      	local.get	39
      e19:      	local.get	51
      e1b:      	local.get	52
      e1d:      	i32.const	8
-     e1f:      	i32.shl 
+     e1f:      	i32.shl
      e20:      	i32.const	256
-     e23:      	i32.and 
-     e24:      	i32.or  
+     e23:      	i32.and
+     e24:      	i32.or
      e25:      	i32.const	22
-     e27:      	i32.shl 
+     e27:      	i32.shl
      e28:      	local.get	39
      e2a:      	i32.load	0
      e2d:      	i32.const	-2147483648
-     e33:      	i32.and 
+     e33:      	i32.and
      e34:      	local.get	49
      e36:      	local.get	50
      e38:      	i32.const	8
-     e3a:      	i32.shl 
+     e3a:      	i32.shl
      e3b:      	i32.const	256
-     e3e:      	i32.and 
-     e3f:      	i32.or  
+     e3e:      	i32.and
+     e3f:      	i32.or
      e40:      	i32.const	13
-     e42:      	i32.shl 
-     e43:      	i32.or  
-     e44:      	i32.or  
+     e42:      	i32.shl
+     e43:      	i32.or
+     e44:      	i32.or
      e45:      	local.get	4
      e47:      	i32.const	1
-     e49:      	i32.add 
+     e49:      	i32.add
      e4a:      	local.tee	4
      e4c:      	i32.const	8191
-     e4f:      	i32.and 
-     e50:      	i32.or  
+     e4f:      	i32.and
+     e50:      	i32.or
      e51:      	i32.store	0
      e54:      	local.get	1
      e56:      	i32.const	8
-     e58:      	i32.add 
+     e58:      	i32.add
      e59:      	local.set	1
      e5b:      	local.get	39
      e5d:      	i32.const	4
-     e5f:      	i32.add 
+     e5f:      	i32.add
      e60:      	local.set	39
      e62:      	local.get	37
      e64:      	local.get	4
-     e66:      	i32.ne  
+     e66:      	i32.ne
      e67:      	br_if   	0                       # 0: up to label29
      e69:      	end
      e6a:      	local.get	4
      e6c:      	i32.const	-1
-     e6e:      	i32.add 
+     e6e:      	i32.add
      e6f:      	local.set	1
      e71:      	end
      e72:      	local.get	24
      e74:      	i32.const	152
-     e77:      	i32.add 
+     e77:      	i32.add
      e78:      	local.get	1
      e7a:      	i32.const	3
-     e7c:      	i32.shl 
-     e7d:      	i32.add 
+     e7c:      	i32.shl
+     e7d:      	i32.add
      e7e:      	local.tee	4
      e80:      	i32.load8_u	0
      e83:      	local.set	39
      e85:      	local.get	4
      e87:      	i32.const	1
-     e89:      	i32.add 
+     e89:      	i32.add
      e8a:      	i32.load8_u	0
      e8d:      	local.set	49
      e8f:      	local.get	4
@@ -1732,7 +1732,7 @@ Disassembly of section CODE:
      e94:      	local.set	50
      e96:      	local.get	4
      e98:      	i32.const	5
-     e9a:      	i32.add 
+     e9a:      	i32.add
      e9b:      	i32.load8_u	0
      e9e:      	local.set	51
      ea0:      	local.get	1
@@ -1742,47 +1742,47 @@ Disassembly of section CODE:
 			00000ea9:  R_WASM_MEMORY_ADDR_LEB	Pxa_ReplayProjectedFrame.ys+1
      eae:      	local.get	1
      eb0:      	i32.const	1
-     eb2:      	i32.add 
+     eb2:      	i32.add
      eb3:      	local.tee	4
      eb5:      	i32.const	2
-     eb7:      	i32.shl 
+     eb7:      	i32.shl
      eb8:      	local.tee	52
      eba:      	local.get	50
      ebc:      	local.get	51
      ebe:      	i32.const	8
-     ec0:      	i32.shl 
+     ec0:      	i32.shl
      ec1:      	i32.const	256
-     ec4:      	i32.and 
-     ec5:      	i32.or  
+     ec4:      	i32.and
+     ec5:      	i32.or
      ec6:      	i32.const	22
-     ec8:      	i32.shl 
+     ec8:      	i32.shl
      ec9:      	local.get	52
      ecb:      	i32.load	96
 			00000ecd:  R_WASM_MEMORY_ADDR_LEB	Pxa_ReplayProjectedFrame.spans+0
      ed2:      	i32.const	-2147483648
-     ed8:      	i32.and 
+     ed8:      	i32.and
      ed9:      	local.get	39
      edb:      	local.get	49
      edd:      	i32.const	8
-     edf:      	i32.shl 
+     edf:      	i32.shl
      ee0:      	i32.const	256
-     ee3:      	i32.and 
-     ee4:      	i32.or  
+     ee3:      	i32.and
+     ee4:      	i32.or
      ee5:      	i32.const	13
-     ee7:      	i32.shl 
-     ee8:      	i32.or  
-     ee9:      	i32.or  
+     ee7:      	i32.shl
+     ee8:      	i32.or
+     ee9:      	i32.or
      eea:      	i32.const	0
      eec:      	local.get	1
      eee:      	i32.const	2
-     ef0:      	i32.add 
+     ef0:      	i32.add
      ef1:      	i32.const	8191
-     ef4:      	i32.and 
+     ef4:      	i32.and
      ef5:      	local.get	4
      ef7:      	local.get	37
-     ef9:      	i32.eq  
+     ef9:      	i32.eq
      efa:      	f32.select
-     efb:      	i32.or  
+     efb:      	i32.or
      efc:      	i32.store	96
 			00000efe:  R_WASM_MEMORY_ADDR_LEB	Pxa_ReplayProjectedFrame.spans+0
      f03:      	end
@@ -1791,10 +1791,10 @@ Disassembly of section CODE:
      f0a:      	i32.const	-1
      f0c:      	call	11
 			00000f0d:  R_WASM_FUNCTION_INDEX_LEB	D_DrawSpans8Rows+0
-     f12:      	block   	
+     f12:      	block
      f14:      	local.get	38
      f16:      	i32.const	1
-     f18:      	i32.and 
+     f18:      	i32.and
      f19:      	i32.eqz
      f1a:      	br_if   	0                       # 0: down to label30
      f1c:      	i32.const	100
@@ -1806,14 +1806,14 @@ Disassembly of section CODE:
      f2b:      	local.get	24
      f2d:      	local.get	37
      f2f:      	i32.const	3
-     f31:      	i32.shl 
-     f32:      	i32.add 
+     f31:      	i32.shl
+     f32:      	i32.add
      f33:      	i32.const	152
-     f36:      	i32.add 
+     f36:      	i32.add
      f37:      	local.set	24
      f39:      	local.get	25
      f3b:      	i32.const	1
-     f3d:      	i32.add 
+     f3d:      	i32.add
      f3e:      	local.tee	25
      f40:      	i32.const	0
      f42:      	i32.load	16
@@ -1945,7 +1945,7 @@ Disassembly of section CODE:
 			000010a8:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_replays+0
     10ad:      	local.tee	4
     10af:      	i32.const	1
-    10b1:      	i32.add 
+    10b1:      	i32.add
     10b2:      	i32.store	24
 			000010b4:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_replays+0
     10b9:      	local.get	4
@@ -1990,14 +1990,14 @@ Disassembly of section CODE:
 			0000111a:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_unavailable+0
     111f:      	local.get	0
     1121:      	i32.const	80
-    1124:      	i32.add 
+    1124:      	i32.add
     1125:      	global.set	0
 			00001126:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
     112b:      	end
 
 0000112c <pxa_game_render_wire_copy>:
 
-    112e:      	block   	
+    112e:      	block
     1130:      	local.get	2
     1132:      	i32.eqz
     1133:      	br_if   	0                       # 0: down to label31
@@ -2014,19 +2014,19 @@ Disassembly of section CODE:
     1151:      	f32.load	0
 			00001153:  R_WASM_MEMORY_ADDR_LEB	global+0
     1158:      	f32.const	0x1p5
-    115d:      	f32.mul 
+    115d:      	f32.mul
     115e:      	local.set	2
     1160:      	i32.const	684
     1163:      	f32.load	0
 			00001165:  R_WASM_MEMORY_ADDR_LEB	global+0
     116a:      	f32.const	0x1p5
-    116f:      	f32.mul 
+    116f:      	f32.mul
     1170:      	local.set	3
     1172:      	i32.const	680
     1175:      	f32.load	0
 			00001177:  R_WASM_MEMORY_ADDR_LEB	global+0
     117c:      	f32.const	0x1p5
-    1181:      	f32.mul 
+    1181:      	f32.mul
     1182:      	local.set	4
     1184:      	i32.const	368
     1187:      	i32.load	0
@@ -2042,14 +2042,14 @@ Disassembly of section CODE:
 			0000119f:  R_WASM_MEMORY_ADDR_LEB	global+0
     11a4:      	local.get	0
     11a6:      	local.get	5
-    11a8:      	i32.sub 
+    11a8:      	i32.sub
     11a9:      	i32.const	2
     11ab:      	i32.shr_s
-    11ac:      	i32.add 
+    11ac:      	i32.add
     11ad:      	i32.load8_u	0
     11b0:      	local.set	8
-    11b2:      	block   	
-    11b4:      	block   	
+    11b2:      	block
+    11b4:      	block
     11b6:      	local.get	1
     11b8:      	i32.const	0
     11ba:      	i32.lt_s
@@ -2057,8 +2057,8 @@ Disassembly of section CODE:
     11bd:      	local.get	1
     11bf:      	local.get	8
     11c1:      	i32.const	1
-    11c3:      	i32.and 
-    11c4:      	i32.ne  
+    11c3:      	i32.and
+    11c4:      	i32.ne
     11c5:      	br_if   	1                       # 1: down to label33
     11c7:      	end
     11c8:      	i32.const	728
@@ -2074,51 +2074,51 @@ Disassembly of section CODE:
     11e5:      	i32.const	13
     11e7:      	i32.shr_u
     11e8:      	i32.const	511
-    11eb:      	i32.and 
+    11eb:      	i32.and
     11ec:      	local.tee	11
     11ee:      	f32.convert_i32_u
     11ef:      	local.tee	12
     11f1:      	i32.const	684
     11f4:      	f32.load	0
 			000011f6:  R_WASM_MEMORY_ADDR_LEB	global+0
-    11fb:      	f32.mul 
+    11fb:      	f32.mul
     11fc:      	local.get	8
     11fe:      	f32.convert_i32_u
     11ff:      	local.tee	13
     1201:      	i32.const	696
     1204:      	f32.load	0
 			00001206:  R_WASM_MEMORY_ADDR_LEB	global+0
-    120b:      	f32.mul 
+    120b:      	f32.mul
     120c:      	i32.const	708
     120f:      	f32.load	0
 			00001211:  R_WASM_MEMORY_ADDR_LEB	global+0
-    1216:      	f32.add 
-    1217:      	f32.add 
+    1216:      	f32.add
+    1217:      	f32.add
     1218:      	local.tee	14
     121a:      	f32.const	0x1p0
     121f:      	local.get	12
     1221:      	i32.const	688
     1224:      	f32.load	0
 			00001226:  R_WASM_MEMORY_ADDR_LEB	global+0
-    122b:      	f32.mul 
+    122b:      	f32.mul
     122c:      	local.get	13
     122e:      	i32.const	700
     1231:      	f32.load	0
 			00001233:  R_WASM_MEMORY_ADDR_LEB	global+0
-    1238:      	f32.mul 
+    1238:      	f32.mul
     1239:      	i32.const	712
     123c:      	f32.load	0
 			0000123e:  R_WASM_MEMORY_ADDR_LEB	global+0
-    1243:      	f32.add 
-    1244:      	f32.add 
+    1243:      	f32.add
+    1244:      	f32.add
     1245:      	local.tee	15
-    1247:      	f32.div 
+    1247:      	f32.div
     1248:      	f32.const	0x1p16
-    124d:      	f32.mul 
+    124d:      	f32.mul
     124e:      	local.tee	16
-    1250:      	f32.mul 
+    1250:      	f32.mul
     1251:      	i32.trunc_sat_f32_s
-    1253:      	i32.add 
+    1253:      	i32.add
     1254:      	local.tee	5
     1256:      	i32.const	0
     1258:      	local.get	5
@@ -2141,22 +2141,22 @@ Disassembly of section CODE:
     127e:      	i32.const	680
     1281:      	f32.load	0
 			00001283:  R_WASM_MEMORY_ADDR_LEB	global+0
-    1288:      	f32.mul 
+    1288:      	f32.mul
     1289:      	local.get	13
     128b:      	i32.const	692
     128e:      	f32.load	0
 			00001290:  R_WASM_MEMORY_ADDR_LEB	global+0
-    1295:      	f32.mul 
+    1295:      	f32.mul
     1296:      	i32.const	704
     1299:      	f32.load	0
 			0000129b:  R_WASM_MEMORY_ADDR_LEB	global+0
-    12a0:      	f32.add 
-    12a1:      	f32.add 
+    12a0:      	f32.add
+    12a1:      	f32.add
     12a2:      	local.tee	12
     12a4:      	local.get	16
-    12a6:      	f32.mul 
+    12a6:      	f32.mul
     12a7:      	i32.trunc_sat_f32_s
-    12a9:      	i32.add 
+    12a9:      	i32.add
     12aa:      	local.tee	5
     12ac:      	i32.const	0
     12ae:      	local.get	5
@@ -2173,24 +2173,24 @@ Disassembly of section CODE:
 			000012c1:  R_WASM_MEMORY_ADDR_LEB	global+0
     12c6:      	local.get	8
     12c8:      	i32.const	320
-    12cb:      	i32.mul 
-    12cc:      	i32.add 
+    12cb:      	i32.mul
+    12cc:      	i32.add
     12cd:      	local.get	11
-    12cf:      	i32.add 
+    12cf:      	i32.add
     12d0:      	local.set	9
     12d2:      	local.get	10
     12d4:      	i32.const	22
     12d6:      	i32.shr_u
     12d7:      	i32.const	511
-    12da:      	i32.and 
+    12da:      	i32.and
     12db:      	local.set	10
     12dd:      	loop    	                        # label35:
     12df:      	local.get	18
     12e1:      	local.set	11
     12e3:      	local.get	17
     12e5:      	local.set	19
-    12e7:      	block   	
-    12e9:      	block   	
+    12e7:      	block
+    12e9:      	block
     12eb:      	local.get	10
     12ed:      	local.tee	8
     12ef:      	local.get	8
@@ -2200,7 +2200,7 @@ Disassembly of section CODE:
     12f7:      	i32.lt_u
     12f8:      	f32.select
     12f9:      	local.tee	5
-    12fb:      	i32.sub 
+    12fb:      	i32.sub
     12fc:      	local.tee	10
     12fe:      	i32.eqz
     12ff:      	br_if   	0                       # 0: down to label37
@@ -2213,20 +2213,20 @@ Disassembly of section CODE:
 			00001312:  R_WASM_MEMORY_ADDR_LEB	global+0
     1317:      	local.get	3
     1319:      	local.get	14
-    131b:      	f32.add 
+    131b:      	f32.add
     131c:      	local.tee	14
     131e:      	f32.const	0x1p0
     1323:      	local.get	2
     1325:      	local.get	15
-    1327:      	f32.add 
+    1327:      	f32.add
     1328:      	local.tee	15
-    132a:      	f32.div 
+    132a:      	f32.div
     132b:      	f32.const	0x1p16
-    1330:      	f32.mul 
+    1330:      	f32.mul
     1331:      	local.tee	13
-    1333:      	f32.mul 
+    1333:      	f32.mul
     1334:      	i32.trunc_sat_f32_s
-    1336:      	i32.add 
+    1336:      	i32.add
     1337:      	local.tee	6
     1339:      	i32.const	32
     133b:      	local.get	6
@@ -2239,7 +2239,7 @@ Disassembly of section CODE:
     1346:      	f32.select
     1347:      	local.tee	17
     1349:      	local.get	19
-    134b:      	i32.sub 
+    134b:      	i32.sub
     134c:      	i32.const	32
     134e:      	i32.div_s
     134f:      	local.set	7
@@ -2252,12 +2252,12 @@ Disassembly of section CODE:
 			00001362:  R_WASM_MEMORY_ADDR_LEB	global+0
     1367:      	local.get	4
     1369:      	local.get	12
-    136b:      	f32.add 
+    136b:      	f32.add
     136c:      	local.tee	12
     136e:      	local.get	13
-    1370:      	f32.mul 
+    1370:      	f32.mul
     1371:      	i32.trunc_sat_f32_s
-    1373:      	i32.add 
+    1373:      	i32.add
     1374:      	local.tee	6
     1376:      	i32.const	32
     1378:      	local.get	6
@@ -2270,7 +2270,7 @@ Disassembly of section CODE:
     1383:      	f32.select
     1384:      	local.tee	18
     1386:      	local.get	11
-    1388:      	i32.sub 
+    1388:      	i32.sub
     1389:      	i32.const	32
     138b:      	i32.div_s
     138c:      	local.set	6
@@ -2288,30 +2288,30 @@ Disassembly of section CODE:
 			000013ac:  R_WASM_MEMORY_ADDR_LEB	global+0
     13b1:      	local.get	5
     13b3:      	i32.const	-1
-    13b5:      	i32.add 
+    13b5:      	i32.add
     13b6:      	local.tee	20
     13b8:      	f32.convert_i32_s
     13b9:      	local.tee	13
-    13bb:      	f32.mul 
+    13bb:      	f32.mul
     13bc:      	local.get	14
-    13be:      	f32.add 
+    13be:      	f32.add
     13bf:      	local.tee	14
     13c1:      	f32.const	0x1p0
     13c6:      	i32.const	688
     13c9:      	f32.load	0
 			000013cb:  R_WASM_MEMORY_ADDR_LEB	global+0
     13d0:      	local.get	13
-    13d2:      	f32.mul 
+    13d2:      	f32.mul
     13d3:      	local.get	15
-    13d5:      	f32.add 
+    13d5:      	f32.add
     13d6:      	local.tee	15
-    13d8:      	f32.div 
+    13d8:      	f32.div
     13d9:      	f32.const	0x1p16
-    13de:      	f32.mul 
+    13de:      	f32.mul
     13df:      	local.tee	16
-    13e1:      	f32.mul 
+    13e1:      	f32.mul
     13e2:      	i32.trunc_sat_f32_s
-    13e4:      	i32.add 
+    13e4:      	i32.add
     13e5:      	local.tee	17
     13e7:      	i32.const	32
     13e9:      	local.get	17
@@ -2334,14 +2334,14 @@ Disassembly of section CODE:
     1410:      	f32.load	0
 			00001412:  R_WASM_MEMORY_ADDR_LEB	global+0
     1417:      	local.get	13
-    1419:      	f32.mul 
+    1419:      	f32.mul
     141a:      	local.get	12
-    141c:      	f32.add 
+    141c:      	f32.add
     141d:      	local.tee	12
     141f:      	local.get	16
-    1421:      	f32.mul 
+    1421:      	f32.mul
     1422:      	i32.trunc_sat_f32_s
-    1424:      	i32.add 
+    1424:      	i32.add
     1425:      	local.tee	18
     1427:      	i32.const	32
     1429:      	local.get	18
@@ -2361,15 +2361,15 @@ Disassembly of section CODE:
 			0000143f:  R_WASM_MEMORY_ADDR_SLEB	fixedReciprocal256+0
     1444:      	local.get	20
     1446:      	i32.const	2
-    1448:      	i32.shl 
-    1449:      	i32.add 
+    1448:      	i32.shl
+    1449:      	i32.add
     144a:      	i64.load32_s	0
     144d:      	local.tee	22
     144f:      	local.get	17
     1451:      	local.get	19
-    1453:      	i32.sub 
+    1453:      	i32.sub
     1454:      	i64.extend_i32_s
-    1455:      	i64.mul 
+    1455:      	i64.mul
     1456:      	i64.const	16
     1458:      	i64.shr_u
     1459:      	i32.wrap_i64
@@ -2377,9 +2377,9 @@ Disassembly of section CODE:
     145c:      	local.get	22
     145e:      	local.get	18
     1460:      	local.get	11
-    1462:      	i32.sub 
+    1462:      	i32.sub
     1463:      	i64.extend_i32_s
-    1464:      	i64.mul 
+    1464:      	i64.mul
     1465:      	i64.const	16
     1467:      	i64.shr_u
     1468:      	i32.wrap_i64
@@ -2389,50 +2389,50 @@ Disassembly of section CODE:
     146e:      	i32.load	0
 			00001470:  R_WASM_MEMORY_ADDR_LEB	r_drawsurf+0
     1475:      	i32.const	3
-    1477:      	i32.and 
+    1477:      	i32.and
     1478:      	local.set	8
     147a:      	local.get	7
     147c:      	i32.const	21
     147e:      	i32.shr_u
     147f:      	i32.const	1024
-    1482:      	i32.and 
+    1482:      	i32.and
     1483:      	local.get	7
-    1485:      	i32.add 
+    1485:      	i32.add
     1486:      	local.set	7
     1488:      	local.get	6
     148a:      	i32.const	21
     148c:      	i32.shr_u
     148d:      	i32.const	1024
-    1490:      	i32.and 
+    1490:      	i32.and
     1491:      	local.get	6
-    1493:      	i32.add 
+    1493:      	i32.add
     1494:      	local.set	6
     1496:      	i32.const	44
     1498:      	i32.load	0
 			0000149a:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     149f:      	i32.const	16
-    14a1:      	i32.shl 
+    14a1:      	i32.shl
     14a2:      	local.get	19
-    14a4:      	i32.add 
+    14a4:      	i32.add
     14a5:      	local.set	19
     14a7:      	i32.const	40
     14a9:      	i32.load	0
 			000014ab:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     14b0:      	i32.const	16
-    14b2:      	i32.shl 
+    14b2:      	i32.shl
     14b3:      	local.get	11
-    14b5:      	i32.add 
+    14b5:      	i32.add
     14b6:      	local.set	11
-    14b8:      	block   	
-    14ba:      	block   	
+    14b8:      	block
+    14ba:      	block
     14bc:      	i32.const	20
     14be:      	i32.load	0
 			000014c0:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     14c5:      	br_if   	0                       # 0: down to label39
-    14c7:      	block   	
-    14c9:      	block   	
-    14cb:      	block   	
-    14cd:      	block   	
+    14c7:      	block
+    14c9:      	block
+    14cb:      	block
+    14cd:      	block
     14cf:      	local.get	8
     14d1:      	br_table 	{0, 1, 2, 3, 0} # 1: down to label42
                                                 # 2: down to label41
@@ -2479,10 +2479,10 @@ Disassembly of section CODE:
 			00001525:  R_WASM_FUNCTION_INDEX_LEB	drawLitSpan3_1+0
     152a:      	br      	1                       # 1: down to label42
     152c:      	end
-    152d:      	block   	
-    152f:      	block   	
-    1531:      	block   	
-    1533:      	block   	
+    152d:      	block
+    152f:      	block
+    1531:      	block
+    1533:      	block
     1535:      	local.get	8
     1537:      	br_table 	{0, 1, 2, 3, 0} # 1: down to label46
                                                 # 2: down to label45
@@ -2530,7 +2530,7 @@ Disassembly of section CODE:
     1590:      	end
     1591:      	local.get	9
     1593:      	local.get	5
-    1595:      	i32.add 
+    1595:      	i32.add
     1596:      	local.set	9
     1598:      	local.get	10
     159a:      	i32.const	0
@@ -2546,11 +2546,11 @@ Disassembly of section CODE:
     15af:      	local.get	0
     15b1:      	i32.load	0
     15b4:      	i32.const	2
-    15b6:      	i32.shl 
+    15b6:      	i32.shl
     15b7:      	i32.const	32764
-    15bb:      	i32.and 
+    15bb:      	i32.and
     15bc:      	local.tee	8
-    15be:      	i32.add 
+    15be:      	i32.add
     15bf:      	local.set	0
     15c1:      	local.get	8
     15c3:      	br_if   	0                       # 0: down to label47
@@ -2563,17 +2563,17 @@ Disassembly of section CODE:
     15cf:      	f32.load	0
 			000015d1:  R_WASM_MEMORY_ADDR_LEB	global+0
     15d6:      	f32.const	0x1p15
-    15db:      	f32.mul 
+    15db:      	f32.mul
     15dc:      	f32.const	0x1p16
-    15e1:      	f32.mul 
+    15e1:      	f32.mul
     15e2:      	i32.trunc_sat_f32_s
     15e4:      	local.tee	2
     15e6:      	i32.const	1
-    15e8:      	i32.shl 
+    15e8:      	i32.shl
     15e9:      	local.set	3
     15eb:      	local.get	2
     15ed:      	i32.const	3
-    15ef:      	i32.mul 
+    15ef:      	i32.mul
     15f0:      	local.set	4
     15f2:      	i32.const	368
     15f5:      	i32.load	0
@@ -2589,21 +2589,21 @@ Disassembly of section CODE:
 			0000160c:  R_WASM_MEMORY_ADDR_LEB	global+0
     1611:      	local.get	0
     1613:      	local.get	5
-    1615:      	i32.sub 
+    1615:      	i32.sub
     1616:      	i32.const	2
     1618:      	i32.shr_s
-    1619:      	i32.add 
+    1619:      	i32.add
     161a:      	i32.load8_u	0
     161d:      	local.set	7
-    161f:      	block   	
-    1621:      	block   	
+    161f:      	block
+    1621:      	block
     1623:      	local.get	6
     1625:      	br_if   	0                       # 0: down to label50
     1627:      	local.get	1
     1629:      	local.get	7
     162b:      	i32.const	1
-    162d:      	i32.and 
-    162e:      	i32.ne  
+    162d:      	i32.and
+    162e:      	i32.ne
     162f:      	br_if   	1                       # 1: down to label49
     1631:      	end
     1632:      	local.get	0
@@ -2612,51 +2612,51 @@ Disassembly of section CODE:
     1639:      	i32.const	13
     163b:      	i32.shr_u
     163c:      	i32.const	511
-    163f:      	i32.and 
+    163f:      	i32.and
     1640:      	local.tee	9
     1642:      	f32.convert_i32_u
     1643:      	i32.const	688
     1646:      	f32.load	0
 			00001648:  R_WASM_MEMORY_ADDR_LEB	global+0
-    164d:      	f32.mul 
+    164d:      	f32.mul
     164e:      	local.get	7
     1650:      	f32.convert_i32_u
     1651:      	i32.const	700
     1654:      	f32.load	0
 			00001656:  R_WASM_MEMORY_ADDR_LEB	global+0
-    165b:      	f32.mul 
+    165b:      	f32.mul
     165c:      	i32.const	712
     165f:      	f32.load	0
 			00001661:  R_WASM_MEMORY_ADDR_LEB	global+0
-    1666:      	f32.add 
-    1667:      	f32.add 
+    1666:      	f32.add
+    1667:      	f32.add
     1668:      	f32.const	0x1p15
-    166d:      	f32.mul 
+    166d:      	f32.mul
     166e:      	f32.const	0x1p16
-    1673:      	f32.mul 
+    1673:      	f32.mul
     1674:      	i32.trunc_sat_f32_s
     1676:      	local.set	5
     1678:      	local.get	8
     167a:      	i32.const	22
     167c:      	i32.shr_u
     167d:      	i32.const	511
-    1680:      	i32.and 
+    1680:      	i32.and
     1681:      	local.set	10
-    1683:      	block   	
+    1683:      	block
     1685:      	i32.const	740
     1688:      	i32.load	0
 			0000168a:  R_WASM_MEMORY_ADDR_LEB	global+0
     168f:      	local.get	7
     1691:      	i32.const	640
-    1694:      	i32.mul 
-    1695:      	i32.add 
+    1694:      	i32.mul
+    1695:      	i32.add
     1696:      	local.get	9
     1698:      	i32.const	1
-    169a:      	i32.shl 
-    169b:      	i32.add 
+    169a:      	i32.shl
+    169b:      	i32.add
     169c:      	local.tee	7
     169e:      	i32.const	2
-    16a0:      	i32.and 
+    16a0:      	i32.and
     16a1:      	i32.eqz
     16a2:      	br_if   	0                       # 0: down to label51
     16a4:      	local.get	7
@@ -2666,18 +2666,18 @@ Disassembly of section CODE:
     16ab:      	i32.store16	0
     16ae:      	local.get	10
     16b0:      	i32.const	-1
-    16b2:      	i32.add 
+    16b2:      	i32.add
     16b3:      	local.set	10
     16b5:      	local.get	5
     16b7:      	local.get	2
-    16b9:      	i32.add 
+    16b9:      	i32.add
     16ba:      	local.set	5
     16bc:      	local.get	7
     16be:      	i32.const	2
-    16c0:      	i32.add 
+    16c0:      	i32.add
     16c1:      	local.set	7
     16c3:      	end
-    16c4:      	block   	
+    16c4:      	block
     16c6:      	local.get	10
     16c8:      	i32.const	4
     16ca:      	i32.lt_s
@@ -2686,56 +2686,56 @@ Disassembly of section CODE:
     16cf:      	i32.const	2
     16d1:      	i32.shr_u
     16d2:      	i32.const	1
-    16d4:      	i32.add 
+    16d4:      	i32.add
     16d5:      	local.set	8
     16d7:      	loop    	                        # label53:
     16d9:      	local.get	7
     16db:      	local.get	5
     16dd:      	local.get	2
-    16df:      	i32.add 
+    16df:      	i32.add
     16e0:      	local.tee	9
     16e2:      	i32.const	-65536
-    16e6:      	i32.and 
+    16e6:      	i32.and
     16e7:      	i64.extend_i32_u
     16e8:      	local.get	5
     16ea:      	i32.const	16
     16ec:      	i32.shr_s
     16ed:      	i64.extend_i32_s
-    16ee:      	i64.or  
+    16ee:      	i64.or
     16ef:      	local.get	3
     16f1:      	local.get	5
-    16f3:      	i32.add 
+    16f3:      	i32.add
     16f4:      	i32.const	-65536
-    16f8:      	i32.and 
+    16f8:      	i32.and
     16f9:      	i64.extend_i32_u
     16fa:      	i64.const	16
-    16fc:      	i64.shl 
-    16fd:      	i64.or  
+    16fc:      	i64.shl
+    16fd:      	i64.or
     16fe:      	local.get	4
     1700:      	local.get	5
-    1702:      	i32.add 
+    1702:      	i32.add
     1703:      	i32.const	-65536
-    1707:      	i32.and 
+    1707:      	i32.and
     1708:      	i64.extend_i32_u
     1709:      	i64.const	32
-    170b:      	i64.shl 
-    170c:      	i64.or  
+    170b:      	i64.shl
+    170c:      	i64.or
     170d:      	i64.store	0
     1710:      	local.get	7
     1712:      	i32.const	8
-    1714:      	i32.add 
+    1714:      	i32.add
     1715:      	local.set	7
     1717:      	local.get	9
     1719:      	local.get	2
-    171b:      	i32.add 
+    171b:      	i32.add
     171c:      	local.get	2
-    171e:      	i32.add 
+    171e:      	i32.add
     171f:      	local.get	2
-    1721:      	i32.add 
+    1721:      	i32.add
     1722:      	local.set	5
     1724:      	local.get	8
     1726:      	i32.const	-1
-    1728:      	i32.add 
+    1728:      	i32.add
     1729:      	local.tee	8
     172b:      	i32.const	1
     172d:      	i32.gt_u
@@ -2743,10 +2743,10 @@ Disassembly of section CODE:
     1730:      	end
     1731:      	local.get	10
     1733:      	i32.const	3
-    1735:      	i32.and 
+    1735:      	i32.and
     1736:      	local.set	10
     1738:      	end
-    1739:      	block   	
+    1739:      	block
     173b:      	local.get	10
     173d:      	i32.const	2
     173f:      	i32.lt_s
@@ -2754,27 +2754,27 @@ Disassembly of section CODE:
     1742:      	local.get	7
     1744:      	local.get	5
     1746:      	local.get	2
-    1748:      	i32.add 
+    1748:      	i32.add
     1749:      	local.tee	8
     174b:      	i32.const	-65536
-    174f:      	i32.and 
+    174f:      	i32.and
     1750:      	local.get	5
     1752:      	i32.const	16
     1754:      	i32.shr_s
-    1755:      	i32.or  
+    1755:      	i32.or
     1756:      	i32.store	0
     1759:      	local.get	7
     175b:      	i32.const	4
-    175d:      	i32.add 
+    175d:      	i32.add
     175e:      	local.set	7
     1760:      	local.get	8
     1762:      	local.get	2
-    1764:      	i32.add 
+    1764:      	i32.add
     1765:      	local.set	5
     1767:      	end
     1768:      	local.get	10
     176a:      	i32.const	1
-    176c:      	i32.and 
+    176c:      	i32.and
     176d:      	i32.eqz
     176e:      	br_if   	0                       # 0: down to label54
     1770:      	local.get	7
@@ -2783,11 +2783,11 @@ Disassembly of section CODE:
     1776:      	i32.shr_u
     1777:      	i32.store16	0
     177a:      	end
-    177b:      	block   	
+    177b:      	block
     177d:      	local.get	0
     177f:      	i32.load	0
     1782:      	i32.const	8191
-    1785:      	i32.and 
+    1785:      	i32.and
     1786:      	local.tee	7
     1788:      	i32.eqz
     1789:      	br_if   	0                       # 0: down to label55
@@ -2797,8 +2797,8 @@ Disassembly of section CODE:
     1795:      	local.tee	5
     1797:      	local.get	7
     1799:      	i32.const	2
-    179b:      	i32.shl 
-    179c:      	i32.add 
+    179b:      	i32.shl
+    179c:      	i32.add
     179d:      	local.set	0
     179f:      	br      	1                       # 1: down to label54
     17a1:      	end
@@ -2810,11 +2810,11 @@ Disassembly of section CODE:
     17a9:      	global.get	0
 			000017aa:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
     17af:      	i32.const	16
-    17b1:      	i32.sub 
+    17b1:      	i32.sub
     17b2:      	local.tee	2
     17b4:      	global.set	0
 			000017b5:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
-    17ba:      	block   	
+    17ba:      	block
     17bc:      	i32.const	0
     17be:      	i64.load	0
 			000017c0:  R_WASM_MEMORY_ADDR_LEB	port_game_render_context+0
@@ -2824,18 +2824,18 @@ Disassembly of section CODE:
     17ca:      	i32.load8_u	84
 			000017cc:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_unavailable+0
     17d1:      	i32.const	1
-    17d3:      	i32.and 
+    17d3:      	i32.and
     17d4:      	br_if   	0                       # 0: down to label56
-    17d6:      	block   	
-    17d8:      	block   	
+    17d6:      	block
+    17d8:      	block
     17da:      	i32.const	0
     17dc:      	i32.load	0
 			000017de:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+0
     17e3:      	br_if   	0                       # 0: down to label58
-    17e5:      	block   	
+    17e5:      	block
     17e7:      	local.get	2
     17e9:      	i32.const	8
-    17eb:      	i32.add 
+    17eb:      	i32.add
     17ec:      	call	3
 			000017ed:  R_WASM_FUNCTION_INDEX_LEB	port_frame_scratch+0
     17f2:      	local.tee	3
@@ -2869,7 +2869,7 @@ Disassembly of section CODE:
     1839:      	i32.const	0
     183b:      	local.get	4
     183d:      	i32.const	-262145
-    1841:      	i32.add 
+    1841:      	i32.add
     1842:      	i32.const	-262129
     1846:      	i32.lt_u
     1847:      	local.tee	4
@@ -2901,43 +2901,43 @@ Disassembly of section CODE:
 			00001884:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+16
     1889:      	i32.eqz
     188a:      	br_if   	0                       # 0: down to label59
-    188c:      	block   	
+    188c:      	block
     188e:      	local.get	0
     1890:      	i32.load16_s	24
     1893:      	i32.const	4
     1895:      	i32.shr_s
     1896:      	i32.const	1
-    1898:      	i32.add 
+    1898:      	i32.add
     1899:      	i64.extend_i32_s
     189a:      	local.get	0
     189c:      	i32.load16_s	26
     189f:      	i32.const	4
     18a1:      	i32.shr_s
     18a2:      	i32.const	1
-    18a4:      	i32.add 
+    18a4:      	i32.add
     18a5:      	i64.extend_i32_s
-    18a6:      	i64.mul 
+    18a6:      	i64.mul
     18a7:      	i64.const	2
-    18a9:      	i64.shl 
+    18a9:      	i64.shl
     18aa:      	local.get	4
     18ac:      	i32.load	0
     18af:      	local.tee	0
     18b1:      	i32.const	10
     18b3:      	i32.shr_u
     18b4:      	i32.const	1023
-    18b7:      	i32.and 
+    18b7:      	i32.and
     18b8:      	local.get	1
     18ba:      	i32.shr_u
     18bb:      	local.get	0
     18bd:      	i32.const	1023
-    18c0:      	i32.and 
+    18c0:      	i32.and
     18c1:      	local.get	1
     18c3:      	i32.shr_u
-    18c4:      	i32.mul 
+    18c4:      	i32.mul
     18c5:      	i32.const	18596
-    18c9:      	i32.add 
+    18c9:      	i32.add
     18ca:      	i64.extend_i32_u
-    18cb:      	i64.add 
+    18cb:      	i64.add
     18cc:      	i32.const	0
     18ce:      	i32.const	0
     18d0:      	i32.load	12
@@ -2945,7 +2945,7 @@ Disassembly of section CODE:
     18d7:      	i32.const	0
     18d9:      	i32.load	8
 			000018db:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+8
-    18e0:      	i32.sub 
+    18e0:      	i32.sub
     18e1:      	i32.const	0
     18e3:      	i32.load	20
 			000018e5:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+20
@@ -2957,7 +2957,7 @@ Disassembly of section CODE:
     18f1:      	i32.load	76
 			000018f3:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_texture_count+0
     18f8:      	i32.const	64
-    18fb:      	i32.ne  
+    18fb:      	i32.ne
     18fc:      	br_if   	1                       # 1: down to label59
     18fe:      	end
     18ff:      	call	9
@@ -2971,16 +2971,16 @@ Disassembly of section CODE:
     1913:      	i32.load8_u	84
 			00001915:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_unavailable+0
     191a:      	i32.const	1
-    191c:      	i32.and 
+    191c:      	i32.and
     191d:      	br_if   	0                       # 0: down to label60
     191f:      	i32.const	0
     1921:      	i32.load	0
 			00001923:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+0
     1928:      	br_if   	0                       # 0: down to label60
-    192a:      	block   	
+    192a:      	block
     192c:      	local.get	2
     192e:      	i32.const	12
-    1930:      	i32.add 
+    1930:      	i32.add
     1931:      	call	3
 			00001932:  R_WASM_FUNCTION_INDEX_LEB	port_frame_scratch+0
     1937:      	local.tee	1
@@ -3014,7 +3014,7 @@ Disassembly of section CODE:
     197e:      	i32.const	0
     1980:      	local.get	0
     1982:      	i32.const	-262145
-    1986:      	i32.add 
+    1986:      	i32.add
     1987:      	i32.const	-262129
     198b:      	i32.lt_u
     198c:      	f32.select
@@ -3027,14 +3027,14 @@ Disassembly of section CODE:
     199f:      	end
     19a0:      	local.get	2
     19a2:      	i32.const	16
-    19a4:      	i32.add 
+    19a4:      	i32.add
     19a5:      	global.set	0
 			000019a6:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
     19ab:      	end
 
 000019ac <D_DrawSpans8>:
 
-    19ae:      	block   	
+    19ae:      	block
     19b0:      	local.get	0
     19b2:      	i32.const	0
     19b4:      	call	15
@@ -3052,13 +3052,13 @@ Disassembly of section CODE:
     19d1:      	global.get	0
 			000019d2:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
     19d7:      	i32.const	176
-    19da:      	i32.sub 
+    19da:      	i32.sub
     19db:      	local.tee	2
     19dd:      	global.set	0
 			000019de:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
     19e3:      	i32.const	0
     19e5:      	local.set	3
-    19e7:      	block   	
+    19e7:      	block
     19e9:      	local.get	0
     19eb:      	i32.eqz
     19ec:      	br_if   	0                       # 0: down to label63
@@ -3071,20 +3071,20 @@ Disassembly of section CODE:
     19fc:      	i32.load8_u	84
 			000019fe:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_unavailable+0
     1a03:      	i32.const	1
-    1a05:      	i32.and 
+    1a05:      	i32.and
     1a06:      	br_if   	0                       # 0: down to label63
     1a08:      	i32.const	0
     1a0a:      	local.set	3
-    1a0c:      	block   	
-    1a0e:      	block   	
+    1a0c:      	block
+    1a0e:      	block
     1a10:      	i32.const	0
     1a12:      	i32.load	0
 			00001a14:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+0
     1a19:      	br_if   	0                       # 0: down to label65
-    1a1b:      	block   	
+    1a1b:      	block
     1a1d:      	local.get	2
     1a1f:      	i32.const	24
-    1a21:      	i32.add 
+    1a21:      	i32.add
     1a22:      	call	3
 			00001a23:  R_WASM_FUNCTION_INDEX_LEB	port_frame_scratch+0
     1a28:      	local.tee	4
@@ -3122,7 +3122,7 @@ Disassembly of section CODE:
     1a77:      	i32.const	0
     1a79:      	local.get	5
     1a7b:      	i32.const	-262145
-    1a7f:      	i32.add 
+    1a7f:      	i32.add
     1a80:      	i32.const	-262129
     1a84:      	i32.lt_u
     1a85:      	local.tee	5
@@ -3279,14 +3279,14 @@ Disassembly of section CODE:
     1c26:      	i32.const	4
     1c28:      	local.get	11
     1c2a:      	i32.const	3
-    1c2c:      	i32.and 
-    1c2d:      	i32.sub 
+    1c2c:      	i32.and
+    1c2d:      	i32.sub
     1c2e:      	local.tee	18
     1c30:      	i32.shr_s
     1c31:      	local.set	19
     1c33:      	i32.const	0
     1c35:      	local.set	20
-    1c37:      	block   	
+    1c37:      	block
     1c39:      	local.get	1
     1c3b:      	i32.eqz
     1c3c:      	br_if   	0                       # 0: down to label67
@@ -3304,10 +3304,10 @@ Disassembly of section CODE:
     1c61:      	i32.const	640
     1c64:      	local.set	20
     1c66:      	end
-    1c67:      	block   	
+    1c67:      	block
     1c69:      	local.get	19
     1c6b:      	i32.const	32768
-    1c6f:      	i32.add 
+    1c6f:      	i32.add
     1c70:      	i32.const	65535
     1c74:      	i32.le_u
     1c75:      	br_if   	0                       # 0: down to label68
@@ -3315,13 +3315,13 @@ Disassembly of section CODE:
     1c79:      	local.set	3
     1c7b:      	br      	1                       # 1: down to label67
     1c7d:      	end
-    1c7e:      	block   	
+    1c7e:      	block
     1c80:      	local.get	5
     1c82:      	local.get	18
     1c84:      	i32.shr_s
     1c85:      	local.tee	21
     1c87:      	i32.const	32768
-    1c8b:      	i32.add 
+    1c8b:      	i32.add
     1c8c:      	i32.const	65535
     1c90:      	i32.le_u
     1c91:      	br_if   	0                       # 0: down to label69
@@ -3333,8 +3333,8 @@ Disassembly of section CODE:
     1c9d:      	i32.load	0
 			00001c9f:  R_WASM_MEMORY_ADDR_LEB	global+0
     1ca4:      	local.set	22
-    1ca6:      	block   	
-    1ca8:      	block   	
+    1ca6:      	block
+    1ca8:      	block
     1caa:      	i32.const	368
     1cad:      	i32.load	0
 			00001caf:  R_WASM_MEMORY_ADDR_LEB	global+0
@@ -3353,10 +3353,10 @@ Disassembly of section CODE:
     1ccc:      	local.get	22
     1cce:      	local.get	0
     1cd0:      	local.get	23
-    1cd2:      	i32.sub 
+    1cd2:      	i32.sub
     1cd3:      	i32.const	2
     1cd5:      	i32.shr_s
-    1cd6:      	i32.add 
+    1cd6:      	i32.add
     1cd7:      	i32.load8_u	0
     1cda:      	local.set	5
     1cdc:      	local.get	0
@@ -3365,34 +3365,34 @@ Disassembly of section CODE:
     1ce3:      	local.get	3
     1ce5:      	i32.const	3462
 			00001ce6:  R_WASM_MEMORY_ADDR_SLEB	pxa_frame_rows+2054
-    1ceb:      	i32.add 
+    1ceb:      	i32.add
     1cec:      	i32.const	0
     1cee:      	i32.store16	0
     1cf1:      	local.get	3
     1cf3:      	i32.const	3460
 			00001cf4:  R_WASM_MEMORY_ADDR_SLEB	pxa_frame_rows+2052
-    1cf9:      	i32.add 
+    1cf9:      	i32.add
     1cfa:      	local.get	26
     1cfc:      	i32.const	22
     1cfe:      	i32.shr_u
     1cff:      	i32.const	511
-    1d02:      	i32.and 
+    1d02:      	i32.and
     1d03:      	i32.store16	0
     1d06:      	local.get	3
     1d08:      	i32.const	3458
 			00001d09:  R_WASM_MEMORY_ADDR_SLEB	pxa_frame_rows+2050
-    1d0e:      	i32.add 
+    1d0e:      	i32.add
     1d0f:      	local.get	5
     1d11:      	i32.store16	0
     1d14:      	local.get	3
     1d16:      	i32.const	3456
 			00001d17:  R_WASM_MEMORY_ADDR_SLEB	pxa_frame_rows+2048
-    1d1c:      	i32.add 
+    1d1c:      	i32.add
     1d1d:      	local.get	26
     1d1f:      	i32.const	13
     1d21:      	i32.shr_u
     1d22:      	i32.const	511
-    1d25:      	i32.and 
+    1d25:      	i32.and
     1d26:      	i32.store16	0
     1d29:      	local.get	0
     1d2b:      	i32.load	0
@@ -3400,18 +3400,18 @@ Disassembly of section CODE:
     1d30:      	i32.const	22
     1d32:      	i32.shr_u
     1d33:      	i32.const	511
-    1d36:      	i32.and 
+    1d36:      	i32.and
     1d37:      	local.get	0
     1d39:      	i32.const	13
     1d3b:      	i32.shr_u
     1d3c:      	i32.const	511
-    1d3f:      	i32.and 
-    1d40:      	i32.add 
+    1d3f:      	i32.and
+    1d40:      	i32.add
     1d41:      	local.tee	26
     1d43:      	local.get	5
     1d45:      	i32.const	320
-    1d48:      	i32.mul 
-    1d49:      	i32.add 
+    1d48:      	i32.mul
+    1d49:      	i32.add
     1d4a:      	local.tee	27
     1d4c:      	local.get	25
     1d4e:      	local.get	27
@@ -3421,11 +3421,11 @@ Disassembly of section CODE:
     1d54:      	local.set	25
     1d56:      	local.get	26
     1d58:      	i32.const	1
-    1d5a:      	i32.shl 
+    1d5a:      	i32.shl
     1d5b:      	local.get	20
     1d5d:      	local.get	5
-    1d5f:      	i32.mul 
-    1d60:      	i32.add 
+    1d5f:      	i32.mul
+    1d60:      	i32.add
     1d61:      	local.tee	5
     1d63:      	local.get	4
     1d65:      	local.get	5
@@ -3433,31 +3433,31 @@ Disassembly of section CODE:
     1d69:      	i32.gt_u
     1d6a:      	f32.select
     1d6b:      	local.set	4
-    1d6d:      	block   	
+    1d6d:      	block
     1d6f:      	local.get	0
     1d71:      	i32.const	8191
-    1d74:      	i32.and 
+    1d74:      	i32.and
     1d75:      	local.tee	0
     1d77:      	br_if   	0                       # 0: down to label73
     1d79:      	local.get	24
     1d7b:      	i32.const	1
-    1d7d:      	i32.add 
+    1d7d:      	i32.add
     1d7e:      	local.set	27
     1d80:      	br      	3                       # 3: down to label70
     1d82:      	end
     1d83:      	local.get	24
     1d85:      	i32.const	1
-    1d87:      	i32.add 
+    1d87:      	i32.add
     1d88:      	local.set	24
     1d8a:      	local.get	23
     1d8c:      	local.get	0
     1d8e:      	i32.const	2
-    1d90:      	i32.shl 
-    1d91:      	i32.add 
+    1d90:      	i32.shl
+    1d91:      	i32.add
     1d92:      	local.set	0
     1d94:      	local.get	3
     1d96:      	i32.const	8
-    1d98:      	i32.add 
+    1d98:      	i32.add
     1d99:      	local.tee	3
     1d9b:      	br_if   	0                       # 0: down to label73
     1d9d:      	end
@@ -3469,7 +3469,7 @@ Disassembly of section CODE:
     1da7:      	local.get	0
     1da9:      	i32.const	2
     1dab:      	i32.shr_s
-    1dac:      	i32.add 
+    1dac:      	i32.add
     1dad:      	i32.load8_u	0
     1db0:      	local.set	3
     1db2:      	i32.const	0
@@ -3481,7 +3481,7 @@ Disassembly of section CODE:
     1dbf:      	i32.const	22
     1dc1:      	i32.shr_u
     1dc2:      	i32.const	511
-    1dc5:      	i32.and 
+    1dc5:      	i32.and
     1dc6:      	i32.store16	1412
 			00001dc8:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_rows+4
     1dcd:      	i32.const	0
@@ -3493,7 +3493,7 @@ Disassembly of section CODE:
     1ddc:      	i32.const	13
     1dde:      	i32.shr_u
     1ddf:      	i32.const	511
-    1de2:      	i32.and 
+    1de2:      	i32.and
     1de3:      	i32.store16	1408
 			00001de5:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_rows+0
     1dea:      	i32.const	0
@@ -3506,46 +3506,46 @@ Disassembly of section CODE:
     1dfc:      	i32.const	22
     1dfe:      	i32.shr_u
     1dff:      	i32.const	511
-    1e02:      	i32.and 
+    1e02:      	i32.and
     1e03:      	local.get	0
     1e05:      	i32.const	13
     1e07:      	i32.shr_u
     1e08:      	i32.const	511
-    1e0b:      	i32.and 
-    1e0c:      	i32.add 
+    1e0b:      	i32.and
+    1e0c:      	i32.add
     1e0d:      	local.tee	0
     1e0f:      	local.get	3
     1e11:      	i32.const	320
-    1e14:      	i32.mul 
-    1e15:      	i32.add 
+    1e14:      	i32.mul
+    1e15:      	i32.add
     1e16:      	local.set	25
     1e18:      	i32.const	1
     1e1a:      	local.set	27
     1e1c:      	local.get	0
     1e1e:      	i32.const	1
-    1e20:      	i32.shl 
+    1e20:      	i32.shl
     1e21:      	local.get	20
     1e23:      	local.get	3
-    1e25:      	i32.mul 
-    1e26:      	i32.add 
+    1e25:      	i32.mul
+    1e26:      	i32.add
     1e27:      	local.set	4
     1e29:      	end
     1e2a:      	local.get	15
     1e2c:      	i32.const	2
-    1e2e:      	i32.shl 
+    1e2e:      	i32.shl
     1e2f:      	i32.const	262140
-    1e33:      	i32.and 
+    1e33:      	i32.and
     1e34:      	local.set	0
     1e36:      	local.get	14
     1e38:      	i32.const	4
     1e3a:      	i32.shr_s
     1e3b:      	i32.const	1
-    1e3d:      	i32.add 
+    1e3d:      	i32.add
     1e3e:      	local.tee	14
     1e40:      	i32.const	65535
-    1e44:      	i32.and 
+    1e44:      	i32.and
     1e45:      	local.set	3
-    1e47:      	block   	
+    1e47:      	block
     1e49:      	local.get	1
     1e4b:      	i32.eqz
     1e4c:      	br_if   	0                       # 0: down to label74
@@ -3555,28 +3555,28 @@ Disassembly of section CODE:
     1e55:      	end
     1e56:      	local.get	0
     1e58:      	local.get	3
-    1e5a:      	i32.mul 
+    1e5a:      	i32.mul
     1e5b:      	local.set	23
     1e5d:      	local.get	13
     1e5f:      	local.get	12
-    1e61:      	i32.mul 
+    1e61:      	i32.mul
     1e62:      	local.set	26
     1e64:      	i32.const	20
     1e66:      	i32.load	0
 			00001e68:  R_WASM_MEMORY_ADDR_LEB	r_drawsurf+0
     1e6d:      	local.get	11
     1e6f:      	i32.const	2
-    1e71:      	i32.shl 
-    1e72:      	i32.add 
+    1e71:      	i32.shl
+    1e72:      	i32.add
     1e73:      	i32.const	12
-    1e75:      	i32.add 
+    1e75:      	i32.add
     1e76:      	i32.load	0
     1e79:      	local.set	4
     1e7b:      	i32.const	0
     1e7d:      	local.set	3
     1e7f:      	i32.const	0
     1e81:      	local.set	0
-    1e83:      	block   	
+    1e83:      	block
     1e85:      	i32.const	0
     1e87:      	i32.load	76
 			00001e89:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_texture_count+0
@@ -3589,33 +3589,33 @@ Disassembly of section CODE:
     1e9b:      	local.get	1
     1e9d:      	local.set	5
     1e9f:      	loop    	                        # label76:
-    1ea1:      	block   	
+    1ea1:      	block
     1ea3:      	local.get	0
     1ea5:      	i32.load	0
     1ea8:      	local.get	4
-    1eaa:      	i32.ne  
+    1eaa:      	i32.ne
     1eab:      	br_if   	0                       # 0: down to label77
     1ead:      	local.get	0
     1eaf:      	i32.const	4
-    1eb1:      	i32.add 
+    1eb1:      	i32.add
     1eb2:      	i32.load	0
     1eb5:      	local.get	26
-    1eb7:      	i32.ne  
+    1eb7:      	i32.ne
     1eb8:      	br_if   	0                       # 0: down to label77
     1eba:      	local.get	0
     1ebc:      	i32.const	8
-    1ebe:      	i32.add 
+    1ebe:      	i32.add
     1ebf:      	i32.load	0
     1ec2:      	local.set	0
     1ec4:      	br      	2                       # 2: down to label75
     1ec6:      	end
     1ec7:      	local.get	0
     1ec9:      	i32.const	12
-    1ecb:      	i32.add 
+    1ecb:      	i32.add
     1ecc:      	local.set	0
     1ece:      	local.get	5
     1ed0:      	i32.const	-1
-    1ed2:      	i32.add 
+    1ed2:      	i32.add
     1ed3:      	local.tee	5
     1ed5:      	br_if   	0                       # 0: down to label77
     1ed7:      	end
@@ -3630,31 +3630,31 @@ Disassembly of section CODE:
     1ee5:      	local.get	23
     1ee7:      	local.get	27
     1ee9:      	i32.const	3
-    1eeb:      	i32.shl 
+    1eeb:      	i32.shl
     1eec:      	local.tee	11
     1eee:      	i32.const	152
-    1ef1:      	i32.add 
+    1ef1:      	i32.add
     1ef2:      	local.tee	22
-    1ef4:      	i32.add 
+    1ef4:      	i32.add
     1ef5:      	i32.const	12
-    1ef7:      	i32.add 
+    1ef7:      	i32.add
     1ef8:      	i64.extend_i32_u
-    1ef9:      	i64.add 
+    1ef9:      	i64.add
     1efa:      	local.tee	28
     1efc:      	i64.const	16384
-    1f00:      	i64.add 
+    1f00:      	i64.add
     1f01:      	local.get	28
     1f03:      	i32.const	0
     1f05:      	i32.load	80
 			00001f07:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_colormap_source+0
     1f0c:      	local.get	8
-    1f0e:      	i32.ne  
+    1f0e:      	i32.ne
     1f0f:      	i32.const	0
     1f11:      	i32.load	72
 			00001f13:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_colormap+0
     1f18:      	local.tee	20
     1f1a:      	i32.eqz
-    1f1b:      	i32.or  
+    1f1b:      	i32.or
     1f1c:      	local.tee	5
     1f1e:      	f32.select
     1f1f:      	i32.const	0
@@ -3664,7 +3664,7 @@ Disassembly of section CODE:
     1f2a:      	i32.const	0
     1f2c:      	i32.load	8
 			00001f2e:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+8
-    1f33:      	i32.sub 
+    1f33:      	i32.sub
     1f34:      	i32.const	0
     1f36:      	i32.load	20
 			00001f38:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+20
@@ -3687,7 +3687,7 @@ Disassembly of section CODE:
     1f62:      	i64.load	0:p2align=2
 			00001f64:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+0
     1f69:      	i64.store	0
-    1f6c:      	block   	
+    1f6c:      	block
     1f6e:      	local.get	0
     1f70:      	br_if   	0                       # 0: down to label78
     1f72:      	local.get	7
@@ -3696,7 +3696,7 @@ Disassembly of section CODE:
 			00001f77:  R_WASM_FUNCTION_INDEX_LEB	Pxa_StoreProjectedSource+0
     1f7c:      	local.set	0
     1f7e:      	end
-    1f7f:      	block   	
+    1f7f:      	block
     1f81:      	local.get	5
     1f83:      	i32.eqz
     1f84:      	br_if   	0                       # 0: down to label79
@@ -3710,7 +3710,7 @@ Disassembly of section CODE:
     1f9b:      	end
     1f9c:      	i32.const	0
     1f9e:      	local.set	3
-    1fa0:      	block   	
+    1fa0:      	block
     1fa2:      	i32.const	0
     1fa4:      	i32.load	20
 			00001fa6:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+20
@@ -3727,22 +3727,22 @@ Disassembly of section CODE:
     1fc0:      	br_if   	0                       # 0: down to label80
     1fc2:      	local.get	5
     1fc4:      	local.get	23
-    1fc6:      	i32.sub 
+    1fc6:      	i32.sub
     1fc7:      	local.tee	5
     1fc9:      	local.get	5
     1fcb:      	i32.const	0
     1fcd:      	i32.load	0
 			00001fcf:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+0
     1fd4:      	local.tee	7
-    1fd6:      	i32.add 
+    1fd6:      	i32.add
     1fd7:      	i32.const	3
-    1fd9:      	i32.and 
+    1fd9:      	i32.and
     1fda:      	local.tee	8
     1fdc:      	i32.lt_u
     1fdd:      	br_if   	0                       # 0: down to label80
     1fdf:      	local.get	5
     1fe1:      	local.get	8
-    1fe3:      	i32.sub 
+    1fe3:      	i32.sub
     1fe4:      	local.tee	29
     1fe6:      	i32.const	0
     1fe8:      	i32.load	8
@@ -3753,19 +3753,19 @@ Disassembly of section CODE:
     1ff4:      	local.get	29
     1ff6:      	i32.store	12
 			00001ff8:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+12
-    1ffd:      	block   	
-    1fff:      	block   	
+    1ffd:      	block
+    1fff:      	block
     2001:      	local.get	5
     2003:      	local.get	8
-    2005:      	i32.eq  
+    2005:      	i32.eq
     2006:      	br_if   	0                       # 0: down to label82
     2008:      	local.get	7
     200a:      	local.get	29
-    200c:      	i32.add 
+    200c:      	i32.add
     200d:      	i32.const	0
 			0000200e:  R_WASM_MEMORY_ADDR_SLEB	global+0
     2013:      	i32.const	3556
-    2016:      	i32.add 
+    2016:      	i32.add
     2017:      	local.get	23
     2019:      	call	17
 			0000201a:  R_WASM_FUNCTION_INDEX_LEB	Pxa_CopyProjectedSource+0
@@ -3777,7 +3777,7 @@ Disassembly of section CODE:
     202c:      	i32.load	16
 			0000202e:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+16
     2033:      	i32.const	1024
-    2036:      	i32.ne  
+    2036:      	i32.ne
     2037:      	br_if   	1                       # 1: down to label81
     2039:      	br      	2                       # 2: down to label80
     203b:      	end
@@ -3785,7 +3785,7 @@ Disassembly of section CODE:
     203e:      	i32.load	16
 			00002040:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+16
     2045:      	i32.const	1024
-    2048:      	i32.eq  
+    2048:      	i32.eq
     2049:      	br_if   	1                       # 1: down to label81
     204b:      	end
     204c:      	local.get	22
@@ -3796,7 +3796,7 @@ Disassembly of section CODE:
     2059:      	i32.load	8
 			0000205b:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+8
     2060:      	local.tee	8
-    2062:      	i32.sub 
+    2062:      	i32.sub
     2063:      	i32.gt_u
     2064:      	br_if   	0                       # 0: down to label82
     2066:      	i32.const	2
@@ -3805,11 +3805,11 @@ Disassembly of section CODE:
     206c:      	f32.select
     206d:      	local.get	16
     206f:      	i32.eqz
-    2070:      	i32.or  
+    2070:      	i32.or
     2071:      	local.set	7
     2073:      	local.get	24
     2075:      	i32.const	3
-    2077:      	i32.shl 
+    2077:      	i32.shl
     2078:      	local.set	24
     207a:      	i32.const	-8
     207c:      	local.set	5
@@ -3817,22 +3817,22 @@ Disassembly of section CODE:
     2080:      	local.get	5
     2082:      	i32.const	1420
 			00002083:  R_WASM_MEMORY_ADDR_SLEB	pxa_frame_rows+12
-    2088:      	i32.add 
+    2088:      	i32.add
     2089:      	i32.load16_u	0
     208c:      	i32.eqz
     208d:      	br_if   	1                       # 1: down to label82
     208f:      	local.get	5
     2091:      	i32.const	1422
 			00002092:  R_WASM_MEMORY_ADDR_SLEB	pxa_frame_rows+14
-    2097:      	i32.add 
+    2097:      	i32.add
     2098:      	i32.load16_u	0
     209b:      	br_if   	1                       # 1: down to label82
     209d:      	local.get	24
     209f:      	local.get	5
     20a1:      	i32.const	8
-    20a3:      	i32.add 
+    20a3:      	i32.add
     20a4:      	local.tee	5
-    20a6:      	i32.ne  
+    20a6:      	i32.ne
     20a7:      	br_if   	0                       # 0: up to label83
     20a9:      	end
     20aa:      	local.get	2
@@ -3906,32 +3906,32 @@ Disassembly of section CODE:
 			00002160:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+0
     2165:      	local.tee	5
     2167:      	local.get	8
-    2169:      	i32.add 
+    2169:      	i32.add
     216a:      	local.set	3
-    216c:      	block   	
+    216c:      	block
     216e:      	local.get	5
     2170:      	i32.eqz
     2171:      	br_if   	0                       # 0: down to label84
     2173:      	local.get	3
     2175:      	local.get	2
     2177:      	i32.const	104
-    217a:      	i32.add 
+    217a:      	i32.add
     217b:      	i32.const	72
     217e:      	call	10
 			0000217f:  R_WASM_FUNCTION_INDEX_LEB	pxa_game_render_wire_copy+0
     2184:      	end
     2185:      	local.get	3
     2187:      	i32.const	72
-    218a:      	i32.add 
+    218a:      	i32.add
     218b:      	local.get	2
     218d:      	i32.const	24
-    218f:      	i32.add 
+    218f:      	i32.add
     2190:      	i32.const	80
     2193:      	call	10
 			00002194:  R_WASM_FUNCTION_INDEX_LEB	pxa_game_render_wire_copy+0
     2199:      	local.get	3
     219b:      	i32.const	152
-    219e:      	i32.add 
+    219e:      	i32.add
     219f:      	i32.const	1408
 			000021a0:  R_WASM_MEMORY_ADDR_SLEB	pxa_frame_rows+0
     21a5:      	local.get	11
@@ -3942,7 +3942,7 @@ Disassembly of section CODE:
     21b1:      	i32.load	8
 			000021b3:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+8
     21b8:      	local.get	22
-    21ba:      	i32.add 
+    21ba:      	i32.add
     21bb:      	i32.store	8
 			000021bd:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+8
     21c2:      	i32.const	1
@@ -3952,15 +3952,15 @@ Disassembly of section CODE:
     21ca:      	i32.load	16
 			000021cc:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+16
     21d1:      	i32.const	1
-    21d3:      	i32.add 
+    21d3:      	i32.add
     21d4:      	i32.store	16
 			000021d6:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+16
-    21db:      	block   	
+    21db:      	block
     21dd:      	local.get	1
     21df:      	i32.const	63
     21e1:      	i32.gt_u
     21e2:      	br_if   	0                       # 0: down to label85
-    21e4:      	block   	
+    21e4:      	block
     21e6:      	local.get	1
     21e8:      	i32.eqz
     21e9:      	br_if   	0                       # 0: down to label86
@@ -3969,20 +3969,20 @@ Disassembly of section CODE:
     21f1:      	local.set	5
     21f3:      	local.get	1
     21f5:      	local.set	25
-    21f7:      	block   	
+    21f7:      	block
     21f9:      	loop    	                        # label88:
     21fb:      	local.get	5
     21fd:      	i32.load	0
     2200:      	local.get	0
-    2202:      	i32.eq  
+    2202:      	i32.eq
     2203:      	br_if   	1                       # 1: down to label87
     2205:      	local.get	5
     2207:      	i32.const	12
-    2209:      	i32.add 
+    2209:      	i32.add
     220a:      	local.set	5
     220c:      	local.get	25
     220e:      	i32.const	-1
-    2210:      	i32.add 
+    2210:      	i32.add
     2211:      	local.tee	25
     2213:      	br_if   	0                       # 0: up to label88
     2215:      	br      	2                       # 2: down to label86
@@ -3993,7 +3993,7 @@ Disassembly of section CODE:
     221d:      	end
     221e:      	local.get	1
     2220:      	i32.const	12
-    2222:      	i32.mul 
+    2222:      	i32.mul
     2223:      	local.tee	5
     2225:      	local.get	0
     2227:      	i32.store	3464
@@ -4009,7 +4009,7 @@ Disassembly of section CODE:
     2244:      	i32.const	0
     2246:      	local.get	1
     2248:      	i32.const	1
-    224a:      	i32.add 
+    224a:      	i32.add
     224b:      	i32.store	76
 			0000224d:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_texture_count+0
     2252:      	end
@@ -4043,7 +4043,7 @@ Disassembly of section CODE:
     229d:      	end
     229e:      	local.get	2
     22a0:      	i32.const	176
-    22a3:      	i32.add 
+    22a3:      	i32.add
     22a4:      	global.set	0
 			000022a5:  R_WASM_GLOBAL_INDEX_LEB	__stack_pointer+0
     22aa:      	local.get	3
@@ -4053,12 +4053,12 @@ Disassembly of section CODE:
         .local i32, i32, i32, i32
     22b2:      	i32.const	0
     22b4:      	local.set	2
-    22b6:      	block   	
+    22b6:      	block
     22b8:      	i32.const	0
     22ba:      	i32.load	20
 			000022bc:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+20
     22c1:      	br_if   	0                       # 0: down to label89
-    22c3:      	block   	
+    22c3:      	block
     22c5:      	local.get	1
     22c7:      	br_if   	0                       # 0: down to label90
     22c9:      	i32.const	0
@@ -4068,7 +4068,7 @@ Disassembly of section CODE:
     22d4:      	i32.const	0
     22d6:      	return
     22d7:      	end
-    22d8:      	block   	
+    22d8:      	block
     22da:      	i32.const	0
     22dc:      	i32.load	12
 			000022de:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+12
@@ -4083,20 +4083,20 @@ Disassembly of section CODE:
     22f5:      	i32.const	0
     22f7:      	return
     22f8:      	end
-    22f9:      	block   	
-    22fb:      	block   	
+    22f9:      	block
+    22fb:      	block
     22fd:      	local.get	2
     22ff:      	local.get	1
-    2301:      	i32.sub 
+    2301:      	i32.sub
     2302:      	local.tee	3
     2304:      	local.get	3
     2306:      	i32.const	0
     2308:      	i32.load	0
 			0000230a:  R_WASM_MEMORY_ADDR_LEB	pxa_frame_batch+0
     230f:      	local.tee	4
-    2311:      	i32.add 
+    2311:      	i32.add
     2312:      	i32.const	3
-    2314:      	i32.and 
+    2314:      	i32.and
     2315:      	local.tee	5
     2317:      	i32.lt_u
     2318:      	br_if   	0                       # 0: down to label93
@@ -4104,7 +4104,7 @@ Disassembly of section CODE:
     231c:      	local.set	2
     231e:      	local.get	3
     2320:      	local.get	5
-    2322:      	i32.sub 
+    2322:      	i32.sub
     2323:      	local.tee	3
     2325:      	i32.const	0
     2327:      	i32.load	8
@@ -4128,7 +4128,7 @@ Disassembly of section CODE:
     234f:      	br_if   	0                       # 0: down to label93
     2351:      	local.get	4
     2353:      	local.get	3
-    2355:      	i32.add 
+    2355:      	i32.add
     2356:      	local.get	0
     2358:      	local.get	1
     235a:      	call	17
@@ -4141,7 +4141,7 @@ Disassembly of section CODE:
 
 00002368 <Pxa_CopyProjectedSource>:
 
-    236a:      	block   	
+    236a:      	block
     236c:      	local.get	2
     236e:      	i32.eqz
     236f:      	br_if   	0                       # 0: down to label94
@@ -4163,44 +4163,44 @@ Disassembly of section CODE:
     2392:      	local.set	6
     2394:      	local.get	0
     2396:      	local.get	1
-    2398:      	i32.add 
+    2398:      	i32.add
     2399:      	local.set	7
     239b:      	local.get	4
     239d:      	i32.const	6
-    239f:      	i32.shl 
+    239f:      	i32.shl
     23a0:      	i32.const	-65536
-    23a4:      	i32.and 
+    23a4:      	i32.and
     23a5:      	local.set	8
     23a7:      	local.get	2
     23a9:      	i32.const	6
-    23ab:      	i32.shl 
+    23ab:      	i32.shl
     23ac:      	i32.const	-65536
-    23b0:      	i32.and 
+    23b0:      	i32.and
     23b1:      	local.set	1
     23b3:      	local.get	5
     23b5:      	i32.const	6
-    23b7:      	i32.shl 
+    23b7:      	i32.shl
     23b8:      	i32.const	-65536
-    23bc:      	i32.and 
+    23bc:      	i32.and
     23bd:      	local.set	9
     23bf:      	local.get	3
     23c1:      	i32.const	6
-    23c3:      	i32.shl 
+    23c3:      	i32.shl
     23c4:      	i32.const	-65536
-    23c8:      	i32.and 
+    23c8:      	i32.and
     23c9:      	local.set	4
     23cb:      	i32.const	24
     23cd:      	i32.load	0
 			000023cf:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     23d4:      	local.tee	10
     23d6:      	i32.const	-1
-    23d8:      	i32.add 
+    23d8:      	i32.add
     23d9:      	local.set	11
     23db:      	i32.const	36
     23dd:      	i32.load	0
 			000023df:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     23e4:      	i32.const	-1
-    23e6:      	i32.add 
+    23e6:      	i32.add
     23e7:      	local.set	12
     23e9:      	i32.const	60
     23eb:      	i32.load	0
@@ -4226,16 +4226,16 @@ Disassembly of section CODE:
     241f:      	i32.const	26
     2421:      	i32.shr_s
     2422:      	i32.const	2
-    2424:      	i32.shl 
-    2425:      	i32.add 
+    2424:      	i32.shl
+    2425:      	i32.add
     2426:      	local.get	4
     2428:      	i32.const	26
     242a:      	i32.shr_s
     242b:      	local.get	15
-    242d:      	i32.mul 
+    242d:      	i32.mul
     242e:      	i32.const	2
-    2430:      	i32.shl 
-    2431:      	i32.add 
+    2430:      	i32.shl
+    2431:      	i32.add
     2432:      	local.tee	5
     2434:      	i32.load	4
     2437:      	local.tee	2
@@ -4243,21 +4243,21 @@ Disassembly of section CODE:
     243b:      	i32.shr_s
     243c:      	local.get	2
     243e:      	i32.extend16_s
-    243f:      	i32.sub 
+    243f:      	i32.sub
     2440:      	local.get	4
     2442:      	i32.const	22
     2444:      	i32.shr_s
     2445:      	local.tee	3
     2447:      	i32.const	15
-    2449:      	i32.and 
+    2449:      	i32.and
     244a:      	local.tee	17
-    244c:      	i32.mul 
+    244c:      	i32.mul
     244d:      	local.get	2
     244f:      	i32.const	16
-    2451:      	i32.shl 
+    2451:      	i32.shl
     2452:      	i32.const	12
     2454:      	i32.shr_s
-    2455:      	i32.add 
+    2455:      	i32.add
     2456:      	local.get	5
     2458:      	i32.load	0
     245b:      	local.tee	2
@@ -4265,57 +4265,57 @@ Disassembly of section CODE:
     245f:      	i32.shr_s
     2460:      	local.get	2
     2462:      	i32.extend16_s
-    2463:      	i32.sub 
+    2463:      	i32.sub
     2464:      	local.get	17
-    2466:      	i32.mul 
+    2466:      	i32.mul
     2467:      	local.get	2
     2469:      	i32.const	16
-    246b:      	i32.shl 
+    246b:      	i32.shl
     246c:      	i32.const	12
     246e:      	i32.shr_s
-    246f:      	i32.add 
+    246f:      	i32.add
     2470:      	local.tee	2
-    2472:      	i32.sub 
+    2472:      	i32.sub
     2473:      	local.get	1
     2475:      	i32.const	22
     2477:      	i32.shr_s
     2478:      	local.tee	5
     247a:      	i32.const	15
-    247c:      	i32.and 
-    247d:      	i32.mul 
+    247c:      	i32.and
+    247d:      	i32.mul
     247e:      	i32.const	4
     2480:      	i32.shr_u
     2481:      	local.get	2
-    2483:      	i32.add 
+    2483:      	i32.add
     2484:      	local.get	6
-    2486:      	i32.and 
-    2487:      	i32.add 
+    2486:      	i32.and
+    2487:      	i32.add
     2488:      	local.get	14
     248a:      	local.get	3
     248c:      	local.get	12
-    248e:      	i32.and 
+    248e:      	i32.and
     248f:      	local.get	10
-    2491:      	i32.mul 
-    2492:      	i32.add 
+    2491:      	i32.mul
+    2492:      	i32.add
     2493:      	local.get	5
     2495:      	local.get	11
-    2497:      	i32.and 
-    2498:      	i32.add 
+    2497:      	i32.and
+    2498:      	i32.add
     2499:      	i32.load8_u	0
-    249c:      	i32.add 
+    249c:      	i32.add
     249d:      	i32.load8_u	0
     24a0:      	i32.store8	0
     24a3:      	local.get	1
     24a5:      	local.get	8
-    24a7:      	i32.add 
+    24a7:      	i32.add
     24a8:      	local.set	1
     24aa:      	local.get	4
     24ac:      	local.get	9
-    24ae:      	i32.add 
+    24ae:      	i32.add
     24af:      	local.set	4
     24b1:      	local.get	0
     24b3:      	i32.const	1
-    24b5:      	i32.add 
+    24b5:      	i32.add
     24b6:      	local.tee	0
     24b8:      	local.get	7
     24ba:      	i32.lt_u
@@ -4334,44 +4334,44 @@ Disassembly of section CODE:
     24d4:      	local.set	6
     24d6:      	local.get	0
     24d8:      	local.get	1
-    24da:      	i32.add 
+    24da:      	i32.add
     24db:      	local.set	7
     24dd:      	local.get	4
     24df:      	i32.const	6
-    24e1:      	i32.shl 
+    24e1:      	i32.shl
     24e2:      	i32.const	-65536
-    24e6:      	i32.and 
+    24e6:      	i32.and
     24e7:      	local.set	8
     24e9:      	local.get	2
     24eb:      	i32.const	6
-    24ed:      	i32.shl 
+    24ed:      	i32.shl
     24ee:      	i32.const	-65536
-    24f2:      	i32.and 
+    24f2:      	i32.and
     24f3:      	local.set	1
     24f5:      	local.get	5
     24f7:      	i32.const	6
-    24f9:      	i32.shl 
+    24f9:      	i32.shl
     24fa:      	i32.const	-65536
-    24fe:      	i32.and 
+    24fe:      	i32.and
     24ff:      	local.set	9
     2501:      	local.get	3
     2503:      	i32.const	6
-    2505:      	i32.shl 
+    2505:      	i32.shl
     2506:      	i32.const	-65536
-    250a:      	i32.and 
+    250a:      	i32.and
     250b:      	local.set	4
     250d:      	i32.const	24
     250f:      	i32.load	0
 			00002511:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     2516:      	local.tee	10
     2518:      	i32.const	-1
-    251a:      	i32.add 
+    251a:      	i32.add
     251b:      	local.set	11
     251d:      	i32.const	36
     251f:      	i32.load	0
 			00002521:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     2526:      	i32.const	-1
-    2528:      	i32.add 
+    2528:      	i32.add
     2529:      	local.set	12
     252b:      	i32.const	60
     252d:      	i32.load	0
@@ -4397,16 +4397,16 @@ Disassembly of section CODE:
     2561:      	i32.const	25
     2563:      	i32.shr_s
     2564:      	i32.const	2
-    2566:      	i32.shl 
-    2567:      	i32.add 
+    2566:      	i32.shl
+    2567:      	i32.add
     2568:      	local.get	4
     256a:      	i32.const	25
     256c:      	i32.shr_s
     256d:      	local.get	15
-    256f:      	i32.mul 
+    256f:      	i32.mul
     2570:      	i32.const	2
-    2572:      	i32.shl 
-    2573:      	i32.add 
+    2572:      	i32.shl
+    2573:      	i32.add
     2574:      	local.tee	5
     2576:      	i32.load	4
     2579:      	local.tee	2
@@ -4414,21 +4414,21 @@ Disassembly of section CODE:
     257d:      	i32.shr_s
     257e:      	local.get	2
     2580:      	i32.extend16_s
-    2581:      	i32.sub 
+    2581:      	i32.sub
     2582:      	local.get	4
     2584:      	i32.const	22
     2586:      	i32.shr_s
     2587:      	local.tee	3
     2589:      	i32.const	7
-    258b:      	i32.and 
+    258b:      	i32.and
     258c:      	local.tee	17
-    258e:      	i32.mul 
+    258e:      	i32.mul
     258f:      	local.get	2
     2591:      	i32.const	16
-    2593:      	i32.shl 
+    2593:      	i32.shl
     2594:      	i32.const	13
     2596:      	i32.shr_s
-    2597:      	i32.add 
+    2597:      	i32.add
     2598:      	local.get	5
     259a:      	i32.load	0
     259d:      	local.tee	2
@@ -4436,57 +4436,57 @@ Disassembly of section CODE:
     25a1:      	i32.shr_s
     25a2:      	local.get	2
     25a4:      	i32.extend16_s
-    25a5:      	i32.sub 
+    25a5:      	i32.sub
     25a6:      	local.get	17
-    25a8:      	i32.mul 
+    25a8:      	i32.mul
     25a9:      	local.get	2
     25ab:      	i32.const	16
-    25ad:      	i32.shl 
+    25ad:      	i32.shl
     25ae:      	i32.const	13
     25b0:      	i32.shr_s
-    25b1:      	i32.add 
+    25b1:      	i32.add
     25b2:      	local.tee	2
-    25b4:      	i32.sub 
+    25b4:      	i32.sub
     25b5:      	local.get	1
     25b7:      	i32.const	22
     25b9:      	i32.shr_s
     25ba:      	local.tee	5
     25bc:      	i32.const	7
-    25be:      	i32.and 
-    25bf:      	i32.mul 
+    25be:      	i32.and
+    25bf:      	i32.mul
     25c0:      	i32.const	3
     25c2:      	i32.shr_u
     25c3:      	local.get	2
-    25c5:      	i32.add 
+    25c5:      	i32.add
     25c6:      	local.get	6
-    25c8:      	i32.and 
-    25c9:      	i32.add 
+    25c8:      	i32.and
+    25c9:      	i32.add
     25ca:      	local.get	14
     25cc:      	local.get	3
     25ce:      	local.get	12
-    25d0:      	i32.and 
+    25d0:      	i32.and
     25d1:      	local.get	10
-    25d3:      	i32.mul 
-    25d4:      	i32.add 
+    25d3:      	i32.mul
+    25d4:      	i32.add
     25d5:      	local.get	5
     25d7:      	local.get	11
-    25d9:      	i32.and 
-    25da:      	i32.add 
+    25d9:      	i32.and
+    25da:      	i32.add
     25db:      	i32.load8_u	0
-    25de:      	i32.add 
+    25de:      	i32.add
     25df:      	i32.load8_u	0
     25e2:      	i32.store8	0
     25e5:      	local.get	1
     25e7:      	local.get	8
-    25e9:      	i32.add 
+    25e9:      	i32.add
     25ea:      	local.set	1
     25ec:      	local.get	4
     25ee:      	local.get	9
-    25f0:      	i32.add 
+    25f0:      	i32.add
     25f1:      	local.set	4
     25f3:      	local.get	0
     25f5:      	i32.const	1
-    25f7:      	i32.add 
+    25f7:      	i32.add
     25f8:      	local.tee	0
     25fa:      	local.get	7
     25fc:      	i32.lt_u
@@ -4505,44 +4505,44 @@ Disassembly of section CODE:
     2616:      	local.set	6
     2618:      	local.get	0
     261a:      	local.get	1
-    261c:      	i32.add 
+    261c:      	i32.add
     261d:      	local.set	7
     261f:      	local.get	4
     2621:      	i32.const	6
-    2623:      	i32.shl 
+    2623:      	i32.shl
     2624:      	i32.const	-65536
-    2628:      	i32.and 
+    2628:      	i32.and
     2629:      	local.set	8
     262b:      	local.get	2
     262d:      	i32.const	6
-    262f:      	i32.shl 
+    262f:      	i32.shl
     2630:      	i32.const	-65536
-    2634:      	i32.and 
+    2634:      	i32.and
     2635:      	local.set	1
     2637:      	local.get	5
     2639:      	i32.const	6
-    263b:      	i32.shl 
+    263b:      	i32.shl
     263c:      	i32.const	-65536
-    2640:      	i32.and 
+    2640:      	i32.and
     2641:      	local.set	9
     2643:      	local.get	3
     2645:      	i32.const	6
-    2647:      	i32.shl 
+    2647:      	i32.shl
     2648:      	i32.const	-65536
-    264c:      	i32.and 
+    264c:      	i32.and
     264d:      	local.set	4
     264f:      	i32.const	24
     2651:      	i32.load	0
 			00002653:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     2658:      	local.tee	10
     265a:      	i32.const	-1
-    265c:      	i32.add 
+    265c:      	i32.add
     265d:      	local.set	11
     265f:      	i32.const	36
     2661:      	i32.load	0
 			00002663:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     2668:      	i32.const	-1
-    266a:      	i32.add 
+    266a:      	i32.add
     266b:      	local.set	12
     266d:      	i32.const	60
     266f:      	i32.load	0
@@ -4568,16 +4568,16 @@ Disassembly of section CODE:
     26a3:      	i32.const	24
     26a5:      	i32.shr_s
     26a6:      	i32.const	2
-    26a8:      	i32.shl 
-    26a9:      	i32.add 
+    26a8:      	i32.shl
+    26a9:      	i32.add
     26aa:      	local.get	4
     26ac:      	i32.const	24
     26ae:      	i32.shr_s
     26af:      	local.get	15
-    26b1:      	i32.mul 
+    26b1:      	i32.mul
     26b2:      	i32.const	2
-    26b4:      	i32.shl 
-    26b5:      	i32.add 
+    26b4:      	i32.shl
+    26b5:      	i32.add
     26b6:      	local.tee	5
     26b8:      	i32.load	4
     26bb:      	local.tee	2
@@ -4585,21 +4585,21 @@ Disassembly of section CODE:
     26bf:      	i32.shr_s
     26c0:      	local.get	2
     26c2:      	i32.extend16_s
-    26c3:      	i32.sub 
+    26c3:      	i32.sub
     26c4:      	local.get	4
     26c6:      	i32.const	22
     26c8:      	i32.shr_s
     26c9:      	local.tee	3
     26cb:      	i32.const	3
-    26cd:      	i32.and 
+    26cd:      	i32.and
     26ce:      	local.tee	17
-    26d0:      	i32.mul 
+    26d0:      	i32.mul
     26d1:      	local.get	2
     26d3:      	i32.const	16
-    26d5:      	i32.shl 
+    26d5:      	i32.shl
     26d6:      	i32.const	14
     26d8:      	i32.shr_s
-    26d9:      	i32.add 
+    26d9:      	i32.add
     26da:      	local.get	5
     26dc:      	i32.load	0
     26df:      	local.tee	2
@@ -4607,57 +4607,57 @@ Disassembly of section CODE:
     26e3:      	i32.shr_s
     26e4:      	local.get	2
     26e6:      	i32.extend16_s
-    26e7:      	i32.sub 
+    26e7:      	i32.sub
     26e8:      	local.get	17
-    26ea:      	i32.mul 
+    26ea:      	i32.mul
     26eb:      	local.get	2
     26ed:      	i32.const	16
-    26ef:      	i32.shl 
+    26ef:      	i32.shl
     26f0:      	i32.const	14
     26f2:      	i32.shr_s
-    26f3:      	i32.add 
+    26f3:      	i32.add
     26f4:      	local.tee	2
-    26f6:      	i32.sub 
+    26f6:      	i32.sub
     26f7:      	local.get	1
     26f9:      	i32.const	22
     26fb:      	i32.shr_s
     26fc:      	local.tee	5
     26fe:      	i32.const	3
-    2700:      	i32.and 
-    2701:      	i32.mul 
+    2700:      	i32.and
+    2701:      	i32.mul
     2702:      	i32.const	2
     2704:      	i32.shr_u
     2705:      	local.get	2
-    2707:      	i32.add 
+    2707:      	i32.add
     2708:      	local.get	6
-    270a:      	i32.and 
-    270b:      	i32.add 
+    270a:      	i32.and
+    270b:      	i32.add
     270c:      	local.get	14
     270e:      	local.get	3
     2710:      	local.get	12
-    2712:      	i32.and 
+    2712:      	i32.and
     2713:      	local.get	10
-    2715:      	i32.mul 
-    2716:      	i32.add 
+    2715:      	i32.mul
+    2716:      	i32.add
     2717:      	local.get	5
     2719:      	local.get	11
-    271b:      	i32.and 
-    271c:      	i32.add 
+    271b:      	i32.and
+    271c:      	i32.add
     271d:      	i32.load8_u	0
-    2720:      	i32.add 
+    2720:      	i32.add
     2721:      	i32.load8_u	0
     2724:      	i32.store8	0
     2727:      	local.get	1
     2729:      	local.get	8
-    272b:      	i32.add 
+    272b:      	i32.add
     272c:      	local.set	1
     272e:      	local.get	4
     2730:      	local.get	9
-    2732:      	i32.add 
+    2732:      	i32.add
     2733:      	local.set	4
     2735:      	local.get	0
     2737:      	i32.const	1
-    2739:      	i32.add 
+    2739:      	i32.add
     273a:      	local.tee	0
     273c:      	local.get	7
     273e:      	i32.lt_u
@@ -4676,44 +4676,44 @@ Disassembly of section CODE:
     2758:      	local.set	6
     275a:      	local.get	0
     275c:      	local.get	1
-    275e:      	i32.add 
+    275e:      	i32.add
     275f:      	local.set	7
     2761:      	local.get	4
     2763:      	i32.const	6
-    2765:      	i32.shl 
+    2765:      	i32.shl
     2766:      	i32.const	-65536
-    276a:      	i32.and 
+    276a:      	i32.and
     276b:      	local.set	8
     276d:      	local.get	2
     276f:      	i32.const	6
-    2771:      	i32.shl 
+    2771:      	i32.shl
     2772:      	i32.const	-65536
-    2776:      	i32.and 
+    2776:      	i32.and
     2777:      	local.set	1
     2779:      	local.get	5
     277b:      	i32.const	6
-    277d:      	i32.shl 
+    277d:      	i32.shl
     277e:      	i32.const	-65536
-    2782:      	i32.and 
+    2782:      	i32.and
     2783:      	local.set	9
     2785:      	local.get	3
     2787:      	i32.const	6
-    2789:      	i32.shl 
+    2789:      	i32.shl
     278a:      	i32.const	-65536
-    278e:      	i32.and 
+    278e:      	i32.and
     278f:      	local.set	4
     2791:      	i32.const	24
     2793:      	i32.load	0
 			00002795:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     279a:      	local.tee	10
     279c:      	i32.const	-1
-    279e:      	i32.add 
+    279e:      	i32.add
     279f:      	local.set	11
     27a1:      	i32.const	36
     27a3:      	i32.load	0
 			000027a5:  R_WASM_MEMORY_ADDR_LEB	sdd+0
     27aa:      	i32.const	-1
-    27ac:      	i32.add 
+    27ac:      	i32.add
     27ad:      	local.set	12
     27af:      	i32.const	60
     27b1:      	i32.load	0
@@ -4739,16 +4739,16 @@ Disassembly of section CODE:
     27e5:      	i32.const	23
     27e7:      	i32.shr_s
     27e8:      	i32.const	2
-    27ea:      	i32.shl 
-    27eb:      	i32.add 
+    27ea:      	i32.shl
+    27eb:      	i32.add
     27ec:      	local.get	4
     27ee:      	i32.const	23
     27f0:      	i32.shr_s
     27f1:      	local.get	15
-    27f3:      	i32.mul 
+    27f3:      	i32.mul
     27f4:      	i32.const	2
-    27f6:      	i32.shl 
-    27f7:      	i32.add 
+    27f6:      	i32.shl
+    27f7:      	i32.add
     27f8:      	local.tee	5
     27fa:      	i32.load	4
     27fd:      	local.tee	2
@@ -4756,21 +4756,21 @@ Disassembly of section CODE:
     2801:      	i32.shr_s
     2802:      	local.get	2
     2804:      	i32.extend16_s
-    2805:      	i32.sub 
+    2805:      	i32.sub
     2806:      	local.get	4
     2808:      	i32.const	22
     280a:      	i32.shr_s
     280b:      	local.tee	3
     280d:      	i32.const	1
-    280f:      	i32.and 
+    280f:      	i32.and
     2810:      	local.tee	17
-    2812:      	i32.mul 
+    2812:      	i32.mul
     2813:      	local.get	2
     2815:      	i32.const	16
-    2817:      	i32.shl 
+    2817:      	i32.shl
     2818:      	i32.const	15
     281a:      	i32.shr_s
-    281b:      	i32.add 
+    281b:      	i32.add
     281c:      	local.get	5
     281e:      	i32.load	0
     2821:      	local.tee	2
@@ -4778,17 +4778,17 @@ Disassembly of section CODE:
     2825:      	i32.shr_s
     2826:      	local.get	2
     2828:      	i32.extend16_s
-    2829:      	i32.sub 
+    2829:      	i32.sub
     282a:      	local.get	17
-    282c:      	i32.mul 
+    282c:      	i32.mul
     282d:      	local.get	2
     282f:      	i32.const	16
-    2831:      	i32.shl 
+    2831:      	i32.shl
     2832:      	i32.const	15
     2834:      	i32.shr_s
-    2835:      	i32.add 
+    2835:      	i32.add
     2836:      	local.tee	2
-    2838:      	i32.sub 
+    2838:      	i32.sub
     2839:      	i32.const	1
     283b:      	i32.shr_u
     283c:      	i32.const	0
@@ -4797,39 +4797,39 @@ Disassembly of section CODE:
     2842:      	i32.shr_s
     2843:      	local.tee	5
     2845:      	i32.const	1
-    2847:      	i32.and 
+    2847:      	i32.and
     2848:      	f32.select
     2849:      	local.get	2
-    284b:      	i32.add 
+    284b:      	i32.add
     284c:      	local.get	6
-    284e:      	i32.and 
-    284f:      	i32.add 
+    284e:      	i32.and
+    284f:      	i32.add
     2850:      	local.get	14
     2852:      	local.get	3
     2854:      	local.get	12
-    2856:      	i32.and 
+    2856:      	i32.and
     2857:      	local.get	10
-    2859:      	i32.mul 
-    285a:      	i32.add 
+    2859:      	i32.mul
+    285a:      	i32.add
     285b:      	local.get	5
     285d:      	local.get	11
-    285f:      	i32.and 
-    2860:      	i32.add 
+    285f:      	i32.and
+    2860:      	i32.add
     2861:      	i32.load8_u	0
-    2864:      	i32.add 
+    2864:      	i32.add
     2865:      	i32.load8_u	0
     2868:      	i32.store8	0
     286b:      	local.get	1
     286d:      	local.get	8
-    286f:      	i32.add 
+    286f:      	i32.add
     2870:      	local.set	1
     2872:      	local.get	4
     2874:      	local.get	9
-    2876:      	i32.add 
+    2876:      	i32.add
     2877:      	local.set	4
     2879:      	local.get	0
     287b:      	i32.const	1
-    287d:      	i32.add 
+    287d:      	i32.add
     287e:      	local.tee	0
     2880:      	local.get	7
     2882:      	i32.lt_u
@@ -4848,31 +4848,31 @@ Disassembly of section CODE:
     28a2:      	local.set	6
     28a4:      	local.get	0
     28a6:      	local.get	1
-    28a8:      	i32.add 
+    28a8:      	i32.add
     28a9:      	local.set	7
     28ab:      	local.get	4
     28ad:      	i32.const	6
-    28af:      	i32.shl 
+    28af:      	i32.shl
     28b0:      	i32.const	-65536
-    28b4:      	i32.and 
+    28b4:      	i32.and
     28b5:      	local.set	8
     28b7:      	local.get	2
     28b9:      	i32.const	6
-    28bb:      	i32.shl 
+    28bb:      	i32.shl
     28bc:      	i32.const	-65536
-    28c0:      	i32.and 
+    28c0:      	i32.and
     28c1:      	local.set	1
     28c3:      	local.get	5
     28c5:      	i32.const	6
-    28c7:      	i32.shl 
+    28c7:      	i32.shl
     28c8:      	i32.const	-65536
-    28cc:      	i32.and 
+    28cc:      	i32.and
     28cd:      	local.set	9
     28cf:      	local.get	3
     28d1:      	i32.const	6
-    28d3:      	i32.shl 
+    28d3:      	i32.shl
     28d4:      	i32.const	-65536
-    28d8:      	i32.and 
+    28d8:      	i32.and
     28d9:      	local.set	4
     28db:      	i32.const	36
     28dd:      	i64.load32_s	0
@@ -4916,16 +4916,16 @@ Disassembly of section CODE:
     2940:      	i32.const	26
     2942:      	i32.shr_s
     2943:      	i32.const	2
-    2945:      	i32.shl 
-    2946:      	i32.add 
+    2945:      	i32.shl
+    2946:      	i32.add
     2947:      	local.get	4
     2949:      	i32.const	26
     294b:      	i32.shr_s
     294c:      	local.get	15
-    294e:      	i32.mul 
+    294e:      	i32.mul
     294f:      	i32.const	2
-    2951:      	i32.shl 
-    2952:      	i32.add 
+    2951:      	i32.shl
+    2952:      	i32.add
     2953:      	local.tee	5
     2955:      	i32.load	4
     2958:      	local.tee	2
@@ -4933,20 +4933,20 @@ Disassembly of section CODE:
     295c:      	i32.shr_s
     295d:      	local.get	2
     295f:      	i32.extend16_s
-    2960:      	i32.sub 
+    2960:      	i32.sub
     2961:      	local.get	4
     2963:      	i32.const	22
     2965:      	i32.shr_u
     2966:      	i32.const	15
-    2968:      	i32.and 
+    2968:      	i32.and
     2969:      	local.tee	3
-    296b:      	i32.mul 
+    296b:      	i32.mul
     296c:      	local.get	2
     296e:      	i32.const	16
-    2970:      	i32.shl 
+    2970:      	i32.shl
     2971:      	i32.const	12
     2973:      	i32.shr_s
-    2974:      	i32.add 
+    2974:      	i32.add
     2975:      	local.get	5
     2977:      	i32.load	0
     297a:      	local.tee	2
@@ -4954,72 +4954,72 @@ Disassembly of section CODE:
     297e:      	i32.shr_s
     297f:      	local.get	2
     2981:      	i32.extend16_s
-    2982:      	i32.sub 
+    2982:      	i32.sub
     2983:      	local.get	3
-    2985:      	i32.mul 
+    2985:      	i32.mul
     2986:      	local.get	2
     2988:      	i32.const	16
-    298a:      	i32.shl 
+    298a:      	i32.shl
     298b:      	i32.const	12
     298d:      	i32.shr_s
-    298e:      	i32.add 
+    298e:      	i32.add
     298f:      	local.tee	2
-    2991:      	i32.sub 
+    2991:      	i32.sub
     2992:      	local.get	1
     2994:      	i32.const	22
     2996:      	i32.shr_u
     2997:      	i32.const	15
-    2999:      	i32.and 
-    299a:      	i32.mul 
+    2999:      	i32.and
+    299a:      	i32.mul
     299b:      	i32.const	4
     299d:      	i32.shr_u
     299e:      	local.get	2
-    29a0:      	i32.add 
+    29a0:      	i32.add
     29a1:      	local.get	6
-    29a3:      	i32.and 
-    29a4:      	i32.add 
+    29a3:      	i32.and
+    29a4:      	i32.add
     29a5:      	local.get	14
     29a7:      	local.get	17
     29a9:      	local.get	4
     29ab:      	i32.const	6
     29ad:      	i32.shr_s
     29ae:      	local.get	11
-    29b0:      	i32.mul 
+    29b0:      	i32.mul
     29b1:      	i64.extend_i32_u
     29b2:      	local.get	10
-    29b4:      	i64.mul 
+    29b4:      	i64.mul
     29b5:      	i64.const	32
     29b7:      	i64.shr_u
     29b8:      	i32.wrap_i64
-    29b9:      	i32.mul 
-    29ba:      	i32.add 
+    29b9:      	i32.mul
+    29ba:      	i32.add
     29bb:      	local.get	1
     29bd:      	i32.const	6
     29bf:      	i32.shr_s
     29c0:      	local.get	12
-    29c2:      	i32.mul 
+    29c2:      	i32.mul
     29c3:      	i64.extend_i32_u
     29c4:      	local.get	18
-    29c6:      	i64.mul 
+    29c6:      	i64.mul
     29c7:      	i64.const	32
     29c9:      	i64.shr_u
     29ca:      	i32.wrap_i64
-    29cb:      	i32.add 
+    29cb:      	i32.add
     29cc:      	i32.load8_u	0
-    29cf:      	i32.add 
+    29cf:      	i32.add
     29d0:      	i32.load8_u	0
     29d3:      	i32.store8	0
     29d6:      	local.get	1
     29d8:      	local.get	8
-    29da:      	i32.add 
+    29da:      	i32.add
     29db:      	local.set	1
     29dd:      	local.get	4
     29df:      	local.get	9
-    29e1:      	i32.add 
+    29e1:      	i32.add
     29e2:      	local.set	4
     29e4:      	local.get	0
     29e6:      	i32.const	1
-    29e8:      	i32.add 
+    29e8:      	i32.add
     29e9:      	local.tee	0
     29eb:      	local.get	7
     29ed:      	i32.lt_u
@@ -5038,31 +5038,31 @@ Disassembly of section CODE:
     2a0d:      	local.set	6
     2a0f:      	local.get	0
     2a11:      	local.get	1
-    2a13:      	i32.add 
+    2a13:      	i32.add
     2a14:      	local.set	7
     2a16:      	local.get	4
     2a18:      	i32.const	6
-    2a1a:      	i32.shl 
+    2a1a:      	i32.shl
     2a1b:      	i32.const	-65536
-    2a1f:      	i32.and 
+    2a1f:      	i32.and
     2a20:      	local.set	8
     2a22:      	local.get	2
     2a24:      	i32.const	6
-    2a26:      	i32.shl 
+    2a26:      	i32.shl
     2a27:      	i32.const	-65536
-    2a2b:      	i32.and 
+    2a2b:      	i32.and
     2a2c:      	local.set	1
     2a2e:      	local.get	5
     2a30:      	i32.const	6
-    2a32:      	i32.shl 
+    2a32:      	i32.shl
     2a33:      	i32.const	-65536
-    2a37:      	i32.and 
+    2a37:      	i32.and
     2a38:      	local.set	9
     2a3a:      	local.get	3
     2a3c:      	i32.const	6
-    2a3e:      	i32.shl 
+    2a3e:      	i32.shl
     2a3f:      	i32.const	-65536
-    2a43:      	i32.and 
+    2a43:      	i32.and
     2a44:      	local.set	4
     2a46:      	i32.const	36
     2a48:      	i64.load32_s	0
@@ -5106,16 +5106,16 @@ Disassembly of section CODE:
     2aab:      	i32.const	25
     2aad:      	i32.shr_s
     2aae:      	i32.const	2
-    2ab0:      	i32.shl 
-    2ab1:      	i32.add 
+    2ab0:      	i32.shl
+    2ab1:      	i32.add
     2ab2:      	local.get	4
     2ab4:      	i32.const	25
     2ab6:      	i32.shr_s
     2ab7:      	local.get	15
-    2ab9:      	i32.mul 
+    2ab9:      	i32.mul
     2aba:      	i32.const	2
-    2abc:      	i32.shl 
-    2abd:      	i32.add 
+    2abc:      	i32.shl
+    2abd:      	i32.add
     2abe:      	local.tee	5
     2ac0:      	i32.load	4
     2ac3:      	local.tee	2
@@ -5123,20 +5123,20 @@ Disassembly of section CODE:
     2ac7:      	i32.shr_s
     2ac8:      	local.get	2
     2aca:      	i32.extend16_s
-    2acb:      	i32.sub 
+    2acb:      	i32.sub
     2acc:      	local.get	4
     2ace:      	i32.const	22
     2ad0:      	i32.shr_u
     2ad1:      	i32.const	7
-    2ad3:      	i32.and 
+    2ad3:      	i32.and
     2ad4:      	local.tee	3
-    2ad6:      	i32.mul 
+    2ad6:      	i32.mul
     2ad7:      	local.get	2
     2ad9:      	i32.const	16
-    2adb:      	i32.shl 
+    2adb:      	i32.shl
     2adc:      	i32.const	13
     2ade:      	i32.shr_s
-    2adf:      	i32.add 
+    2adf:      	i32.add
     2ae0:      	local.get	5
     2ae2:      	i32.load	0
     2ae5:      	local.tee	2
@@ -5144,72 +5144,72 @@ Disassembly of section CODE:
     2ae9:      	i32.shr_s
     2aea:      	local.get	2
     2aec:      	i32.extend16_s
-    2aed:      	i32.sub 
+    2aed:      	i32.sub
     2aee:      	local.get	3
-    2af0:      	i32.mul 
+    2af0:      	i32.mul
     2af1:      	local.get	2
     2af3:      	i32.const	16
-    2af5:      	i32.shl 
+    2af5:      	i32.shl
     2af6:      	i32.const	13
     2af8:      	i32.shr_s
-    2af9:      	i32.add 
+    2af9:      	i32.add
     2afa:      	local.tee	2
-    2afc:      	i32.sub 
+    2afc:      	i32.sub
     2afd:      	local.get	1
     2aff:      	i32.const	22
     2b01:      	i32.shr_u
     2b02:      	i32.const	7
-    2b04:      	i32.and 
-    2b05:      	i32.mul 
+    2b04:      	i32.and
+    2b05:      	i32.mul
     2b06:      	i32.const	3
     2b08:      	i32.shr_u
     2b09:      	local.get	2
-    2b0b:      	i32.add 
+    2b0b:      	i32.add
     2b0c:      	local.get	6
-    2b0e:      	i32.and 
-    2b0f:      	i32.add 
+    2b0e:      	i32.and
+    2b0f:      	i32.add
     2b10:      	local.get	14
     2b12:      	local.get	17
     2b14:      	local.get	4
     2b16:      	i32.const	6
     2b18:      	i32.shr_s
     2b19:      	local.get	11
-    2b1b:      	i32.mul 
+    2b1b:      	i32.mul
     2b1c:      	i64.extend_i32_u
     2b1d:      	local.get	10
-    2b1f:      	i64.mul 
+    2b1f:      	i64.mul
     2b20:      	i64.const	32
     2b22:      	i64.shr_u
     2b23:      	i32.wrap_i64
-    2b24:      	i32.mul 
-    2b25:      	i32.add 
+    2b24:      	i32.mul
+    2b25:      	i32.add
     2b26:      	local.get	1
     2b28:      	i32.const	6
     2b2a:      	i32.shr_s
     2b2b:      	local.get	12
-    2b2d:      	i32.mul 
+    2b2d:      	i32.mul
     2b2e:      	i64.extend_i32_u
     2b2f:      	local.get	18
-    2b31:      	i64.mul 
+    2b31:      	i64.mul
     2b32:      	i64.const	32
     2b34:      	i64.shr_u
     2b35:      	i32.wrap_i64
-    2b36:      	i32.add 
+    2b36:      	i32.add
     2b37:      	i32.load8_u	0
-    2b3a:      	i32.add 
+    2b3a:      	i32.add
     2b3b:      	i32.load8_u	0
     2b3e:      	i32.store8	0
     2b41:      	local.get	1
     2b43:      	local.get	8
-    2b45:      	i32.add 
+    2b45:      	i32.add
     2b46:      	local.set	1
     2b48:      	local.get	4
     2b4a:      	local.get	9
-    2b4c:      	i32.add 
+    2b4c:      	i32.add
     2b4d:      	local.set	4
     2b4f:      	local.get	0
     2b51:      	i32.const	1
-    2b53:      	i32.add 
+    2b53:      	i32.add
     2b54:      	local.tee	0
     2b56:      	local.get	7
     2b58:      	i32.lt_u
@@ -5228,31 +5228,31 @@ Disassembly of section CODE:
     2b78:      	local.set	6
     2b7a:      	local.get	0
     2b7c:      	local.get	1
-    2b7e:      	i32.add 
+    2b7e:      	i32.add
     2b7f:      	local.set	7
     2b81:      	local.get	4
     2b83:      	i32.const	6
-    2b85:      	i32.shl 
+    2b85:      	i32.shl
     2b86:      	i32.const	-65536
-    2b8a:      	i32.and 
+    2b8a:      	i32.and
     2b8b:      	local.set	8
     2b8d:      	local.get	2
     2b8f:      	i32.const	6
-    2b91:      	i32.shl 
+    2b91:      	i32.shl
     2b92:      	i32.const	-65536
-    2b96:      	i32.and 
+    2b96:      	i32.and
     2b97:      	local.set	1
     2b99:      	local.get	5
     2b9b:      	i32.const	6
-    2b9d:      	i32.shl 
+    2b9d:      	i32.shl
     2b9e:      	i32.const	-65536
-    2ba2:      	i32.and 
+    2ba2:      	i32.and
     2ba3:      	local.set	9
     2ba5:      	local.get	3
     2ba7:      	i32.const	6
-    2ba9:      	i32.shl 
+    2ba9:      	i32.shl
     2baa:      	i32.const	-65536
-    2bae:      	i32.and 
+    2bae:      	i32.and
     2baf:      	local.set	4
     2bb1:      	i32.const	36
     2bb3:      	i64.load32_s	0
@@ -5296,16 +5296,16 @@ Disassembly of section CODE:
     2c16:      	i32.const	24
     2c18:      	i32.shr_s
     2c19:      	i32.const	2
-    2c1b:      	i32.shl 
-    2c1c:      	i32.add 
+    2c1b:      	i32.shl
+    2c1c:      	i32.add
     2c1d:      	local.get	4
     2c1f:      	i32.const	24
     2c21:      	i32.shr_s
     2c22:      	local.get	15
-    2c24:      	i32.mul 
+    2c24:      	i32.mul
     2c25:      	i32.const	2
-    2c27:      	i32.shl 
-    2c28:      	i32.add 
+    2c27:      	i32.shl
+    2c28:      	i32.add
     2c29:      	local.tee	5
     2c2b:      	i32.load	4
     2c2e:      	local.tee	2
@@ -5313,20 +5313,20 @@ Disassembly of section CODE:
     2c32:      	i32.shr_s
     2c33:      	local.get	2
     2c35:      	i32.extend16_s
-    2c36:      	i32.sub 
+    2c36:      	i32.sub
     2c37:      	local.get	4
     2c39:      	i32.const	22
     2c3b:      	i32.shr_u
     2c3c:      	i32.const	3
-    2c3e:      	i32.and 
+    2c3e:      	i32.and
     2c3f:      	local.tee	3
-    2c41:      	i32.mul 
+    2c41:      	i32.mul
     2c42:      	local.get	2
     2c44:      	i32.const	16
-    2c46:      	i32.shl 
+    2c46:      	i32.shl
     2c47:      	i32.const	14
     2c49:      	i32.shr_s
-    2c4a:      	i32.add 
+    2c4a:      	i32.add
     2c4b:      	local.get	5
     2c4d:      	i32.load	0
     2c50:      	local.tee	2
@@ -5334,72 +5334,72 @@ Disassembly of section CODE:
     2c54:      	i32.shr_s
     2c55:      	local.get	2
     2c57:      	i32.extend16_s
-    2c58:      	i32.sub 
+    2c58:      	i32.sub
     2c59:      	local.get	3
-    2c5b:      	i32.mul 
+    2c5b:      	i32.mul
     2c5c:      	local.get	2
     2c5e:      	i32.const	16
-    2c60:      	i32.shl 
+    2c60:      	i32.shl
     2c61:      	i32.const	14
     2c63:      	i32.shr_s
-    2c64:      	i32.add 
+    2c64:      	i32.add
     2c65:      	local.tee	2
-    2c67:      	i32.sub 
+    2c67:      	i32.sub
     2c68:      	local.get	1
     2c6a:      	i32.const	22
     2c6c:      	i32.shr_u
     2c6d:      	i32.const	3
-    2c6f:      	i32.and 
-    2c70:      	i32.mul 
+    2c6f:      	i32.and
+    2c70:      	i32.mul
     2c71:      	i32.const	2
     2c73:      	i32.shr_u
     2c74:      	local.get	2
-    2c76:      	i32.add 
+    2c76:      	i32.add
     2c77:      	local.get	6
-    2c79:      	i32.and 
-    2c7a:      	i32.add 
+    2c79:      	i32.and
+    2c7a:      	i32.add
     2c7b:      	local.get	14
     2c7d:      	local.get	17
     2c7f:      	local.get	4
     2c81:      	i32.const	6
     2c83:      	i32.shr_s
     2c84:      	local.get	11
-    2c86:      	i32.mul 
+    2c86:      	i32.mul
     2c87:      	i64.extend_i32_u
     2c88:      	local.get	10
-    2c8a:      	i64.mul 
+    2c8a:      	i64.mul
     2c8b:      	i64.const	32
     2c8d:      	i64.shr_u
     2c8e:      	i32.wrap_i64
-    2c8f:      	i32.mul 
-    2c90:      	i32.add 
+    2c8f:      	i32.mul
+    2c90:      	i32.add
     2c91:      	local.get	1
     2c93:      	i32.const	6
     2c95:      	i32.shr_s
     2c96:      	local.get	12
-    2c98:      	i32.mul 
+    2c98:      	i32.mul
     2c99:      	i64.extend_i32_u
     2c9a:      	local.get	18
-    2c9c:      	i64.mul 
+    2c9c:      	i64.mul
     2c9d:      	i64.const	32
     2c9f:      	i64.shr_u
     2ca0:      	i32.wrap_i64
-    2ca1:      	i32.add 
+    2ca1:      	i32.add
     2ca2:      	i32.load8_u	0
-    2ca5:      	i32.add 
+    2ca5:      	i32.add
     2ca6:      	i32.load8_u	0
     2ca9:      	i32.store8	0
     2cac:      	local.get	1
     2cae:      	local.get	8
-    2cb0:      	i32.add 
+    2cb0:      	i32.add
     2cb1:      	local.set	1
     2cb3:      	local.get	4
     2cb5:      	local.get	9
-    2cb7:      	i32.add 
+    2cb7:      	i32.add
     2cb8:      	local.set	4
     2cba:      	local.get	0
     2cbc:      	i32.const	1
-    2cbe:      	i32.add 
+    2cbe:      	i32.add
     2cbf:      	local.tee	0
     2cc1:      	local.get	7
     2cc3:      	i32.lt_u
@@ -5418,33 +5418,33 @@ Disassembly of section CODE:
     2ce5:      	local.set	6
     2ce7:      	local.get	0
     2ce9:      	local.get	1
-    2ceb:      	i32.add 
+    2ceb:      	i32.add
     2cec:      	local.set	7
     2cee:      	local.get	4
     2cf0:      	i32.const	10
     2cf2:      	i32.shr_s
     2cf3:      	local.tee	8
     2cf5:      	i32.const	16
-    2cf7:      	i32.shl 
+    2cf7:      	i32.shl
     2cf8:      	local.set	9
     2cfa:      	local.get	2
     2cfc:      	i32.const	10
     2cfe:      	i32.shr_s
     2cff:      	local.tee	2
     2d01:      	i32.const	16
-    2d03:      	i32.shl 
+    2d03:      	i32.shl
     2d04:      	local.set	4
     2d06:      	local.get	5
     2d08:      	i32.const	6
-    2d0a:      	i32.shl 
+    2d0a:      	i32.shl
     2d0b:      	i32.const	-65536
-    2d0f:      	i32.and 
+    2d0f:      	i32.and
     2d10:      	local.set	10
     2d12:      	local.get	3
     2d14:      	i32.const	6
-    2d16:      	i32.shl 
+    2d16:      	i32.shl
     2d17:      	i32.const	-65536
-    2d1b:      	i32.and 
+    2d1b:      	i32.and
     2d1c:      	local.set	1
     2d1e:      	i32.const	36
     2d20:      	i64.load32_s	0
@@ -5485,7 +5485,7 @@ Disassembly of section CODE:
     2d7d:      	local.get	14
     2d7f:      	local.get	2
     2d81:      	i32.const	25
-    2d83:      	i32.shl 
+    2d83:      	i32.shl
     2d84:      	i32.const	31
     2d86:      	i32.shr_s
     2d87:      	local.get	17
@@ -5493,16 +5493,16 @@ Disassembly of section CODE:
     2d8b:      	i32.const	23
     2d8d:      	i32.shr_s
     2d8e:      	i32.const	2
-    2d90:      	i32.shl 
-    2d91:      	i32.add 
+    2d90:      	i32.shl
+    2d91:      	i32.add
     2d92:      	local.get	1
     2d94:      	i32.const	23
     2d96:      	i32.shr_s
     2d97:      	local.get	16
-    2d99:      	i32.mul 
+    2d99:      	i32.mul
     2d9a:      	i32.const	2
-    2d9c:      	i32.shl 
-    2d9d:      	i32.add 
+    2d9c:      	i32.shl
+    2d9d:      	i32.add
     2d9e:      	local.tee	3
     2da0:      	i32.load	4
     2da3:      	local.tee	5
@@ -5510,20 +5510,20 @@ Disassembly of section CODE:
     2da7:      	i32.shr_s
     2da8:      	local.get	5
     2daa:      	i32.extend16_s
-    2dab:      	i32.sub 
+    2dab:      	i32.sub
     2dac:      	local.get	1
     2dae:      	i32.const	22
     2db0:      	i32.shr_u
     2db1:      	i32.const	1
-    2db3:      	i32.and 
+    2db3:      	i32.and
     2db4:      	local.tee	20
-    2db6:      	i32.mul 
+    2db6:      	i32.mul
     2db7:      	local.get	5
     2db9:      	i32.const	16
-    2dbb:      	i32.shl 
+    2dbb:      	i32.shl
     2dbc:      	i32.const	15
     2dbe:      	i32.shr_s
-    2dbf:      	i32.add 
+    2dbf:      	i32.add
     2dc0:      	local.get	3
     2dc2:      	i32.load	0
     2dc5:      	local.tee	5
@@ -5531,71 +5531,71 @@ Disassembly of section CODE:
     2dc9:      	i32.shr_s
     2dca:      	local.get	5
     2dcc:      	i32.extend16_s
-    2dcd:      	i32.sub 
+    2dcd:      	i32.sub
     2dce:      	local.get	20
-    2dd0:      	i32.mul 
+    2dd0:      	i32.mul
     2dd1:      	local.get	5
     2dd3:      	i32.const	16
-    2dd5:      	i32.shl 
+    2dd5:      	i32.shl
     2dd6:      	i32.const	15
     2dd8:      	i32.shr_s
-    2dd9:      	i32.add 
+    2dd9:      	i32.add
     2dda:      	local.tee	5
-    2ddc:      	i32.sub 
+    2ddc:      	i32.sub
     2ddd:      	i32.const	1
     2ddf:      	i32.shr_u
-    2de0:      	i32.and 
+    2de0:      	i32.and
     2de1:      	local.get	5
-    2de3:      	i32.add 
+    2de3:      	i32.add
     2de4:      	local.get	6
-    2de6:      	i32.and 
-    2de7:      	i32.add 
+    2de6:      	i32.and
+    2de7:      	i32.add
     2de8:      	local.get	15
     2dea:      	local.get	18
     2dec:      	local.get	1
     2dee:      	i32.const	6
     2df0:      	i32.shr_s
     2df1:      	local.get	12
-    2df3:      	i32.mul 
+    2df3:      	i32.mul
     2df4:      	i64.extend_i32_u
     2df5:      	local.get	11
-    2df7:      	i64.mul 
+    2df7:      	i64.mul
     2df8:      	i64.const	32
     2dfa:      	i64.shr_u
     2dfb:      	i32.wrap_i64
-    2dfc:      	i32.mul 
-    2dfd:      	i32.add 
+    2dfc:      	i32.mul
+    2dfd:      	i32.add
     2dfe:      	local.get	4
     2e00:      	i32.const	6
     2e02:      	i32.shr_s
     2e03:      	local.get	13
-    2e05:      	i32.mul 
+    2e05:      	i32.mul
     2e06:      	i64.extend_i32_u
     2e07:      	local.get	19
-    2e09:      	i64.mul 
+    2e09:      	i64.mul
     2e0a:      	i64.const	32
     2e0c:      	i64.shr_u
     2e0d:      	i32.wrap_i64
-    2e0e:      	i32.add 
+    2e0e:      	i32.add
     2e0f:      	i32.load8_u	0
-    2e12:      	i32.add 
+    2e12:      	i32.add
     2e13:      	i32.load8_u	0
     2e16:      	i32.store8	0
     2e19:      	local.get	4
     2e1b:      	local.get	9
-    2e1d:      	i32.add 
+    2e1d:      	i32.add
     2e1e:      	local.set	4
     2e20:      	local.get	1
     2e22:      	local.get	10
-    2e24:      	i32.add 
+    2e24:      	i32.add
     2e25:      	local.set	1
     2e27:      	local.get	2
     2e29:      	local.get	8
-    2e2b:      	i32.add 
+    2e2b:      	i32.add
     2e2c:      	local.set	2
     2e2e:      	local.get	0
     2e30:      	i32.const	1
-    2e32:      	i32.add 
+    2e32:      	i32.add
     2e33:      	local.tee	0
     2e35:      	local.get	7
     2e37:      	i32.lt_u
@@ -5605,13 +5605,13 @@ Disassembly of section CODE:
 
 00002e3c <D_DrawSpans8AndZ>:
 
-    2e3e:      	block   	
+    2e3e:      	block
     2e40:      	local.get	0
     2e42:      	i32.const	1
     2e44:      	call	15
 			00002e45:  R_WASM_FUNCTION_INDEX_LEB	Pxa_QueueProjectedSurface+0
     2e4a:      	br_if   	0                       # 0: down to label103
-    2e4c:      	block   	
+    2e4c:      	block
     2e4e:      	i32.const	1
 			00002e4f:  R_WASM_TABLE_INDEX_SLEB	D_DrawSpans8AndZOdd+0
     2e54:      	local.get	0
