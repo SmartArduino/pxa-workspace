@@ -1,0 +1,3 @@
+Command: python3 local/pxa-apps/common/recrof/tests/run_host_indexed_blit.py
+Exit status: 0
+PASS: 500 legacy indexed frame/cursor comparisons, 320x200/240 and arbitrary scale, odd byte splits, guards and rejection

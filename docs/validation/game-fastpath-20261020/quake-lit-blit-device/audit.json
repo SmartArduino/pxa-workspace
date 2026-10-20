@@ -1,0 +1,59 @@
+{
+  "fps": {
+    "median": 8.9,
+    "min": 7.9,
+    "max": 9.9,
+    "mean": 8.85
+  },
+  "samples": 60,
+  "window_seconds": 60.01611540200247,
+  "unique_level_records": 12,
+  "level_record_span_seconds": 55.706,
+  "ready_at_end": true,
+  "exact_pcm_negotiation": true,
+  "median_output_us_per_frame": 9780.53961352657,
+  "controls_checks": {
+    "measured": {
+      "white": 0,
+      "pixels": 196,
+      "expected_visible": false
+    },
+    "touch-restored": {
+      "white": 196,
+      "pixels": 196,
+      "expected_visible": true
+    },
+    "controller-hidden": {
+      "white": 0,
+      "pixels": 196,
+      "expected_visible": false
+    },
+    "release-stays-hidden": {
+      "white": 0,
+      "pixels": 196,
+      "expected_visible": false
+    },
+    "disconnect-restored": {
+      "white": 196,
+      "pixels": 196,
+      "expected_visible": true
+    }
+  },
+  "cleanup_errors": [],
+  "error": null,
+  "median_renderer_us": {
+    "view": 89343.5,
+    "surf": 55282.0,
+    "world": 11697.5,
+    "scan": 66594.5,
+    "snd": 1713.0
+  },
+  "host": {
+    "counter_semantics": "five-second window deltas; hx is per engine frame",
+    "batches_in_records": 542,
+    "rejected_in_records": 0,
+    "every_frame_native": true,
+    "median_execution_us_per_engine_frame": 2273.0,
+    "median_validation_us_per_engine_frame": 73.0
+  }
+}

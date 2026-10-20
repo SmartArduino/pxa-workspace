@@ -1,0 +1,171 @@
+{
+  "firmware": {
+    "serial": "1c:29:04:d0:af:5e",
+    "offset": "0x10000",
+    "bytes": 3949232,
+    "application_sha256": "fd70da1fc21893d1675877e0f041c60d00e8eed7b0aa5785c81221a475919a3d",
+    "elf_sha256": "c5eef7676c5c387e1c5fe05d8753983137efff9edd3182ee4ce9669e768b6845",
+    "partition_table_unchanged": true,
+    "status": "flashed",
+    "esptool_exit_code": 0
+  },
+  "sdk_revision": "b787d4a8497f49ac76000c88879b42d1a8f0b9e6",
+  "apps_revision": "f480f2cafa6021827a8765273ca3f2ab6de2bc95",
+  "compiler": {
+    "path": "build/game-native-pcm-20261020/wamrc-known-alignment/wamrc",
+    "sha256": "4e2c9668e8317600fe97f180f13af62259a7d77efc9acfbd5b096570f8ad6e11",
+    "patch_sha256": "c94cdc218b77b62a1c3ac740875637ea6f86eb38185f684b1421ab2790e32676"
+  },
+  "packages": {
+    "duke-native-blit": {
+      "artifact": {
+        "manifest_sha256": "fe04f224eb06ffb64a0581f388acdefb26e58d70d1d002bf5585c519450c8310",
+        "path": "pxa-duke-native-blit.pxa",
+        "sha256": "8a574d0fcc360e1dc14f8ff2958de66181b252a6c27c998890a96f6d5e924dc3",
+        "size": 1627604
+      },
+      "inputs": {
+        "compile_sdk": [
+          2,
+          1
+        ],
+        "files": [
+          {
+            "path": "artifacts/main.esp32-s31.aot",
+            "sha256": "6b0a7bc4eece1b1753d7f1bfd8cb3113f1759bfc65bbf663f91340a6ab2e0bcc",
+            "size": 2303892
+          }
+        ],
+        "i18n_catalogs": [],
+        "package_json_sha256": "990ae9a174b3d8aab49f39c70d91f608335a793da54080432616002aa279e29b"
+      },
+      "package": {
+        "app_id": "pxa-duke3d-sd",
+        "engine_abi": "wamr-pxa-aot-v6-core-1",
+        "manifest_format": "0.7",
+        "min_sdk": "2.1",
+        "publisher_key_id": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171",
+        "release_sequence": 36,
+        "target": "esp32-s31",
+        "target_sdk": "2.1"
+      },
+      "schema": "pxa-provenance-1",
+      "tools": {
+        "clang": "clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141)",
+        "python": "3.14.8",
+        "wamrc": "wamrc 2.4.3",
+        "wasi_sdk_dir": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/deps/pxa-system/.pxa/wasi-sdk-34.0-x86_64-linux"
+      },
+      "wasm": {
+        "path": "build/game-fastpath-20261020/wasm-cache/duke-native-blit-wasm-3f147365b20c394f/artifacts/main.wasm",
+        "bytes": 998481,
+        "sha256": "a1c3fc12e02305b998c5cd40d798490bf3852b753c0cdc4cbc3a4242fab2cb1c"
+      }
+    },
+    "quake-native-lit-blit": {
+      "artifact": {
+        "manifest_sha256": "1ca61dad2abb8b4fb1febcd5aa8aab26e15500b87ff0194c54eeb34020ac3f59",
+        "path": "pxa-quake-native-lit-blit.pxa",
+        "sha256": "b75185e1618a838df09a123387579b218813f9e5838c00bf62594831a8481be8",
+        "size": 1497939
+      },
+      "inputs": {
+        "compile_sdk": [
+          2,
+          1
+        ],
+        "files": [
+          {
+            "path": "artifacts/main.esp32-s31.aot",
+            "sha256": "e7266479eb67ae60a39f1351c581dd1cd9e2ee7dfab46135633764347fd74a96",
+            "size": 2998092
+          }
+        ],
+        "i18n_catalogs": [],
+        "package_json_sha256": "6eeb8381598b941235c2599e8fcba3612df59ddc4238d663d3650a3cff8df0c7"
+      },
+      "package": {
+        "app_id": "pxa-quake-sd",
+        "engine_abi": "wamr-pxa-aot-v6-core-1",
+        "manifest_format": "0.7",
+        "min_sdk": "2.1",
+        "publisher_key_id": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171",
+        "release_sequence": 134,
+        "target": "esp32-s31",
+        "target_sdk": "2.1"
+      },
+      "schema": "pxa-provenance-1",
+      "tools": {
+        "clang": "clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141)",
+        "python": "3.14.8",
+        "wamrc": "wamrc 2.4.3",
+        "wasi_sdk_dir": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/deps/pxa-system/.pxa/wasi-sdk-34.0-x86_64-linux"
+      },
+      "wasm": {
+        "path": "build/game-fastpath-20261020/wasm-cache/quake-native-lit-blit-wasm-ea4b52dad832ab55/artifacts/main.wasm",
+        "bytes": 884300,
+        "sha256": "ee02f3e3a612717aa13b8070e02ffc771da4ec9e905bd8d17d5231759c983803"
+      }
+    }
+  },
+  "source_files": {
+    "tools/game-perf/profiles/duke-native-blit/CMakeLists.txt": "c66b36b9bcaabe2499769b51ee578ccbdbb633cc8e427f35313cc38587ea8b3d",
+    "tools/game-perf/profiles/duke-native-blit/package.json": "990ae9a174b3d8aab49f39c70d91f608335a793da54080432616002aa279e29b",
+    "tools/game-perf/profiles/quake-native-lit-blit/CMakeLists.txt": "856de89792475e76c53c504e352338ae3a7e0628f3e857d3602118c72be6c903",
+    "tools/game-perf/profiles/quake-native-lit-blit/package.json": "6eeb8381598b941235c2599e8fcba3612df59ddc4238d663d3650a3cff8df0c7",
+    "local/pxa-apps/common/recrof/runtime.c": "0cbd129725b837c8a339716bf458ed3084e5e0079f6c188775aabf58e5e7bbaa",
+    "local/pxa-apps/common/recrof/framebuffer.c": "a36845e0aa1f7b279d73d218475947aae1389de7da8e4b922afa72187e56e6a5",
+    "local/pxa-apps/common/recrof/Engine.cmake": "6189c60e5885c233a057bc2d30848173979b73b492fe5a362034b5102a02e048",
+    "local/pxa-apps/quake/port/lit_span.h": "8b2eb62105837296ec16f5bb1010cdf9ae065402194730066e6168fec8530bde",
+    "local/pxa-apps/duke3d/input_stats.c": "4602eb51f1ec3be54ff89fa8d614a489bb099fca9bc6578c181366eeffc3df7b",
+    "deps/pxa-system/libpxa/src/services/game_render/raster_blit.c": "094b1094216a9240e5b7a3c7216ed1bb498ea2551bc32e2757c6385443fac010",
+    "deps/pxa-system/libpxa/src/services/game_render/game_render_service.c": "294ae9ca897ac879278f0a683dd969e5e28b64c0533927d88b53a16d86f97a49",
+    "local/pxa-apps/common/recrof/tests/host_indexed_blit_test.c": "11f1e98b2d46cf104651e94723cdcf6a8c794166cc1f4a257b360fd9e45f5711",
+    "local/pxa-apps/common/recrof/tests/run_host_indexed_blit.py": "fe79a60f28fb5e197ad1a16fe4acbfb7bcaa377aa506a9551ed4f9de7bb0380c",
+    "local/pxa-apps/quake/port.c": "8c17f41ab10f98d89d1d26fe4d295cbea664351fadecf4e05d03d142953914c9"
+  },
+  "lighting_cache_baseline": {
+    "version": "0.4.13",
+    "release_sequence": 133,
+    "provenance": {
+      "artifact": {
+        "manifest_sha256": "92f15aabdb42fdf6bf139c17d65d84c62e943c07a442da650f626da9ae4aea5b",
+        "path": "pxa-quake-native-lit-cache.pxa",
+        "sha256": "a9dcfc144d6bd90627df7c6a2408508b1658871427fcdbfa2eb9f0710f975356",
+        "size": 1494237
+      },
+      "inputs": {
+        "compile_sdk": [
+          2,
+          1
+        ],
+        "files": [
+          {
+            "path": "artifacts/main.esp32-s31.aot",
+            "sha256": "04fa0e2aee12373123f88db3394461e74f097282d839d5a34309a4b4cd14a3f6",
+            "size": 2993244
+          }
+        ],
+        "i18n_catalogs": [],
+        "package_json_sha256": "4cb0ad78579b169cee30e56921ac2ec9cc4d5587eec7cc98bfbafb02821eb8d9"
+      },
+      "package": {
+        "app_id": "pxa-quake-sd",
+        "engine_abi": "wamr-pxa-aot-v6-core-1",
+        "manifest_format": "0.7",
+        "min_sdk": "2.1",
+        "publisher_key_id": "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171",
+        "release_sequence": 133,
+        "target": "esp32-s31",
+        "target_sdk": "2.1"
+      },
+      "schema": "pxa-provenance-1",
+      "tools": {
+        "clang": "clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141)",
+        "python": "3.14.8",
+        "wamrc": "wamrc 2.4.3",
+        "wasi_sdk_dir": "/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/deps/pxa-system/.pxa/wasi-sdk-34.0-x86_64-linux"
+      }
+    }
+  }
+}

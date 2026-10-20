@@ -165,3 +165,33 @@ and fractional stepping, fullbright and output guards. Record the compiler
 used as a separate factor: the current candidate uses the isolated alignment
 compiler, whereas the normal SDK compiler remains unchanged. Desktop pixel
 equivalence and successful signing do not establish a device FPS gain.
+
+## Native indexed output with the foreground main loop
+
+`duke-native-blit` combines the native-loop/PCM profile with
+`PXA_RECROF_HOST_BLIT`; `quake-native-lit-blit` adds the same output path to
+`quake-native-lit-cache`. Both declare GameRender 1.2's
+`borrowed-indexed-blit` feature. These profiles retain the original world
+renderer, resolution, palette, audio format and fixed SD resource roots.
+
+Each frame passes a 64-byte description of the existing indexed source,
+512-byte palette and acquired RGB565 surface to the Host. The synchronous
+operation borrows guest memory for this call, validates bounds and aliasing,
+then resolves directly into the existing destination. It does not allocate
+another framebuffer or copy the source image into a command packet. The
+320-pixel output uses paired RGB565 stores; scaling and cursor cases retain
+their exact sampling rules. A rejected frame uses the existing guest resolve.
+
+Use the same firmware and AOT compiler for both sides of a comparison. Check
+fresh actual-level records, a complete 60-second FPS window, and active Host
+batch counters with zero rejected batches. Duke logs cumulative counters;
+Quake logs period deltas and divides execution time by engine frames.
+Compare `draw_us / frames`
+as well as FPS: this timing includes acquisition and presentation, not only
+palette conversion. Host execution counters isolate the native portion.
+Run `local/pxa-apps/common/recrof/tests/run_host_indexed_blit.py` for the
+ASan/UBSan pixel, scaling, cursor, odd partition, aliasing and guard checks.
+
+Device results and the exact signed artifact identities are recorded in
+`docs/validation/2026-10-20-game-fastpath.zh-CN.md`. Keep the earlier
+`duke-blit` callback profile separate when interpreting those results.
