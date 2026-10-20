@@ -4,7 +4,7 @@ set -euo pipefail
 tests_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 component_dir=$(cd "$tests_dir/.." && pwd)
 project_dir=$(cd "$component_dir/../../.." && pwd)
-pxa_system_dir="$project_dir/deps/pxa-system"
+pxa_system_dir=${PXSYS_ROOT:-"$project_dir/deps/pxa-system"}
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/pxa-esp-host-tests.XXXXXX")
 trap 'rm -rf -- "$build_dir"' EXIT
 
@@ -41,6 +41,8 @@ build_and_run ui_event_text \
   "${adapter_includes[@]}" "$tests_dir/pxa_host_ui_event_text_test.c"
 build_and_run maintenance \
   -I"$component_dir/src/runtime" "$tests_dir/pxa_host_maintenance_test.c"
+build_and_run main_loop \
+  "${adapter_includes[@]}" "$tests_dir/pxa_host_main_loop_test.c"
 build_and_run window_metrics \
   "${adapter_includes[@]}" "$tests_dir/pxa_host_window_metrics_test.c"
 

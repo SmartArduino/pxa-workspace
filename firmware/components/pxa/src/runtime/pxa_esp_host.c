@@ -73,6 +73,8 @@
 #include "pxa_host_maintenance.h"
 #include "pxa_host_ui_event_text.h"
 #include "pxa_host_pointer_mailbox.h"
+#include "pxa_host_main_loop.h"
+#include "pxa/event_port.h"
 #include "pxa_esp_store_policy.h"
 #include "pxa/pxa_esp_system_font.h"
 
@@ -215,6 +217,10 @@ typedef struct {
     uint8_t runtime_started;
     uint8_t runtime_starting;
     uint8_t ime_only_runtime;
+    uint8_t cooperative_active;
+    uint8_t cooperative_exit_pending;
+    pxa_stop_reason_t cooperative_exit_reason;
+    uint64_t cooperative_idle_at;
     QueueHandle_t queue;
     TaskHandle_t runtime_task;
     esp_timer_handle_t clock_timer;
@@ -279,6 +285,10 @@ typedef struct {
 } pxa_esp_host_t;
 
 static pxa_esp_host_t g_host;
+static void cooperative_exit(pxa_stop_reason_t reason) {
+    if (!g_host.cooperative_exit_pending) g_host.cooperative_exit_reason = reason;
+    g_host.cooperative_exit_pending = 1;
+}
 static pxa_esp_store_job_t *g_store_install;
 static struct {
     uint32_t prompt_id;
@@ -1603,10 +1613,12 @@ static bool event_delivery_deferred(
 }
 
 static int drain_events(pxa_component_t component) {
+    if (g_host.cooperative_active || g_host.cooperative_exit_pending) return 0;
     pxa_wamr_event_result_t result;
     const pxa_status_t status = pxa_wamr_engine_deliver_event_result(
         g_host.engine, g_host.activation.runtime, component, &result);
     if (status == PXA_STATUS_OK) {
+        if (result.cooperative_cancelled) { cooperative_exit(PXA_STOP_NORMAL); return 0; }
         (void)pxa_ipc_flush(g_host.activation.services.ipc);
         if (close_after_window_event(component, &result)) return 0;
         return 1;
@@ -2102,6 +2114,7 @@ static void refresh_volume_key_capture_state(void) {
 }
 
 static int drain_active_events(void) {
+    if (g_host.cooperative_active || g_host.cooperative_exit_pending) return 0;
     uint8_t round;
     const uint64_t started_us = host_now_us(NULL);
     for (round = 0; round < PXA_ESP_HOST_EVENT_DRAIN_ROUNDS; ++round) {
@@ -2115,6 +2128,7 @@ static int drain_active_events(void) {
                 g_host.engine, g_host.activation.runtime,
                 g_host.activation.active_components[index], &result);
             if (status == PXA_STATUS_OK) {
+                if (result.cooperative_cancelled) { cooperative_exit(PXA_STOP_NORMAL); return 0; }
                 delivered = 1;
                 (void)pxa_ipc_flush(g_host.activation.services.ipc);
                 if (close_after_window_event(g_host.activation.active_components[index], &result))
@@ -2781,6 +2795,8 @@ static pxa_status_t acquire_ui_image(pxa_component_t component, pxa_handle64_t h
 
 static pxa_status_t prepare_start(void *context, pxa_component_t component,
                                   uint64_t instance_id, uint8_t kind);
+static pxa_status_t host_cooperate(void *context, pxa_component_t component,
+                                   uint64_t deadline_us);
 static pxa_status_t reset_runtime(uint16_t max_components) {
     pxa_runtime_limits_t limits;
     pxa_service_ops_t operations;
@@ -2863,6 +2879,7 @@ static pxa_status_t initialize_engine(uint16_t max_components) {
     config.open_artifact = pxa_wamr_open_artifact_file;
     config.now_us = host_now_us;
     config.prepare_start = prepare_start;
+    config.cooperate = host_cooperate;
     config.call_timeout_us = (uint64_t)CONFIG_PXA_CALL_TIMEOUT_MS * 1000u;
     config.guest_stack_size = CONFIG_PXA_GUEST_STACK_SIZE;
     config.host_managed_heap_size = CONFIG_PXA_HOST_MANAGED_HEAP_SIZE;
@@ -3278,6 +3295,7 @@ static int start_verified(const char *identity) {
                sizeof(registered_versions));
         capabilities.core_version.major = PXA_CORE_VERSION_MAJOR;
         capabilities.core_version.minor = PXA_CORE_VERSION_MINOR;
+        capabilities.execution_models = pxa_wamr_engine_execution_models(g_host.engine);
         capabilities.services = service_capabilities;
         capabilities.service_count =
             (uint16_t)(sizeof(registered_versions) /
@@ -3408,7 +3426,11 @@ static int start_verified(const char *identity) {
     g_host.lifecycle_delivered = PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND;
     update_window_snapshot(g_host.activation.active_component, NULL);
     (void)pxa_ipc_flush(g_host.activation.services.ipc);
-    if (!drain_active_events()) {
+    /* A main-loop handler may not return until stop. Publish activation before
+     * its first event so System can foreground the Window and dismiss launch. */
+    int main_loop = manifest->component_count == 1 &&
+        (manifest->components[0].flags & PXA_PACKAGE_COMPONENT_FLAG_MAIN_LOOP);
+    if (!main_loop && !drain_active_events()) {
         PXA_ESP_START_FAIL("drain-startup-events", PXA_STATUS_INTERNAL);
     }
     publish_active_state();
@@ -4303,6 +4325,7 @@ static void advance_graceful_stop(void) {
     if (!g_host.graceful_stop_active) return;
     if (g_host.activation.active_component != PXA_COMPONENT_INVALID)
         drain_active_events();
+    if (g_host.cooperative_exit_pending) return;
     if (g_host.activation.active_component == PXA_COMPONENT_INVALID ||
         g_host.activation.runtime == NULL) {
         ready = 1;
@@ -4362,15 +4385,138 @@ static void maintain_native_ime_runtime(void) {
     if (g_host.ime_only_runtime && !pxa_esp_ime_active()) stop_active(PXA_STOP_NORMAL);
 }
 
+/* Execute native work while retaining the current WAMR call stack. No command
+ * that can replace/destroy a runtime is removed from the queue here. The same
+ * task resumes its outer owner loop after cancellation and performs teardown. */
+static pxa_status_t host_cooperate(void *context, pxa_component_t component,
+                                   uint64_t deadline_us) {
+    pxa_esp_host_command_t command;
+    pxa_event_view_t event;
+    pxa_status_t result = PXA_STATUS_OK;
+    uint64_t started = host_now_us(NULL);
+    (void)context;
+    if (g_host.cooperative_active) return PXA_STATUS_BAD_STATE;
+    if (component != g_host.activation.active_component || !g_host.activation.runtime) {
+        cooperative_exit(PXA_STOP_POLICY);
+        return PXA_STATUS_CANCELLED;
+    }
+    g_host.cooperative_active = 1;
+    sync_ui_lifecycle();
+    pxa_ui_color_scheme_t color;
+    pxa_window_insets_t safe, bars;
+    uint32_t palette[PXA_UI_THEME_ROLE_COUNT];
+    if (take_pending_color_scheme(&color)) apply_color_scheme(color);
+    if (take_pending_ui_palette(palette)) apply_ui_palette(palette);
+    if (take_pending_window_insets(&safe, &bars)) apply_window_insets(&safe, &bars);
+    if (g_host.activation.services.surface)
+        (void)pxa_surface_service_flush_releases(g_host.activation.services.surface);
+    if (g_host.activation.services.assets) {
+        (void)__atomic_exchange_n(&g_assets_completion_ready, 0u, __ATOMIC_ACQ_REL);
+        (void)pxa_assets_service_poll(g_host.activation.services.assets);
+    }
+    if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
+    pxa_esp_fs_roots_poll(g_host.activation.services.fs_roots);
+    if (take_net_completion_ready()) drain_net_completions();
+    if (take_pointer_command(&command, host_now_us(NULL))) post_pointer(&command);
+    for (unsigned count = 0; count < 8; ++count) {
+        pxa_stop_reason_t reason;
+        if (xQueuePeek(g_host.queue, &command, 0) != pdTRUE) break;
+        int policy = pxa_host_main_loop_command(&command,
+            g_host.activation.package_instance_id, g_host.activation.active_instance_id,
+            g_host.activation.active_identity, g_host.activation.permission_prompt.prompt_id,
+            pxa_esp_ime_active(), &reason);
+        if (policy == PXA_HOST_LOOP_EXIT) {
+            cooperative_exit(reason);
+            result = PXA_STATUS_CANCELLED;
+            goto finished;
+        }
+        if (xQueueReceive(g_host.queue, &command, 0) != pdTRUE) break;
+        portENTER_CRITICAL(&g_process_state_lock);
+        pxa_host_maintenance_clear(&g_host.maintenance_pending,
+            (pxa_esp_host_command_type_t)command.type);
+        portEXIT_CRITICAL(&g_process_state_lock);
+        if (policy == PXA_HOST_LOOP_SKIP) {
+            if (command.type == PXA_ESP_HOST_CMD_SCHEDULER_MAINTENANCE)
+                mark_scheduler_maintenance_due();
+            continue;
+        }
+        switch (command.type) {
+        case PXA_ESP_HOST_CMD_POINTER: post_pointer(&command); break;
+        case PXA_ESP_HOST_CMD_UI_EVENT:
+            post_ui_event(&command);
+            pxa_host_ui_event_release_text(&command.payload.ui_event, free);
+            break;
+        case PXA_ESP_HOST_CMD_CONTROLLER: post_controller(&command); break;
+        case PXA_ESP_HOST_CMD_TICK:
+            post_tick(command.payload.tick.slot, command.payload.tick.generation, host_now_us(NULL));
+            break;
+        case PXA_ESP_HOST_CMD_SYSTEM_COMPLETE:
+            complete_system_request(command.payload.system_complete.response); break;
+        case PXA_ESP_HOST_CMD_SYSTEM_EVENT:
+            post_system_event(command.payload.system_event.event); break;
+        case PXA_ESP_HOST_CMD_LEASE_MAINTENANCE: {
+            pxa_component_t affected[2]; size_t affected_count = 0;
+            if (g_host.activation.services.lease)
+                (void)pxa_lease_revoke_expired(g_host.activation.services.lease,
+                    affected, 2, &affected_count);
+            break;
+        }
+        case PXA_ESP_HOST_CMD_NET_MAINTENANCE: drain_net_completions(); break;
+        case PXA_ESP_HOST_CMD_WINDOW_MAINTENANCE:
+            update_window_snapshot(component, NULL); update_ui_resource_pressure(); break;
+        case PXA_ESP_HOST_CMD_PERMISSION_DECISION:
+            complete_runtime_permission_prompt(command.payload.permission_decision.prompt_id,
+                command.payload.permission_decision.granted != 0); break;
+        case PXA_ESP_HOST_CMD_PERMISSION_SET:
+            apply_active_permission(command.payload.permission_set.permission_index,
+                command.payload.permission_set.granted != 0); break;
+        default: break; /* Drain/sensor need no extra work after the native pass. */
+        }
+        if (host_now_us(NULL) - started >= 8000) break;
+    }
+    /* A zero-time checkpoint must still periodically release the CPU to IDLE
+     * and native workers during long CPU-only loading. No additional task. */
+    uint64_t now = host_now_us(NULL);
+    if (now - g_host.cooperative_idle_at >= 32000) {
+        vTaskDelay(1);
+        g_host.cooperative_idle_at = host_now_us(NULL);
+    }
+    if (pxa_event_peek(g_host.activation.runtime, component, &event) == PXA_STATUS_OK)
+        goto finished;
+    now = host_now_us(NULL);
+    if (deadline_us && now < deadline_us) {
+        uint64_t wait_us = deadline_us - now;
+        if (wait_us > 8000) wait_us = 8000;
+        uint64_t tick_us = (uint64_t)portTICK_PERIOD_MS * 1000u;
+        TickType_t ticks = (TickType_t)((wait_us + tick_us - 1) / tick_us);
+        /* Notifications are latched: a completion between the mailbox check
+         * and this wait makes it return immediately, rather than losing wake. */
+        (void)ulTaskNotifyTake(pdTRUE, ticks ? ticks : 1);
+    }
+finished:
+    g_host.cooperative_active = 0;
+    return result;
+}
+
 static void run(void) {
     pxa_esp_host_command_t command;
     for (;;) {
+        if (g_host.cooperative_exit_pending) {
+            pxa_stop_reason_t reason = g_host.cooperative_exit_reason;
+            g_host.cooperative_exit_pending = 0;
+            ESP_LOGI(PXA_ESP_HOST_TAG, "Main loop ended: reason=%u runtime_stack_min_free=%u bytes",
+                (unsigned)reason, (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            stop_active(reason);
+            continue;
+        }
         int handled = 0;
         pxa_ui_color_scheme_t color_scheme;
         pxa_window_insets_t pending_safe_insets;
         pxa_window_insets_t pending_system_bar_insets;
         sync_ui_lifecycle();
+        if (g_host.cooperative_exit_pending) continue;
         advance_graceful_stop();
+        if (g_host.cooperative_exit_pending) continue;
         maintain_native_ime_runtime();
         pxa_esp_ime_pump();
         pxa_esp_ime_drain();
@@ -4413,10 +4559,15 @@ static void run(void) {
             drain_net_completions();
             handled = 1;
         }
+        /* Guest delivery above can return because the native wait observed a
+         * lifecycle command. Teardown must precede scheduler mutations and
+         * removing that retained command from the queue in this iteration. */
+        if (g_host.cooperative_exit_pending) continue;
         if (!pxa_esp_ime_loading() && take_scheduler_maintenance_due()) {
             maintain_scheduler();
             handled = 1;
         }
+        if (g_host.cooperative_exit_pending) continue;
         if (xQueueReceive(g_host.queue, &command, 0) == pdTRUE) {
             handled = 1;
             portENTER_CRITICAL(&g_process_state_lock);
