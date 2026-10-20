@@ -1,0 +1,366 @@
+{
+  "game": "quake",
+  "qualified": true,
+  "log_history_interval_samples": 5,
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "info": {
+    "target": "esp32s31",
+    "serial": "1c:29:04:d0:af:5e",
+    "version": "0.4.0",
+    "free_heap": "15738527",
+    "pxa": "ready",
+    "package_directory_adopt": "1",
+    "package_receive": "1",
+    "board": "doit-gamekit",
+    "pxa_version": "0.4.0",
+    "pxa_core": "2.1",
+    "storage_total": "11468800",
+    "storage_used": "10506240",
+    "storage_free": "962560",
+    "presentation_fps_x10": "0",
+    "elf_sha256": "4ac88342edbeb9fd9b0df38c53e9e79d0c15cb5e310156375cf162ecc2b005ec"
+  },
+  "launch_log_ms": 1276084,
+  "screenshots": {
+    "launch": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "7508",
+      "device_us": "1299793281",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "ee8363b8a447f5770cbeb5ddcd291757c8fb9e24fa4e8880815dc935e5863b7f"
+    },
+    "menu": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "7558",
+      "device_us": "1303891648",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "b8048a007c85c503d591d8a13890777ad28770ed0f48a41f91c3dec22ab278c9"
+    },
+    "singleplayer": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "7618",
+      "device_us": "1307970673",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "def94817ebfc140232e605688a6ac074ec9e796364c6580de0d3e4e3ad31e137"
+    },
+    "newgame": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "7792",
+      "device_us": "1328973939",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "acf8794ba93be0b0a9a0ef26940bcc22a73186cd979af74c28d282fed253a572"
+    },
+    "level-before-window": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "7863",
+      "device_us": "1337261676",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "200170523a6009a0a93925fc1659d829d5fa8d414ebbfd5e9909858bb846a125"
+    },
+    "level-after-window": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "8398",
+      "device_us": "1399161237",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "2366202cdead2792d10df1e95e4fc07fbf57b05e32cab872cb7946df9a0dc1ac"
+    }
+  },
+  "pulses": [
+    {
+      "bits": 64,
+      "requested_seconds": 0.4,
+      "press": {
+        "event": "586",
+        "device_us": "1301667282",
+        "log_ms": "1302988",
+        "status": "processed"
+      },
+      "release": {
+        "event": "587",
+        "device_us": "1302074089",
+        "log_ms": "1303395",
+        "status": "processed"
+      },
+      "ack_interval_us": 406807,
+      "log_barrier": 1302981
+    },
+    {
+      "bits": 16,
+      "requested_seconds": 0.4,
+      "press": {
+        "event": "590",
+        "device_us": "1305734753",
+        "log_ms": "1307056",
+        "status": "processed"
+      },
+      "release": {
+        "event": "591",
+        "device_us": "1306141897",
+        "log_ms": "1307463",
+        "status": "processed"
+      },
+      "ack_interval_us": 407144,
+      "log_barrier": 1307049
+    },
+    {
+      "bits": 16,
+      "requested_seconds": 0.4,
+      "press": {
+        "event": "594",
+        "device_us": "1309817897",
+        "log_ms": "1311139",
+        "status": "processed"
+      },
+      "release": {
+        "event": "595",
+        "device_us": "1310225144",
+        "log_ms": "1311546",
+        "status": "processed"
+      },
+      "ack_interval_us": 407247,
+      "log_barrier": 1311132
+    }
+  ],
+  "pcm_negotiation": true,
+  "host_mix_observed": true,
+  "overlay": {
+    "level-before-window": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": false
+    },
+    "level-after-window": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": false
+    }
+  },
+  "window_log_ms": 1340462,
+  "window_start": 143974.425652976,
+  "window_end": 144034.458274064,
+  "display": {
+    "capacity": "256",
+    "raster": "0",
+    "present": "256",
+    "raster_overflow": "0",
+    "present_overflow": "264",
+    "list_min": "0",
+    "list_max": "0",
+    "pixels_min": "0",
+    "pixels_max": "0",
+    "surface_changed": "0",
+    "completed": "521",
+    "window_us": "60036940",
+    "display": "1"
+  },
+  "level_records": [
+    {
+      "time": 143978.953754227,
+      "kind": "LOG",
+      "payload": "1344988\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=43 eng=5855 view=93170 world=11870 scan=70336 surf=58836 ent=6203 snd=1842 io=15338 hb=43 hr=0 px=3302400 hv=73 hx=2747\u001b[0m",
+      "log_ms": 1344988
+    },
+    {
+      "time": 143984.049641767,
+      "kind": "LOG",
+      "payload": "1350080\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=44 eng=5730 view=92844 world=11970 scan=69948 surf=58470 ent=6413 snd=2117 io=15588 hb=44 hr=0 px=3379200 hv=87 hx=2770\u001b[0m",
+      "log_ms": 1350080
+    },
+    {
+      "time": 143989.0651654,
+      "kind": "LOG",
+      "payload": "1355099\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=43 eng=5528 view=93657 world=12069 scan=70741 surf=59217 ent=6179 snd=2354 io=16182 hb=43 hr=0 px=3302400 hv=81 hx=2837\u001b[0m",
+      "log_ms": 1355099
+    },
+    {
+      "time": 143994.179567541,
+      "kind": "LOG",
+      "payload": "1360218\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=45 eng=5167 view=91723 world=12125 scan=68751 surf=57285 ent=6230 snd=2115 io=15528 hb=45 hr=0 px=3456000 hv=97 hx=2732\u001b[0m",
+      "log_ms": 1360218
+    },
+    {
+      "time": 143999.236169599,
+      "kind": "LOG",
+      "payload": "1365266\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=44 eng=5356 view=92279 world=12056 scan=69543 surf=58052 ent=6099 snd=2152 io=15568 hb=44 hr=0 px=3379200 hv=84 hx=2650\u001b[0m",
+      "log_ms": 1365266
+    },
+    {
+      "time": 144004.336260657,
+      "kind": "LOG",
+      "payload": "1370373\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=44 eng=5915 view=93006 world=12046 scan=69956 surf=58463 ent=6319 snd=2217 io=15691 hb=44 hr=0 px=3379200 hv=93 hx=2779\u001b[0m",
+      "log_ms": 1370373
+    },
+    {
+      "time": 144009.426201671,
+      "kind": "LOG",
+      "payload": "1375462\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=44 eng=5515 view=92961 world=11990 scan=69915 surf=58461 ent=6282 snd=2242 io=15571 hb=44 hr=0 px=3379200 hv=78 hx=2825\u001b[0m",
+      "log_ms": 1375462
+    },
+    {
+      "time": 144014.438490759,
+      "kind": "LOG",
+      "payload": "1380473\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=44 eng=5112 view=91376 world=12052 scan=68796 surf=57308 ent=6103 snd=2387 io=15753 hb=44 hr=0 px=3379200 hv=72 hx=2773\u001b[0m",
+      "log_ms": 1380473
+    },
+    {
+      "time": 144019.525125332,
+      "kind": "LOG",
+      "payload": "1385560\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=44 eng=5967 view=92805 world=12005 scan=69736 surf=58195 ent=6294 snd=1876 io=15266 hb=44 hr=0 px=3379200 hv=74 hx=2692\u001b[0m",
+      "log_ms": 1385560
+    },
+    {
+      "time": 144024.557047736,
+      "kind": "LOG",
+      "payload": "1390590\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=44 eng=5286 view=92152 world=12076 scan=69346 surf=57876 ent=6195 snd=2089 io=15530 hb=44 hr=0 px=3379200 hv=73 hx=2721\u001b[0m",
+      "log_ms": 1390590
+    },
+    {
+      "time": 144029.579085595,
+      "kind": "LOG",
+      "payload": "1395612\t\u001b[32m[PXA app=pxa-quake-sd component=65537 level=INFO] PXA QUAKE ready=1 hp=100 xyz=544,288,50 n=43 eng=5737 view=93580 world=11918 scan=70232 surf=58788 ent=6772 snd=2364 io=16282 hb=43 hr=0 px=3302400 hv=78 hx=2742\u001b[0m",
+      "log_ms": 1395612
+    }
+  ],
+  "fps_samples": [
+    8.9,
+    8.9,
+    7.9,
+    8.9,
+    8.9,
+    7.9,
+    8.9,
+    8.9,
+    8.9,
+    8.0,
+    7.9,
+    8.9,
+    8.9,
+    7.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    7.9,
+    7.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    7.9,
+    8.9,
+    7.9,
+    8.9,
+    8.9,
+    8.9,
+    7.9,
+    8.9,
+    8.9,
+    7.9,
+    8.9,
+    8.9,
+    8.9,
+    7.9,
+    8.9,
+    8.9,
+    7.9,
+    8.9,
+    7.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9,
+    7.9,
+    8.9,
+    7.9,
+    8.9,
+    7.9,
+    8.9,
+    7.9,
+    8.9,
+    8.9,
+    8.9,
+    8.9
+  ],
+  "fps": {
+    "mean": 8.601666666666667,
+    "median": 8.9,
+    "min": 7.9,
+    "max": 8.9,
+    "lcd_completed": 8.677990583797243
+  },
+  "memory": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=651955;sram_free=107715;sram_min=31980;sram_largest=61440;psram_total=16741200;psram_free=9137104;psram_min=8363064;psram_largest=7340032"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=26488;external=40842;peak_internal=26488;peak_external=40853;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=40560"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=26488;external=282"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=2176"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "stopped": true
+}

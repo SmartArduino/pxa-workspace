@@ -1,0 +1,31 @@
+CMake Error at CMakeLists.txt:3 (include):
+  include could not find requested file:
+
+    /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-device-20261021/committed-sdk/libpxa/../cmake/PxaVersion.cmake
+
+
+CMake Warning at CMakeLists.txt:4 (project):
+  VERSION keyword not followed by a value or was followed by a value that
+  expanded to nothing.
+
+
+-- The C compiler identification is GNU 16.2.1
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Found OpenSSL: /usr/lib/libcrypto.so (found version "3.6.5")
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+CMake Error at /usr/share/cmake/Modules/WriteBasicConfigVersionFile.cmake:50 (message):
+  No VERSION specified for WRITE_BASIC_CONFIG_VERSION_FILE()
+Call Stack (most recent call first):
+  /usr/share/cmake/Modules/CMakePackageConfigHelpers.cmake:444 (write_basic_config_version_file)
+  CMakeLists.txt:917 (write_basic_package_version_file)
+
+
+-- Configuring incomplete, errors occurred!
+make: Makefile: No such file or directory
+make: *** No rule to make target 'Makefile'.  Stop.

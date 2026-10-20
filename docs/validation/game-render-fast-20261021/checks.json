@@ -1,0 +1,242 @@
+{
+  "root_base": "91f2f62",
+  "sdk_base": "5dcf7f441f91dba8a0f082d7a3d36665da83992d",
+  "sdk_commit": "275aacf6d8be16d4933071d42ced3f804a9c6ede",
+  "tests": [
+    {
+      "command": "PXA_TEST_SANITIZERS=1 bash firmware/components/pxa/tests/test_host.sh",
+      "exit_code": 0,
+      "log": "render-host-tests.txt",
+      "includes": [
+        "100000 racing raster handoffs",
+        "controller state exhaustive IDs and buttons",
+        "pointer backpressure/coalescing/reset",
+        "ESP adapters"
+      ]
+    },
+    {
+      "command": "python local/pxa-apps/common/recrof/tests/run_quake_host_spans.py",
+      "exit_code": 0,
+      "log": "render-differential.txt",
+      "upstream_comparisons": 200000,
+      "spans": 400000
+    },
+    {
+      "command": "python local/pxa-apps/common/recrof/tests/run_quake_projected_spans.py",
+      "exit_code": 0,
+      "log": "render-projected-differential.txt",
+      "upstream_comparisons": 40000
+    },
+    {
+      "command": "cmake --build build/game-host-audio-20261020-next/tests --target pxa_ui_test -j6 && build/game-host-audio-20261020-next/tests/pxa_ui_test",
+      "exit_code": 0,
+      "sanitizers": [
+        "address",
+        "undefined"
+      ],
+      "build_log": "ui-build.txt",
+      "log": "ui-test.txt"
+    },
+    {
+      "command": "cmake --build build/game-host-audio-20261020-next/tests --target pxa_game_render_spans_test -j6 && build/game-host-audio-20261020-next/tests/pxa_game_render_spans_test",
+      "exit_code": 0,
+      "sanitizers": [
+        "address",
+        "undefined"
+      ],
+      "build_log": "render-sdk-build.txt",
+      "log": "render-sdk-test.txt"
+    }
+  ],
+  "host_test_sdk_note": "Host tests include existing working-tree GameRender changes; device builds use the separately frozen source manifests.",
+  "device_runs": {
+    "duke-controls": {
+      "qualified": false,
+      "stopped": null,
+      "error": "AssertionError(('touch-150', 0))",
+      "firmware": "425ee691e5f113df0cf563cb2df5977bdfc91e14198152202593c12353616196",
+      "fps": {
+        "mean": 21.855,
+        "median": 21.9,
+        "min": 19.9,
+        "max": 22.9,
+        "lcd_completed": 21.910226155688203
+      }
+    },
+    "duke-controls-repeat": {
+      "qualified": false,
+      "stopped": true,
+      "error": "AssertionError(('touch-150', 0))",
+      "firmware": "425ee691e5f113df0cf563cb2df5977bdfc91e14198152202593c12353616196",
+      "fps": null
+    },
+    "duke-diagnostic": {
+      "qualified": false,
+      "stopped": true,
+      "error": "AssertionError(('touch-150', 0))",
+      "firmware": "57b62565573aa39534f060bda32dedb58e72207447a1ada5ddfbb5160580ea6b",
+      "fps": null
+    },
+    "duke-input-fixed-run": {
+      "qualified": false,
+      "stopped": true,
+      "error": "RuntimeError('No fresh actual-level record after marker')",
+      "firmware": "833c84558cd54763853947a86e6e08288466fea2a8d1365906ec0baa5aadeca2",
+      "fps": {
+        "mean": 21.09,
+        "median": 20.9,
+        "min": 18.9,
+        "max": 22.9,
+        "lcd_completed": 21.14549882814945
+      }
+    },
+    "duke-input-fixed-controls": {
+      "qualified": true,
+      "stopped": true,
+      "error": null,
+      "firmware": "833c84558cd54763853947a86e6e08288466fea2a8d1365906ec0baa5aadeca2",
+      "fps": null
+    },
+    "duke-render-fast": {
+      "qualified": false,
+      "stopped": true,
+      "error": "AssertionError('Insufficient complete level window')",
+      "firmware": "4ac88342edbeb9fd9b0df38c53e9e79d0c15cb5e310156375cf162ecc2b005ec",
+      "fps": null
+    },
+    "duke-render-fast-verified": {
+      "qualified": true,
+      "stopped": true,
+      "error": null,
+      "firmware": "4ac88342edbeb9fd9b0df38c53e9e79d0c15cb5e310156375cf162ecc2b005ec",
+      "fps": {
+        "mean": 20.168333333333333,
+        "median": 19.9,
+        "min": 18.8,
+        "max": 21.8,
+        "lcd_completed": 20.235868281385695
+      }
+    },
+    "render-baseline": {
+      "qualified": true,
+      "stopped": true,
+      "error": null,
+      "firmware": "833c84558cd54763853947a86e6e08288466fea2a8d1365906ec0baa5aadeca2",
+      "fps": null
+    },
+    "render-fast-probe": {
+      "qualified": true,
+      "stopped": true,
+      "error": null,
+      "firmware": "4ac88342edbeb9fd9b0df38c53e9e79d0c15cb5e310156375cf162ecc2b005ec",
+      "fps": null
+    },
+    "quake-audio-baseline": {
+      "qualified": true,
+      "stopped": true,
+      "error": null,
+      "firmware": "4ac88342edbeb9fd9b0df38c53e9e79d0c15cb5e310156375cf162ecc2b005ec",
+      "fps": {
+        "mean": 8.516666666666667,
+        "median": 8.9,
+        "min": 7.9,
+        "max": 8.9,
+        "lcd_completed": 8.59470637709724
+      }
+    },
+    "quake-audio-host": {
+      "qualified": true,
+      "stopped": true,
+      "error": null,
+      "firmware": "4ac88342edbeb9fd9b0df38c53e9e79d0c15cb5e310156375cf162ecc2b005ec",
+      "fps": {
+        "mean": 8.601666666666667,
+        "median": 8.9,
+        "min": 7.9,
+        "max": 8.9,
+        "lcd_completed": 8.677990583797243
+      }
+    },
+    "duke-final": {
+      "qualified": true,
+      "stopped": true,
+      "error": null,
+      "firmware": "a8e8925070ee547ad0e9592563cfa0be447b0121d769b58cc73d9d93733b42aa",
+      "fps": {
+        "mean": 20.558333333333334,
+        "median": 20.85,
+        "min": 19.8,
+        "max": 21.9,
+        "lcd_completed": 20.635884710926316
+      }
+    },
+    "render-final-probe": {
+      "qualified": true,
+      "stopped": true,
+      "error": null,
+      "firmware": "a8e8925070ee547ad0e9592563cfa0be447b0121d769b58cc73d9d93733b42aa",
+      "fps": null
+    },
+    "render-cold-baseline": {
+      "qualified": true,
+      "stopped": true,
+      "error": null,
+      "firmware": "833c84558cd54763853947a86e6e08288466fea2a8d1365906ec0baa5aadeca2",
+      "fps": null
+    },
+    "render-cold-final": {
+      "qualified": true,
+      "stopped": true,
+      "error": null,
+      "firmware": "a8e8925070ee547ad0e9592563cfa0be447b0121d769b58cc73d9d93733b42aa",
+      "fps": null
+    }
+  },
+  "final_host_tests": {
+    "command": "PXA_TEST_SANITIZERS=1 bash firmware/components/pxa/tests/test_host.sh",
+    "exit_code": 0,
+    "log": "final-host-tests.txt",
+    "reason": "Final callback-pointer retry progress fix"
+  },
+  "final_build": {
+    "exit_code": 0,
+    "log": "final-build.txt",
+    "elf": "a8e8925070ee547ad0e9592563cfa0be447b0121d769b58cc73d9d93733b42aa"
+  },
+  "host_implementation_commit": "5cbfafe8cff3690f9c9a310c779b8cd1b5d98d7f",
+  "committed_sdk_tests": {
+    "commit": "275aacf6d8be16d4933071d42ced3f804a9c6ede",
+    "extracted_paths": [
+      "libpxa",
+      "cmake",
+      "VERSION"
+    ],
+    "build_exit_code": 0,
+    "sanitizers": [
+      "address",
+      "undefined"
+    ],
+    "build_log": "committed-sdk-build.txt",
+    "executables": [
+      {
+        "path": "build/game-device-20261021/committed-sdk-tests/pxa_ui_test",
+        "exit_code": 0,
+        "log": "committed-ui-test.txt"
+      },
+      {
+        "path": "build/game-device-20261021/committed-sdk-tests/pxa_game_render_spans_test",
+        "exit_code": 0,
+        "log": "committed-render-test.txt"
+      }
+    ],
+    "setup_retry": "Initial extraction omitted cmake/PxaVersion.cmake and VERSION. Added those committed files before configuring again; no source or assertion changes."
+  },
+  "audio_selection": {
+    "default_host_mix": false,
+    "device_selected": "quake-host-audio-baseline",
+    "restore_install_exit_code": 0,
+    "reason": "No meaningful FPS improvement; measured sound-stage median increased."
+  },
+  "final_device_state": "final-device-state.json",
+  "primary_render_comparison": "render-cold-comparison.json"
+}

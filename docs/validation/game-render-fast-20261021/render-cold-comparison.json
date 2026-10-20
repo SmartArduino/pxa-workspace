@@ -1,0 +1,237 @@
+{
+  "baseline_elf": "833c84558cd54763853947a86e6e08288466fea2a8d1365906ec0baa5aadeca2",
+  "candidate_elf": "a8e8925070ee547ad0e9592563cfa0be447b0121d769b58cc73d9d93733b42aa",
+  "all_qualified": true,
+  "cold_start": true,
+  "same_installed_packages": true,
+  "post_flash_wait_min_seconds": 10,
+  "rounds": 3,
+  "batches_per_round": 100,
+  "rows": [
+    {
+      "scene": 0,
+      "baseline_execute_us": {
+        "median": 7658.0,
+        "min": 6047.2,
+        "max": 7728.22
+      },
+      "candidate_execute_us": {
+        "median": 6038.22,
+        "min": 4693.38,
+        "max": 6130.96
+      },
+      "reduction_percent": 21.151475581091667,
+      "hash": "258ebaab",
+      "baseline_wall_us": {
+        "median": 8578.29,
+        "min": 6907.38,
+        "max": 8654.32
+      },
+      "candidate_wall_us": {
+        "median": 6986.32,
+        "min": 5501.51,
+        "max": 7050.14
+      }
+    },
+    {
+      "scene": 1,
+      "baseline_execute_us": {
+        "median": 7037.47,
+        "min": 5792.69,
+        "max": 7071.92
+      },
+      "candidate_execute_us": {
+        "median": 6960.21,
+        "min": 5601.88,
+        "max": 7052.72
+      },
+      "reduction_percent": 1.0978377172478209,
+      "hash": "aed3abc5",
+      "baseline_wall_us": {
+        "median": 7896.01,
+        "min": 6586.39,
+        "max": 7924.16
+      },
+      "candidate_wall_us": {
+        "median": 7844.73,
+        "min": 6406.3,
+        "max": 7979.56
+      }
+    },
+    {
+      "scene": 2,
+      "baseline_execute_us": {
+        "median": 6666.6,
+        "min": 5385.61,
+        "max": 6669.06
+      },
+      "candidate_execute_us": {
+        "median": 2537.66,
+        "min": 2332.42,
+        "max": 2921.74
+      },
+      "reduction_percent": 61.93471934719348,
+      "hash": "7be245c5",
+      "baseline_wall_us": {
+        "median": 7503.21,
+        "min": 6180.23,
+        "max": 7516.12
+      },
+      "candidate_wall_us": {
+        "median": 3215.27,
+        "min": 2956.04,
+        "max": 3664.56
+      }
+    },
+    {
+      "scene": 3,
+      "baseline_execute_us": {
+        "median": 307.96,
+        "min": 300.65,
+        "max": 326.76
+      },
+      "candidate_execute_us": {
+        "median": 304.89,
+        "min": 294.69,
+        "max": 320.39
+      },
+      "reduction_percent": 0.9968827120405226,
+      "hash": "816ff410",
+      "baseline_wall_us": {
+        "median": 784.11,
+        "min": 771.11,
+        "max": 801.75
+      },
+      "candidate_wall_us": {
+        "median": 756.07,
+        "min": 744.66,
+        "max": 793.52
+      }
+    },
+    {
+      "scene": 4,
+      "baseline_execute_us": {
+        "median": 8341.57,
+        "min": 6384.51,
+        "max": 8457.81
+      },
+      "candidate_execute_us": {
+        "median": 4974.3,
+        "min": 4919.42,
+        "max": 6305.06
+      },
+      "reduction_percent": 40.36734092023443,
+      "hash": "ba39bf57",
+      "baseline_wall_us": {
+        "median": 9315.54,
+        "min": 7271.99,
+        "max": 9411.73
+      },
+      "candidate_wall_us": {
+        "median": 5852.24,
+        "min": 5749.61,
+        "max": 7248.59
+      }
+    },
+    {
+      "scene": 5,
+      "baseline_execute_us": {
+        "median": 6180.32,
+        "min": 5884.98,
+        "max": 7353.18
+      },
+      "candidate_execute_us": {
+        "median": 5919.21,
+        "min": 5896.21,
+        "max": 7418.04
+      },
+      "reduction_percent": 4.224862143060548,
+      "hash": "bc8087c5",
+      "baseline_wall_us": {
+        "median": 7036.64,
+        "min": 6680.97,
+        "max": 8274.71
+      },
+      "candidate_wall_us": {
+        "median": 6731.78,
+        "min": 6729.48,
+        "max": 8379.87
+      }
+    },
+    {
+      "scene": 6,
+      "baseline_execute_us": {
+        "median": 5846.03,
+        "min": 5766.96,
+        "max": 7145.81
+      },
+      "candidate_execute_us": {
+        "median": 2637.2,
+        "min": 2579.43,
+        "max": 3211.09
+      },
+      "reduction_percent": 54.88904436001868,
+      "hash": "427225c5",
+      "baseline_wall_us": {
+        "median": 6673.57,
+        "min": 6572.56,
+        "max": 8011.88
+      },
+      "candidate_wall_us": {
+        "median": 3312.01,
+        "min": 3225.01,
+        "max": 3963.89
+      }
+    },
+    {
+      "scene": 7,
+      "baseline_execute_us": {
+        "median": 335.49,
+        "min": 322.53,
+        "max": 339.94
+      },
+      "candidate_execute_us": {
+        "median": 326.64,
+        "min": 325.56,
+        "max": 333.87
+      },
+      "reduction_percent": 2.637932576231787,
+      "hash": "5749b4b4",
+      "baseline_wall_us": {
+        "median": 812.87,
+        "min": 787.17,
+        "max": 817.86
+      },
+      "candidate_wall_us": {
+        "median": 784.8,
+        "min": 776.66,
+        "max": 845.78
+      }
+    }
+  ],
+  "no_game_fps_inference": true,
+  "baseline_memory_before": [
+    "scope=heap;sram_total=651955;sram_free=149743;sram_min=31980;sram_largest=98304;psram_total=16741200;psram_free=15627672;psram_min=15577824;psram_largest=15466496",
+    "scope=budget;internal=24992;external=16564;peak_internal=24992;peak_external=16564;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+    "scope=kind;name=raster;internal=0;external=0",
+    "scope=kind;name=image;internal=0;external=0",
+    "scope=kind;name=audio;internal=0;external=16400",
+    "scope=kind;name=temporary;internal=0;external=0",
+    "scope=kind;name=metadata;internal=24992;external=164",
+    "scope=kind;name=frame;internal=0;external=0",
+    "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0",
+    ""
+  ],
+  "candidate_memory_before": [
+    "scope=heap;sram_total=651955;sram_free=149743;sram_min=31980;sram_largest=98304;psram_total=16741200;psram_free=15627144;psram_min=15578272;psram_largest=15466496",
+    "scope=budget;internal=24992;external=16564;peak_internal=24992;peak_external=16564;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0",
+    "scope=kind;name=raster;internal=0;external=0",
+    "scope=kind;name=image;internal=0;external=0",
+    "scope=kind;name=audio;internal=0;external=16400",
+    "scope=kind;name=temporary;internal=0;external=0",
+    "scope=kind;name=metadata;internal=24992;external=164",
+    "scope=kind;name=frame;internal=0;external=0",
+    "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=0",
+    ""
+  ]
+}

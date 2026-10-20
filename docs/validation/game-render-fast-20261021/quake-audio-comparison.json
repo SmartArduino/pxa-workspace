@@ -1,0 +1,134 @@
+{
+  "quake-audio-baseline": {
+    "qualified": true,
+    "stopped": true,
+    "elf": "4ac88342edbeb9fd9b0df38c53e9e79d0c15cb5e310156375cf162ecc2b005ec",
+    "host_mix_observed": false,
+    "fps": {
+      "mean": 8.516666666666667,
+      "median": 8.9,
+      "min": 7.9,
+      "max": 8.9,
+      "lcd_completed": 8.59470637709724
+    },
+    "timing_median_us": {
+      "eng": 5543.5,
+      "view": 93796.0,
+      "snd": 1858.0,
+      "io": 15500.0,
+      "hv": 88.0,
+      "hx": 2763.0
+    },
+    "positions": [
+      "544,288,50"
+    ],
+    "memory": [
+      {
+        "kind": "DATA",
+        "payload": "scope=heap;sram_total=651955;sram_free=107703;sram_min=31980;sram_largest=61440;psram_total=16741200;psram_free=9137364;psram_min=8363420;psram_largest=7340032"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=budget;internal=26488;external=40842;peak_internal=26488;peak_external=40853;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=raster;internal=0;external=0"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=image;internal=0;external=0"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=audio;internal=0;external=40560"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=temporary;internal=0;external=0"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=metadata;internal=26488;external=282"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=frame;internal=0;external=0"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=2176"
+      },
+      {
+        "kind": "OK",
+        "payload": ""
+      }
+    ]
+  },
+  "quake-audio-host": {
+    "qualified": true,
+    "stopped": true,
+    "elf": "4ac88342edbeb9fd9b0df38c53e9e79d0c15cb5e310156375cf162ecc2b005ec",
+    "host_mix_observed": true,
+    "fps": {
+      "mean": 8.601666666666667,
+      "median": 8.9,
+      "min": 7.9,
+      "max": 8.9,
+      "lcd_completed": 8.677990583797243
+    },
+    "timing_median_us": {
+      "eng": 5528,
+      "view": 92844,
+      "snd": 2152,
+      "io": 15571,
+      "hv": 78,
+      "hx": 2747
+    },
+    "positions": [
+      "544,288,50"
+    ],
+    "memory": [
+      {
+        "kind": "DATA",
+        "payload": "scope=heap;sram_total=651955;sram_free=107715;sram_min=31980;sram_largest=61440;psram_total=16741200;psram_free=9137104;psram_min=8363064;psram_largest=7340032"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=budget;internal=26488;external=40842;peak_internal=26488;peak_external=40853;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=raster;internal=0;external=0"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=image;internal=0;external=0"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=audio;internal=0;external=40560"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=temporary;internal=0;external=0"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=metadata;internal=26488;external=282"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=kind;name=frame;internal=0;external=0"
+      },
+      {
+        "kind": "DATA",
+        "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=2176"
+      },
+      {
+        "kind": "OK",
+        "payload": ""
+      }
+    ]
+  }
+}

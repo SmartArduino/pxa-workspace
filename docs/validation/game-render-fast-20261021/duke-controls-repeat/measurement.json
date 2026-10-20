@@ -1,0 +1,317 @@
+{
+  "game": "duke",
+  "qualified": false,
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "info": {
+    "target": "esp32s31",
+    "serial": "1c:29:04:d0:af:5e",
+    "version": "0.4.0",
+    "free_heap": "15756639",
+    "pxa": "ready",
+    "package_directory_adopt": "1",
+    "package_receive": "1",
+    "board": "doit-gamekit",
+    "pxa_version": "0.4.0",
+    "pxa_core": "2.1",
+    "storage_total": "11468800",
+    "storage_used": "7307264",
+    "storage_free": "4161536",
+    "presentation_fps_x10": "0",
+    "elf_sha256": "425ee691e5f113df0cf563cb2df5977bdfc91e14198152202593c12353616196"
+  },
+  "launch_log_ms": 780373,
+  "screenshots": {
+    "launch": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3383",
+      "device_us": "805980264",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "cd7998af3ad121dbb4681e61e35c57682e988181f6e665948cb322c4924eb359"
+    },
+    "menu-0": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3548",
+      "device_us": "811869490",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "3f3981bcf2b720e00c29dbfd10378df1ba9937cc3c8325fa164f072742b0bcc4"
+    },
+    "menu-1": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3715",
+      "device_us": "817775484",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "59d75d14d29600f946b1f027f95dbfa196a2c9edfcab77d43fe8a50b6f75d784"
+    },
+    "menu-2": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3797",
+      "device_us": "822684788",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "menu-3": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3797",
+      "device_us": "822684788",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "menu-4": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3797",
+      "device_us": "822684788",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "menu-5": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3797",
+      "device_us": "822684788",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "menu-6": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3797",
+      "device_us": "822684788",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "menu-7": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3860",
+      "device_us": "855740256",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "33898aae1f5f282c09f9deeaa174f801876272719eab937bcac71de6e4becceb"
+    },
+    "touch-150": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "4139",
+      "device_us": "868891686",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "6b2361cf500e3971902ed1b613bf40c64454d558919189df722e15bab683f171"
+    }
+  },
+  "pulses": [
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "204",
+        "device_us": "807854411",
+        "log_ms": "809173",
+        "status": "processed"
+      },
+      "release": {
+        "event": "206",
+        "device_us": "809061960",
+        "log_ms": "810381",
+        "status": "processed"
+      },
+      "ack_interval_us": 1207549,
+      "log_barrier": 809166
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "210",
+        "device_us": "813763984",
+        "log_ms": "815083",
+        "status": "processed"
+      },
+      "release": {
+        "event": "212",
+        "device_us": "814970892",
+        "log_ms": "816290",
+        "status": "processed"
+      },
+      "ack_interval_us": 1206908,
+      "log_barrier": 815076
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "216",
+        "device_us": "819754769",
+        "log_ms": "821074",
+        "status": "processed"
+      },
+      "release": {
+        "event": "218",
+        "device_us": "820961810",
+        "log_ms": "822281",
+        "status": "processed"
+      },
+      "ack_interval_us": 1207041,
+      "log_barrier": 821067
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "222",
+        "device_us": "826283904",
+        "log_ms": "827603",
+        "status": "processed"
+      },
+      "release": {
+        "event": "224",
+        "device_us": "827491134",
+        "log_ms": "828810",
+        "status": "processed"
+      },
+      "ack_interval_us": 1207230,
+      "log_barrier": 827596
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "228",
+        "device_us": "832538330",
+        "log_ms": "833857",
+        "status": "processed"
+      },
+      "release": {
+        "event": "230",
+        "device_us": "833745051",
+        "log_ms": "835064",
+        "status": "processed"
+      },
+      "ack_interval_us": 1206721,
+      "log_barrier": 833850
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "234",
+        "device_us": "838820895",
+        "log_ms": "840140",
+        "status": "processed"
+      },
+      "release": {
+        "event": "236",
+        "device_us": "840027975",
+        "log_ms": "841347",
+        "status": "processed"
+      },
+      "ack_interval_us": 1207080,
+      "log_barrier": 840134
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "240",
+        "device_us": "845316853",
+        "log_ms": "846636",
+        "status": "processed"
+      },
+      "release": {
+        "event": "242",
+        "device_us": "846526352",
+        "log_ms": "847845",
+        "status": "processed"
+      },
+      "ack_interval_us": 1209499,
+      "log_barrier": 846628
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "246",
+        "device_us": "851712325",
+        "log_ms": "853031",
+        "status": "processed"
+      },
+      "release": {
+        "event": "248",
+        "device_us": "852919946",
+        "log_ms": "854239",
+        "status": "processed"
+      },
+      "ack_interval_us": 1207621,
+      "log_barrier": 853025
+    }
+  ],
+  "pcm_negotiation": true,
+  "host_mix_observed": false,
+  "overlay": {
+    "touch-150": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": true
+    }
+  },
+  "error": "AssertionError(('touch-150', 0))",
+  "traceback": "Traceback (most recent call last):\n  File \"/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-device-20261021/run_game.py\", line 110, in <module>\n    req('INPUT POINTER DOWN 292 212 0');pump(.2);req('INPUT POINTER MOVE 285 207 0');pump(.2);req('INPUT POINTER UP 285 207 0');pump(2);shot(f'touch-{ms}',True)\n                                                                                                                                        ~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-device-20261021/run_game.py\", line 63, in shot\n    assert (white==len(border))==visible,(name,white)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ('touch-150', 0)\n",
+  "stop_retries": [
+    {
+      "attempt": 1,
+      "error": "PxaDbRejectedError('package_not_running')"
+    },
+    {
+      "attempt": 2,
+      "error": "PxaDbRejectedError('package_not_running')"
+    },
+    {
+      "attempt": 3,
+      "error": "PxaDbRejectedError('package_not_running')"
+    }
+  ],
+  "stopped": true
+}

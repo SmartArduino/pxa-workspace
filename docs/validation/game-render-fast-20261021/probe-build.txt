@@ -1,0 +1,35 @@
+-- The C compiler identification is Clang 23.1.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/deps/pxa-system/.pxa/wasi-sdk-34.0-x86_64-linux/bin/clang - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Configuring done (1.2s)
+-- Generating done (0.0s)
+CMake Warning (unused-cli):
+  Manually-specified variables were not used by the project:
+
+    PXA_GENERATED_INCLUDE_DIR
+    Pxa_DIR
+
+
+-- Build files have been written to: /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-device-20261021/probe-cache/render-kernel-probe-wasm-dcf8f5a3637254f5/cmake-build
+[1/2] Building C object CMakeFiles/pxa_main.dir/main.c.obj
+[2/2] Linking C executable /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-device-20261021/probe-cache/render-kernel-probe-wasm-dcf8f5a3637254f5/artifacts/main.wasm
+Verified bounded linear memory: min=3 max=8 pages
+Create AoT compiler with:
+  target:        riscv32
+  target cpu:    generic-rv32
+  target triple: riscv32-pc-linux-ilp32f
+  cpu features:  +m,+a,+f,+c,+zba,+zbb,+zbs
+  opt level:     3
+  size level:    3
+  output format: AoT file
+Compile success, file /tmp/pxa-render-kernel-probe-esp32s31.CpEDkk/package/artifacts/main.esp32-s31.aot was generated.
+pxa-render-kernel-probe publisher=17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171 files=2
+/home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-device-20261021/probe-package/pxa-render-kernel-probe.pxa files=2 packed=94095 unpacked=128101
+Package directory: /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-device-20261021/probe-package/pxa-render-kernel-probe
+Container for pxadb: /home/lucinhu/Documents/workspace/esp32/zuowei_paixueji_touch/pxa-projects/build/game-device-20261021/probe-package/pxa-render-kernel-probe.pxa
+Architecture artifacts in build/game-device-20261021/probe-package/pxa-render-kernel-probe/artifacts:
+main.esp32-s31.aot
+main.wasm

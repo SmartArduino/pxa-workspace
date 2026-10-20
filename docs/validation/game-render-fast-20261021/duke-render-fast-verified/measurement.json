@@ -1,0 +1,886 @@
+{
+  "game": "duke",
+  "qualified": true,
+  "log_history_interval_samples": 5,
+  "hello": "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor,input-v2,screenshot-rgb565,screenshot-jpeg,perf-raster,heap-local,ime,perf-fps;max_chunk=1024;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=esp32s31;serial=1c:29:04:d0:af:5e;version=0.4.0;uart_rx_buffer=4096;uart_rx_fifo_threshold=32",
+  "info": {
+    "target": "esp32s31",
+    "serial": "1c:29:04:d0:af:5e",
+    "version": "0.4.0",
+    "free_heap": "15749175",
+    "pxa": "ready",
+    "package_directory_adopt": "1",
+    "package_receive": "1",
+    "board": "doit-gamekit",
+    "pxa_version": "0.4.0",
+    "pxa_core": "2.1",
+    "storage_total": "11468800",
+    "storage_used": "7475200",
+    "storage_free": "3993600",
+    "presentation_fps_x10": "0",
+    "elf_sha256": "4ac88342edbeb9fd9b0df38c53e9e79d0c15cb5e310156375cf162ecc2b005ec"
+  },
+  "launch_log_ms": 447346,
+  "screenshots": {
+    "launch": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "2871",
+      "device_us": "472926563",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "29f3a9670a2fb2575899e53ea5578ee97527eefc9e7ebc0680349bd9a290d168"
+    },
+    "menu-0": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3009",
+      "device_us": "479148831",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "8f4e2059a4ffd1e84bb6c815fc004221cfaab6027636d61c3fd2cd62d08a2700"
+    },
+    "menu-1": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3148",
+      "device_us": "485359620",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "59d75d14d29600f946b1f027f95dbfa196a2c9edfcab77d43fe8a50b6f75d784"
+    },
+    "menu-2": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3198",
+      "device_us": "489552521",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "menu-3": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3198",
+      "device_us": "489552521",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "menu-4": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3198",
+      "device_us": "489552521",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "menu-5": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3198",
+      "device_us": "489552521",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "menu-6": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3198",
+      "device_us": "489552521",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "menu-7": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3198",
+      "device_us": "489552521",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "48728abad41017232a8ff44053b18e4011bbf7d741c22982730de4eefee54001"
+    },
+    "level-before-window": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "3388",
+      "device_us": "537498381",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "bee3d605537da4dd62dda64d6ea408633edc85f61ae4eb35c9ed3aa373acf478"
+    },
+    "level-after-window": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "4646",
+      "device_us": "599773752",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "dd968066fb912975284e40321fb52d83ecc67999f47c0dde22eecc94476f900a"
+    },
+    "touch-150": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "4735",
+      "device_us": "604413177",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "bff82ac84b1264c72c32e503b74fc05df96ea95adc9068baf8ebcdf042deba6a"
+    },
+    "pad-150": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "4816",
+      "device_us": "608678358",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "15508a522418efbb956c95c78aadbc206956b5fde7f0b546e5c742d2e362e7f7"
+    },
+    "touch-100": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "4904",
+      "device_us": "613325012",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "1cffe3ae89952b07ef9290696e992acfa2637e66f40e388469ba8c1a1d9d3bf9"
+    },
+    "pad-100": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "4987",
+      "device_us": "617639282",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "d5e698e281299e586339ea7c1cbf2307ab39e45e648535a57bba49404e5ebd3a"
+    },
+    "touch-50": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "5077",
+      "device_us": "622346032",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "694f79935661d5d401e70fc8731fd6f71d96c888acd733370e709cf015c3e747"
+    },
+    "pad-50": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "5155",
+      "device_us": "626423091",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "828f4ecc30b1d4c928bd2597dc291a2a2a3976703e5c621afb2cd5d27be7d963"
+    },
+    "release-hidden": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "5195",
+      "device_us": "628643218",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "16264a64fec7c38d1c30ebac809efd16056a18195fde4141c76d487a660cf707"
+    },
+    "disconnect": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "5257",
+      "device_us": "631879364",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "d961f46ac09dada757c8241305c7e973b6a712cb25cb69a03efa1026bff116e7"
+    },
+    "move-1": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "5570",
+      "device_us": "647210461",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "ac62f3e9e331f4be6d3df5e66b71795c66317e447037633714837554e5385bab"
+    },
+    "move-2": {
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "5876",
+      "device_us": "662104698",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "bb70d141fb2406b0f278905d6d2dc53ce59b018bc4ed5908b1c1098c020875f6"
+    }
+  },
+  "pulses": [
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "217",
+        "device_us": "475120848",
+        "log_ms": "476442",
+        "status": "processed"
+      },
+      "release": {
+        "event": "219",
+        "device_us": "476329225",
+        "log_ms": "477650",
+        "status": "processed"
+      },
+      "ack_interval_us": 1208377,
+      "log_barrier": 476434
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "223",
+        "device_us": "481322851",
+        "log_ms": "482644",
+        "status": "processed"
+      },
+      "release": {
+        "event": "225",
+        "device_us": "482531238",
+        "log_ms": "483852",
+        "status": "processed"
+      },
+      "ack_interval_us": 1208387,
+      "log_barrier": 482636
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "229",
+        "device_us": "487493184",
+        "log_ms": "488814",
+        "status": "processed"
+      },
+      "release": {
+        "event": "231",
+        "device_us": "488700850",
+        "log_ms": "490022",
+        "status": "processed"
+      },
+      "ack_interval_us": 1207666,
+      "log_barrier": 488806
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "235",
+        "device_us": "494076882",
+        "log_ms": "495398",
+        "status": "processed"
+      },
+      "release": {
+        "event": "237",
+        "device_us": "495287292",
+        "log_ms": "496608",
+        "status": "processed"
+      },
+      "ack_interval_us": 1210410,
+      "log_barrier": 495390
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "241",
+        "device_us": "500512966",
+        "log_ms": "501834",
+        "status": "processed"
+      },
+      "release": {
+        "event": "243",
+        "device_us": "501721682",
+        "log_ms": "503043",
+        "status": "processed"
+      },
+      "ack_interval_us": 1208716,
+      "log_barrier": 501826
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "247",
+        "device_us": "507046598",
+        "log_ms": "508368",
+        "status": "processed"
+      },
+      "release": {
+        "event": "249",
+        "device_us": "508256172",
+        "log_ms": "509577",
+        "status": "processed"
+      },
+      "ack_interval_us": 1209574,
+      "log_barrier": 508359
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "253",
+        "device_us": "513709350",
+        "log_ms": "515030",
+        "status": "processed"
+      },
+      "release": {
+        "event": "255",
+        "device_us": "514917160",
+        "log_ms": "516238",
+        "status": "processed"
+      },
+      "ack_interval_us": 1207810,
+      "log_barrier": 515022
+    },
+    {
+      "bits": 128,
+      "requested_seconds": 1.2,
+      "press": {
+        "event": "259",
+        "device_us": "520259961",
+        "log_ms": "521581",
+        "status": "processed"
+      },
+      "release": {
+        "event": "261",
+        "device_us": "521468988",
+        "log_ms": "522790",
+        "status": "processed"
+      },
+      "ack_interval_us": 1209027,
+      "log_barrier": 521573
+    },
+    {
+      "bits": 16,
+      "requested_seconds": 0.15,
+      "press": {
+        "event": "343",
+        "device_us": "606686058",
+        "log_ms": "608007",
+        "status": "processed"
+      },
+      "release": {
+        "event": "344",
+        "device_us": "606844272",
+        "log_ms": "608165",
+        "status": "processed"
+      },
+      "ack_interval_us": 158214,
+      "log_barrier": 607999,
+      "guest_edges": [
+        {
+          "time": 143241.999209851,
+          "kind": "LOG",
+          "payload": "608060\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA PAD controller=0 connected=1 buttons=16\u001b[0m",
+          "log_ms": 608060
+        },
+        {
+          "time": 143242.145908221,
+          "kind": "LOG",
+          "payload": "608210\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA PAD controller=0 connected=1 buttons=0\u001b[0m",
+          "log_ms": 608210
+        }
+      ]
+    },
+    {
+      "bits": 16,
+      "requested_seconds": 0.1,
+      "press": {
+        "event": "353",
+        "device_us": "615693795",
+        "log_ms": "617015",
+        "status": "processed"
+      },
+      "release": {
+        "event": "354",
+        "device_us": "615802501",
+        "log_ms": "617123",
+        "status": "processed"
+      },
+      "ack_interval_us": 108706,
+      "log_barrier": 617007,
+      "guest_edges": [
+        {
+          "time": 143250.985512634,
+          "kind": "LOG",
+          "payload": "617049\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA PAD controller=0 connected=1 buttons=16\u001b[0m",
+          "log_ms": 617049
+        },
+        {
+          "time": 143251.088597465,
+          "kind": "LOG",
+          "payload": "617152\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA PAD controller=0 connected=1 buttons=0\u001b[0m",
+          "log_ms": 617152
+        }
+      ]
+    },
+    {
+      "bits": 16,
+      "requested_seconds": 0.05,
+      "press": {
+        "event": "363",
+        "device_us": "624566247",
+        "log_ms": "625887",
+        "status": "processed"
+      },
+      "release": {
+        "event": "364",
+        "device_us": "624623997",
+        "log_ms": "625945",
+        "status": "processed"
+      },
+      "ack_interval_us": 57750,
+      "log_barrier": 625879,
+      "guest_edges": [
+        {
+          "time": 143259.847441077,
+          "kind": "LOG",
+          "payload": "625911\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA PAD controller=0 connected=1 buttons=16\u001b[0m",
+          "log_ms": 625911
+        },
+        {
+          "time": 143259.910309361,
+          "kind": "LOG",
+          "payload": "625972\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA PAD controller=0 connected=1 buttons=0\u001b[0m",
+          "log_ms": 625972
+        }
+      ]
+    },
+    {
+      "bits": 1,
+      "requested_seconds": 1.0,
+      "press": {
+        "event": "373",
+        "device_us": "637134850",
+        "log_ms": "638456",
+        "status": "processed"
+      },
+      "release": {
+        "event": "374",
+        "device_us": "638142886",
+        "log_ms": "639464",
+        "status": "processed"
+      },
+      "ack_interval_us": 1008036,
+      "log_barrier": 638448,
+      "guest_edges": [
+        {
+          "time": 143272.400803491,
+          "kind": "LOG",
+          "payload": "638462\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA PAD controller=0 connected=1 buttons=1\u001b[0m",
+          "log_ms": 638462
+        },
+        {
+          "time": 143273.477966548,
+          "kind": "LOG",
+          "payload": "639540\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA PAD controller=0 connected=1 buttons=0\u001b[0m",
+          "log_ms": 639540
+        }
+      ]
+    },
+    {
+      "bits": 2,
+      "requested_seconds": 1.0,
+      "press": {
+        "event": "389",
+        "device_us": "652036956",
+        "log_ms": "653358",
+        "status": "processed"
+      },
+      "release": {
+        "event": "390",
+        "device_us": "653045245",
+        "log_ms": "654366",
+        "status": "processed"
+      },
+      "ack_interval_us": 1008289,
+      "log_barrier": 653350,
+      "guest_edges": [
+        {
+          "time": 143287.393379832,
+          "kind": "LOG",
+          "payload": "653457\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA PAD controller=0 connected=1 buttons=2\u001b[0m",
+          "log_ms": 653457
+        },
+        {
+          "time": 143288.343467273,
+          "kind": "LOG",
+          "payload": "654406\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA PAD controller=0 connected=1 buttons=0\u001b[0m",
+          "log_ms": 654406
+        }
+      ]
+    }
+  ],
+  "pcm_negotiation": true,
+  "host_mix_observed": false,
+  "overlay": {
+    "level-before-window": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": false
+    },
+    "level-after-window": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": false
+    },
+    "touch-150": {
+      "white": 196,
+      "total": 196,
+      "expected_visible": true
+    },
+    "pad-150": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": false
+    },
+    "touch-100": {
+      "white": 196,
+      "total": 196,
+      "expected_visible": true
+    },
+    "pad-100": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": false
+    },
+    "touch-50": {
+      "white": 196,
+      "total": 196,
+      "expected_visible": true
+    },
+    "pad-50": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": false
+    },
+    "release-hidden": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": false
+    },
+    "disconnect": {
+      "white": 196,
+      "total": 196,
+      "expected_visible": true
+    },
+    "move-1": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": false
+    },
+    "move-2": {
+      "white": 0,
+      "total": 196,
+      "expected_visible": false
+    }
+  },
+  "window_log_ms": 541011,
+  "window_start": 143174.948300127,
+  "window_end": 143234.984728926,
+  "display": {
+    "capacity": "256",
+    "raster": "0",
+    "present": "256",
+    "raster_overflow": "0",
+    "present_overflow": "958",
+    "list_min": "0",
+    "list_max": "0",
+    "pixels_min": "0",
+    "pixels_max": "0",
+    "surface_changed": "0",
+    "completed": "1215",
+    "window_us": "60041901",
+    "display": "1"
+  },
+  "level_records": [
+    {
+      "time": 143176.706168926,
+      "kind": "LOG",
+      "payload": "542766\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=995 hr=0 hx=3149124\u001b[0m",
+      "log_ms": 542766
+    },
+    {
+      "time": 143181.729972155,
+      "kind": "LOG",
+      "payload": "547787\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=1096 hr=0 hx=3454595\u001b[0m",
+      "log_ms": 547787
+    },
+    {
+      "time": 143186.776598192,
+      "kind": "LOG",
+      "payload": "552840\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=1198 hr=0 hx=3767564\u001b[0m",
+      "log_ms": 552840
+    },
+    {
+      "time": 143191.810274003,
+      "kind": "LOG",
+      "payload": "557874\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=1299 hr=0 hx=4072380\u001b[0m",
+      "log_ms": 557874
+    },
+    {
+      "time": 143196.816650828,
+      "kind": "LOG",
+      "payload": "562877\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=1400 hr=0 hx=4381743\u001b[0m",
+      "log_ms": 562877
+    },
+    {
+      "time": 143204.982875811,
+      "kind": "LOG",
+      "payload": "567880\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=1501 hr=0 hx=4690164\u001b[0m",
+      "log_ms": 567880
+    },
+    {
+      "time": 143206.859354808,
+      "kind": "LOG",
+      "payload": "572922\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=1604 hr=0 hx=4999303\u001b[0m",
+      "log_ms": 572922
+    },
+    {
+      "time": 143211.885295585,
+      "kind": "LOG",
+      "payload": "577940\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=1706 hr=0 hx=5307505\u001b[0m",
+      "log_ms": 577940
+    },
+    {
+      "time": 143219.981600588,
+      "kind": "LOG",
+      "payload": "582940\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=1806 hr=0 hx=5609210\u001b[0m",
+      "log_ms": 582940
+    },
+    {
+      "time": 143221.921079756,
+      "kind": "LOG",
+      "payload": "587979\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=1908 hr=0 hx=5921174\u001b[0m",
+      "log_ms": 587979
+    },
+    {
+      "time": 143226.93420747,
+      "kind": "LOG",
+      "payload": "592990\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=2010 hr=0 hx=6220298\u001b[0m",
+      "log_ms": 592990
+    },
+    {
+      "time": 143231.942598275,
+      "kind": "LOG",
+      "payload": "598005\t\u001b[32m[PXA app=pxa-duke3d-sd component=65537 level=INFO] PXA DUKE INPUT x=-31243 y=7160 z=-158228 angle=422 mode=4 up=0 down=0 hb=2111 hr=0 hx=6522405\u001b[0m",
+      "log_ms": 598005
+    }
+  ],
+  "fps_samples": [
+    18.9,
+    21.8,
+    19.9,
+    19.9,
+    20.9,
+    19.9,
+    19.9,
+    19.9,
+    19.9,
+    19.8,
+    20.9,
+    19.7,
+    19.9,
+    20.9,
+    19.9,
+    19.9,
+    19.9,
+    18.9,
+    20.8,
+    20.8,
+    19.9,
+    19.9,
+    20.9,
+    19.9,
+    19.8,
+    20.8,
+    18.9,
+    20.9,
+    20.9,
+    18.9,
+    20.8,
+    20.9,
+    19.9,
+    19.9,
+    20.9,
+    19.9,
+    20.8,
+    19.8,
+    19.9,
+    20.9,
+    19.9,
+    18.8,
+    20.7,
+    19.9,
+    19.8,
+    20.7,
+    19.8,
+    19.9,
+    20.9,
+    19.9,
+    20.8,
+    19.9,
+    19.9,
+    19.9,
+    20.9,
+    19.9,
+    19.9,
+    20.9,
+    19.9,
+    20.9
+  ],
+  "fps": {
+    "mean": 20.168333333333333,
+    "median": 19.9,
+    "min": 18.8,
+    "max": 21.8,
+    "lcd_completed": 20.235868281385695
+  },
+  "memory": [
+    {
+      "kind": "DATA",
+      "payload": "scope=heap;sram_total=651955;sram_free=87367;sram_min=31980;sram_largest=49152;psram_total=16741200;psram_free=9685072;psram_min=8911256;psram_largest=8650752"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=budget;internal=26488;external=40843;peak_internal=26488;peak_external=40853;temporary_peak_internal=0;temporary_peak_external=0;fixed=2224;denied=0;allocation_failures=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=raster;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=image;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=audio;internal=0;external=40560"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=temporary;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=metadata;internal=26488;external=283"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=kind;name=frame;internal=0;external=0"
+    },
+    {
+      "kind": "DATA",
+      "payload": "scope=surface;frame=0;scratch=0;mailbox=0;probe=0;peak_total=2176"
+    },
+    {
+      "kind": "OK",
+      "payload": ""
+    }
+  ],
+  "movement": [
+    {
+      "bits": 1,
+      "before": {
+        "x": -31243,
+        "y": 7160,
+        "angle": 422
+      },
+      "after": {
+        "x": -30581,
+        "y": 12146,
+        "angle": 422
+      },
+      "dx": 662,
+      "dy": 4986,
+      "projection": 4977.612658993308
+    },
+    {
+      "bits": 2,
+      "before": {
+        "x": -30581,
+        "y": 12146,
+        "angle": 422
+      },
+      "after": {
+        "x": -31978,
+        "y": 7299,
+        "angle": 422
+      },
+      "dx": -1397,
+      "dy": -4847,
+      "projection": -5044.254480055623
+    }
+  ],
+  "stopped": true
+}
