@@ -73,6 +73,7 @@
 #include "pxa_host_maintenance.h"
 #include "pxa_host_ui_event_text.h"
 #include "pxa_host_pointer_mailbox.h"
+#include "pxa_host_controller_state.h"
 #include "pxa_host_main_loop.h"
 #include "pxa/event_port.h"
 #include "pxa_esp_store_policy.h"
@@ -280,6 +281,7 @@ typedef struct {
     uint32_t unresponsive_prompt_id;
     pxa_host_clock_slots_t clock_slots;
     pxa_host_pointer_mailbox_t pointer_mailbox;
+    pxa_host_controller_state_t controller_state;
     pxa_esp_host_public_state_t public_state;
     pxa_esp_host_activation_t activation;
 } pxa_esp_host_t;
@@ -2265,24 +2267,6 @@ static int enqueue_pointer_event(const pxa_host_pointer_event_t *event) {
     return queued;
 }
 
-static int take_pointer_command(pxa_esp_host_command_t *command,
-                                uint64_t now_us) {
-    pxa_host_pointer_event_t event;
-    int available;
-
-    portENTER_CRITICAL(&g_pointer_mailbox_lock);
-    available = pxa_host_pointer_mailbox_take(
-        &g_host.pointer_mailbox, now_us,
-        PXA_ESP_HOST_POINTER_MOVE_MIN_INTERVAL_US, &event);
-    portEXIT_CRITICAL(&g_pointer_mailbox_lock);
-    if (available) {
-        memset(command, 0, sizeof(*command));
-        command->type = (uint8_t)PXA_ESP_HOST_CMD_POINTER;
-        command->payload.pointer = event;
-    }
-    return available;
-}
-
 static int pointer_mailbox_has_move(void) {
     int pending;
 
@@ -2306,7 +2290,7 @@ static int pointer_move_is_due(uint64_t now_us) {
 
 static void clear_pointer_mailbox(void) {
     portENTER_CRITICAL(&g_pointer_mailbox_lock);
-    pxa_host_pointer_mailbox_init(&g_host.pointer_mailbox);
+    pxa_host_pointer_mailbox_reset(&g_host.pointer_mailbox);
     portEXIT_CRITICAL(&g_pointer_mailbox_lock);
 }
 
@@ -3568,41 +3552,68 @@ static void on_watchdog_timer(void *arg) {
 
 /* --- command loop -------------------------------------------------------- */
 
-static void post_pointer(const pxa_esp_host_command_t *command) {
+/* A full Core mailbox is backpressure, not successful delivery. Keep the
+ * source edge until accepted; all UI work remains on the runtime owner task. */
+static int prepare_pointer(const pxa_esp_host_command_t *command) {
     const pxa_host_pointer_event_t *event = &command->payload.pointer;
-    if (g_host.activation.services.ui == NULL || g_host.activation.ui_component == PXA_COMPONENT_INVALID ||
+    if (g_host.activation.services.ui == NULL ||
+        g_host.activation.ui_component == PXA_COMPONENT_INVALID ||
         event->instance_id == 0 ||
         event->instance_id != g_host.activation.active_instance_id)
-        return;
-    {
-        uint8_t value[12] = {0};
-        value[0] = event->id;
-        value[1] = event->phase;
-        pxa_write_u32(value + 4, (uint32_t)event->x);
-        pxa_write_u32(value + 8, (uint32_t)event->y);
+        return 1;
+    uint8_t value[12] = {0};
+    value[0] = event->id;
+    value[1] = event->phase;
+    pxa_write_u32(value + 4, (uint32_t)event->x);
+    pxa_write_u32(value + 8, (uint32_t)event->y);
+    const pxa_status_t status = pxa_ui_queue_event(
+        g_host.activation.services.ui, g_host.activation.ui_component,
+        event->surface, event->node, PXA_UI_EVENT_POINTER,
+        event->phase == PXA_HOST_POINTER_MOVE_PHASE
+            ? 0 : PXA_UI_EVENT_FLAG_RELIABLE,
+        event->timestamp_us, value, sizeof(value));
+    if (status == PXA_STATUS_BUSY || status == PXA_STATUS_RESOURCE_LIMIT) return 0;
+    if (status == PXA_STATUS_OK) {
         pxa_esp_surface_note_input_sample(event->timestamp_us);
+        pxa_esp_surface_note_input_delivered(event->timestamp_us, host_now_us(NULL));
         if (event->phase != PXA_HOST_POINTER_MOVE_PHASE) {
 #if PXA_AUDIO_LATENCY_TRACE
             esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: input us=%llu sampled=%llu phase=%u x=%d y=%d\n",
-                     (unsigned long long)host_now_us(NULL),
-                     (unsigned long long)event->timestamp_us,
-                     (unsigned)event->phase, (int)event->x, (int)event->y);
+                (unsigned long long)host_now_us(NULL),
+                (unsigned long long)event->timestamp_us,
+                (unsigned)event->phase, (int)event->x, (int)event->y);
 #endif
-            ESP_LOGI(PXA_ESP_HOST_TAG,
-                     "pointer delivered id=%u phase=%u x=%d y=%d",
-                     (unsigned)event->id, (unsigned)event->phase,
-                     (int)event->x, (int)event->y);
+            ESP_LOGI(PXA_ESP_HOST_TAG, "pointer accepted id=%u phase=%u x=%d y=%d",
+                (unsigned)event->id, (unsigned)event->phase, (int)event->x, (int)event->y);
         }
-        (void)pxa_ui_queue_event(
-            g_host.activation.services.ui, g_host.activation.ui_component,
-            event->surface, event->node, PXA_UI_EVENT_POINTER,
-            event->phase == PXA_HOST_POINTER_MOVE_PHASE
-                ? 0 : PXA_UI_EVENT_FLAG_RELIABLE,
-            event->timestamp_us, value, sizeof(value));
     }
+    return 1; /* Stale/unsubscribed targets do not hold up other input. */
+}
+
+static int dispatch_pending_pointer(void) {
+    pxa_esp_host_command_t command = {0};
+    uint32_t epoch;
+    int available;
+    uint64_t now = host_now_us(NULL);
+    portENTER_CRITICAL(&g_pointer_mailbox_lock);
+    available = pxa_host_pointer_mailbox_peek(&g_host.pointer_mailbox, now,
+        PXA_ESP_HOST_POINTER_MOVE_MIN_INTERVAL_US, &command.payload.pointer, &epoch);
+    portEXIT_CRITICAL(&g_pointer_mailbox_lock);
+    if (!available) return 0;
+    command.type = PXA_ESP_HOST_CMD_POINTER;
+    const int accepted = prepare_pointer(&command);
+    if (accepted) {
+        portENTER_CRITICAL(&g_pointer_mailbox_lock);
+        (void)pxa_host_pointer_mailbox_commit(&g_host.pointer_mailbox,
+            &command.payload.pointer, epoch, now);
+        portEXIT_CRITICAL(&g_pointer_mailbox_lock);
+    }
+    /* Only dispatch Guest code after committing the snapshot: a callback may
+     * suspend, replace the UI or enter the retained native main loop. */
     drain_active_events();
-    pxa_esp_surface_note_input_delivered(event->timestamp_us,
-                                         host_now_us(NULL));
+    /* A callback may have freed Core slots. Retry pending input on the next
+     * owner iteration instead of sleeping until an unrelated notification. */
+    return 1;
 }
 
 static void post_ui_event(const pxa_esp_host_command_t *command) {
@@ -3640,6 +3651,16 @@ static int prepare_controller(const pxa_esp_host_command_t *command) {
         event->instance_id == 0 ||
         event->instance_id != g_host.activation.active_instance_id)
         return 1;
+    const uint32_t generation = pxa_ui_event_target_generation(
+        g_host.activation.services.ui, g_host.activation.ui_component,
+        PXA_UI_PRIMARY_SURFACE, 1u, PXA_UI_EVENT_CONTROLLER_STATE);
+    if (!generation) {
+        g_host.controller_state.valid = 0;
+        return 1;
+    }
+    if (pxa_host_controller_state_matches(&g_host.controller_state,
+            event->instance_id, generation, event->controller,
+            event->connected, event->buttons)) return 1;
     value[0] = event->controller;
     value[1] = event->connected;
     pxa_write_u32(value + 4, event->buttons);
@@ -3648,6 +3669,10 @@ static int prepare_controller(const pxa_esp_host_command_t *command) {
         PXA_UI_PRIMARY_SURFACE, 1u, PXA_UI_EVENT_CONTROLLER_STATE,
         PXA_UI_EVENT_FLAG_RELIABLE, event->timestamp_us, value,
         sizeof(value));
+    if (status == PXA_STATUS_OK)
+        pxa_host_controller_state_accept(&g_host.controller_state,
+            event->instance_id, generation, event->controller,
+            event->connected, event->buttons);
     return status != PXA_STATUS_BUSY && status != PXA_STATUS_RESOURCE_LIMIT;
 }
 
@@ -4313,6 +4338,7 @@ static void sync_ui_lifecycle(void) {
             snprintf(launch_identity, sizeof(launch_identity), "%s",
                      g_host.activation.active_identity);
         g_host.lifecycle_delivered = effective;
+        g_host.controller_state.valid = 0;
         /* A main-loop event callback can retain this call until the app exits.
          * Remove launch chrome before dispatch, so it cannot cover the running
          * app and intercept all pointer input for that entire lifetime. */
@@ -4422,7 +4448,7 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
     if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
     pxa_esp_fs_roots_poll(g_host.activation.services.fs_roots);
     if (take_net_completion_ready()) drain_net_completions();
-    if (take_pointer_command(&command, host_now_us(NULL))) post_pointer(&command);
+    (void)dispatch_pending_pointer();
     for (unsigned count = 0; count < 8; ++count) {
         pxa_stop_reason_t reason;
         if (xQueuePeek(g_host.queue, &command, 0) != pdTRUE) break;
@@ -4436,8 +4462,10 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
             goto finished;
         }
         if (policy != PXA_HOST_LOOP_SKIP &&
-            command.type == PXA_ESP_HOST_CMD_CONTROLLER &&
-            !prepare_controller(&command)) break;
+            ((command.type == PXA_ESP_HOST_CMD_CONTROLLER &&
+              !prepare_controller(&command)) ||
+             (command.type == PXA_ESP_HOST_CMD_POINTER &&
+              !prepare_pointer(&command)))) break;
         if (xQueueReceive(g_host.queue, &command, 0) != pdTRUE) break;
         portENTER_CRITICAL(&g_process_state_lock);
         pxa_host_maintenance_clear(&g_host.maintenance_pending,
@@ -4449,7 +4477,7 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
             continue;
         }
         switch (command.type) {
-        case PXA_ESP_HOST_CMD_POINTER: post_pointer(&command); break;
+        case PXA_ESP_HOST_CMD_POINTER: break; /* Prepared before removal. */
         case PXA_ESP_HOST_CMD_UI_EVENT:
             post_ui_event(&command);
             pxa_host_ui_event_release_text(&command.payload.ui_event, free);
@@ -4555,10 +4583,7 @@ static void run(void) {
         /* A pointer move can run guest code and build a full Canvas frame.
          * Handle only one here so a continuous drag cannot starve ticks or
          * system BACK requests waiting in the regular command queue. */
-        if (take_pointer_command(&command, host_now_us(NULL))) {
-            post_pointer(&command);
-            handled = 1;
-        }
+        if (dispatch_pending_pointer()) handled = 1;
         if (__atomic_exchange_n(&g_assets_completion_ready, 0u, __ATOMIC_ACQ_REL)) {
             if (g_host.activation.runtime) (void)drain_active_events();
             handled = 1;
@@ -4578,8 +4603,10 @@ static void run(void) {
         if (g_host.cooperative_exit_pending) continue;
         const int command_available = xQueuePeek(g_host.queue, &command, 0) == pdTRUE;
         if (command_available &&
-            command.type == PXA_ESP_HOST_CMD_CONTROLLER &&
-            !prepare_controller(&command)) {
+            ((command.type == PXA_ESP_HOST_CMD_CONTROLLER &&
+              !prepare_controller(&command)) ||
+             (command.type == PXA_ESP_HOST_CMD_POINTER &&
+              !prepare_pointer(&command)))) {
             /* A callback-mode app can free event slots here. A native-loop
              * app consumes them through its wait port instead. */
             drain_active_events();
@@ -4640,7 +4667,7 @@ static void run(void) {
                 }
                 break;
             case PXA_ESP_HOST_CMD_POINTER:
-                post_pointer(&command);
+                drain_active_events();
                 break;
             case PXA_ESP_HOST_CMD_UI_EVENT:
                 post_ui_event(&command);

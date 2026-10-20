@@ -242,6 +242,44 @@ static void test_internal_layout_stays_bounded(void) {
     assert(sizeof(pxa_host_pointer_mailbox_t) <= 464u);
 }
 
+static void test_backpressure_and_inflight_changes(void) {
+    pxa_host_pointer_mailbox_t mailbox;
+    pxa_host_pointer_event_t snapshot, next;
+    uint32_t epoch;
+    pxa_host_pointer_mailbox_init(&mailbox);
+    for (unsigned i = 0; i < PXA_HOST_POINTER_MAILBOX_CAPACITY; ++i) {
+        next = pointer_event(0, i & 1 ? 2 : 0, (int)i);
+        next.timestamp_us = i + 1;
+        assert(pxa_host_pointer_mailbox_push(&mailbox, &next));
+    }
+    /* Rejected downstream writes leave every edge, including its time,
+     * available for retry. Acceptance removes exactly the accepted sample. */
+    for (unsigned i = 0; i < PXA_HOST_POINTER_MAILBOX_CAPACITY; ++i) {
+        for (unsigned retry = 0; retry < 20; ++retry) {
+            assert(pxa_host_pointer_mailbox_peek(&mailbox, 100, 16, &snapshot, &epoch));
+            assert(snapshot.x == (int)i && snapshot.timestamp_us == i + 1);
+            assert(mailbox.count == PXA_HOST_POINTER_MAILBOX_CAPACITY - i);
+        }
+        assert(pxa_host_pointer_mailbox_commit(&mailbox, &snapshot, epoch, 100));
+    }
+    next = pointer_event(0, PXA_HOST_POINTER_MOVE_PHASE, 1);
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &next));
+    assert(pxa_host_pointer_mailbox_peek(&mailbox, 200, 16, &snapshot, &epoch));
+    next.x = 2; /* Producer replaces a move while Host submits its snapshot. */
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &next));
+    assert(!pxa_host_pointer_mailbox_commit(&mailbox, &snapshot, epoch, 200));
+    assert(mailbox.count == 1 && mailbox.events[0].x == 2);
+    assert(pxa_host_pointer_mailbox_peek(&mailbox, 200, 16, &snapshot, &epoch));
+    next = pointer_event(0, 2, 3); /* Appending an edge does not invalidate it. */
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &next));
+    assert(pxa_host_pointer_mailbox_commit(&mailbox, &snapshot, epoch, 200));
+    assert(pxa_host_pointer_mailbox_peek(&mailbox, 200, 16, &snapshot, &epoch));
+    pxa_host_pointer_mailbox_reset(&mailbox);
+    assert(pxa_host_pointer_mailbox_push(&mailbox, &snapshot));
+    assert(!pxa_host_pointer_mailbox_commit(&mailbox, &snapshot, epoch, 200));
+    assert(mailbox.count == 1); /* Even an identical post-reset edge survives. */
+}
+
 int main(void) {
     test_contiguous_moves_are_coalesced();
     test_move_before_edge_bypasses_throttle();
@@ -254,5 +292,6 @@ int main(void) {
     test_coalescing_never_crosses_an_edge();
     test_stream_identity_includes_owner_surface_and_node();
     test_internal_layout_stays_bounded();
+    test_backpressure_and_inflight_changes();
     return 0;
 }

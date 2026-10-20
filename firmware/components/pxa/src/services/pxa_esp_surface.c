@@ -310,6 +310,7 @@ void pxa_esp_surface_perf_clear(void) {
 }
 
 #if CONFIG_PXA_PARALLEL_RASTER
+#include "pxa_raster_handoff.h"
 typedef struct {
     const uint8_t *bytes;
     pxa_raster_draw_list_view_t list;
@@ -331,29 +332,53 @@ static StaticSemaphore_t g_raster_worker_done_storage;
 static SemaphoreHandle_t g_raster_worker_done;
 static pxa_esp_raster_worker_job_t g_raster_worker_job;
 static uint8_t g_raster_worker_attempted;
+static pxa_raster_handoff_t g_raster_handoff;
 static uint16_t g_raster_split_row;
 static uint16_t g_raster_split_height;
+
+static void execute_worker_job(void) {
+    const uint64_t started_us = (uint64_t)esp_timer_get_time();
+    memset(&g_raster_worker_job.telemetry, 0,
+           sizeof(g_raster_worker_job.telemetry));
+    if (g_raster_worker_job.indexed_spans) {
+        pxa_raster_spans_execute_range(g_raster_worker_job.indexed_spans,
+            g_raster_worker_job.byte_begin, g_raster_worker_job.byte_end);
+    } else pxa_raster_execute_draw_list_rows(
+        g_raster_worker_job.bytes, &g_raster_worker_job.list,
+        &g_raster_worker_job.target, &g_raster_worker_job.resources,
+        g_raster_worker_job.row_begin, g_raster_worker_job.row_end,
+        &g_raster_worker_job.telemetry);
+    g_raster_worker_job.elapsed_us = latency_us(
+        started_us, (uint64_t)esp_timer_get_time());
+}
 
 static void raster_worker_task(void *context) {
     (void)context;
     for (;;) {
-        uint64_t started_us;
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        started_us = (uint64_t)esp_timer_get_time();
-        memset(&g_raster_worker_job.telemetry, 0,
-               sizeof(g_raster_worker_job.telemetry));
-        if (g_raster_worker_job.indexed_spans) {
-            pxa_raster_spans_execute_range(g_raster_worker_job.indexed_spans,
-                g_raster_worker_job.byte_begin, g_raster_worker_job.byte_end);
-        } else pxa_raster_execute_draw_list_rows(
-            g_raster_worker_job.bytes, &g_raster_worker_job.list,
-            &g_raster_worker_job.target, &g_raster_worker_job.resources,
-            g_raster_worker_job.row_begin, g_raster_worker_job.row_end,
-            &g_raster_worker_job.telemetry);
-        g_raster_worker_job.elapsed_us = latency_us(
-            started_us, (uint64_t)esp_timer_get_time());
+        /* A late notification can outlive a job stolen by the owner. Only
+         * a successful acquire permits accessing its borrowed inputs. */
+        if (!pxa_raster_handoff_claim(&g_raster_handoff)) continue;
+        execute_worker_job();
         xSemaphoreGive(g_raster_worker_done);
     }
+}
+
+static void start_worker_job(void) {
+    (void)xSemaphoreTake(g_raster_worker_done, 0);
+    pxa_raster_handoff_publish(&g_raster_handoff);
+    xTaskNotifyGive(g_raster_worker_task);
+}
+
+static int finish_worker_job(void) {
+    /* The other core also runs LCD/audio tasks. If it has not started our
+     * half, finish it here instead of sleeping behind unrelated work. */
+    if (pxa_raster_handoff_claim(&g_raster_handoff)) {
+        execute_worker_job();
+        return 0;
+    }
+    (void)xSemaphoreTake(g_raster_worker_done, portMAX_DELAY);
+    return 1;
 }
 
 static void ensure_raster_worker(void) {
@@ -1586,10 +1611,9 @@ pxa_status_t pxa_esp_game_render_execute_spans(void *context,
             g_raster_worker_job.indexed_spans = batch;
             g_raster_worker_job.byte_begin = split;
             g_raster_worker_job.byte_end = batch->target_bytes;
-            (void)xSemaphoreTake(g_raster_worker_done, 0);
-            xTaskNotifyGive(g_raster_worker_task);
+            start_worker_job();
             pxa_raster_spans_execute_range(batch, 0, split);
-            (void)xSemaphoreTake(g_raster_worker_done, portMAX_DELAY);
+            (void)finish_worker_job();
             g_raster_worker_job.indexed_spans = NULL;
         } else pxa_raster_spans_execute_range(batch, 0, batch->target_bytes);
     } else
@@ -1987,16 +2011,18 @@ static void execute_raster_draw_list(
         g_raster_worker_job.resources = *resources;
         g_raster_worker_job.row_begin = split;
         g_raster_worker_job.row_end = target->height;
-        (void)xSemaphoreTake(g_raster_worker_done, 0);
-        xTaskNotifyGive(g_raster_worker_task);
+        start_worker_job();
 
         main_started_us = (uint64_t)esp_timer_get_time();
         pxa_raster_execute_draw_list_rows(bytes, list, target, resources, 0,
                                           split, telemetry);
         *main_us = latency_us(main_started_us,
                               (uint64_t)esp_timer_get_time());
-        (void)xSemaphoreTake(g_raster_worker_done, portMAX_DELAY);
-        *worker_us = g_raster_worker_job.elapsed_us;
+        if (finish_worker_job()) *worker_us = g_raster_worker_job.elapsed_us;
+        else {
+            *main_us = latency_us(main_started_us, (uint64_t)esp_timer_get_time());
+            *split_row = target->height;
+        }
         telemetry->covered_pixels +=
             g_raster_worker_job.telemetry.covered_pixels;
         telemetry->last_covered_pixels +=

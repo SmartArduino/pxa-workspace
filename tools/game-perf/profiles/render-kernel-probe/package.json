@@ -1,0 +1,60 @@
+{
+  "format": "pxa-package-source-0.1",
+  "min_sdk": [
+    2,
+    1
+  ],
+  "target_sdk": [
+    2,
+    1
+  ],
+  "compile_sdk": [
+    2,
+    1
+  ],
+  "id": "pxa-render-kernel-probe",
+  "version": "0.1.0",
+  "release_sequence": 1,
+  "name": "Render kernel probe",
+  "description": "Private exact-output and device timing comparison of indexed raster kernels.",
+  "build": {
+    "system": "cmake",
+    "source_dir": ".",
+    "linear_memory": {
+      "maximum_bytes": 524288,
+      "pinned": true
+    }
+  },
+  "components": [
+    {
+      "id": "main",
+      "kind": "ui",
+      "execution_model": "main-loop",
+      "cmake_target": "pxa_main",
+      "services": [
+        "ui",
+        "window",
+        "log",
+        {
+          "name": "game-render",
+          "min_version": [
+            1,
+            2
+          ],
+          "features": [
+            "borrowed-indexed-spans"
+          ]
+        }
+      ],
+      "wasi": {
+        "version": "preview1",
+        "libc": "wasi-libc",
+        "features": [
+          "monotonic-clock",
+          "wall-clock"
+        ]
+      }
+    }
+  ],
+  "permissions": []
+}

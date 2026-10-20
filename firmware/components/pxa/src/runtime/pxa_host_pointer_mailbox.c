@@ -118,13 +118,12 @@ int pxa_host_pointer_mailbox_push(pxa_host_pointer_mailbox_t *mailbox,
     return 1;
 }
 
-int pxa_host_pointer_mailbox_take(pxa_host_pointer_mailbox_t *mailbox,
+int pxa_host_pointer_mailbox_peek(const pxa_host_pointer_mailbox_t *mailbox,
                                   uint64_t now_us,
                                   uint64_t move_min_interval_us,
-                                  pxa_host_pointer_event_t *event) {
-    pxa_host_pointer_move_clock_t *clock;
+                                  pxa_host_pointer_event_t *event, uint32_t *epoch) {
     uint8_t index;
-    if (mailbox == NULL || event == NULL || mailbox->count == 0) return 0;
+    if (mailbox == NULL || event == NULL || epoch == NULL || mailbox->count == 0) return 0;
 
     /* Preserve edge ordering. With only moves pending, each finger has its
      * own cadence so one active contact cannot throttle another. */
@@ -145,6 +144,22 @@ int pxa_host_pointer_mailbox_take(pxa_host_pointer_mailbox_t *mailbox,
     }
 
     *event = mailbox->events[index];
+    *epoch = mailbox->epoch;
+    return 1;
+}
+
+int pxa_host_pointer_mailbox_commit(pxa_host_pointer_mailbox_t *mailbox,
+    const pxa_host_pointer_event_t *event, uint32_t epoch, uint64_t now_us) {
+    pxa_host_pointer_move_clock_t *clock;
+    uint8_t index;
+    if (!mailbox || !event || mailbox->epoch != epoch) return 0;
+    for (index = 0; index < mailbox->count; ++index) {
+        const pxa_host_pointer_event_t *p = &mailbox->events[index];
+        if (same_pointer_stream(p, event) && p->phase == event->phase &&
+            p->timestamp_us == event->timestamp_us &&
+            p->x == event->x && p->y == event->y) break;
+    }
+    if (index == mailbox->count) return 0;
     memmove(&mailbox->events[index], &mailbox->events[index + 1u],
             (size_t)(mailbox->count - index - 1u) *
                 sizeof(mailbox->events[0]));
@@ -186,4 +201,19 @@ int pxa_host_pointer_mailbox_move_is_due(
         }
     }
     return 0;
+}
+
+void pxa_host_pointer_mailbox_reset(pxa_host_pointer_mailbox_t *mailbox) {
+    if (!mailbox) return;
+    uint32_t epoch = mailbox->epoch + 1u;
+    pxa_host_pointer_mailbox_init(mailbox);
+    mailbox->epoch = epoch;
+}
+
+int pxa_host_pointer_mailbox_take(pxa_host_pointer_mailbox_t *mailbox,
+    uint64_t now_us, uint64_t move_min_interval_us,
+    pxa_host_pointer_event_t *event) {
+    uint32_t epoch;
+    return pxa_host_pointer_mailbox_peek(mailbox, now_us, move_min_interval_us,
+        event, &epoch) && pxa_host_pointer_mailbox_commit(mailbox, event, epoch, now_us);
 }
