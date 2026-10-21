@@ -1222,6 +1222,7 @@ void SensecapWatcherHardware::PublishStatus() {
     if (system_ == nullptr) return;
     pxsys_system_status_snapshot_t status;
     pxsys_system_status_snapshot_init(&status);
+    (void)pxa_system_clock_update_status(&status);
     uint8_t battery_percent = 0;
     if (battery_.GetPercent(&battery_percent)) {
         status.battery_valid = 1;
@@ -1702,6 +1703,7 @@ bool SensecapWatcherHardware::RequestPowerOff() {
 
 void SensecapWatcherHardware::PowerOff() {
     (void)pxa_host_prepare_shutdown(1200);
+    (void)pxa_system_clock_save();
     ESP_LOGI(kTag, "Releasing the power latch");
     ledc_set_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL, 0);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL);

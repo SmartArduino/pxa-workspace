@@ -18,5 +18,11 @@ ESP-IDF component。
 除非每个支持的板子都需要，否则不要把板级依赖加入
 `firmware/main/idf_component.yml`。
 
+系统时间由 [pxa_system_clock](../../firmware/components/pxa_system_clock/README.md)
+提供默认走时和关机恢复。板卡的初始及周期状态调用
+`pxa_system_clock_update_status()`；断电、关闭 RTC 总线或进入深睡前调用
+`pxa_system_clock_save()`，软件重启自动保存。外置 RTC、芯片 RTC 或协处理器可以在
+板卡初始化时通过 `pxa_system_clock_set_source()` 接入 UTC 读写回调。
+
 PXA 数据存储不是固定名为 `assets` 的分区，也不会随常规固件更新烧录。通过 pxadb 开发
 安装与出厂镜像生成参见 [PXA 应用交付](../../docs/zh-CN/pxa-app-delivery.md)。

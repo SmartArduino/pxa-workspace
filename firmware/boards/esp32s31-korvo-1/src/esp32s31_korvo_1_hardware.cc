@@ -1079,13 +1079,7 @@ void Esp32S31Korvo1Hardware::PublishStatus() {
 
     pxsys_system_status_snapshot_t status;
     pxsys_system_status_snapshot_init(&status);
-    const std::time_t now = std::time(nullptr);
-    struct tm local = {};
-    if (localtime_r(&now, &local) != nullptr && local.tm_year + 1900 >= 2020) {
-        status.time_valid = 1;
-        status.hour = local.tm_hour;
-        status.minute = local.tm_min;
-    }
+    (void)pxa_system_clock_update_status(&status);
 
     const bool wifi_ready = wifi_initialized_.load();
     const bool wifi_enabled = wifi_ready && wifi_enabled_.load();

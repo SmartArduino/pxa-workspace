@@ -28,6 +28,7 @@
 #include <esp_heap_caps.h>
 #include <esp_lvgl_port.h>
 #include <esp_netif_sntp.h>
+#include <pxa_system_clock.h>
 #include <esp_system.h>
 #include <nvs.h>
 #include <freertos/FreeRTOS.h>
@@ -604,18 +605,7 @@ void PaiTouchHardware::PublishStatus() {
     if (system_ == nullptr) return;
     pxsys_system_status_snapshot_t status;
     pxsys_system_status_snapshot_init(&status);
-    const std::time_t now = std::time(nullptr);
-    struct tm local = {};
-    if (localtime_r(&now, &local) != nullptr && local.tm_year + 1900 >= 2020) {
-        status.time_valid = 1;
-        status.hour = local.tm_hour;
-        status.minute = local.tm_min;
-        status.date_valid = 1;
-        status.year = local.tm_year + 1900;
-        status.month = local.tm_mon + 1;
-        status.day = local.tm_mday;
-        status.weekday = local.tm_wday;
-    }
+    (void)pxa_system_clock_update_status(&status);
     if (battery_ != nullptr) {
         uint8_t level = 0;
         status.battery_valid = battery_->GetBatteryLevel(level);
@@ -1123,6 +1113,7 @@ void PaiTouchHardware::EnterWifiProvisioning() {
 
 void PaiTouchHardware::PowerOff() {
     (void)pxa_host_prepare_shutdown(1200);
+    (void)pxa_system_clock_save();
     ESP_LOGI(kTag, "Holding controller power-off signal on GPIO1");
     const ledc_timer_config_t timer = {
         .speed_mode = LEDC_LOW_SPEED_MODE,

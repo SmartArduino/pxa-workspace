@@ -1,0 +1,151 @@
+{
+  "port": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5CFF043509-if00",
+  "expected_elf_sha256": "fe5aa99a92288e5c19ab07a3eaad10582b3319e33c093abc068db11106bdf7da",
+  "captures": [
+    {
+      "name": "live-before-restart",
+      "host_monotonic": 187775.642965057,
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "7",
+      "device_us": "4849018",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "4d361c7cff5708c60af0474ddb95640cbcb38c7bd48b4debe26fa8ecd08603f0"
+    },
+    {
+      "name": "after-minute",
+      "host_monotonic": 187847.90759929,
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "14",
+      "device_us": "78200622",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "d43b8715cc25f6e98ed17eeff6467e43bf402cfa948ee2c8bbf783c5f4238430"
+    },
+    {
+      "name": "locked",
+      "host_monotonic": 187908.428419288,
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "35",
+      "device_us": "138214264",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "97c9f959f07dd7e1a07342d423f145b26e75305d7f559cdd1e2f8777b67ea484"
+    },
+    {
+      "name": "restored",
+      "host_monotonic": 187916.70405172,
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "7",
+      "device_us": "4880302",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "a5ccafb47ce7b1d47607a1add7ef114c33eaf26f558edf1480778aa39441f81d"
+    },
+    {
+      "name": "restored-ticking",
+      "host_monotonic": 187983.757121932,
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "9",
+      "device_us": "71941270",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "0c1215ed5cfcbd46cfa0775d63d926a94f78b5772d7e816ce97bde7a75fd8364"
+    },
+    {
+      "name": "notification-date",
+      "host_monotonic": 187987.411832432,
+      "format": "rgb565le",
+      "width": "320",
+      "height": "240",
+      "stride": "640",
+      "orientation": "logical",
+      "frame_id": "19",
+      "device_us": "75443562",
+      "source": "st7789-native-sw270-completed",
+      "bytes": "153600",
+      "sha256": "5f61cfe59eefe42e5c41509c0ab643c8054dbe390af93a7e7bd812435105f2f2"
+    }
+  ],
+  "device": {
+    "target": "esp32s31",
+    "serial": "1c:29:04:d0:af:5e",
+    "version": "0.4.0",
+    "free_heap": "16083875",
+    "pxa": "ready",
+    "package_directory_adopt": "1",
+    "package_receive": "1",
+    "board": "doit-gamekit",
+    "pxa_version": "0.4.0",
+    "pxa_core": "2.1",
+    "storage_total": "11468800",
+    "storage_used": "8818688",
+    "storage_free": "2650112",
+    "presentation_fps_x10": "13",
+    "elf_sha256": "fe5aa99a92288e5c19ab07a3eaad10582b3319e33c093abc068db11106bdf7da"
+  },
+  "restart_host_monotonic": 187908.431386697,
+  "capture_sequence_complete": true,
+  "visual_review": "passed: default 00:00 -> 00:01; lock 00:02 / 2026-01-01; restart 00:02 -> 00:03; notification 00:03 / 2026-01-01; ROM hard reset restores checkpoint 00:02",
+  "clock_behavior_passed": true,
+  "hard_reset_restore": {
+    "screenshot": "after-hard-reset.png",
+    "observed_time": "00:02",
+    "checkpoint": "checkpoint.json",
+    "physical_power_cycle_tested": false
+  },
+  "images": {
+    "live-before-restart.png": {
+      "time": "00:00",
+      "view": "status bar"
+    },
+    "after-minute.png": {
+      "time": "00:01",
+      "view": "status bar"
+    },
+    "locked.png": {
+      "time": "00:02",
+      "date": "2026-01-01",
+      "view": "lock screen"
+    },
+    "restored.png": {
+      "time": "00:02",
+      "view": "status bar after software restart"
+    },
+    "restored-ticking.png": {
+      "time": "00:03",
+      "view": "status bar after software restart + 65 seconds"
+    },
+    "notification-date.png": {
+      "time": "00:03",
+      "date": "2026-01-01",
+      "view": "notification shade"
+    },
+    "after-hard-reset.png": {
+      "time": "00:02",
+      "view": "NVS checkpoint restored after ROM read and hardware reset"
+    }
+  },
+  "firmware_binary_sha256": "aaf58e27e4e15a3db656e4ecde58577916234cddbb9fcedb007d400f3f9e59d3",
+  "source_clock_sha256_at_validation": "f68231b5410a70fda515a8057393505c69550991e872ec6077e3fc12f17a40a4"
+}

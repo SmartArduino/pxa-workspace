@@ -50,6 +50,8 @@ struct lv_display_t { unsigned dpi = 130; } panel;
 unsigned requested_dpi, last_pixels, host_calls, shell_calls, profile_reads;
 unsigned initialize_calls, mounted_calls, lock_depth;
 bool display_available, host_success, initialized, mounted;
+bool clock_ready, clock_success=true;
+bool pxa_system_clock_initialize() { assert(initialized); clock_ready=clock_success; return clock_success; }
 std::vector<unsigned> font_pixels;
 lv_display_t* lv_display_get_default() { return &panel; }
 unsigned lv_display_get_dpi(lv_display_t* d) { assert(lock_depth); return d->dpi; }
@@ -86,7 +88,7 @@ void profile(void*, pxsys_display_profile_t* out) {
     assert(initialized); ++profile_reads; *out={480,480,requested_dpi};
 }
 bool pxa_host_initialize() {
-    ++host_calls; assert(initialized && mounted);
+    ++host_calls; assert(initialized && clock_ready);
     if(!host_success)return false;
     for(unsigned sp : {12u,14u,16u,20u,24u,28u}) {
         assert(load_ui_font(sp,nullptr));
@@ -121,7 +123,7 @@ int main() {
         for(bool early : {false,true}) {
             requested_dpi=dpi; panel.dpi=130; g_system=nullptr;
             host_calls=shell_calls=profile_reads=initialize_calls=mounted_calls=lock_depth=0;
-            display_available=host_success=true; initialized=mounted=false; font_pixels.clear();
+            display_available=host_success=true; initialized=mounted=clock_ready=false; font_pixels.clear();
             board={nullptr,early,initialize,display,profile,nullptr,nullptr,nullptr,nullptr,nullptr};
             pxa_product_profile_t product{sizeof(pxa_product_profile_t),true};
             assert(pxa_integration_start(&product));
@@ -133,8 +135,15 @@ int main() {
     assert(!pxa_integration_start(&product) && host_calls==0 && shell_calls==0);
     display_available=true; host_success=false; host_calls=shell_calls=0;
     assert(!pxa_integration_start(&product) && host_calls==1 && shell_calls==0);
+    host_success=true; clock_success=false; host_calls=shell_calls=0;
+    assert(!pxa_integration_start(&product) && host_calls==0 && shell_calls==0);
+    clock_success=true; initialized=mounted=clock_ready=false;
+    host_calls=shell_calls=profile_reads=initialize_calls=mounted_calls=0;
+    product.mount_storage=false;
+    assert(pxa_integration_start(&product));
+    assert(clock_ready && !mounted && mounted_calls==0 && initialize_calls==1);
     assert(lock_depth==0);
-    std::puts("Production startup/font loader: density published before six fonts, single profile, both mount orders and failures passed");
+    std::puts("Production startup/font loader: density before fonts, both mount orders, clock before Host, optional storage and failures passed");
 }
 '''
 

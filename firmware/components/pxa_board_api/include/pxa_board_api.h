@@ -8,6 +8,7 @@
 #include <lvgl.h>
 #include <pxsys/reference_lvgl.h>
 #include <pxsys/standard_system.h>
+#include <pxa_system_clock.h>
 
 #ifdef __cplusplus
 extern "C" {

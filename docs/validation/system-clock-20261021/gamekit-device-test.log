@@ -1,0 +1,18 @@
+Captured live-before-restart: device_us=4849018
+Waiting for uptime 75s: 70s remaining
+Waiting for uptime 75s: 50s remaining
+Waiting for uptime 75s: 30s remaining
+Waiting for uptime 75s: 10s remaining
+Captured after-minute: device_us=78200622
+Waiting for uptime 135s: 58s remaining
+Waiting for uptime 135s: 38s remaining
+Waiting for uptime 135s: 18s remaining
+Captured locked: device_us=138214264
+Captured restored: device_us=4880302
+Waiting for uptime 69.880302s: 65s remaining
+Waiting for uptime 69.880302s: 45s remaining
+Waiting for uptime 69.880302s: 25s remaining
+Waiting for uptime 69.880302s: 5s remaining
+Captured restored-ticking: device_us=71941270
+Captured notification-date: device_us=75443562
+Clock capture sequence complete; screenshots require visual review.

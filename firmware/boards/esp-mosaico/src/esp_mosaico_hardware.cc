@@ -1151,6 +1151,7 @@ void EspMosaicoHardware::PerformPowerAction() {
         wake_pending_ = true;
         return;
     }
+    (void)pxa_system_clock_save();
     audio_.StopForShutdown();
     vTaskDelay(pdMS_TO_TICKS(120));
     if (power_action_.load() == PXSYS_REFERENCE_POWER_ACTION_RESTART) {
@@ -1306,18 +1307,7 @@ void EspMosaicoHardware::PublishStatus() {
     if (system_ == nullptr) return;
     pxsys_system_status_snapshot_t status;
     pxsys_system_status_snapshot_init(&status);
-    const std::time_t now = std::time(nullptr);
-    struct tm local = {};
-    if (localtime_r(&now, &local) != nullptr && local.tm_year + 1900 >= 2020) {
-        status.time_valid = 1;
-        status.hour = local.tm_hour;
-        status.minute = local.tm_min;
-        status.date_valid = 1;
-        status.year = local.tm_year + 1900;
-        status.month = local.tm_mon + 1;
-        status.day = local.tm_mday;
-        status.weekday = local.tm_wday;
-    }
+    (void)pxa_system_clock_update_status(&status);
     const auto battery = battery_.Get();
     status.battery_valid = battery.valid;
     status.battery_percent = battery.percent;

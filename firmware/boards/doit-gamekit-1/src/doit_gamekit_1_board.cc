@@ -1095,11 +1095,7 @@ void Gamekit::PublishStatus() {
     const int rssi = connected ? wifi.GetRssi() : -100;
     status.wifi_signal_level = status.network_signal_level =
         !connected ? 0 : rssi >= -55 ? 4 : rssi >= -67 ? 3 : rssi >= -75 ? 2 : 1;
-    const auto now = std::time(nullptr);
-    struct tm local{};
-    if (localtime_r(&now, &local) && local.tm_year >= 120) {
-        status.time_valid = 1; status.hour = local.tm_hour; status.minute = local.tm_min;
-    }
+    (void)pxa_system_clock_update_status(&status);
     (void)pxsys_system_status_service_update(pxsys_standard_system_status(system_), &status);
 }
 

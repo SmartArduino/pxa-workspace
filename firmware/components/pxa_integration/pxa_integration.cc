@@ -1187,6 +1187,8 @@ bool CreateSystem(const pxa_board_port_t* board,
 
     pxsys_standard_system_config_t system_config;
     pxsys_standard_system_config_init(&system_config);
+    if (!pxa_system_clock_update_status(&system_config.initial_system_status))
+        return false;
     system_config.max_apps = profile->max_apps;
     system_config.max_instances = profile->max_instances;
     system_config.max_tasks = profile->max_tasks;
@@ -1392,6 +1394,7 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     if (profile->mount_storage && !MountPxaStorage()) return false;
     ESP_LOGI(kTag, "Startup storage ready at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
     if (!board->initialize_before_storage && !board->initialize(board->context)) return false;
+    if (!pxa_system_clock_initialize()) return false;
     ESP_LOGI(kTag, "Startup board ready at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
     // Host semantic fonts are created during initialization, before CreateSystem.
     // Publish density now and pass the same profile to the shell; a later DPI

@@ -19,6 +19,14 @@ Keep the board component self-contained:
 Do not add a board's dependencies to `firmware/main/idf_component.yml` unless every
 supported board needs them.
 
+[pxa_system_clock](../../firmware/components/pxa_system_clock/README.md) supplies
+a ticking default time and restores the time saved at shutdown. Call
+`pxa_system_clock_update_status()` for initial and periodic status, and
+`pxa_system_clock_save()` before cutting power, disabling RTC buses or entering
+deep sleep. Software restarts save automatically. Register UTC read/write
+callbacks with `pxa_system_clock_set_source()` during board initialization to
+use an external RTC, an on-chip RTC or a companion processor.
+
 PXA storage is not a fixed `assets` partition and is not flashed as part of a
 normal firmware update. See [PXA App Delivery](../../docs/pxa-app-delivery.md)
 for pxadb development installation and factory image generation.
