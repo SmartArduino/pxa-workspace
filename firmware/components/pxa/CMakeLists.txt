@@ -145,6 +145,7 @@ if(CONFIG_COMPILER_OPTIMIZATION_PERF AND
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster_spans.c"
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster_blit.c"
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster_projected_spans.c"
+        "${PXA_C_CORE_ROOT}/src/services/game_render/raster_prepared.c"
         APPEND PROPERTY COMPILE_OPTIONS "-O3")
 endif()
 if(CONFIG_WAMR_ENABLE_LIBC_WASI)

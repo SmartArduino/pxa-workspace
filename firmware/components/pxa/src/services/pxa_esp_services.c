@@ -705,6 +705,10 @@ static pxa_status_t initialize_bounded_services(
     game_render_config.execute_spans = pxa_esp_game_render_execute_spans;
     game_render_config.now_us = now_us;
     game_render_config.clock_context = NULL;
+    /* Optional plans never consume scarce internal RAM on allocation failure. */
+    game_render_config.span_prepare_allocator =
+        pxa_esp_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_RASTER);
+    game_render_config.span_prepare_bytes = CONFIG_PXA_GAME_RENDER_PREPARE_KIB * 1024u;
     workspace_size =
         pxa_game_render_service_workspace_size(&game_render_config);
     status = allocate_workspace(host, workspace_size,

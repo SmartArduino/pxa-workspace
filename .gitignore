@@ -29,3 +29,6 @@
 # Python bytecode is local build state at any tool depth.
 **/__pycache__/
 **/.pytest_cache/
+
+# Raw Quake device evidence stays local; commit the validation summary only.
+/docs/validation/quake-host-prepare-20261021/

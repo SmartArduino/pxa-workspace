@@ -335,6 +335,7 @@ static uint8_t g_raster_worker_attempted;
 static pxa_raster_handoff_t g_raster_handoff;
 static uint16_t g_raster_split_row;
 static uint16_t g_raster_split_height;
+static uint8_t g_indexed_primary_share = 128;
 
 static void execute_worker_job(void) {
     const uint64_t started_us = (uint64_t)esp_timer_get_time();
@@ -1602,8 +1603,8 @@ pxa_status_t pxa_esp_game_render_execute_spans(void *context,
      * cache-line boundary in native memory, preventing false sharing. */
     if (g_raster_worker_task && batch->pixels >= 2048) {
         uintptr_t base = (uintptr_t)batch->target;
-        uint32_t midpoint = batch->first_pixel +
-            (batch->end_pixel - batch->first_pixel) / 2u;
+        uint32_t midpoint = pxa_raster_spans_split_hint(batch,
+            batch->prepared ? g_indexed_primary_share : 128);
         uint32_t split = (uint32_t)(((base + midpoint) &
                                      ~(uintptr_t)63u) - base);
         if (split && split < batch->target_bytes) {
@@ -1612,8 +1613,18 @@ pxa_status_t pxa_esp_game_render_execute_spans(void *context,
             g_raster_worker_job.byte_begin = split;
             g_raster_worker_job.byte_end = batch->target_bytes;
             start_worker_job();
+            uint64_t started = batch->prepared ? (uint64_t)esp_timer_get_time() : 0;
             pxa_raster_spans_execute_range(batch, 0, split);
-            (void)finish_worker_job();
+            uint32_t primary_us = batch->prepared ? latency_us(started, (uint64_t)esp_timer_get_time()) : 0;
+            int parallel = finish_worker_job();
+            if (batch->prepared && parallel && primary_us && g_raster_worker_job.elapsed_us) {
+                uint64_t primary = (uint64_t)g_indexed_primary_share * g_raster_worker_job.elapsed_us;
+                uint64_t secondary = (uint64_t)(256u - g_indexed_primary_share) * primary_us;
+                uint32_t target = (uint32_t)(256u * primary / (primary + secondary));
+                if (target < 64) target = 64;
+                if (target > 224) target = 224;
+                g_indexed_primary_share = (uint8_t)((3u * g_indexed_primary_share + target + 2u) / 4u);
+            }
             g_raster_worker_job.indexed_spans = NULL;
         } else pxa_raster_spans_execute_range(batch, 0, batch->target_bytes);
     } else

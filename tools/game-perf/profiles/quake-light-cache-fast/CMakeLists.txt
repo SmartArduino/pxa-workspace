@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.20)
+project(pxa_quake_light_cache_fast C CXX)
+set(PXA_RECROF_BULK_READ_COPY ON CACHE BOOL "" FORCE)
+set(PXA_RECROF_PACKED_GAME_CODEC ON CACHE BOOL "" FORCE)
+include("${CMAKE_CURRENT_LIST_DIR}/../quake-light-cache/CMakeLists.txt")

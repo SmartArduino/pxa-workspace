@@ -242,3 +242,57 @@ wall time, which also includes event checkpoints. Compare output hashes across
 firmwares as well as within repeats. This is a compute benchmark, not game FPS.
 The unchanged caller-owned output/source buffers stay borrowed until both cores
 complete the call. No probe control operation is added to the public ABI.
+
+## Quake Host preparation and light-grid cache
+
+`quake-host-prepare`, `quake-light-cache`, and `quake-light-cache-fast` are
+private comparison profiles for one signed `pxa-quake-sd` application. The last
+profile also enables large-read `memory.copy` and the layout-checked command
+codec. Use the same built AOT when changing probe mode or Host firmware.
+
+```sh
+PXA_GAME_APPS_ROOT="$PWD/local/pxa-apps" bash tools/app.sh build quake-light-cache-fast \
+  --board doit-gamekit --source-root tools/game-perf/profiles --target esp32s31 \
+  --aot-only --output build/quake-probe
+python3 tools/game-perf/run_quake_host_probe.py quake build/quake-run \
+  --elf FULL_ELF_SHA256 --version INSTALLED_VERSION --mode 7 --controls
+```
+
+This device-specific runner guards USB `5CFF043509`, MCU `1c:29:04:d0:af:5e`,
+firmware identity, installed version, and idle state. It writes only the owned
+probe-mode file in Quake's fixed App-media directory and removes it on exit.
+Mode is one hexadecimal byte, with these independent bits:
+
+| Bit | Meaning |
+| --- | --- |
+| 1 | Native indexed output |
+| 2 | Native world frame batches |
+| 4 | Packed light-grid cache |
+| 8 | Rebuild cache hits with the original engine and compare sampled cells |
+
+Common modes: 1 = Guest world/native output, 3 = native world/output,
+5 = Guest world/cache, 7 = native world/cache, 13/15 = corresponding cache
+verification. Verification adds work and is not a performance configuration.
+Mode files affect private probes only; ordinary builds do not read them.
+
+Runs capture a 60-second LCD completion window at START `544,288,50`, HP=100,
+require at least eight fresh level records spanning 45 seconds, and retain
+original device timestamps when recovering dropped logs. Screenshots sit
+outside the timed window. `--controls` also checks short press/release edges,
+actual forward/backward movement and touch/controller overlay transitions.
+Use cold starts with the same application catalog for firmware comparisons;
+record both idle and in-game memory. Do not add nested stage timings or infer
+FPS from an isolated raster kernel. Light-grid verification excludes only the
+upstream packer's unsampled last row; all sampled packed words remain strict.
+
+For a normal Quake package, omit `--mode` and use `--expect-light-cache` when
+the package enables that cache. `--idle-lock` additionally waits 130 seconds
+without input, captures the lock screen, swipes to unlock, and requires a
+new level record from the same firmware. This option assumes this board's
+persisted 120-second lock timeout; inspect both lock/unlock screenshots before
+claiming lock coverage. PCM negotiation is checked, but this is not a physical
+audio waveform or listening test.
+
+The qualified firmware, source hashes, cold-start helper, comparison windows,
+and production package results are recorded in
+`docs/validation/2026-10-21-quake-host-prepare.zh-CN.md`.
