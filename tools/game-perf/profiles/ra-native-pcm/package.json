@@ -12,9 +12,9 @@
     2,
     1
   ],
-  "id": "pxa-red-alert-sd",
+  "id": "pxa-red-alert",
   "version": "0.1.6",
-  "name": "Red Alert SD",
+  "name": "Red Alert",
   "description": "Engine with automatically bound fixed SD resources and internal saves",
   "build": {
     "system": "cmake",
@@ -82,5 +82,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 7
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

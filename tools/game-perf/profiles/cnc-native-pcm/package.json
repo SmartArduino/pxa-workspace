@@ -12,9 +12,9 @@
     2,
     1
   ],
-  "id": "pxa-command-conquer-sd",
+  "id": "pxa-command-conquer",
   "version": "0.1.13",
-  "name": "Command & Conquer SD",
+  "name": "Command & Conquer",
   "description": "Engine with automatically bound fixed SD resources and internal saves",
   "build": {
     "system": "cmake",
@@ -82,5 +82,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 14
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

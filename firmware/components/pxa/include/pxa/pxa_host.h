@@ -238,6 +238,13 @@ bool pxa_host_active_identity(char *identity, size_t capacity);
 bool pxa_host_deploy_package(const char *identity_key);
 bool pxa_host_deploy_package_detailed(
     const char *identity_key, pxa_host_package_deploy_result_t *result);
+/* PXADB administration only; exact publisher-qualified identities, idle owner.
+ * data/ moves atomically without overwriting; capability grants stay separate. */
+int32_t pxa_host_move_app_data(const char *from,const char *to);
+/* Host native absolute private root and media path relative to selected volume.
+ * These are developer tooling paths, never Guest capabilities. */
+int32_t pxa_host_app_storage_paths(const char *identity,char *private_root,size_t private_capacity,
+                                  char *media_relative,size_t media_capacity);
 bool pxa_host_manage_app(pxa_host_app_action_t action,
                          const char *identity_key);
 /* Two-phase enumeration like pxa_host_list_packages: permissions == NULL

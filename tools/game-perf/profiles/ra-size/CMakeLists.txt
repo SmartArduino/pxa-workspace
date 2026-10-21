@@ -5,5 +5,5 @@ if(DEFINED ENV{PXA_GAME_APPS_ROOT} AND NOT "$ENV{PXA_GAME_APPS_ROOT}" STREQUAL "
 else()
     get_filename_component(game_apps_root "${CMAKE_CURRENT_LIST_DIR}/../../../../local/pxa-apps" ABSOLUTE)
 endif()
-add_subdirectory("${game_apps_root}/red-alert-sd" engine)
+add_subdirectory("${game_apps_root}/red-alert" engine)
 target_compile_options(pxa_main PRIVATE -Oz)

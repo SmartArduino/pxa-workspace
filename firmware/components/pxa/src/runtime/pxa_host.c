@@ -367,6 +367,14 @@ bool pxa_host_deploy_package_detailed(
     return success;
 }
 
+int32_t pxa_host_move_app_data(const char *from,const char *to) {
+    return g_host_ready?pxa_esp_host_move_app_data(from,to):PXA_STATUS_UNAVAILABLE;
+}
+int32_t pxa_host_app_storage_paths(const char *identity,char *private_root,size_t private_capacity,
+                                  char *media_relative,size_t media_capacity) {
+    return g_host_ready?pxa_esp_package_store_debug_storage_paths(identity,private_root,private_capacity,
+        media_relative,media_capacity):PXA_STATUS_UNAVAILABLE;
+}
 bool pxa_host_manage_app(pxa_host_app_action_t action,
                          const char *identity_key) {
     bool success;

@@ -8,6 +8,7 @@
 #include "pxa_publisher_profile.h"
 #include "pxa_publisher_binding.h"
 #include "pxa_locator_migration.h"
+#include "pxa_private_data_move.h"
 #include "pxa_esp_fs_roots.h"
 #include "pxa_esp_package_policy.h"
 
@@ -2227,25 +2228,87 @@ migration_done:
     return status;
 }
 
+/* Called with metadata lock held. An exact identity can also address retained
+ * data after archiving. A live target is checked separately by move-data. */
+static pxa_status_t storage_paths_locked(const char *identity,int allow_legacy,
+    char *private_root,size_t private_capacity,char *media_relative,size_t media_capacity) {
+    uint8_t publisher[32];char app_id[65],key[130],relative[130];uint16_t flags=0;
+    pxa_esp_package_entry_t *entry=find_entry(identity);
+    if(entry && entry->has_publisher_key_id) {
+        memcpy(publisher,entry->publisher_key_id,32);
+        snprintf(app_id,sizeof(app_id),"%s",entry->id);
+    } else {
+        if(!allow_legacy)return PXA_STATUS_NOT_FOUND;
+        if(strlen(identity)<66 || identity[64]!=':' || !safe_app_id(identity+65))return PXA_STATUS_NOT_FOUND;
+        for(unsigned i=0;i<32;++i) {
+            unsigned value=0;
+            for(unsigned j=0;j<2;++j) {
+                char c=identity[i*2+j];
+                if(!((c>='0'&&c<='9')||(c>='a'&&c<='f')))return PXA_STATUS_INVALID_ARGUMENT;
+                value=value*16+(c<='9'?c-'0':c-'a'+10);
+            }
+            publisher[i]=(uint8_t)value;
+        }
+        snprintf(app_id,sizeof(app_id),"%s",identity+65);
+    }
+    if(!filesystem_identity(key,sizeof(key),publisher,app_id))return PXA_STATUS_INVALID_ARGUMENT;
+    pxa_status_t status=pxa_app_locators_find(&g_store->locators,publisher,app_id,&flags,relative,sizeof(relative));
+    if(status==PXA_STATUS_OK) {
+        if(!(flags&PXA_LOCATOR_DATA_LEGACY))snprintf(key,sizeof(key),"%s",relative);
+    } else if(status==PXA_STATUS_NOT_FOUND && allow_legacy) {
+        static const char domain[]="PXA-APPKEY-1",hex[]="0123456789abcdef";
+        uint8_t input[sizeof(domain)-1+32+2+64],hash[32];size_t n=sizeof(domain)-1,len=strlen(app_id);
+        memcpy(input,domain,n);memcpy(input+n,publisher,32);input[n+32]=(uint8_t)len;input[n+33]=0;
+        memcpy(input+n+34,app_id,len);
+        status=pxa_esp_mbedtls_sha256(input,n+34+len,hash);if(status!=PXA_STATUS_OK)return status;
+        for(unsigned i=0;i<32;++i){relative[2*i]=hex[hash[i]>>4];relative[2*i+1]=hex[hash[i]&15];}relative[64]=0;
+    } else return status;
+    if(entry && entry->storage_key[0])snprintf(key,sizeof(key),"%s",entry->storage_key);
+    int n=snprintf(private_root,private_capacity,"%s/%s",g_store->data_root,key);
+    if(n<0 || (size_t)n>=private_capacity)return PXA_STATUS_RESOURCE_LIMIT;
+    n=snprintf(media_relative,media_capacity,"PXA/media/%s",relative);
+    return n<0 || (size_t)n>=media_capacity?PXA_STATUS_RESOURCE_LIMIT:PXA_STATUS_OK;
+}
+pxa_status_t pxa_esp_package_store_debug_storage_paths(const char *identity,
+    char *private_root,size_t private_capacity,char *media_relative,size_t media_capacity) {
+    if(!identity || !private_root || !media_relative || !store_is_initialized())return PXA_STATUS_INVALID_ARGUMENT;
+    if(!take_lock(g_store->metadata_lock))return PXA_STATUS_UNAVAILABLE;
+    pxa_status_t status=storage_paths_locked(identity,1,private_root,private_capacity,media_relative,media_capacity);
+    release_lock(g_store->metadata_lock);
+    if(status!=PXA_STATUS_OK){if(private_capacity)private_root[0]=0;if(media_capacity)media_relative[0]=0;}
+    return status;
+}
+
 pxa_status_t pxa_esp_package_store_storage_paths(const char *identity,
     char *private_root,size_t private_capacity,char *media_relative,size_t media_capacity) {
     if(!identity || !private_root || !media_relative || !store_is_initialized())return PXA_STATUS_INVALID_ARGUMENT;
     if(!take_lock(g_store->metadata_lock))return PXA_STATUS_UNAVAILABLE;
-    pxa_status_t status=PXA_STATUS_NOT_FOUND;pxa_esp_package_entry_t *entry=find_entry(identity);
-    if(entry && entry->installed && entry->has_publisher_key_id) {
-        char relative[130];uint16_t flags=0;
-        status=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
-        if(status==PXA_STATUS_OK) {
-            int n=snprintf(private_root,private_capacity,"%s/%s",g_store->data_root,entry->storage_key);
-            if(n<0 || (size_t)n>=private_capacity){status=PXA_STATUS_RESOURCE_LIMIT;goto paths_done;}
-            n=snprintf(media_relative,media_capacity,"PXA/media/%s",relative);
-            status=n<0 || (size_t)n>=media_capacity?PXA_STATUS_RESOURCE_LIMIT:PXA_STATUS_OK;
-        }
-    }
-paths_done:
+    pxa_esp_package_entry_t *entry=find_entry(identity);
+    pxa_status_t status=entry && entry->installed?
+        storage_paths_locked(identity,0,private_root,private_capacity,media_relative,media_capacity):PXA_STATUS_NOT_FOUND;
     release_lock(g_store->metadata_lock);
     if(status!=PXA_STATUS_OK){if(private_capacity)private_root[0]=0;if(media_capacity)media_relative[0]=0;}
     return status;
+}
+
+/* Trusted developer operation, run only by the runtime owner while idle.
+ * New identity must be installed and verified; source must have the exact same
+ * publisher root. Move only the app's data/, never capability/grant metadata. */
+pxa_status_t pxa_esp_package_store_move_data(const char *from,const char *to) {
+    if(!from || !to || strlen(from)<66 || strlen(to)<66 || from[64]!=':' || to[64]!=':' ||
+        strncmp(from,to,65) || !strcmp(from,to))return PXA_STATUS_DENIED;
+    if(!store_is_initialized() || !take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
+    if(!take_lock(g_store->metadata_lock)){release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
+    pxa_status_t status=PXA_STATUS_NOT_FOUND;
+    pxa_esp_package_entry_t *target=find_entry(to);
+    char source_root[PXA_ESP_PACKAGE_ROOT_BYTES],target_root[PXA_ESP_PACKAGE_ROOT_BYTES],media[140];
+    if(!target || !target->installed || !target->has_publisher_key_id)goto done;
+    status=storage_paths_locked(from,1,source_root,sizeof(source_root),media,sizeof(media));
+    if(status!=PXA_STATUS_OK)goto done;
+    status=storage_paths_locked(to,0,target_root,sizeof(target_root),media,sizeof(media));
+    if(status==PXA_STATUS_OK)status=pxa_private_data_move(source_root,target_root,from);
+done:
+    release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);return status;
 }
 
 bool pxa_esp_package_store_deploy_detailed(

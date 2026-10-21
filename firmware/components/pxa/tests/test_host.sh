@@ -67,6 +67,9 @@ build_and_run identity_match \
 build_and_run app_locators \
   -I"$component_dir/src/package" -I"$pxa_system_dir/libpxa/include" \
   "$tests_dir/pxa_app_locators_test.c" "$component_dir/src/package/pxa_app_locators.c"
+build_and_run private_data_move \
+  -I"$component_dir/src/package" -I"$pxa_system_dir/libpxa/include" \
+  "$tests_dir/pxa_private_data_move_test.c"
 build_and_run locator_migration \
   -I"$component_dir/src/package" -I"$pxa_system_dir/libpxa/include" \
   "$tests_dir/pxa_locator_migration_test.c" "$component_dir/src/package/pxa_locator_migration.c" \

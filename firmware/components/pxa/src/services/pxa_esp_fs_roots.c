@@ -117,6 +117,19 @@ pxa_status_t pxa_esp_storage_select_app_media(const char *path) {
     }
     return PXA_STATUS_NOT_FOUND;
 }
+pxa_status_t pxa_esp_storage_media_mount(char *output,size_t capacity) {
+    const pxa_scoped_fs_mount_t *m=mount_for(g_app_media_epoch);
+    pxa_volume_info_t v;
+    if(!output || !capacity)return PXA_STATUS_INVALID_ARGUMENT;
+    output[0]=0;
+    if(!m || pxa_volume_get(g_volumes,g_app_media_epoch,&v)!=PXA_STATUS_OK ||
+        v.ambiguous || v.state!=PXA_VOLUME_READY)return PXA_STATUS_UNAVAILABLE;
+    size_t prefix=strlen(CONFIG_PXA_MOUNT_POINT);
+    if(strncmp(m->host_path,CONFIG_PXA_MOUNT_POINT,prefix) ||
+        m->host_path[prefix]!='/')return PXA_STATUS_DENIED;
+    int n=snprintf(output,capacity,"%s",m->host_path+prefix+1);
+    return n<0 || (size_t)n>=capacity?PXA_STATUS_RESOURCE_LIMIT:PXA_STATUS_OK;
+}
 bool pxa_esp_storage_debug_path(const char *relative,bool system_unlocked,char *temporary,size_t capacity) {
     const char *base=CONFIG_PXA_MOUNT_POINT; size_t prefix=strlen(base); uint16_t i;
     if(!relative || !pxa_fs_scoped_path_is_valid(

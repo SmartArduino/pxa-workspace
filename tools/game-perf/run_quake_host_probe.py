@@ -6,10 +6,10 @@ import pxadb
 from usb_keep_awake import usb_parent
 from run_main_loop_probe import log_barrier,require_idle_packages
 import argparse
-ap=argparse.ArgumentParser();ap.add_argument('game',choices=['duke','quake']);ap.add_argument('output',type=Path);ap.add_argument('--elf',required=True);ap.add_argument('--mode',type=int,choices=[1,3,5,7,13,15]);ap.add_argument('--version',default='0.4.16');ap.add_argument('--controls',action='store_true');ap.add_argument('--controls-only',action='store_true');ap.add_argument('--expect-host-mix',action='store_true');ap.add_argument('--expect-light-cache',action='store_true');ap.add_argument('--idle-lock',action='store_true');a=ap.parse_args()
-mode_path='sdcard/PXA/media/207f14f1edf22e79d1ee07571c729bc1bf71f3212e4007ec2905aca346552538/pxa-render-probe-mode'
+ap=argparse.ArgumentParser();ap.add_argument('game',choices=['duke','quake']);ap.add_argument('output',type=Path);ap.add_argument('--elf',required=True);ap.add_argument('--mode',type=int,choices=[1,3,5,7,13,15]);ap.add_argument('--version',default='0.5.0');ap.add_argument('--controls',action='store_true');ap.add_argument('--controls-only',action='store_true');ap.add_argument('--expect-host-mix',action='store_true');ap.add_argument('--expect-light-cache',action='store_true');ap.add_argument('--idle-lock',action='store_true');a=ap.parse_args()
+mode_path=None
 out=a.output;out.mkdir(parents=True,exist_ok=False)
-app='pxa-duke3d-sd' if a.game=='duke' else 'pxa-quake-sd';version='0.1.35' if a.game=='duke' else a.version
+app='pxa-duke3d' if a.game=='duke' else 'pxa-quake';version='0.2.0' if a.game=='duke' else a.version
 port='/dev/serial/by-id/usb-1a86_USB_Single_Serial_5CFF043509-if00'
 assert subprocess.run(['fuser',str(Path(port).resolve())],capture_output=True).returncode==1
 p=usb_parent(port);assert [(p/x).read_text().strip() for x in ['idVendor','idProduct','serial']]==['1a86','55d3','5CFF043509']
@@ -85,6 +85,10 @@ with open(node,'rb',buffering=0),(out/'serial.jsonl').open('w',buffering=1) as l
   report['idle_memory']=[{'kind':f.kind,'payload':f.payload} for f in req('MEMORY')]
   mark();owned=True
   if a.mode is not None:
+   identity=next(f.payload.split('\t',1)[0] for f in packages if f.kind=='PKG' and f':{app}\t' in f.payload)
+   paths={f.payload.split('\t',1)[0]:f.payload.split('\t',1)[1] for f in req('PACKAGE paths '+identity) if f.kind=='PATH'}
+   assert 'media' in paths,'No selected media volume'
+   mode_path=paths['media']+'/pxa-render-probe-mode'
    fs=pxadb.NormalFsClient(c)
    existing=fs.list(mode_path.rsplit('/',1)[0])
    if any(e[2]=='pxa-render-probe-mode' for e in existing):fs.remove(mode_path)
@@ -206,7 +210,7 @@ with open(node,'rb',buffering=0),(out/'serial.jsonl').open('w',buffering=1) as l
     pump(1)
     report['after_stop_memory']=[{'kind':f.kind,'payload':f.payload} for f in req('MEMORY')]
     req('INPUT KEY HOME')
-    if a.mode is not None:
+    if mode_path is not None:
      try:pxadb.NormalFsClient(c).remove(mode_path)
      except Exception as e:report.setdefault('cleanup_errors',[]).append({'command':'remove owned probe mode','error':repr(e)});report['qualified']=False
   (out/'measurement.json').write_text(json.dumps(report,indent=2)+'\n')

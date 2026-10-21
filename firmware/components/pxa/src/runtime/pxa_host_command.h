@@ -35,6 +35,7 @@ typedef enum {
     PXA_ESP_HOST_CMD_STORE_INSTALL,
     PXA_ESP_HOST_CMD_SHUTDOWN,
     PXA_ESP_HOST_CMD_IME_INPUT,
+    PXA_ESP_HOST_CMD_MOVE_DATA,
 } pxa_esp_host_command_type_t;
 
 typedef struct {
@@ -140,6 +141,7 @@ typedef union {
     pxa_host_system_event_command_t system_event;
     pxa_host_shutdown_command_t shutdown;
     pxa_host_store_install_command_t store_install;
+    void *move_data;
 } pxa_esp_host_command_payload_t;
 
 typedef struct {

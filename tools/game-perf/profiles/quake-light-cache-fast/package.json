@@ -12,9 +12,9 @@
     2,
     1
   ],
-  "id": "pxa-quake-sd",
+  "id": "pxa-quake",
   "version": "0.4.23",
-  "name": "Quake SD",
+  "name": "Quake",
   "description": "Private light-grid cache comparison with bulk resource reads and packed frame commands",
   "build": {
     "system": "cmake",
@@ -86,5 +86,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 143
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

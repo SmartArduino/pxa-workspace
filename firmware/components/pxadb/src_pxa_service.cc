@@ -1264,7 +1264,7 @@ void SendHello(unsigned long sequence) {
         "";
 #endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=%s;serial=%s;version=%s%s",
+             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=%s;serial=%s;version=%s%s",
              kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
              CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version,
@@ -1948,6 +1948,45 @@ void SendPackages(unsigned long sequence) {
 #endif
 }
 
+bool IsQualifiedIdentity(const char* identity) {
+    if(identity==nullptr || strlen(identity)<66 || identity[64]!=':' || !IsSafeIdentity(identity+65))return false;
+    for(unsigned i=0;i<64;++i)if(!((identity[i]>='0'&&identity[i]<='9')||(identity[i]>='a'&&identity[i]<='f')))return false;
+    return true;
+}
+void HandlePackagePaths(unsigned long sequence,const char* identity) {
+#if CONFIG_PXA_ENABLED
+    if(!IsQualifiedIdentity(identity)){SendFrame(sequence,"ERR","qualified_identity_required");return;}
+    char private_root[160],media[140],mount[128],payload[kMaxFramePayload];
+    auto status=pxa_host_app_storage_paths(identity,private_root,sizeof(private_root),media,sizeof(media));
+    const size_t prefix=strlen(CONFIG_PXA_MOUNT_POINT);
+    if(status!=0 || strncmp(private_root,CONFIG_PXA_MOUNT_POINT,prefix) || private_root[prefix]!='/') {
+        SendFrame(sequence,"ERR","storage_paths_unavailable");return;
+    }
+    snprintf(payload,sizeof(payload),"private\t%s",private_root+prefix+1);
+    if(!SendFrame(sequence,"PATH",payload))return;
+    if(pxa_esp_storage_media_mount(mount,sizeof(mount))!=PXA_STATUS_OK) {
+        SendFrame(sequence,"OK","media=unavailable");return;
+    }
+    int n=snprintf(payload,sizeof(payload),"media\t%s/%s",mount,media);
+    if(n<0 || size_t(n)>=sizeof(payload)){SendFrame(sequence,"ERR","storage_path_too_long");return;}
+    if(SendFrame(sequence,"PATH",payload))SendFrame(sequence,"OK","media=ready");
+#else
+    (void)identity;SendFrame(sequence,"ERR","pxa_disabled");
+#endif
+}
+void HandlePackageMoveData(unsigned long sequence,const char* from,const char* to) {
+#if CONFIG_PXA_ENABLED
+    if(!IsQualifiedIdentity(from) || !IsQualifiedIdentity(to)) {
+        SendFrame(sequence,"ERR","qualified_identity_required");return;
+    }
+    auto status=pxa_host_move_app_data(from,to);
+    char response[64];snprintf(response,sizeof(response),"data_move_status=%ld",long(status));
+    SendFrame(sequence,status==0?"OK":"ERR",response);
+#else
+    (void)from;(void)to;SendFrame(sequence,"ERR","pxa_disabled");
+#endif
+}
+
 void HandlePackageAction(unsigned long sequence, const char* action, const char* identity) {
 #if CONFIG_PXA_ENABLED
     if (!IsSafeIdentity(identity)) {
@@ -2249,6 +2288,12 @@ void HandleCommand(char* line) {
         HandleFsUnlock(sequence, argument);
     } else if (strcmp(command, "FSLOCK") == 0) {
         HandleFsLock(sequence);
+    } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
+               strcmp(argument, "paths") == 0 && second_argument != nullptr) {
+        HandlePackagePaths(sequence,second_argument);
+    } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
+               strcmp(argument, "move-data") == 0 && second_argument != nullptr && third_argument != nullptr) {
+        HandlePackageMoveData(sequence,second_argument,third_argument);
     } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
                strcmp(argument, "publish") == 0 && second_argument != nullptr) {
 #if CONFIG_PXA_ENABLED

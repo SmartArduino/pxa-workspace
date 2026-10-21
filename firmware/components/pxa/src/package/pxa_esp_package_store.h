@@ -131,6 +131,11 @@ pxa_status_t pxa_esp_package_store_migrate_storage(const char *,char *,size_t);
 pxa_status_t pxa_esp_package_store_storage_paths(const char *identity,
     char *private_root,size_t private_capacity,char *media_relative,size_t media_capacity);
 
+/* Developer migration can inspect a retained legacy identity after archive. */
+pxa_status_t pxa_esp_package_store_debug_storage_paths(const char *identity,
+    char *private_root,size_t private_capacity,char *media_relative,size_t media_capacity);
+pxa_status_t pxa_esp_package_store_move_data(const char *from,const char *to);
+
 bool pxa_esp_package_store_deploy(const char *identity);
 bool pxa_esp_package_store_deploy_detailed(
     const char *identity, pxa_esp_package_store_deploy_result_t *result);

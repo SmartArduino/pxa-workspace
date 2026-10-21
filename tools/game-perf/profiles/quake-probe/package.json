@@ -12,9 +12,9 @@
     2,
     0
   ],
-  "id": "pxa-quake-sd",
+  "id": "pxa-quake",
   "version": "0.4.6",
-  "name": "Quake SD",
+  "name": "Quake",
   "description": "Private same-AOT renderer comparison and sampled surface timing",
   "build": {
     "system": "cmake",
@@ -79,5 +79,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 126
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

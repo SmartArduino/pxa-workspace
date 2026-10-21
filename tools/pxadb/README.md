@@ -273,3 +273,26 @@ TCP token 认证不加密流量。仅 UI 的桌面模拟器仍没有 PXADB 端�
 文件传输和 Package 管理，详见 [PXADB GUI](../pxadb-gui/README.md)。
 
 On internal Flash, protected system directories can be created only after explicit `fs unlock`; this includes missing `system/pxa` and `system/fonts` parents for initial factory provisioning. Upload/replacement/removal still use the stricter policy. Finish provisioning with `fs lock`. Ordinary SD card directories are writable through PXADB without unlocking: uploads, deletion, directory creation and same-card file moves are allowed. `sdcard/PXA/system` is read-only by default; `fs unlock` temporarily allows mutations below it, and `fs lock` or expiry restores read-only access. The system root, its parent `sdcard/PXA` and the card mount point stay in place. Other card directories, such as `sdcard/PXA/media`, need no unlock. A normally installed store cannot obtain installer authority merely by using the `pxa-store` ID; the product must provision the trusted factory package.
+
+
+### Package storage migration
+
+`PACKAGE paths <publisher-root>:<app-id>` is a read-only Host lookup. `PATH`
+frames carry `private<TAB>path` and, when the selected registered media volume is
+ready, `media<TAB>path`. Paths are relative to the normal PXADB storage root;
+`OK media=unavailable` never grants permission to create a Flash substitute.
+The binding may be a publisher/app directory or a retained legacy identity being
+migrated. Guest FS roots remain controlled by the Host.
+
+`PACKAGE move-data <qualified-source> <qualified-target>` moves the source's
+private `data/` into the target identity. The target must be installed and verified;
+both identities must have the same publisher root. The runtime owner rejects it
+while an app, a pending launch, a graceful stop or an IME is active. It does not
+copy capability grants, merge existing data, or archive packages. A durable
+receipt allows retry after a lost reply; cross-filesystem rename fails without
+copying. Back up saves before invoking it. See the game `migrate_sd.py` tool for
+verified backup, conflict checks and resource migration.
+
+The capabilities are `package-storage` and `package-move-data`. These are cold
+Host administration commands, with no new Guest ABI, rendering buffers or
+per-frame allocations.

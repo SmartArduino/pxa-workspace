@@ -246,7 +246,7 @@ complete the call. No probe control operation is added to the public ABI.
 ## Quake Host preparation and light-grid cache
 
 `quake-host-prepare`, `quake-light-cache`, and `quake-light-cache-fast` are
-private comparison profiles for one signed `pxa-quake-sd` application. The last
+private comparison profiles for one signed `pxa-quake` application. The last
 profile also enables large-read `memory.copy` and the layout-checked command
 codec. Use the same built AOT when changing probe mode or Host firmware.
 
@@ -296,3 +296,7 @@ audio waveform or listening test.
 The qualified firmware, source hashes, cold-start helper, comparison windows,
 and production package results are recorded in
 `docs/validation/2026-10-21-quake-host-prepare.zh-CN.md`.
+
+Production game entries no longer use `-sd` names. Profiles target the same canonical identity and signed publisher binding. Resource uploads and probe-mode files must use `PACKAGE paths <publisher-root>:<app-id>`; do not reuse historical AppKey paths. Historical measurements retain the original IDs and versions.
+
+After migrating to a new application ID, launch once and handle its normal audio permission dialog before automated FPS/control probes. Grants are intentionally not copied across identities; a permission prompt is not an in-level performance sample.

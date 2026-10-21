@@ -12,9 +12,9 @@
     2,
     0
   ],
-  "id": "pxa-quake-sd",
+  "id": "pxa-quake",
   "version": "0.3.0",
-  "name": "Quake SD",
+  "name": "Quake",
   "description": "Engine with automatically bound fixed SD resources and internal saves",
   "build": {
     "system": "cmake",
@@ -78,5 +78,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 110
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

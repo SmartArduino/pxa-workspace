@@ -12,9 +12,9 @@
     2,
     0
   ],
-  "id": "pxa-red-alert-sd",
+  "id": "pxa-red-alert",
   "version": "0.1.4",
-  "name": "Red Alert SD",
+  "name": "Red Alert",
   "description": "Private source-size comparison; unchanged units, caches, renderer and current PXA audio settings",
   "build": {
     "system": "cmake",
@@ -75,5 +75,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 5
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

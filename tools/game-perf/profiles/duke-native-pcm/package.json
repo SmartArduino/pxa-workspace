@@ -12,9 +12,9 @@
     2,
     1
   ],
-  "id": "pxa-duke3d-sd",
+  "id": "pxa-duke3d",
   "version": "0.1.34",
-  "name": "Duke Nukem 3D SD",
+  "name": "Duke Nukem 3D",
   "description": "Duke Nukem 3D engine with automatically bound fixed SD resources and internal saves",
   "build": {
     "system": "cmake",
@@ -82,5 +82,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 35
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

@@ -12,9 +12,9 @@
     2,
     1
   ],
-  "id": "pxa-quake-sd",
+  "id": "pxa-quake",
   "version": "0.4.14",
-  "name": "Quake SD",
+  "name": "Quake",
   "description": "Quake with exact-pixel cached lit spans, original PCM and borrowed native indexed resolve",
   "build": {
     "system": "cmake",
@@ -85,5 +85,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 134
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

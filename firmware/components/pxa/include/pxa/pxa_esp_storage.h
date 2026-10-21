@@ -17,6 +17,9 @@ pxa_status_t pxa_esp_storage_register_fat(const char *path,const char *name,
 size_t pxa_esp_storage_volumes(pxa_volume_info_t *out,size_t capacity);
 /* Explicit board policy, never enumeration order. Before app activation. */
 pxa_status_t pxa_esp_storage_select_app_media(const char *registered_mount);
+/* Selected app-media mount, relative to the PXADB storage root. Read-only;
+ * UNAVAILABLE means no usable selected volume, never a directory fallback. */
+pxa_status_t pxa_esp_storage_media_mount(char *output,size_t capacity);
 /* PXADB Host tooling only. Validates a descendant on a registered removable
  * volume and optionally returns a staging path on that SAME filesystem.
  * PXA/system descendants require the PXADB system unlock; the system root,

@@ -12,9 +12,9 @@
     2,
     1
   ],
-  "id": "pxa-quake-sd",
+  "id": "pxa-quake",
   "version": "0.4.15",
-  "name": "Quake SD",
+  "name": "Quake",
   "description": "Quake synchronous Host audio comparison; original PCM, native indexed output and exact lighting cache",
   "build": {
     "system": "cmake",
@@ -85,5 +85,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 135
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

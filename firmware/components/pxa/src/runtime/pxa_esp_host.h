@@ -78,6 +78,7 @@ bool pxa_esp_host_resolve_package_metadata(
 bool pxa_esp_host_deploy_package(const char *identity);
 bool pxa_esp_host_deploy_package_detailed(
     const char *identity, pxa_host_package_deploy_result_t *result);
+pxa_status_t pxa_esp_host_move_app_data(const char *from,const char *to);
 bool pxa_esp_host_manage_app(pxa_host_app_action_t action,
                              const char *identity);
 size_t pxa_esp_host_list_app_permissions(const char *identity,

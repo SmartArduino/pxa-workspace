@@ -12,9 +12,9 @@
     2,
     1
   ],
-  "id": "pxa-duke3d-sd",
+  "id": "pxa-duke3d",
   "version": "0.1.35",
-  "name": "Duke Nukem 3D SD",
+  "name": "Duke Nukem 3D",
   "description": "Duke Nukem 3D with original native PCM, foreground main loop and borrowed native indexed resolve",
   "build": {
     "system": "cmake",
@@ -92,5 +92,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 36
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

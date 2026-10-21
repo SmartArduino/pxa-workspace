@@ -12,9 +12,9 @@
     2,
     1
   ],
-  "id": "pxa-quake2-sd",
+  "id": "pxa-quake2",
   "version": "0.1.15",
-  "name": "Quake II SD",
+  "name": "Quake II",
   "description": "Engine with automatically bound fixed SD resources and internal saves",
   "build": {
     "system": "cmake",
@@ -82,5 +82,9 @@
       "scope": "media"
     }
   ],
-  "release_sequence": 16
+  "release_sequence": 200,
+  "publisher": {
+    "handle": "lucinhu",
+    "display_name": "lucinhu"
+  }
 }

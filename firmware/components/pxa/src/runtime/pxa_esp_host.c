@@ -31,6 +31,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
 
@@ -2782,6 +2783,25 @@ static pxa_status_t acquire_ui_image(pxa_component_t component, pxa_handle64_t h
 
 static pxa_status_t prepare_start(void *context, pxa_component_t component,
                                   uint64_t instance_id, uint8_t kind);
+typedef struct {
+    unsigned references;
+    SemaphoreHandle_t complete;
+    pxa_status_t status;
+    char from[PXA_HOST_COMMAND_MAX_IDENTITY_BYTES],to[PXA_HOST_COMMAND_MAX_IDENTITY_BYTES];
+} pxa_move_data_job_t;
+static void move_data_release(pxa_move_data_job_t *job) {
+    if(__atomic_sub_fetch(&job->references,1u,__ATOMIC_ACQ_REL)==0) {
+        vSemaphoreDelete(job->complete);free(job);
+    }
+}
+static void move_data_complete(pxa_move_data_job_t *job) {
+    /* Both callback and native-main-loop games are serialized by this owner. */
+    if(g_host.activation.active_identity[0] || g_host.graceful_stop_active ||
+       g_host.deferred_launch_identity[0] || pxa_esp_ime_active())job->status=PXA_STATUS_BAD_STATE;
+    else job->status=pxa_esp_package_store_move_data(job->from,job->to);
+    xSemaphoreGive(job->complete);move_data_release(job);
+}
+
 static pxa_status_t host_cooperate(void *context, pxa_component_t component,
                                    uint64_t deadline_us);
 static pxa_status_t reset_runtime(uint16_t max_components) {
@@ -4490,6 +4510,7 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
             continue;
         }
         switch (command.type) {
+        case PXA_ESP_HOST_CMD_MOVE_DATA: move_data_complete(command.payload.move_data); break;
         case PXA_ESP_HOST_CMD_POINTER: break; /* Prepared before removal. */
         case PXA_ESP_HOST_CMD_UI_EVENT:
             post_ui_event(&command);
@@ -4634,6 +4655,9 @@ static void run(void) {
                 (pxa_esp_host_command_type_t)command.type);
             portEXIT_CRITICAL(&g_process_state_lock);
             switch (command.type) {
+            case PXA_ESP_HOST_CMD_MOVE_DATA:
+                move_data_complete(command.payload.move_data);
+                break;
             case PXA_ESP_HOST_CMD_IME_INPUT:
                 pxa_esp_ime_input(&command.payload.ime_input);
                 pxa_esp_ime_pump(); pxa_esp_ime_drain();
@@ -5885,6 +5909,21 @@ bool pxa_esp_host_deploy_package_detailed(
     return store_result.status == PXA_STATUS_OK;
 }
 
+pxa_status_t pxa_esp_host_move_app_data(const char *from,const char *to) {
+    if(!g_host.initialized || !from || !to || strlen(from)>=PXA_HOST_COMMAND_MAX_IDENTITY_BYTES ||
+       strlen(to)>=PXA_HOST_COMMAND_MAX_IDENTITY_BYTES || xTaskGetCurrentTaskHandle()==g_host.runtime_task)
+        return PXA_STATUS_INVALID_ARGUMENT;
+    pxa_move_data_job_t *job=esp_alloc(sizeof(*job));
+    if(!job)return PXA_STATUS_RESOURCE_LIMIT;
+    memset(job,0,sizeof(*job));job->complete=xSemaphoreCreateBinary();
+    if(!job->complete){free(job);return PXA_STATUS_RESOURCE_LIMIT;}
+    strcpy(job->from,from);strcpy(job->to,to);job->references=2;job->status=PXA_STATUS_UNAVAILABLE;
+    pxa_esp_host_command_t command={.type=PXA_ESP_HOST_CMD_MOVE_DATA};command.payload.move_data=job;
+    if(!post_command(&command)){move_data_release(job);move_data_release(job);return PXA_STATUS_UNAVAILABLE;}
+    pxa_status_t status=PXA_STATUS_UNAVAILABLE;
+    if(xSemaphoreTake(job->complete,pdMS_TO_TICKS(10000))==pdTRUE)status=job->status;
+    move_data_release(job);return status;
+}
 bool pxa_esp_host_manage_app(pxa_host_app_action_t action,
                              const char *identity) {
     pxa_esp_host_public_state_t public_state;
