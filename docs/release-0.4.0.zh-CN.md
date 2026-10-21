@@ -34,7 +34,7 @@
 | sensecap-watcher | esp32s3 | 32 MiB | 3,623,600 B |
 | doit-gamekit | esp32s31 | 16 MiB | 3,898,208 B |
 
-完整合并固件包含 bootloader、分区表、系统应用和工厂 LittleFS（简体中文字体及商城 0.8.14）。字体使用同一份大陆字形黑体子集；商城直接复用本轮发布的原生包，不另行重建签名。逐区域记录见 [firmware-manifest.json](release-0.4.0/firmware-manifest.json)，挂载读回与版本验证见 [firmware-readback.json](release-0.4.0/firmware-readback.json)。
+完整合并固件包含 bootloader、分区表、系统应用和工厂 LittleFS（简体中文字体及商城 0.8.14）。字体使用同一份大陆字形黑体子集；商城直接复用本轮发布的原生包，不另行重建签名。
 
 **merged.bin 用于首次部署，会覆盖已有应用、存档和设置。需要保留数据时，仅在分区表一致的前提下烧录 app.bin；存储区的字体和应用也会保留原有版本，应单独更新。** S31 的说明保留 `--no-stub`，手动进入下载模式时使用 `--before no-reset`。本轮没有执行这些烧写操作。
 

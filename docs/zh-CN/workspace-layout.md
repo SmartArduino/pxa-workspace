@@ -9,7 +9,11 @@
 | `firmware/` | ESP-IDF 产品、板子、驱动与 pxadb 服务 | PXA App 源码和出厂镜像生成 |
 | `factory/` | 受版本控制的板级出厂预置选择与静态基础内容 | 开发者本机源码路径 |
 | `simulator/` | 桌面显示与输入 Profile | ESP-IDF 驱动、DMA 与物理外设 |
-| `local/` | 私有 App catalog、临时出厂覆盖和输出 | 任何需要追踪的产品策略 |
+| `local/` | 私有 App catalog、临时出厂覆盖和本地产物 | 任何需要追踪的产品策略 |
+
+验证报告、跑分、日志、截图和实验数据（包括 Markdown 摘要）统一放在被忽略的
+`local/artifacts/<topic>/<YYYYMMDD-HHMMSS>/`。`docs/` 保存长期维护的架构、接口、
+使用说明和正式发布说明；只有用户明确要求时才将某份报告纳入版本控制。
 
 ## 板级开发
 

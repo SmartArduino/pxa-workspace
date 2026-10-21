@@ -321,12 +321,9 @@ SD 增加的是存储容量，不是 PSRAM。AOT 从 SD 加载也不等于在 SD
 
 2026-10-18 初始检查：GameKit 是 ESP32-S31，约 16 MiB PSRAM，内部应用分区可用 5,083,136 B，SD 已挂载；pai-touch 是 ESP32-S3，约 8 MiB PSRAM，内部可用约 0.83 MiB且有运行中的应用。随后仅为 GameKit 更新应用固件分区，保留分区表、NVS、文件系统与原有应用；安装了独立签名的 `pxa-scoped-files` 测试应用。真机通过 SD 8192 B 数据内容、4091 偏移 seek、EOF、只读隔离、子句柄生命周期及重启后的持久授权恢复。它验证授权读取链路，不代表游戏关卡、FPS、外部安装或 SD 系统盘已经通过。原始 Flash 私有备份仍保留；pai-touch 未改动。
 
-后续固定根示例通过首次启动及重启后的无选择器读取；Duke3D 已自动读取 SD 资源并进入 Hollywood Holocaust 屋顶关卡，线性内存上限仍为 4 MiB。早先的 INFO 帧率采样带入存储扫描干扰，不能用来量化优化收益；测量状态详见[真机验证记录](validation/2026-10-18-duke3d-sd.zh-CN.md)。其余游戏、完整存档及长期稳定性仍待设备验收，整应用安装与 SD 系统盘尚未实现。
+后续固定根示例通过首次启动及重启后的无选择器读取；Duke3D 已自动读取 SD 资源并进入 Hollywood Holocaust 屋顶关卡，线性内存上限仍为 4 MiB。早先的 INFO 帧率采样带入存储扫描干扰，不能用来量化优化收益。其余游戏、完整存档及长期稳定性仍待设备验收，整应用安装与 SD 系统盘尚未实现。
 
 先行实现已完成：FS 0.3 已接入 scoped-roots、可选 user-directory-grants 及无需选择器的 app-media-root，原有操作兼容；ASan/UBSan 的 Host Core、作用域目录和包测试通过，C SDK 测试、C++ FS/roots 测试通过，PXADB 78 项测试通过。app-media-root 的签名 SDK 示例已在真机首次启动和重启后通过，manifest 无文件权限声明，全程无选择器。未实现功能不发布 feature。异步随机读取、整应用后端、系统盘引导和掉电恢复仍属于后续验收。
-
-已完成链路的固件摘要、可复现夹具与截图见[授权 SD 读取真机记录](validation/2026-10-18-sd-roots.zh-CN.md)。
-默认固定目录且无权限/选择弹窗的验证见[固定根真机记录](validation/2026-10-18-sd-fixed-root.zh-CN.md)。
 
 ## 12. 代码落点与依据
 

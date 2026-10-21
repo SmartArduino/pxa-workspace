@@ -21,9 +21,7 @@ That interval excludes Guest dispatch and is not an acoustic latency measurement
 Performance builds use O3 for the portable rasterizer. The measured 314-byte
 depth/texture span kernel is placed in IRAM through an IDF linker fragment;
 other boards default to mapped code. Set `-DPXA_RASTER_SPAN_IRAM=OFF` in
-`idf.py` to compare placement. The complete firmware, display/input telemetry,
-heap-local peaks and cross-board validation are recorded in
-[`docs/performance/esp32s31-korvo-1-20261013.zh-CN.md`](../../../docs/performance/esp32s31-korvo-1-20261013.zh-CN.md).
+`idf.py` to compare placement.
 GT1151 contacts are exposed as five independent LVGL pointer devices, so PXA
 apps and games receive stable `pointer_id` values for simultaneous touches.
 The poller checks the GT1x data-ready bit before using the GT1151 driver for
@@ -41,7 +39,7 @@ Run `bash firmware/boards/esp32s31-korvo-1/tests/test_host.sh` for touch-state
 ASan/UBSan regression checks. To capture physical touch edges, build with
 `-DPXA_KORVO_TOUCH_TRACE=ON`; it records report counts, idle polls, errors, read
 timing and physical pointer edges. It is off by default and excludes injected
-input. See [`docs/korvo-touch-stability-20261013.zh-CN.md`](../../../docs/korvo-touch-stability-20261013.zh-CN.md).
+input.
 Build it with:
 
 ```sh

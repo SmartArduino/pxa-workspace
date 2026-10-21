@@ -1,6 +1,6 @@
 # PXA 资源与 game-render 重构目标
 
-这是供目标模式执行的任务描述与验收契约。具体设计见 [资源架构设计](pxa-resource-design.zh-CN.md)，实际落地状态见 [执行记录](pxa-resource-refactor-progress.zh-CN.md)。设计要求不代表对应能力已经完成。
+这是供目标模式执行的任务描述与验收契约。具体设计见 [资源架构设计](pxa-resource-design.zh-CN.md)。设计要求不代表对应能力已经完成。
 
 ## 用户修订：安装时校验，运行时信任已安装包
 

@@ -1,9 +1,0 @@
-{
-  "namespace": "pxa_clock",
-  "key": "utc",
-  "utc_seconds": 1767196943,
-  "utc_iso": "2025-12-31T16:02:23+00:00",
-  "entry_crc_valid": true,
-  "page_header_crc_valid": true,
-  "reset": "ROM read then hard reset; application shutdown handler is not run"
-}

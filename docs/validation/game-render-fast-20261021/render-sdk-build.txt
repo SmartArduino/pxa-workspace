@@ -1,6 +1,0 @@
-[  1%] Building C object CMakeFiles/pxa.dir/src/services/game_render/raster_spans.c.o
-[  3%] Linking C static library libpxa.a
-[ 98%] Built target pxa
-[ 98%] Building C object CMakeFiles/pxa_game_render_spans_test.dir/tests/game_render_spans_test.c.o
-[100%] Linking C executable pxa_game_render_spans_test
-[100%] Built target pxa_game_render_spans_test

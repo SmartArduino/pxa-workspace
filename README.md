@@ -22,7 +22,7 @@ pxa run hello
 默认 C++26、O3，项目通过 `pxa.lock` 固定 SDK 与工具链版本。当前发行包要求 Linux x86_64、glibc 2.39+。应用包需要 Core 2.0 及其声明的服务能力。
 [中文入门教程](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [发布说明](https://github.com/SmartArduino/pxa-system/releases/tag/v0.4.0) · [本次发布验证](docs/release-0.4.0.zh-CN.md)
 
-可选的 [PXA AI 套件](https://pxa.doit.am/docs/ai-development/) 提供开发、调试、真机验收与发布 skills，以及项目内 agent 配置和自动验证脚本。配合现有 DevKit 使用，不增加设备运行开销。[实际验证报告](docs/ai-kit-validation-20261014.zh-CN.md)
+可选的 [PXA AI 套件](https://pxa.doit.am/docs/ai-development/) 提供开发、调试、真机验收与发布 skills，以及项目内 agent 配置和自动验证脚本。配合现有 DevKit 使用，不增加设备运行开销。
 
 Windows/macOS 可使用 [跨平台工具](tools/portable/README.md)：容器负责构建和无界面模拟器，宿主机 PXADB 直接连接 USB 串口；无需 USB 转发。
 
@@ -111,10 +111,7 @@ SD 资源访问、多分区、安装位置选择及跨卷迁移的现状与拟�
 整应用安装的统一 `/PXA` 布局，以及无需 Flash 文件分区的 SD 系统盘，见
 [固定目录与 SD 系统盘设计](docs/pxa-storage-layout.zh-CN.md)（安装及系统盘后端尚未实现）。
 默认资源根已支持无需选目录的 `fs.app_media()`，见
-[SDK 示例](deps/pxa-system/sdk/guest-cpp/examples/fixed-files/README.zh-CN.md)与
-[GameKit 首次启动/重启验证](docs/validation/2026-10-18-sd-fixed-root.zh-CN.md)。
-Duke3D 已从固定 SD 目录自动读取资源并进入关卡，实测与边界见
-[游戏真机验证](docs/validation/2026-10-18-duke3d-sd.zh-CN.md)。
+[SDK 示例](deps/pxa-system/sdk/guest-cpp/examples/fixed-files/README.zh-CN.md)。
 
 ## PXA 快速开发
 

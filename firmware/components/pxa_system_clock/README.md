@@ -70,7 +70,3 @@ python3 firmware/components/pxa_system_clock/tests/test_ui.py
 主机测试使用生产服务源码和可控的系统时间、NVS、RTC 边界，覆盖默认时间走动、
 UTC 保存恢复、重启回调、时区切换、来源优先级、RTC 断电期间继续走时、
 网络/手动校正后的写回、损坏数据和读写失败。
-
-GameKit 实机已验证默认时间跨分钟走动、锁屏日期、软件重启保存恢复、恢复后走时、
-通知面板和硬复位后的 NVS 检查点恢复；截图、运行哈希和 Flash 检查点见
-[实机验证报告](../../../docs/validation/2026-10-21-system-clock.zh-CN.md)。

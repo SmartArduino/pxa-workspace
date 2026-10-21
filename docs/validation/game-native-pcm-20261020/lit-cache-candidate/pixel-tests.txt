@@ -1,4 +1,0 @@
-PASS: 200000 exact pixel comparisons, 8 kernels, fractional/negative steps, fullbright, row/cell boundaries and output guards
-PASS: 200000 exact pixel comparisons, 8 kernels, fractional/negative steps, fullbright, row/cell boundaries and output guards
-HOST_MICROBENCH moving_t=0 original_ns=494319974 cached_ns=159173035 speedup=3.106 checksum=108750000 (not device FPS)
-HOST_MICROBENCH moving_t=1 original_ns=437977333 cached_ns=402963517 speedup=1.087 checksum=232156250 (not device FPS)

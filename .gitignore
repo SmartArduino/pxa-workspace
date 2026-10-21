@@ -30,5 +30,12 @@
 **/__pycache__/
 **/.pytest_cache/
 
-# Raw Quake device evidence stays local; commit the validation summary only.
-/docs/validation/quake-host-prepare-20261021/
+# Reports and measurements belong in ignored local/artifacts/.
+# Ignore the old output locations so they cannot be added accidentally.
+/docs/validation/
+/docs/benchmarks/
+/docs/performance/
+/docs/reports/
+/docs/**/*.log
+/docs/**/*.jsonl
+/docs/**/*.csv

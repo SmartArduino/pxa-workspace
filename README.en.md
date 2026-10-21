@@ -23,7 +23,7 @@ pxa run hello
 C++26 and O3 are the defaults; `pxa.lock` pins the SDK and toolchain. The published binary requires Linux x86_64 and glibc 2.39+. Apps require Core 2.0 and their declared services.
 [Getting started (Chinese)](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [Release](https://github.com/SmartArduino/pxa-system/releases/tag/v0.4.0) · [0.4.0 validation (Chinese)](docs/release-0.4.0.zh-CN.md)
 
-The optional [PXA AI kit](https://pxa.doit.am/docs/ai-development/) adds development/debug/device/release skills, project-scoped agents and repeatable verification scripts. It works with the existing DevKit and adds no device runtime overhead. [Validation report (Chinese)](docs/ai-kit-validation-20261014.zh-CN.md)
+The optional [PXA AI kit](https://pxa.doit.am/docs/ai-development/) adds development/debug/device/release skills, project-scoped agents and repeatable verification scripts. It works with the existing DevKit and adds no device runtime overhead.
 
 Windows/macOS users can use [the cross-platform companion](tools/portable/README.en.md): build and run headless in a container, then use host-native PXADB for USB serial without forwarding devices.
 

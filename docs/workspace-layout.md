@@ -9,7 +9,12 @@ The workspace has four independent development paths:
 | `firmware/` | ESP-IDF product, boards, drivers and pxadb service | PXA App source and factory image creation |
 | `factory/` | Versioned per-board factory selection and static base content | Developer-specific source paths |
 | `simulator/` | Desktop display and input profiles | ESP-IDF drivers, DMA and physical peripherals |
-| `local/` | Private App catalog, temporary factory overlays and output | Any tracked product policy |
+| `local/` | Private App catalog, temporary factory overlays and local artifacts | Any tracked product policy |
+
+Keep validation reports, benchmarks, logs, screenshots and experimental data in
+ignored `local/artifacts/<topic>/<YYYYMMDD-HHMMSS>/`, including Markdown summaries.
+`docs/` holds maintained architecture, interface and usage documentation and
+release notes. Reports enter version control only at the user's explicit request.
 
 ## Board Work
 

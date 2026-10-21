@@ -59,8 +59,8 @@ bash tools/app.sh build quake-frame-io --board doit-gamekit \
 
 These are opt-in measurements. A profile name does not establish a performance
 improvement. Preserve the tested firmware, SDK/App revisions, AOT hash, actual
-level readiness and complete frame window. The validation report in
-`docs/validation/game-render-batches-20261020` records the comparisons.
+level readiness and complete frame window. Save reports and generated data under
+ignored `local/artifacts/game-perf/<YYYYMMDD-HHMMSS>/`.
 
 Profiles compile the **current** App sources by default. For historical replay,
 use the revisions recorded with that measurement. `PXA_GAME_APPS_ROOT` can point
@@ -95,9 +95,6 @@ allocations and does not validate imports, load an artifact, sign a package or
 claim device performance. A positive remainder is not an admission pass.
 The RA offline no-Asyncify comparison still has unresolved coroutine imports;
 it must never be installed as though the new execution model already existed.
-Measurements and limitations are in
-`docs/validation/game-render-followup-20261020`; the proposed execution and audio
-changes in that report were unimplemented at its measurement date.
 
 ## Core 2.1 main-loop candidates
 
@@ -170,10 +167,8 @@ RA submit 22050 Hz stereo PCM. The GameKit output worker pulls the Host mixer
 at its 48000 Hz mono device clock. Bounded resampling and downmixing happen
 at that boundary, with mixer storage charged to PSRAM.
 
-Build with the same command as above, replacing the profile name. All five
-signed artifacts, source identities, Node actual-level/PCM retry checks and
-the real-device main-loop lifecycle probe are recorded in
-`docs/validation/game-native-pcm-20261020`. Node timing is not device FPS.
+Build with the same command as above, replacing the profile name.
+Node timing is not device FPS.
 Exact PCM negotiation alone does not prove uninterrupted physical playback
 or the >=15 FPS acceptance target.
 
@@ -216,9 +211,8 @@ palette conversion. Host execution counters isolate the native portion.
 Run `local/pxa-apps/common/recrof/tests/run_host_indexed_blit.py` for the
 ASan/UBSan pixel, scaling, cursor, odd partition, aliasing and guard checks.
 
-Device results and the exact signed artifact identities are recorded in
-`docs/validation/2026-10-20-game-fastpath.zh-CN.md`. Keep the earlier
-`duke-blit` callback profile separate when interpreting those results.
+Keep the earlier `duke-blit` callback profile separate when interpreting
+measurements from the main-loop profiles.
 
 ## Indexed raster kernel device comparison
 
@@ -292,10 +286,6 @@ new level record from the same firmware. This option assumes this board's
 persisted 120-second lock timeout; inspect both lock/unlock screenshots before
 claiming lock coverage. PCM negotiation is checked, but this is not a physical
 audio waveform or listening test.
-
-The qualified firmware, source hashes, cold-start helper, comparison windows,
-and production package results are recorded in
-`docs/validation/2026-10-21-quake-host-prepare.zh-CN.md`.
 
 Production game entries no longer use `-sd` names. Profiles target the same canonical identity and signed publisher binding. Resource uploads and probe-mode files must use `PACKAGE paths <publisher-root>:<app-id>`; do not reuse historical AppKey paths. Historical measurements retain the original IDs and versions.
 

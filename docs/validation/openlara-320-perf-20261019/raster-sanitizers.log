@@ -1,1 +1,0 @@
-batch raster: 4000 triangles/quads, winding, scissor, transparent texels, depth test/write modes; exact color/depth passed

@@ -1,7 +1,0 @@
-{
-  "app_commit": "de8947292b0f7df3807e17cc955320c8643bd138",
-  "source_sha256": "06aecc239bebe72d53d46630c8663b27ea4d1c099b75077f355167c9222845ad",
-  "test_source_sha256": "88379f43d6f94bbbc831c6c364dae8d69bdb4f669f1d809d22a3ccceb4b6d62c",
-  "wasm_sha256": "1db41a96ba845927711bcca1102386f284a96a5b2e09e68682c0da7da71cfac3",
-  "scope": "Host GCC/Clang ASan+UBSan and WASM source-helper checks only. Device games in this report predate this helper change. Current port_pcm and device output are still 16kHz mono; full audio fidelity has not passed."
-}

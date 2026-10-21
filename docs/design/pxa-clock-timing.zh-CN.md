@@ -1,6 +1,6 @@
 # Clock 周期与调度能力设计
 
-状态：Clock 0.3 已实现于规范、C/C++ SDK、公共 Host 处理器、ESP Host 和桌面模拟器；真机数据见 [验证报告](../validation/2026-10-19-clock-and-duke.zh-CN.md)。
+状态：Clock 0.3 已实现于规范、C/C++ SDK、公共 Host 处理器、ESP Host 和桌面模拟器。
 
 兼容接口 `set-period` 的线格式是毫秒 `u16`，0 取消，16～1000 有效。这个范围由规范、C/C++ SDK 和 Host 同时检查，是协议政策，不是 ESP32 的硬件计时下限。旧 GameKit Host 每 5000µs 扫描到期定时器。新 Host 已将 Clock 与原有系统/指针维护分开，使用独立的最近期限一次性定时器。系统维护仍保留原周期，不能宣称系统空闲时完全没有唤醒。
 

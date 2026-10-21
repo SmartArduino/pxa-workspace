@@ -65,4 +65,4 @@ PXADB_BAUD=2000000 python3 tools/measure-device-gameplay.py \
 SDKCONFIG 后重新构建，并检查 ELF 不含 `__wrap_pxa_wamr_read_aot`。某些 IDF
 版本将参数写入 `build/.../toolchain/ldflags`；只清空 CMake 缓存变量并不足以移除。
 
-本轮数据和限制见 [验收报告](../../docs/benchmarks/aot-stream-20261015.zh-CN.md)。
+日志、采样数据与测量报告统一写入 `local/artifacts/aot-loader/<YYYYMMDD-HHMMSS>/`。
