@@ -83,6 +83,10 @@ build_and_run store_policy \
   -I"$pxa_system_dir/libpxa/include" \
   -I"$pxa_system_dir/libpxa/adapters/include" \
   "$tests_dir/pxa_esp_store_policy_test.c"
+build_and_run storage_path_policy \
+    "$tests_dir/pxa_esp_storage_path_policy_test.c"
+build_and_run media_path \
+    "$tests_dir/pxa_esp_media_path_test.c"
 build_and_run install_space \
   -I"$pxa_system_dir/libpxa/include" \
   -I"$pxa_system_dir/libpxa/adapters/include" \

@@ -17,9 +17,12 @@ pxa_status_t pxa_esp_storage_register_fat(const char *path,const char *name,
 size_t pxa_esp_storage_volumes(pxa_volume_info_t *out,size_t capacity);
 /* Explicit board policy, never enumeration order. Before app activation. */
 pxa_status_t pxa_esp_storage_select_app_media(const char *registered_mount);
-/* PXADB Host tooling only. Validates a user-data descendant and optionally
- * returns a staging path on that SAME filesystem. Managed names/root denied. */
-bool pxa_esp_storage_debug_path(const char *relative,char *temporary,size_t capacity);
+/* PXADB Host tooling only. Validates a descendant on a registered removable
+ * volume and optionally returns a staging path on that SAME filesystem.
+ * PXA/system descendants require the PXADB system unlock; the system root,
+ * PXA and the mount point stay in place. Other card paths need no unlock. */
+bool pxa_esp_storage_debug_path(const char *relative,bool system_unlocked,
+    char *temporary,size_t capacity);
 /* Trusted system picker only; these paths are never returned to Guest. */
 typedef struct { char name[PXA_ESP_STORAGE_PATH_BYTES]; } pxa_esp_storage_folder_t;
 pxa_status_t pxa_esp_storage_folders(uint64_t epoch,const char *relative,

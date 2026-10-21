@@ -109,18 +109,17 @@ pxa_status_t pxa_esp_game_render_execute_spans(void *context,
 
 pxa_status_t pxa_esp_fs_roots_create(void *context,
     void *(*allocate)(void *, size_t), const char *identity, const char *name,
+    const char *media_relative,
     uint8_t user_directories, void *notify_context, void (*notify)(void *),
     pxa_esp_fs_roots_t **output, pxa_fs_roots_backend_t **backend) {
     (void)context; (void)allocate; (void)identity; (void)name;
+    (void)media_relative;
     (void)user_directories; (void)notify_context; (void)notify;
     *output = NULL; *backend = NULL;
     assert(!"storage fixture declares no scoped directories");
     return PXA_STATUS_UNSUPPORTED;
 }
 
-pxa_status_t pxa_esp_fs_roots_set_media_relative(pxa_esp_fs_roots_t *roots,const char *path) {
-    (void)roots;(void)path;return PXA_STATUS_OK;
-}
 void pxa_esp_fs_roots_bind(pxa_esp_fs_roots_t *roots, pxa_fs_service_t *service) {
     (void)service; assert(roots == NULL);
 }

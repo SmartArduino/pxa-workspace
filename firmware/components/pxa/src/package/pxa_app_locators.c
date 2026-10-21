@@ -117,6 +117,10 @@ pxa_status_t pxa_app_locators_load(pxa_app_locators_t *r, uint64_t generation,
         memmove(r->publishers, pubs, np * sizeof(*pubs));
     if (na)
         memmove(r->apps, apps, na * sizeof(*apps));
+    /* Discard retired control bits without probing or migrating SD paths.
+     * Existing device records keep their publisher/app bindings intact. */
+    for (size_t i = 0; i < na; ++i)
+        r->apps[i].flags &= PXA_LOCATOR_ACTIVE_FLAGS;
     r->publisher_count = np;
     r->app_count = na;
     r->generation = generation;
@@ -129,7 +133,7 @@ pxa_status_t pxa_app_locators_reserve(pxa_app_locators_t *r, uint8_t kind, const
                                       uint16_t flags) {
     if (!r || !ns || !root || !app_key || !app_id_valid(app_id) ||
         !publisher_handle_valid(handle) || reserved(handle) || (kind != 1 && kind != 2) ||
-        ((flags & ~63u) || ((flags >> 3) & ~flags & 7u)))
+        ((flags & ~PXA_LOCATOR_ACTIVE_FLAGS) || ((flags >> 3) & ~flags & 3u)))
         return PXA_STATUS_INVALID_ARGUMENT;
     if (!r->ready)
         return PXA_STATUS_UNAVAILABLE;
@@ -250,7 +254,7 @@ pxa_status_t pxa_app_locators_encode(uint64_t generation, const pxa_locator_publ
     }
     for (size_t i = 0; i < na; ++i) {
         put_le(p, apps[i].publisher, 2);
-        put_le(p + 2, apps[i].flags, 2);
+        put_le(p + 2, apps[i].flags & PXA_LOCATOR_ACTIVE_FLAGS, 2);
         p += 4;
         memcpy(p, apps[i].root, 32);
         p += 32;
@@ -296,7 +300,7 @@ pxa_status_t pxa_app_locators_decode(pxa_app_locators_t *r, const uint8_t *data,
 
 pxa_status_t pxa_app_locators_set_flags(pxa_app_locators_t *r, const uint8_t root[32],
                                         const char *app_id, uint16_t flags) {
-    if (!r || !root || !app_id || (flags & ~63u) || ((flags >> 3) & ~flags & 7u))
+    if (!r || !root || !app_id || (flags & ~PXA_LOCATOR_ACTIVE_FLAGS) || ((flags >> 3) & ~flags & 3u))
         return PXA_STATUS_INVALID_ARGUMENT;
     if (!r->ready)
         return PXA_STATUS_UNAVAILABLE;

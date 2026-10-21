@@ -35,13 +35,16 @@ static void reload(pxa_app_locators_t *r) {
 int main(void) {
     pxa_locator_migration_io_t io = {NULL, probe, move};
     pxa_app_locators_t r;
+    /* The retired SD-media bit must never invoke filesystem migration. */
+    assert(pxa_locator_migrate(&r,root,"pxa-nes",4,"old","new",&io)==PXA_STATUS_INVALID_ARGUMENT);
+    assert(!commits && !moves);
     for (unsigned scenario = 0; scenario < 9; ++scenario) {
         pxa_app_locators_init(&r, NULL, commit);
         pxa_app_locators_init(&durable, NULL, commit);
         commits = fail_commit = moves = move_fails = fail_after = 0;
         old_dir = 1;
         next_dir = 0;
-        assert(pxa_app_locators_reserve(&r, 1, root, "lucinhu", root, "pxa-nes", root, 7) ==
+        assert(pxa_app_locators_reserve(&r, 1, root, "lucinhu", root, "pxa-nes", root, 3) ==
                PXA_STATUS_OK);
         if (scenario == 1)
             fail_commit = commits + 1; /* cannot persist intent: no move */
@@ -76,10 +79,10 @@ int main(void) {
         char relative[130];
         assert(pxa_app_locators_find(&r, root, "pxa-nes", &flags, relative, sizeof(relative)) ==
                    PXA_STATUS_OK &&
-               flags == 5);
+               flags == 1);
         if (scenario != 6)
             assert(!old_dir && next_dir);
     }
-    puts("PASS: migration intent/rename/completion failures, recovery, empty sources and conflict "
-         "preservation");
+    puts("PASS: package/private migration failures, recovery and conflict preservation; "
+         "SD media migration rejected");
 }

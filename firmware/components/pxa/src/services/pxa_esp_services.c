@@ -396,14 +396,10 @@ static pxa_status_t initialize_fs(
     if(user_directories || fixed_media) {
         pxa_fs_roots_backend_t *roots=NULL;
         status=pxa_esp_fs_roots_create(host->allocator_context,host->allocate,
-            host->identity,host->identity,user_directories,host->assets_notify_context,
+            host->identity,host->identity,host->media_relative,user_directories,host->assets_notify_context,
             host->assets_notify,&services->fs_roots,&roots);
         if(status!=PXA_STATUS_OK && status!=PXA_STATUS_UNAVAILABLE)
             return fail(result,"initialize-app-directories",status,PXA_ESP_SERVICES_ISSUE_NONE);
-        if(status==PXA_STATUS_OK && host->media_relative) {
-            status=pxa_esp_fs_roots_set_media_relative(services->fs_roots,host->media_relative);
-            if(status!=PXA_STATUS_OK)return fail(result,"resolve-app-media",status,PXA_ESP_SERVICES_ISSUE_NONE);
-        }
         service_config.roots=roots;
         service_config.permissions=services->permission;
     }

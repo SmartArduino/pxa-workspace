@@ -26,6 +26,19 @@ from pxadb_gui.session import (
 )
 
 
+def tearDownModule() -> None:
+    # Destroy test widgets while Python signal callbacks are still alive,
+    # before PySide's application cleanup during interpreter shutdown.
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+
+    application = QApplication.instance()
+    if application is not None:
+        for widget in application.topLevelWidgets():
+            widget.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
 class GeometryTest(unittest.TestCase):
     def test_fitted_rect_centers_content(self) -> None:
         self.assertEqual(fitted_rect(100, 100, 200, 100), (50.0, 0.0, 100.0, 100.0))
@@ -223,6 +236,24 @@ class ScreenshotRequestTest(unittest.TestCase):
         self.assertEqual(
             screenshot_request("protocol=2;screenshot=png;simulator=1"),
             "SCREENSHOT")
+
+
+class FileUploadTest(unittest.TestCase):
+    def test_push_keeps_chinese_name_under_the_selected_directory(self) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.instance() or QApplication([])
+        session = mock.Mock()
+        signals = SessionSignals()
+        panel = FilePanel(session, signals)
+        panel._path = "sdcard/PXA/media/nes"
+        local = "/tmp/金庸群侠传.书剑江山.nes"
+        with mock.patch("pxadb_gui.panels.QFileDialog.getOpenFileNames",
+                        return_value=([local], "")):
+            panel._push()
+        session.upload.assert_called_once_with(
+            local, "sdcard/PXA/media/nes/金庸群侠传.书剑江山.nes")
+        panel.close()
 
 
 class SystemUnlockTest(unittest.TestCase):

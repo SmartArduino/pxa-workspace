@@ -13,4 +13,4 @@ trap 'rm -rf "$test_dir"' EXIT
     "$root/firmware/components/pxadb/fs_policy_test.cpp" -o "$test_dir/fs-policy"
 "$test_dir/fs-policy"
 echo 'PXADB multitouch state and mailbox ASan/UBSan tests OK'
-echo 'PXADB protected parent creation policy ASan/UBSan tests OK'
+echo 'PXADB UTF-8 paths and protected parent creation policy ASan/UBSan tests OK'

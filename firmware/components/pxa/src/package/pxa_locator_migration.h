@@ -1,7 +1,8 @@
 #ifndef PXA_LOCATOR_MIGRATION_H
 #define PXA_LOCATOR_MIGRATION_H
 #include "pxa_app_locators.h"
-/* Probe: 0 absent, 1 directory, negative error (links/files are errors).
+/* Package/private data only. Probe: 0 absent, 1 directory, negative error
+ * (links/files are errors).
  * Move must never replace a destination and must persist its rename before
  * returning OK. Call only with all application file handles closed. */
 typedef struct {

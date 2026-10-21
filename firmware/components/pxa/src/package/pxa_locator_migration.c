@@ -5,7 +5,7 @@ pxa_status_t pxa_locator_migrate(pxa_app_locators_t *r, const uint8_t root[32], 
     char relative[130];
     uint16_t flags = 0;
     if (!io || !io->probe || !io->move || !old_path || !new_path ||
-        (bit != 1 && bit != 2 && bit != 4))
+        (bit != PXA_LOCATOR_PACKAGE_LEGACY && bit != PXA_LOCATOR_DATA_LEGACY))
         return PXA_STATUS_INVALID_ARGUMENT;
     pxa_status_t status =
         pxa_app_locators_find(r, root, app_id, &flags, relative, sizeof(relative));
@@ -14,9 +14,9 @@ pxa_status_t pxa_locator_migrate(pxa_app_locators_t *r, const uint8_t root[32], 
     int old = io->probe(io->context, old_path), next = io->probe(io->context, new_path);
     if (old < 0 || next < 0)
         return PXA_STATUS_IO_ERROR;
+    uint16_t moving = (uint16_t)(bit << 3);
     if (old && next)
         return PXA_STATUS_DENIED;
-    uint16_t moving = (uint16_t)(bit << 3);
     if (!(flags & moving)) {
         if (next)
             return PXA_STATUS_DENIED; /* unclaimed destination */

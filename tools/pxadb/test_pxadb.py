@@ -316,6 +316,28 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         self.assertIn("FSDATA 0 YWI=", writes[1])
         self.assertIn("FSDATA 2 Yw==", writes[2])
 
+    def test_upload_preserves_chinese_filename_in_utf8_wire_path(self) -> None:
+        filename = "金庸群侠传.书剑江山.nes"
+        remote = f"sdcard/PXA/media/nes/{filename}"
+        payload = b"NES\x1a" + bytes(16)
+        client = fake_client([
+            encoded_frame(1, "READY", str(len(payload))),
+            encoded_frame(2, "OK", ""),
+        ])
+        client.device_info = "max_chunk=64;fs_offset=1;fs_chunk_crc32=1"
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / filename
+            source.write_bytes(payload)
+            pxadb.NormalFsClient(client).put(source, remote, progress=lambda *_: None)
+        _, _, command, encoded_path, size, digest = client.serial.writes[0].decode("ascii").split()
+        self.assertEqual(command, "FSPUT")
+        self.assertEqual(base64.b64decode(encoded_path).decode("utf-8"), remote)
+        self.assertEqual(int(size), len(payload))
+        self.assertEqual(digest, hashlib.sha256(payload).hexdigest())
+        command = b"".join(client.serial.writes).decode("ascii").splitlines()[-1]
+        self.assertIn(f" FSDATA2 0 {zlib.crc32(payload):08x} ", command)
+        self.assertEqual(base64.b64decode(command.split()[-1]), payload)
+
     def test_corrupted_upload_restarts_with_smaller_chunks_and_same_digest(self) -> None:
         payload = b"abcd"
         client = fake_client([

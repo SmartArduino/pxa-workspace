@@ -1463,7 +1463,7 @@ static pxa_status_t lookup_locator(void *context,const pxa_posix_installer_ident
 static pxa_status_t legacy_layout_flags(const uint8_t root[32],const char *app_id,uint16_t *flags) {
     char key[130],path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];
     if(!filesystem_identity(key,sizeof(key),root,app_id))return PXA_STATUS_INVALID_ARGUMENT;
-    *flags=PXA_LOCATOR_MEDIA_LEGACY; /* removable media may be absent today */
+    *flags=0;
     const char *bases[2]={g_store->packages_root,g_store->data_root};
     for(unsigned i=0;i<2;++i) {
         int n=snprintf(path,sizeof(path),"%s/%s",bases[i],key);
@@ -1637,7 +1637,7 @@ bool pxa_esp_package_store_initialize(void) {
     for(size_t i=0;i<g_store->entry_count;++i) {
         pxa_esp_package_entry_t *entry=&g_store->entries[i];char relative[130],root[PXA_ESP_PACKAGE_MAX_PATH];uint16_t flags=0;
         if(pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative))==PXA_STATUS_OK &&
-           (flags&(PXA_LOCATOR_PACKAGE_MOVING|PXA_LOCATOR_DATA_MOVING|PXA_LOCATOR_MEDIA_MOVING))) {
+           (flags&(PXA_LOCATOR_PACKAGE_MOVING|PXA_LOCATOR_DATA_MOVING))) {
             pxa_status_t recovered=pxa_esp_package_store_migrate_storage(entry->identity,root,sizeof(root));
             if(recovered!=PXA_STATUS_OK)ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Locator recovery pending for %s: %ld",entry->identity,(long)recovered);
             if(!g_store->locators.ready)return initialization_failed("recover-app-locators");
@@ -2156,18 +2156,6 @@ pxa_status_t pxa_esp_package_store_register_namespace(const uint8_t *token,size_
     release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);return status;
 }
 
-static pxa_status_t legacy_media_relative(const uint8_t root[32],const char *app_id,char out[75]) {
-    static const char domain[]="PXA-APPKEY-1",hex[]="0123456789abcdef";
-    uint8_t input[sizeof(domain)-1+34+64],hash[32];size_t prefix=sizeof(domain)-1,length=strlen(app_id);
-    if(length>64)return PXA_STATUS_INVALID_ARGUMENT;
-    memcpy(input,domain,prefix);memcpy(input+prefix,root,32);
-    input[prefix+32]=(uint8_t)length;input[prefix+33]=0;memcpy(input+prefix+34,app_id,length);
-    pxa_status_t status=pxa_esp_mbedtls_sha256(input,prefix+34+length,hash);
-    if(status!=PXA_STATUS_OK)return status;
-    memcpy(out,"PXA/media/",10);
-    for(size_t i=0;i<32;++i){out[10+2*i]=hex[hash[i]>>4];out[11+2*i]=hex[hash[i]&15];}out[74]=0;
-    return PXA_STATUS_OK;
-}
 static int migration_probe(void *context,const char *path) {
     (void)context;struct stat st;
     if(lstat(path,&st)==0)return S_ISDIR(st.st_mode)?1:-1;
@@ -2195,35 +2183,6 @@ static pxa_status_t migration_move(void *context,const char *from,const char *to
 #endif
     return PXA_STATUS_OK;
 }
-static pxa_status_t migrate_media_locked(pxa_esp_package_entry_t *entry,const char *relative) {
-    char mount[192],legacy[75],old_path[384],next_path[384];
-    pxa_status_t status=pxa_esp_fs_roots_media_mount(mount,sizeof(mount));
-    if(status!=PXA_STATUS_OK)return status;
-    status=legacy_media_relative(entry->publisher_key_id,entry->id,legacy);
-    if(status!=PXA_STATUS_OK)return status;
-    int n=snprintf(old_path,sizeof(old_path),"%s/%s",mount,legacy);
-    int m=snprintf(next_path,sizeof(next_path),"%s/PXA/media/%s",mount,relative);
-    if(n<0 || m<0 || (size_t)n>=sizeof(old_path) || (size_t)m>=sizeof(next_path))return PXA_STATUS_RESOURCE_LIMIT;
-    pxa_locator_migration_io_t io={NULL,migration_probe,migration_move};
-    return pxa_locator_migrate(&g_store->locators,entry->publisher_key_id,entry->id,PXA_LOCATOR_MEDIA_LEGACY,old_path,next_path,&io);
-}
-/* Fixed-media provider calls this before creating its first grant. It never
- * moves private data or package files while an application is running. */
-pxa_status_t pxa_esp_package_store_prepare_media(const char *identity) {
-    if(!store_is_initialized() || !identity)return PXA_STATUS_INVALID_ARGUMENT;
-    if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
-    if(!take_lock(g_store->metadata_lock)){release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
-    pxa_status_t status=PXA_STATUS_NOT_FOUND;pxa_esp_package_entry_t *entry=find_entry(identity);
-    if(entry && entry->installed) {
-        char relative[130];uint16_t flags=0;
-        status=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
-        if(status==PXA_STATUS_NOT_FOUND)status=PXA_STATUS_OK;
-        else if(status==PXA_STATUS_OK && (flags&3u))status=PXA_STATUS_BAD_STATE;
-        else if(status==PXA_STATUS_OK && (flags&PXA_LOCATOR_MEDIA_LEGACY))status=migrate_media_locked(entry,relative);
-    }
-    release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);return status;
-}
-
 /* Only the activation owner calls this, after stopping the old app. Each move
  * is preceded by a durable intent; boot/relaunch can finish an interrupted move.
  * Legacy adapters remain available for packages without a publisher profile. */
@@ -2259,14 +2218,6 @@ pxa_status_t pxa_esp_package_store_migrate_storage(const char *identity,char *ro
         }
         else snprintf(entry->storage_key,sizeof(entry->storage_key),"%s",relative);
     }
-    if(flags&PXA_LOCATOR_MEDIA_LEGACY) {
-        pxa_status_t media=migrate_media_locked(entry,relative);
-        if(media!=PXA_STATUS_OK && media!=PXA_STATUS_UNAVAILABLE)
-            ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Media migration deferred for %s: %ld",entry->identity,(long)media);
-        /* Removable-media failures never prevent private/Flash use. A first
-         * fixed-root open retries this journal before exposing any directory. */
-        if(!g_store->locators.ready){status=media;goto migration_done;}
-    }
     status=PXA_STATUS_OK;
 migration_copy:
     {int n=snprintf(root_out,capacity,"%s",entry->root);if(n<0 || (size_t)n>=capacity)status=PXA_STATUS_RESOURCE_LIMIT;}
@@ -2284,16 +2235,10 @@ pxa_status_t pxa_esp_package_store_storage_paths(const char *identity,
     if(entry && entry->installed && entry->has_publisher_key_id) {
         char relative[130];uint16_t flags=0;
         status=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
-        if(status==PXA_STATUS_OK || status==PXA_STATUS_NOT_FOUND) {
+        if(status==PXA_STATUS_OK) {
             int n=snprintf(private_root,private_capacity,"%s/%s",g_store->data_root,entry->storage_key);
             if(n<0 || (size_t)n>=private_capacity){status=PXA_STATUS_RESOURCE_LIMIT;goto paths_done;}
-            if(status==PXA_STATUS_OK)
-                n=snprintf(media_relative,media_capacity,"PXA/media/%s",relative);
-            else {
-                char legacy[75];status=legacy_media_relative(entry->publisher_key_id,entry->id,legacy);
-                if(status!=PXA_STATUS_OK)goto paths_done;
-                n=snprintf(media_relative,media_capacity,"%s",legacy);
-            }
+            n=snprintf(media_relative,media_capacity,"PXA/media/%s",relative);
             status=n<0 || (size_t)n>=media_capacity?PXA_STATUS_RESOURCE_LIMIT:PXA_STATUS_OK;
         }
     }

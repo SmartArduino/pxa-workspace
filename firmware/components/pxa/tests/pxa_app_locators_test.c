@@ -84,6 +84,15 @@ int main(void) {
     for (size_t i = 0; i < encoded_size; ++i)
         assert(pxa_app_locators_decode(&registry, encoded, i) == PXA_STATUS_PROTOCOL_ERROR);
     assert(pxa_app_locators_decode(&registry, encoded, encoded_size) == PXA_STATUS_OK);
+    /* Previously persisted SD-media bookkeeping cannot affect current paths
+     * or initiate directory migration after updating the firmware. */
+    saved.apps[0].flags |= 4u | 32u;
+    assert(pxa_app_locators_load(&registry,saved.generation,saved.publishers,
+                                saved.publisher_count,saved.apps,saved.app_count)==PXA_STATUS_OK);
+    assert(pxa_app_locators_find(&registry,root,"pxa-nes",&flags,path,sizeof(path))==PXA_STATUS_OK &&
+           flags==3 && !strcmp(path,original));
+    assert(pxa_app_locators_set_flags(&registry,root,"pxa-nes",4)==PXA_STATUS_INVALID_ARGUMENT);
+    assert(pxa_app_locators_reserve(&registry,1,root,"lucinhu",root,"retired-media",root,4)==PXA_STATUS_INVALID_ARGUMENT);
     saved.apps[1] = saved.apps[0];
     assert(pxa_app_locators_load(&registry, saved.generation, saved.publishers,
                                  saved.publisher_count, saved.apps,

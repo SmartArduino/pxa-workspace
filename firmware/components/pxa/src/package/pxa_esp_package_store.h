@@ -124,9 +124,6 @@ bool pxa_esp_package_store_preview_file(const char *source_path,
 /* Accepts only product-trusted, time-valid issuer proofs. Cold control path. */
 pxa_status_t pxa_esp_package_store_register_namespace(const uint8_t *,size_t);
 
-/* Fixed-media provider only, before its first grant; preserves private roots. */
-pxa_status_t pxa_esp_package_store_prepare_media(const char *);
-
 /* Activation owner only: all app handles must be closed before migration. */
 pxa_status_t pxa_esp_package_store_migrate_storage(const char *,char *,size_t);
 

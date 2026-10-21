@@ -79,7 +79,7 @@ constexpr size_t kUsbBufferSize = 512;
 constexpr size_t kLogQueueDepth = 4;
 constexpr size_t kLogHistoryDepth = 16;
 constexpr size_t kLogScratchCount = 2;
-constexpr size_t kFsPathLength = 240;
+constexpr size_t kFsPathLength = pxadb::kFsPathCapacity;
 #ifndef CONFIG_PXA_MOUNT_POINT
 #define CONFIG_PXA_MOUNT_POINT "/assets"
 #endif
@@ -450,32 +450,14 @@ bool DecodeFsPath(const char* encoded, char* relative, size_t relative_capacity,
                               relative_capacity - 1, &decoded_length,
                               reinterpret_cast<const unsigned char*>(encoded),
                               strlen(encoded)) != 0 ||
-        decoded_length == 0 || decoded_length >= relative_capacity) {
+        decoded_length >= relative_capacity ||
+        !pxadb::valid_fs_path(std::string_view(relative, decoded_length))) {
         return false;
     }
     relative[decoded_length] = '\0';
     if (strcmp(relative, ".") == 0) {
         const int length = snprintf(absolute, absolute_capacity, "%s", kPxaMountPoint);
         return length > 0 && static_cast<size_t>(length) < absolute_capacity;
-    }
-    if (relative[0] == '/') return false;
-    const char* segment = relative;
-    for (char* character = relative;; ++character) {
-        const char value = *character;
-        if (!(value == '\0' || value == '/' || value == '.' || value == '_' ||
-              value == '-' || value == '~' || (value >= 'a' && value <= 'z') ||
-              (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9'))) {
-            return false;
-        }
-        if (value == '/' || value == '\0') {
-            if (character == segment ||
-                (character - segment == 1 && segment[0] == '.') ||
-                (character - segment == 2 && segment[0] == '.' && segment[1] == '.')) {
-                return false;
-            }
-            if (value == '\0') break;
-            segment = character + 1;
-        }
     }
     const int length = snprintf(absolute, absolute_capacity, "%s/%s", kPxaMountPoint,
                                 relative);
@@ -489,10 +471,10 @@ bool IsSystemWriteUnlocked() {
            static_cast<uint64_t>(esp_timer_get_time()) < expiry;
 }
 
-bool IsWritableFsPath(const char* relative) {
+bool IsWritableFsPath(const char* relative, bool system_unlocked = IsSystemWriteUnlocked()) {
     if (relative == nullptr) return false;
 #if CONFIG_PXA_ENABLED
-    if (pxa_esp_storage_debug_path(relative, nullptr, 0)) return true;
+    if (pxa_esp_storage_debug_path(relative, system_unlocked, nullptr, 0)) return true;
 #endif
     if (strcmp(relative, ".pxadb-upload") == 0) return false;
     if (strcmp(relative, kPxaStateRoot) == 0 ||
@@ -503,7 +485,7 @@ bool IsWritableFsPath(const char* relative) {
     }
     // The factory tree is read-only until FSUNLOCK. The mount root itself and
     // the two managed subtrees stay in place even while unlocked.
-    return IsSystemWriteUnlocked() &&
+    return system_unlocked &&
            strncmp(relative, "system/", 7) == 0 &&
            !pxadb::protected_system_directory(relative);
 }
@@ -800,13 +782,14 @@ void SendFsRead(unsigned long sequence, const char* encoded_path,
 
 void StartFsUpload(unsigned long sequence, const char* encoded_path,
                    const char* size_text, const char* expected_sha256) {
+    const bool system_unlocked = IsSystemWriteUnlocked();
     char relative[kFsPathLength] = {};
     char path[kFsAbsolutePathLength] = {};
     char* end = nullptr;
     const unsigned long size = size_text == nullptr ? 0 : strtoul(size_text, &end, 10);
     if (size_text == nullptr || end == size_text || *end != '\0' ||
         !DecodeFsPath(encoded_path, relative, sizeof(relative), path, sizeof(path)) ||
-        !IsWritableFsPath(relative)) {
+        !IsWritableFsPath(relative, system_unlocked)) {
         SendFrame(sequence, "ERR", "invalid_path_or_size");
         return;
     }
@@ -831,7 +814,7 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
     AbortFileUpload();
     bool external = false;
 #if CONFIG_PXA_ENABLED
-    external = pxa_esp_storage_debug_path(relative, s_file_upload.temporary,
+    external = pxa_esp_storage_debug_path(relative, system_unlocked, s_file_upload.temporary,
                                          sizeof(s_file_upload.temporary));
 #endif
     const int temporary_length = external ? static_cast<int>(strlen(s_file_upload.temporary)) :
@@ -1007,10 +990,11 @@ void MoveExternalFile(unsigned long sequence, const char* encoded_source,
     char source[kFsAbsolutePathLength] = {}, destination[kFsAbsolutePathLength] = {};
     char source_volume[PXA_ESP_STORAGE_PATH_BYTES + 32] = {};
     char destination_volume[PXA_ESP_STORAGE_PATH_BYTES + 32] = {};
+    const bool system_unlocked = IsSystemWriteUnlocked();
     if (!DecodeFsPath(encoded_source, source_relative, sizeof(source_relative), source, sizeof(source)) ||
         !DecodeFsPath(encoded_destination, destination_relative, sizeof(destination_relative), destination, sizeof(destination)) ||
-        !pxa_esp_storage_debug_path(source_relative, source_volume, sizeof(source_volume)) ||
-        !pxa_esp_storage_debug_path(destination_relative, destination_volume, sizeof(destination_volume))) {
+        !pxa_esp_storage_debug_path(source_relative, system_unlocked, source_volume, sizeof(source_volume)) ||
+        !pxa_esp_storage_debug_path(destination_relative, system_unlocked, destination_volume, sizeof(destination_volume))) {
         SendFrame(sequence, "ERR", "invalid_path"); return;
     }
     if (strcmp(source_volume, destination_volume) != 0) {

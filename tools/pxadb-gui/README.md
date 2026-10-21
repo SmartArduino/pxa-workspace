@@ -38,10 +38,18 @@ pxadb-gui --connect 192.168.1.20:9222 --token local/simulator/pai-touch/pxadb2.t
   GUI and again in the firmware input mailbox, and preview captures pause while
   the pointer is held down so drags stay responsive.
 - **File transfer** — browse storage, create and delete paths, push and pull
-  files with progress. Works on firmware (`FSLIST`/`FSREAD`/`FSSHA`) and on
+  files with progress, preserving UTF-8 filenames (including Chinese names).
+  Firmware paths are limited to 239 UTF-8 bytes including directory names;
+  devices running the older ASCII-only path validator need a firmware update.
+  Works on firmware (`FSLIST`/`FSREAD`/`FSSHA`) and on
   product simulators. On firmware, the Files panel can temporarily unlock
-  writes under the system directory for 1–1440 minutes and lock it again
-  (`FSUNLOCK`/`FSLOCK`).
+  writes under the internal Flash system directory for 1–1440 minutes and
+  lock it again (`FSUNLOCK`/`FSLOCK`). SD card directories allow uploads,
+  removal, directory creation and same-volume file moves without unlocking,
+  except `sdcard/PXA/system`, which is read-only by default. Destructive operations
+  on its parent `sdcard/PXA` are also denied. `FSUNLOCK` temporarily permits
+  writes below `sdcard/PXA/system` as well; `FSLOCK` or expiry restores read-only
+  access. The system directory itself stays in place.
 - **Device log** — subscribe to structured logs and raw console output while
   the preview runs; the worker drains buffered output between requests.
 - **Packages** — list installed packages, install a local `.pxa`, launch,
@@ -106,9 +114,15 @@ pxadb-gui --connect 192.168.1.20:9222 --token local/simulator/pai-touch/pxadb2.t
 - **远程操纵** —— 点击、拖动以及 Back/Home/音量按键经固件输入路由注入。
   MOVE 事件在 GUI 侧和设备输入邮箱中各合并一次；按住指针时暂停预览采集，
   拖动响应保持在几十毫秒级。
-- **文件传输** —— 浏览存储、新建/删除路径、带进度地上传下载。固件
+- **文件传输** —— 浏览存储、新建/删除路径、带进度地上传下载，保留中文等 UTF-8
+  文件名。固件路径（含目录）最多 239 个 UTF-8 字节；使用旧版 ASCII 路径校验的
+  设备需要更新固件。固件
   （`FSLIST`/`FSREAD`/`FSSHA`）和产品模拟器都支持。连接固件时，文件面板可按
-  1～1440 分钟临时解锁系统目录写入，并可立即重新锁定（`FSUNLOCK`/`FSLOCK`）。
+  1～1440 分钟临时解锁内部 Flash 系统目录写入，并可立即重新锁定
+  （`FSUNLOCK`/`FSLOCK`）。SD 卡普通目录的上传、删除、新建目录和卡内文件移动
+  无需解锁；`sdcard/PXA/system` 默认只读，父目录 `sdcard/PXA` 也禁止整体删除。
+  `FSUNLOCK` 也可临时解锁 `sdcard/PXA/system` 内部文件和子目录，`FSLOCK` 或到期
+  后恢复只读；系统根目录本身不能整体删除。
 - **设备日志** —— 预览运行期间可订阅结构化日志与原始串口输出；worker 会在
   请求间隙排空缓冲区。
 - **包管理** —— 列出已安装包、安装本地 `.pxa`、启动、停止、启用、禁用、
