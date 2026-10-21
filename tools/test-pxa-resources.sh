@@ -6,6 +6,7 @@ project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 pxa_root="$project_root/deps/pxa-system"
 test_root="${PXA_RESOURCE_TEST_ROOT:-$project_root/build/resource-checks}"
 app_root="${PXA_APP_SOURCE_ROOT:-$project_root/local/pxa-apps}"
+fixture_root="$pxa_root/simulator/desktop/tests/apps"
 profile="${PXA_RESOURCE_TEST_PROFILE:-pai-touch}"
 case "$profile" in pai-touch|sensecap-watcher) ;; *) echo "Unsupported test profile: $profile" >&2; exit 2;; esac
 mkdir -p "$test_root/logs"
@@ -29,8 +30,9 @@ run_logged korvo-touch-test bash "$project_root/firmware/boards/esp32s31-korvo-1
 run_logged pxadb-input-test bash "$project_root/tools/test-pxadb-input.sh"
 run_logged spec-test python3 "$pxa_root/spec/draft/tools/test.py"
 run_logged package-test bash "$pxa_root/tools/package/test_package_tool.sh"
-run_logged scenes-generate python3 "$app_root/resource-scenes/generate_resources.py"
-run_logged scenes-package env PXA_APP_SOURCE_ROOT="$app_root" \
+run_logged scenes-generate python3 "$fixture_root/resource-scenes/generate_resources.py"
+run_logged scenes-package env PXA_APP_SOURCE_ROOT="$fixture_root" \
+    PXA_SIGNING_KEY="${PXA_SIGNING_KEY:-$app_root/.dev-signing/publisher-private.pem}" \
     PXA_PACKAGE_OUTPUT_ROOT="$test_root/packages" \
     bash "$pxa_root/tools/package/package_app.sh" resource-scenes simulator "$test_root/packages/pxa-resource-scenes"
 run_logged pixel-audio-controller-build "${CC:-clang}" -std=c11 -Wno-attributes \

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Run installed resource-scenes on a physical board with live log evidence.
+"""Run the installed resource-scenes test fixture with live log evidence.
+
+Fixture source: deps/pxa-system/simulator/desktop/tests/apps/resource-scenes.
 
 Install the board-specific package first. This controls one serial connection,
 subscribes before launch, and always stops the test app. Heap INFO is aggregate

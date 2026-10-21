@@ -132,7 +132,7 @@ C SDK 使用 `PXA_CONTROLLER_X/Y/L/R`，C++ SDK 使用
 本工作区的固件使用 PXA Core 2.0，Core 1 应用包需要重新构建。例如：
 
 ```sh
-tools/app.sh build plane-shooter-raster --board doit-gamekit
+tools/app.sh build plane-shooter --board doit-gamekit
 ```
 
 `doit-gamekit` 的默认应用目标为 ESP32-S31 AOT。PSRAM 中的 AOT 代码与重定位

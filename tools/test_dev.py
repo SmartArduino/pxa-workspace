@@ -16,11 +16,11 @@ import dev
 class DeviceLaunchTest(unittest.TestCase):
     def setUp(self) -> None:
         args = SimpleNamespace(
-            mode="device", app_id="game-render-bench", board="esp32s31-korvo-1",
+            mode="device", app_id="plane-shooter", board="esp32s31-korvo-1",
             port="/dev/ttyUSB0", baud=2000000, no_logcat=True,
         )
         self.developer = dev.Developer(args, mock.Mock(), pathlib.Path("."))
-        self.developer.package_id = "pxa-game-render-bench"
+        self.developer.package_id = "pxa-plane-shooter"
 
     def test_failed_build_keeps_running_application_and_logs(self) -> None:
         runner, logcat = mock.Mock(), mock.Mock()
@@ -36,7 +36,7 @@ class DeviceLaunchTest(unittest.TestCase):
     def test_reads_identity_from_signed_package(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
-            package = root / "local/app-output/esp32s31-korvo-1/pxa-game-render-bench.pxa"
+            package = root / "local/app-output/esp32s31-korvo-1/pxa-plane-shooter.pxa"
             package.parent.mkdir(parents=True)
             package.touch()
             with mock.patch.object(dev, "ROOT", root), \

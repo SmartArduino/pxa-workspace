@@ -1,5 +1,11 @@
 # PXA Unverified Functionality
 
+Historical checklist: `pxa-lab` was retired on 2026-10-21. The lab-specific
+steps below describe earlier validation plans and cannot be run against the
+current app catalog. Core 2 ABI/IPC and resource fixtures now live under
+`deps/pxa-system/simulator/desktop/tests/apps/`; their package test scripts run
+the signed Guests independently of the product app repository.
+
 This file tracks PXA Draft 0.1 behavior that has source integration and/or
 host-side coverage but has not been validated in a running simulator or on an
 ESP32-S3 device. It is intentionally kept until each item has reproducible
