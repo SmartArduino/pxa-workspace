@@ -22,6 +22,7 @@
 #include <lvgl.h>
 #include <pxa_board_common/ledc_backlight.h>
 #include <pxadb/pxadb_service.h>
+#include <pxadb_pointer_samples.h>
 
 struct pxsys_standard_system;
 typedef struct pxsys_standard_system pxsys_standard_system_t;
@@ -56,6 +57,7 @@ public:
     bool PollPowerKey(bool* pressed);
 
 private:
+    static constexpr uint8_t kDebugPointers = 5;
     static constexpr int kTouchMaxPointers = CONFIG_ESP_LCD_TOUCH_MAX_POINTS;
 
     // SPD2010 touch protocol shim over the i2c_master driver. The stock
@@ -126,8 +128,8 @@ private:
     void WakeScreen();
     void NavigateHome();
     bool RouteInjectedPointerDown();
-    bool InjectPointer(uint16_t x, uint16_t y, bool pressed);
-    bool CancelInjectedPointer();
+    bool InjectPointer(uint8_t id, uint16_t x, uint16_t y, bool pressed);
+    bool CancelInjectedPointer(uint8_t id);
     bool RouteInjectedKey(pxadb::TestControlKey key);
     static void ReadInjectedPointer(lv_indev_t* indev, lv_indev_data_t* data);
     void SnapshotFlushArea(const lv_area_t* area, const uint8_t* pixels);
@@ -152,7 +154,7 @@ private:
     esp_lcd_touch_handle_t touch_ = nullptr;
     lv_display_t* display_ = nullptr;
     lv_indev_t* touch_indev_ = nullptr;
-    lv_indev_t* injected_pointer_ = nullptr;
+    lv_indev_t* injected_pointers_[kDebugPointers] = {};
     // Only the LVGL/port owner changes pending; the flush task publishes the
     // completed mirror through snapshot_sem_. The next raster can overlap DMA.
     bool direct_frame_pending_ = false;
@@ -198,9 +200,8 @@ private:
     std::atomic<bool> power_key_woke_screen_{false};
     std::atomic<bool> power_key_long_press_{false};
     std::atomic<bool> status_update_pending_{false};
-    std::atomic<uint16_t> injected_pointer_x_{0};
-    std::atomic<uint16_t> injected_pointer_y_{0};
-    std::atomic<bool> injected_pointer_pressed_{false};
+    pxadb::PointerSamples<kDebugPointers> injected_touches_;
+    portMUX_TYPE injected_lock_ = portMUX_INITIALIZER_UNLOCKED;
     // UI capture mirror and composed scanout buffer. Native game captures
     // lease the completed Surface; two small SRAM blocks serve all LCD DMA.
     // The SPD2010 has no readable framebuffer.

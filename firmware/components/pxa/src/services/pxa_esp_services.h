@@ -118,6 +118,8 @@ typedef struct {
     const pxa_package_manifest_t *manifest;
     const char *identity;
     const char *package_root;
+    const char *private_root; /* trusted resolved path, activation only */
+    const char *media_relative; /* trusted PXA/media/<locator>, activation only */
     void *assets_notify_context;
     void (*assets_notify)(void *context);
     void *allocator_context;

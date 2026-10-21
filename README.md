@@ -72,6 +72,11 @@ ES8311 播放和原生 USB CDC。硬件版本识别、ESP-IDF main 环境与当�
 接线、按键操作和首次烧录见
 [板级说明](firmware/boards/doit-gamekit/README.md)。
 
+`doit-gamekit-1` 对应 V0.8 新板，采用参考工程的 ST7789V TN 横屏初始化、
+FT6336U 触摸、14 个按键、MAX98357A 和原生四线 SDMMC，新增 MENU/RETURN
+系统键。构建命令为 `tools/firmware.sh doit-gamekit-1 build`；接线、屏幕参数
+和首次烧录见 [板级说明](firmware/boards/doit-gamekit-1/README.md)。
+
 ```sh
 tools/firmware.sh pai-touch build
 tools/firmware.sh pai-touch flash --port /dev/ttyACM0 --baud 406800

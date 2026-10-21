@@ -740,19 +740,20 @@ int main(void) {
     assert(backend.present_buffer(backend.context, surface, 2, 4) ==
            PXA_STATUS_OK);
     pxa_esp_surface_release_frame(frame.lease);
-    assert(release_notifications == 3);
+    assert(release_notifications == 2);
     assert(backend.peek_release(backend.context, surface, &released) ==
                PXA_STATUS_OK &&
            released.buffer_index == 0 && released.frame_id == 3);
-    backend.consume_release(backend.context, surface);
-    assert(backend.peek_release(backend.context, surface, &released) ==
-               PXA_STATUS_OK &&
-           released.buffer_index == 1 && released.frame_id == 2);
     backend.consume_release(backend.context, surface);
     assert(pxa_esp_surface_acquire_latest_for_direct(&frame) &&
            frame.frame_id == 4 &&
            frame.input_timestamp_us == 1000 &&
            frame.pixels == mapped_pixels + 64);
+    assert(release_notifications == 3);
+    assert(backend.peek_release(backend.context, surface, &released) ==
+               PXA_STATUS_OK &&
+           released.buffer_index == 1 && released.frame_id == 2);
+    backend.consume_release(backend.context, surface);
     pxa_esp_surface_note_frame_presented(frame.input_timestamp_us, 2200);
     pxa_esp_surface_take_display_input_metrics(&input_metrics);
     assert(input_metrics.sample_to_guest_count == 1 &&
@@ -823,16 +824,92 @@ int main(void) {
         assert(memory_info.probe_bytes == 0);
     }
     pxa_esp_surface_release_frame(frame.lease);
-    assert(release_notifications == 4);
-    assert(backend.peek_release(backend.context, surface, &released) ==
-               PXA_STATUS_OK &&
-           released.buffer_index == 2 && released.frame_id == 4);
-    backend.consume_release(backend.context, surface);
+    assert(release_notifications == 3);
     assert(backend.peek_release(backend.context, surface, &released) ==
            PXA_STATUS_WOULD_BLOCK);
     assert(backend.query(backend.context, surface, &state) == PXA_STATUS_OK &&
-           state.presented_frames == 2 && state.released_frames == 4 &&
-           state.free_buffers == 3);
+           state.presented_frames == 2 && state.released_frames == 3 &&
+           state.free_buffers == 2);
+    /* No new Guest frame: volume/modal redraws still have a leased backdrop.
+     * The held buffer is neither writable nor released to the Guest. */
+    pxa_esp_surface_set_system_overlay_visible(true);
+    assert(!pxa_esp_surface_acquire_latest_for_direct(&probe));
+    for (unsigned redraw = 0; redraw < 4; ++redraw) {
+        assert(pxa_esp_surface_acquire_latest(&probe) &&
+               probe.frame_id == 4 && probe.pixels == mapped_pixels + 64);
+        pxa_esp_surface_release_frame(probe.lease);
+    }
+    pxa_esp_surface_set_system_overlay_visible(false);
+    assert(backend.query(backend.context, surface, &state) == PXA_STATUS_OK &&
+           state.presented_frames == 2 && state.released_frames == 3);
+    assert(backend.acquire_buffer(backend.context, surface, &buffer_index) == PXA_STATUS_OK && buffer_index != 2);
+    assert(backend.present_buffer(backend.context, surface, buffer_index, 5) == PXA_STATUS_OK);
+    assert(pxa_esp_surface_acquire_latest_for_direct(&probe) && probe.frame_id == 5);
+    assert(backend.peek_release(backend.context, surface, &released) == PXA_STATUS_OK &&
+           released.buffer_index == 2 && released.frame_id == 4);
+    backend.consume_release(backend.context, surface);
+    /* Old storage is reusable while the replacement is still being rotated. */
+    assert(backend.acquire_buffer(backend.context, surface, &buffer_index) == PXA_STATUS_OK);
+    assert(backend.present_buffer(backend.context, surface, buffer_index, 6) == PXA_STATUS_OK);
+    pxa_esp_surface_release_frame(probe.lease);
+    backend.close(backend.context, surface);
+    assert(allocations == 0);
+
+    /* The production NES uses exactly two mapped buffers. One retained
+     * backdrop must not deadlock replacement or expose the writer's pixels. */
+    desc.buffer_count = 2;
+    assert(backend.create(backend.context, &desc, &surface, &stride) == PXA_STATUS_OK);
+    assert(backend.configure(backend.context, surface, &layer) == PXA_STATUS_OK);
+    assert(backend.register_buffers(backend.context, surface, mapped_pixels, 64) == PXA_STATUS_OK);
+    for (uint64_t id = 1; id <= 32; ++id) {
+        assert(backend.acquire_buffer(backend.context, surface, &buffer_index) == PXA_STATUS_OK);
+        memset(mapped_pixels + buffer_index * 32, (int)id, 32);
+        assert(backend.present_buffer(backend.context, surface, buffer_index, id) == PXA_STATUS_OK);
+        assert(pxa_esp_surface_acquire_latest(&probe) && probe.frame_id == id);
+        if (id > 1) {
+            assert(backend.peek_release(backend.context, surface, &released) == PXA_STATUS_OK && released.frame_id == id - 1);
+            backend.consume_release(backend.context, surface);
+            /* Return the previous storage before the replacement lease ends. */
+            assert(backend.query(backend.context, surface, &state) == PXA_STATUS_OK && state.free_buffers == 1);
+        }
+        pxa_esp_surface_release_frame(probe.lease);
+        assert(backend.peek_release(backend.context, surface, &released) == PXA_STATUS_WOULD_BLOCK);
+        for (unsigned redraw = 0; redraw < 3; ++redraw) {
+            assert(pxa_esp_surface_acquire_current_for_preview(&probe) && probe.frame_id == id);
+            assert(probe.pixels[0] == (uint8_t)id);
+            pxa_esp_surface_release_frame(probe.lease);
+        }
+    }
+    /* A volume-style alpha plane must blend over the retained Guest frame,
+     * rather than promoting the empty LVGL background to a fullscreen cover.
+     * No Guest submit occurs while the overlay animates or disappears. */
+    pxa_esp_surface_set_system_alpha_provider(ui_alpha_plane, &notifications);
+    pxa_esp_surface_runtime_modal_enter();
+    assert(pxa_esp_surface_composition_required());
+    for (unsigned redraw = 0; redraw < 8; ++redraw) {
+        assert(!pxa_esp_surface_acquire_latest_for_direct(&probe));
+        assert(pxa_esp_surface_acquire_latest(&probe) && probe.frame_id == 32);
+        assert(probe.opaque_ui_region_count == 0 && !probe.suppress_guest_alpha);
+        assert(probe.system_alpha_plane.visible && probe.system_alpha_plane.alpha);
+        const uint16_t backdrop = pxa_read_u16(probe.pixels);
+        assert(backdrop == 0x2020);
+        assert(pxa_esp_surface_blend_alpha_pixel(backdrop,
+                   probe.system_alpha_plane.pixels[0],
+                   probe.system_alpha_plane.alpha[0],255) == backdrop);
+        assert(pxa_esp_surface_blend_alpha_pixel(backdrop,
+                   probe.system_alpha_plane.pixels[2],
+                   probe.system_alpha_plane.alpha[2],255) == 0x001f);
+        pxa_esp_surface_release_frame(probe.lease);
+    }
+    pxa_esp_surface_runtime_modal_leave();
+    pxa_esp_surface_set_system_alpha_provider(empty_ui_alpha_plane, &notifications);
+    assert(pxa_esp_surface_acquire_latest(&probe) && probe.frame_id == 32 &&
+           !probe.system_alpha_plane.visible && !probe.opaque_ui_region_count);
+    pxa_esp_surface_release_frame(probe.lease);
+    assert(backend.query(backend.context,surface,&state) == PXA_STATUS_OK &&
+           state.presented_frames == 32 && state.released_frames == 31 &&
+           state.free_buffers == 1);
+    pxa_esp_surface_set_system_alpha_provider(NULL,NULL);
     backend.close(backend.context, surface);
     assert(allocations == 0);
 

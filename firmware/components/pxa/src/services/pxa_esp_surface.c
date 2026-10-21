@@ -2327,6 +2327,7 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
     bool runtime_modal_active;
     bool full_ui_region;
     bool alpha_available = true;
+    int release_ready = 0;
     uint64_t candidate_frame_id;
     int index;
     if (frame == NULL) return false;
@@ -2366,6 +2367,23 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
     surface->acquire_new = !current_only &&
                            surface->pending != PXA_ESP_SURFACE_NONE;
     if (surface->acquire_new) {
+        /* Keep the last mapped frame readable between submissions, including
+         * redraws caused only by volume/permission overlays. Return its buffer
+         * as soon as the replacement lease starts, so the Guest can render in
+         * parallel with rotation of the replacement. Never read a buffer after
+         * its release has been delivered to the Guest. */
+        if ((surface->flags & PXA_SURFACE_FLAG_GUEST_MAPPED) != 0 &&
+            surface->current != PXA_ESP_SURFACE_NONE) {
+            if (!enqueue_release_locked(surface, surface->current,
+                                        surface->current_frame_id)) {
+                taskEXIT_CRITICAL(&g_surface_lock);
+                return false;
+            }
+            release_ready = 1;
+            surface->current = PXA_ESP_SURFACE_NONE;
+            surface->current_frame_id = 0;
+            surface->current_input_timestamp_us = 0;
+        }
         index = surface->pending;
         surface->pending = PXA_ESP_SURFACE_NONE;
         surface->acquired_frame_id = surface->pending_frame_id;
@@ -2422,6 +2440,7 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
     system_alpha_provider = g_system_alpha_provider;
     system_alpha_provider_context = g_system_alpha_provider_context;
     taskEXIT_CRITICAL(&g_surface_lock);
+    if (release_ready) notify_release_ready();
     if (ui_alpha_provider != NULL &&
         !ui_alpha_provider(ui_alpha_provider_context, &frame->ui_alpha_plane)) {
         memset(&frame->ui_alpha_plane, 0, sizeof(frame->ui_alpha_plane));
@@ -2537,7 +2556,6 @@ void pxa_esp_surface_release_frame(uint64_t lease) {
     uint32_t generation =
         lease <= UINT32_MAX ? (uint32_t)lease : UINT32_C(0);
     int destroy = 0;
-    int release_ready = 0;
     if (generation == 0) return;
     taskENTER_CRITICAL(&g_surface_lock);
     surface = g_acquired_surface;
@@ -2552,18 +2570,10 @@ void pxa_esp_surface_release_frame(uint64_t lease) {
         return;
     }
     if (surface->acquire_new) {
-        if ((surface->flags & PXA_SURFACE_FLAG_GUEST_MAPPED) != 0) {
-            release_ready = enqueue_release_locked(
-                surface, surface->acquired, surface->acquired_frame_id);
-            surface->current = PXA_ESP_SURFACE_NONE;
-            surface->current_frame_id = 0;
-            surface->current_input_timestamp_us = 0;
-        } else {
-            surface->current = surface->acquired;
-            surface->current_frame_id = surface->acquired_frame_id;
-            surface->current_input_timestamp_us =
-                surface->acquired_input_timestamp_us;
-        }
+        surface->current = surface->acquired;
+        surface->current_frame_id = surface->acquired_frame_id;
+        surface->current_input_timestamp_us =
+            surface->acquired_input_timestamp_us;
         ++surface->presented_frames;
         if ((surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) != 0)
             ++surface->raster_telemetry.visible_frames;
@@ -2576,7 +2586,6 @@ void pxa_esp_surface_release_frame(uint64_t lease) {
     g_acquired_surface = NULL;
     if (surface->closing && !surface->writer_active) destroy = 1;
     taskEXIT_CRITICAL(&g_surface_lock);
-    if (release_ready) notify_release_ready();
     if (destroy) destroy_surface(surface);
 }
 

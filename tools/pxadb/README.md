@@ -165,8 +165,10 @@ transfer and package management.
 
 ## 简体中文
 
-多点触摸调试先查询 `input capabilities`。pai-touch 和产品模拟器支持两个独立
-接触点；其他板卡继续按实际实现报告数量。协议为
+多点触摸调试先查询 `input capabilities`，以连接目标返回的 `max_pointers` 为准。
+当前实现中 pai-touch、esp-mosaico 提供两个独立调试接触点；
+esp32s31-korvo-1、doit-gamekit、sensecap-watcher 和产品模拟器提供五个。
+调试接触点数量不代表实体触摸屏的能力，旧固件仍可能只报告一个。协议为
 `INPUT POINTER <DOWN|MOVE|UP|CANCEL> x y id`，`INPUT CANCEL` 取消全部接触点，
 KEY 在切换界面前也取消所有注入手势。CANCEL 不应触发点击或射击。
 连续手势应复用一个 `PxaDbClient` 连接；每指必须先 DOWN，独立 MOVE，最后 UP
@@ -185,10 +187,17 @@ PXADB_BAUD=2000000 pxadb input controller 0x10 --hold-ms 500 --port /dev/ttyACM0
 ```
 
 模拟器控制 socket 的内部命令为 `TOUCH phase id x y` 和 `TOUCH CANCEL_ALL`，
-两根手指对应独立 LVGL 输入设备。`POINTER phase x y` 保留单鼠标 SDL 测试路径。
+每根手指对应独立 LVGL 输入设备。桥接器向运行中的模拟器查询触点上限；
+旧版不返回能力字段的模拟器按两个处理。`POINTER phase x y` 保留单鼠标 SDL 测试路径。
 pai-touch 的注入复用两个物理触点设备，调试期间暂停控制器采样，最后释放被 LVGL
 读到后恢复；正在进行的实体手势不会被调试注入抢占。这里验证驱动后的游戏链路，
 不包含实体触摸传感器采样延迟。
+
+Korvo 复用已有五个物理 LVGL 触点通道；GameKit、Watcher 按需创建额外调试通道。
+这三种适配器用固定容量的逐指队列保留 DOWN/UP 边沿，只合并连续 MOVE。
+LVGL 任务消费队列，调试任务不直接调用应用触摸回调。单指 CANCEL 不影响其他
+仍按住的手指；`INPUT CANCEL`、会话清理和五秒无输入超时负责释放全部注入状态。
+同时按方向和 A 的测试应保持一个连接，使用不同 id，并在超时前发送 MOVE。
 
 PXADB 是本工作区固件 PXADB USB Serial/JTAG 服务的主机客户端。它可安装独立构建的
 PXA 容器，不会重新编译或烧录固件。

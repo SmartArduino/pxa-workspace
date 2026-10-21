@@ -12,6 +12,12 @@
 #include <string.h>
 #include <sys/stat.h>
 
+/* LittleFS/FAT mounts on ESP-IDF are link-free; its libc has no lstat.
+ * Native adapter tests retain POSIX no-follow checks. */
+#if !defined(__linux__) && !defined(__APPLE__)
+#define lstat stat
+#endif
+
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -30,6 +36,9 @@
 #endif
 #ifndef CONFIG_PXA_MOUNT_POINT
 #define CONFIG_PXA_MOUNT_POINT "/assets"
+#endif
+#ifndef CONFIG_PXA_PRIVATE_DATA_DIR
+#define CONFIG_PXA_PRIVATE_DATA_DIR "data"
 #endif
 #ifndef CONFIG_PXA_PRIVATE_FS_QUOTA_BYTES
 #define CONFIG_PXA_PRIVATE_FS_QUOTA_BYTES (64 * 1024)
@@ -293,8 +302,8 @@ static pxa_status_t initialize_permission(
 static int prepare_private_root(char *root, size_t capacity,
                                 const char *identity) {
     char legacy[PXA_ESP_SERVICES_PATH_BYTES];
-    int length = snprintf(root, capacity, "%s/%s/data",
-                          CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT);
+    int length = snprintf(root, capacity, "%s/%s/%s",
+                          CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT,CONFIG_PXA_PRIVATE_DATA_DIR);
     if (length < 0 || (size_t)length >= capacity ||
         (mkdir(root, 0700) != 0 && errno != EEXIST)) return 0;
     int added = snprintf(root + length, capacity - (size_t)length,
@@ -315,6 +324,28 @@ static int prepare_private_root(char *root, size_t capacity,
     return mkdir(root, 0700) == 0 || errno == EEXIST;
 }
 
+static int prepare_resolved_private_root(char *root,size_t capacity,const pxa_esp_services_config_t *host) {
+    if(!host->private_root)return prepare_private_root(root,capacity,host->identity);
+    char prefix[PXA_ESP_SERVICES_PATH_BYTES];
+    int prefix_size=snprintf(prefix,sizeof(prefix),"%s/%s/%s/",CONFIG_PXA_MOUNT_POINT,CONFIG_PXA_STATE_ROOT,CONFIG_PXA_PRIVATE_DATA_DIR);
+    if(prefix_size<0 || (size_t)prefix_size>=sizeof(prefix))return 0;
+    if(strncmp(host->private_root,prefix,(size_t)prefix_size) || strlen(host->private_root)>=capacity)return 0;
+    char legacy[PXA_ESP_SERVICES_PATH_BYTES];
+    int n=snprintf(legacy,sizeof(legacy),"%s%s",prefix,host->identity);
+    if(n<0 || (size_t)n>=sizeof(legacy))return 0;
+    if(strlen(host->identity)>65 && host->identity[64]==':')legacy[prefix_size+64]='~';
+    if(!strcmp(legacy,host->private_root))return prepare_private_root(root,capacity,host->identity);
+    strcpy(root,host->private_root);
+    for(char *p=root+strlen(CONFIG_PXA_MOUNT_POINT);;++p) {
+        if(*p && *p!='/')continue;
+        char saved=*p;*p=0;
+        struct stat st;
+        if((mkdir(root,0700)!=0 && errno!=EEXIST) || lstat(root,&st)!=0 || !S_ISDIR(st.st_mode)){*p=saved;return 0;}
+        *p=saved;if(!saved)break;
+    }
+    return 1;
+}
+
 static pxa_status_t initialize_fs(
     pxa_esp_services_t *services, const pxa_esp_services_config_t *host,
     pxa_esp_services_result_t *result) {
@@ -325,7 +356,7 @@ static pxa_status_t initialize_fs(
     size_t workspace_size;
     memset(&config, 0, sizeof(config));
     config.struct_size = sizeof(config);
-    if (!prepare_private_root(root, sizeof(root), host->identity)) {
+    if (!prepare_resolved_private_root(root, sizeof(root), host)) {
         return fail(result, "create-private-fs-root", PXA_STATUS_INTERNAL,
                     PXA_ESP_SERVICES_ISSUE_NONE);
     }
@@ -355,7 +386,7 @@ static pxa_status_t initialize_fs(
         for(uint16_t j=0;j<component->service_count;++j) {
             const pxa_package_service_requirement_t *requirement=&component->services[j];
             if(requirement->service==PXA_FS_SERVICE_ID &&
-                (requirement->required_features & PXA_FS_FEATURE_APP_MEDIA_ROOT)) fixed_media=1;
+                (requirement->required_features & (PXA_FS_FEATURE_APP_MEDIA_ROOT|PXA_FS_FEATURE_APP_MEDIA_PATH))) fixed_media=1;
         }
     }
     for (uint16_t i=0;i<services->declaration_count;++i) {
@@ -369,6 +400,10 @@ static pxa_status_t initialize_fs(
             host->assets_notify,&services->fs_roots,&roots);
         if(status!=PXA_STATUS_OK && status!=PXA_STATUS_UNAVAILABLE)
             return fail(result,"initialize-app-directories",status,PXA_ESP_SERVICES_ISSUE_NONE);
+        if(status==PXA_STATUS_OK && host->media_relative) {
+            status=pxa_esp_fs_roots_set_media_relative(services->fs_roots,host->media_relative);
+            if(status!=PXA_STATUS_OK)return fail(result,"resolve-app-media",status,PXA_ESP_SERVICES_ISSUE_NONE);
+        }
         service_config.roots=roots;
         service_config.permissions=services->permission;
     }
@@ -444,7 +479,7 @@ static pxa_status_t initialize_storage(
     size_t workspace_size;
     memset(&config, 0, sizeof(config));
     config.struct_size = sizeof(config);
-    if (!prepare_private_root(root, sizeof(root), host->identity)) {
+    if (!prepare_resolved_private_root(root, sizeof(root), host)) {
         return fail(result, "create-private-storage-root", PXA_STATUS_INTERNAL,
                     PXA_ESP_SERVICES_ISSUE_NONE);
     }
@@ -663,9 +698,12 @@ static pxa_status_t initialize_bounded_services(
     surface_config.struct_size = sizeof(surface_config);
     surface_config.max_surfaces = 1;
     surface_config.max_surfaces_per_component = 1;
-    surface_config.max_width = 320;
-    surface_config.max_height = 240;
-    surface_config.max_frame_bytes = 320u * 240u * 4u;
+    /* Accept the whole wire-format range. Dimensions need not match the panel;
+     * checked byte arithmetic and the backend's actual allocation/mapping
+     * decide admission. These limits do not reserve framebuffer storage. */
+    surface_config.max_width = UINT16_MAX;
+    surface_config.max_height = UINT16_MAX;
+    surface_config.max_frame_bytes = UINT32_MAX;
     surface_config.min_buffer_count = 2;
     surface_config.max_buffer_count = 3;
     surface_config.backend = surface_backend;

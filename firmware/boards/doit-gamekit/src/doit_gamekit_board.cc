@@ -40,6 +40,7 @@
 #include <pxa_board_common/ledc_backlight.h>
 #include <pxa_board_common/boot_screen.h>
 #include <pxadb/pxadb_service.h>
+#include <pxadb_pointer_samples.h>
 #include <sdmmc_cmd.h>
 #include <wifi_manager.h>
 
@@ -97,6 +98,7 @@ public:
 private:
     bool InitializeDisplay();
     bool InitializeButtons();
+    bool CreateRemotePointer(uint8_t id);
     bool InitializeSd();
     bool InitializeWifi();
     void PollInput();
@@ -151,10 +153,11 @@ private:
     uint32_t sampled_content_frames_ = 0, overlay_fps_ = UINT32_MAX;
     bool overlay_enabled_ = false;
     uint32_t flush_count_ = 0;
-    struct RemotePoint { uint16_t x, y; bool pressed, cancel; };
-    QueueHandle_t remote_points_ = nullptr, remote_keys_ = nullptr;
-    lv_indev_t* remote_pointer_ = nullptr;
-    RemotePoint remote_state_{};
+    static constexpr uint8_t kDebugPointers = 5;
+    QueueHandle_t remote_keys_ = nullptr;
+    lv_indev_t* remote_pointers_[kDebugPointers]{};
+    pxadb::PointerSamples<kDebugPointers> remote_samples_;
+    portMUX_TYPE remote_lock_ = portMUX_INITIALIZER_UNLOCKED;
     std::atomic<bool> physical_active_{false}, wake_requested_{false};
     ControllerSamples<> remote_controller_;
     portMUX_TYPE controller_lock_ = portMUX_INITIALIZER_UNLOCKED;
@@ -583,6 +586,35 @@ bool Gamekit::InitializeSd() {
     return true;
 }
 
+// Called with the display lock held. Additional diagnostic fingers are lazy,
+// so ordinary controller play retains the same single pointer timer.
+bool Gamekit::CreateRemotePointer(uint8_t id) {
+    if (id >= kDebugPointers) return false;
+    if (remote_pointers_[id]) return true;
+    auto* pointer = lv_indev_create();
+    if (!pointer) return false;
+    lv_indev_set_type(pointer, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_disp(pointer, display_);
+    lv_indev_set_driver_data(pointer, this);
+    lv_indev_set_user_data(pointer, reinterpret_cast<void*>(static_cast<uintptr_t>(id)));
+    lv_indev_set_read_cb(pointer, [](lv_indev_t* device, lv_indev_data_t* data) {
+        auto* self = static_cast<Gamekit*>(lv_indev_get_driver_data(device));
+        const auto id = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_indev_get_user_data(device)));
+        bool more = false;
+        portENTER_CRITICAL(&self->remote_lock_);
+        const auto sample = self->remote_samples_.Read(id, more);
+        portEXIT_CRITICAL(&self->remote_lock_);
+        if (sample.cancel) lv_indev_wait_release(device);
+        data->point = {sample.x, sample.y};
+        data->timestamp = lv_tick_get();
+        data->state = sample.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+        data->continue_reading = more;
+    });
+    lv_timer_set_period(lv_indev_get_read_timer(pointer), 5);
+    remote_pointers_[id] = pointer;
+    return true;
+}
+
 bool Gamekit::InitializeButtons() {
     uint64_t mask = 0;
     for (int pin : kButtonPins) mask |= 1ULL << pin;
@@ -590,31 +622,11 @@ bool Gamekit::InitializeButtons() {
         .pin_bit_mask = mask, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE, .intr_type = GPIO_INTR_DISABLE,
     };
-    remote_points_ = xQueueCreate(16, sizeof(RemotePoint));
     remote_keys_ = xQueueCreate(8, sizeof(pxadb::TestControlKey));
-    if (!remote_points_ || !remote_keys_ || gpio_config(&config) != ESP_OK || !LockDisplay(1000))
+    if (!remote_keys_ || gpio_config(&config) != ESP_OK || !LockDisplay(1000))
         return false;
     lv_lock();
-    remote_pointer_ = lv_indev_create();
-    if (remote_pointer_) {
-        lv_indev_set_type(remote_pointer_, LV_INDEV_TYPE_POINTER);
-        lv_indev_set_disp(remote_pointer_, display_);
-        lv_indev_set_user_data(remote_pointer_, this);
-        lv_indev_set_read_cb(remote_pointer_, [](lv_indev_t* device, lv_indev_data_t* data) {
-            auto* self = static_cast<Gamekit*>(lv_indev_get_user_data(device));
-            RemotePoint point;
-            if (xQueueReceive(self->remote_points_, &point, 0) == pdTRUE) {
-                self->remote_state_ = point;
-                if (point.cancel) lv_indev_reset(device, nullptr);
-            }
-            data->point = {self->remote_state_.x, self->remote_state_.y};
-            data->timestamp = lv_tick_get();
-            data->state = self->remote_state_.pressed && !self->remote_state_.cancel
-                ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-            data->continue_reading = uxQueueMessagesWaiting(self->remote_points_) != 0;
-        });
-        lv_timer_set_period(lv_indev_get_read_timer(remote_pointer_), 5);
-    }
+    const bool remote_ready = CreateRemotePointer(0);
     pointer_ = lv_indev_create();
     if (pointer_) {
         lv_indev_set_type(pointer_, LV_INDEV_TYPE_POINTER);
@@ -653,7 +665,7 @@ bool Gamekit::InitializeButtons() {
     });
     lv_unlock();
     UnlockDisplay();
-    return pointer_ && remote_pointer_ && poll && status && navigation_ready;
+    return pointer_ && remote_ready && poll && status && navigation_ready;
 }
 
 void Gamekit::PollInput() {
@@ -668,9 +680,10 @@ void Gamekit::PollInput() {
         portENTER_CRITICAL(&controller_lock_);
         remote_controller_.Clear();
         portEXIT_CRITICAL(&controller_lock_);
-        xQueueReset(remote_points_);
-        remote_state_ = {};
-        lv_indev_reset(remote_pointer_, nullptr);
+        portENTER_CRITICAL(&remote_lock_);
+        remote_samples_.Clear();
+        portEXIT_CRITICAL(&remote_lock_);
+        for (auto* pointer : remote_pointers_) if (pointer) lv_indev_wait_release(pointer);
         if (takeover_) takeover_(takeover_context_);
     }
     previous_raw_ = raw;
@@ -814,6 +827,7 @@ bool Gamekit::ConfigureDiagnostics() {
     pxadb::TestControlAdapter adapter;
     adapter.context = this;
     adapter.width = kWidth; adapter.height = kHeight;
+    adapter.max_pointers = kDebugPointers;
     adapter.route_pointer_down = [](void* context) {
         auto* self = static_cast<Gamekit*>(context);
         self->wake_requested_.store(true);
@@ -821,16 +835,26 @@ bool Gamekit::ConfigureDiagnostics() {
     };
     adapter.inject_pointer = [](void* context, uint8_t id, uint16_t x, uint16_t y, bool pressed) {
         auto* self = static_cast<Gamekit*>(context);
-        if (id || x >= kWidth || y >= kHeight || self->physical_active_.load()) return false;
-        const RemotePoint point{x, y, pressed, false};
-        return xQueueSend(self->remote_points_, &point, 0) == pdTRUE;
+        if (id >= kDebugPointers || x >= kWidth || y >= kHeight || self->physical_active_.load()) return false;
+        if (!self->remote_pointers_[id]) {
+            if (!self->LockDisplay(1000)) return false;
+            lv_lock();
+            const bool ready = self->CreateRemotePointer(id);
+            lv_unlock();self->UnlockDisplay();
+            if (!ready) return false;
+        }
+        portENTER_CRITICAL(&self->remote_lock_);
+        const bool accepted = !self->physical_active_.load() &&
+            self->remote_samples_.Push(id, x, y, pressed);
+        portEXIT_CRITICAL(&self->remote_lock_);
+        return accepted;
     };
     adapter.cancel_pointer = [](void* context, uint8_t id) {
-        if (id) return false;
         auto* self = static_cast<Gamekit*>(context);
-        xQueueReset(self->remote_points_);
-        const RemotePoint point{0, 0, false, true};
-        return xQueueSend(self->remote_points_, &point, 0) == pdTRUE;
+        portENTER_CRITICAL(&self->remote_lock_);
+        const bool accepted = self->remote_samples_.Cancel(id);
+        portEXIT_CRITICAL(&self->remote_lock_);
+        return accepted;
     };
     adapter.route_key = [](void* context, pxadb::TestControlKey key) {
         auto* self = static_cast<Gamekit*>(context);

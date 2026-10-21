@@ -1590,53 +1590,53 @@ bool SensecapWatcherHardware::RouteInjectedPointerDown() {
     return false;
 }
 
-bool SensecapWatcherHardware::InjectPointer(uint16_t x, uint16_t y,
+bool SensecapWatcherHardware::InjectPointer(uint8_t id, uint16_t x, uint16_t y,
                                             bool pressed) {
-    if (display_ == nullptr || x >= WATCHER_DISPLAY_WIDTH ||
-        y >= WATCHER_DISPLAY_HEIGHT) {
-        return false;
-    }
-    injected_pointer_x_.store(x, std::memory_order_relaxed);
-    injected_pointer_y_.store(y, std::memory_order_relaxed);
-    injected_pointer_pressed_.store(pressed, std::memory_order_release);
-    // The indev's read timer runs inside the LVGL task, which owns the display
-    // pipeline; injecting here would run UI callbacks on the PXADB task.
-    if (injected_pointer_ != nullptr) return true;
-    if (!lvgl_port_lock(1000)) return false;
-    lv_lock();
-    if (injected_pointer_ == nullptr) {
-        injected_pointer_ = lv_indev_create();
-        if (injected_pointer_ != nullptr) {
-            lv_indev_set_type(injected_pointer_, LV_INDEV_TYPE_POINTER);
-            lv_indev_set_display(injected_pointer_, display_);
-            lv_indev_set_user_data(injected_pointer_, this);
-            lv_indev_set_read_cb(injected_pointer_, ReadInjectedPointer);
-            lv_timer_set_period(lv_indev_get_read_timer(injected_pointer_),
-                                kTouchPollMs);
+    if (display_ == nullptr || id >= kDebugPointers || x >= WATCHER_DISPLAY_WIDTH ||
+        y >= WATCHER_DISPLAY_HEIGHT) return false;
+    if (injected_pointers_[id] == nullptr) {
+        if (!lvgl_port_lock(1000)) return false;
+        lv_lock();
+        auto* indev = lv_indev_create();
+        if (indev != nullptr) {
+            lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+            lv_indev_set_display(indev, display_);
+            lv_indev_set_driver_data(indev, this);
+            lv_indev_set_user_data(indev, reinterpret_cast<void*>(static_cast<uintptr_t>(id)));
+            lv_indev_set_read_cb(indev, ReadInjectedPointer);
+            lv_timer_set_period(lv_indev_get_read_timer(indev), kTouchPollMs);
+            injected_pointers_[id] = indev;
         }
+        lv_unlock();lvgl_port_unlock();
+        if (indev == nullptr) return false;
     }
-    const bool ready = injected_pointer_ != nullptr;
-    lv_unlock();
-    lvgl_port_unlock();
-    return ready;
+    portENTER_CRITICAL(&injected_lock_);
+    const bool accepted = injected_touches_.Push(id, x, y, pressed);
+    portEXIT_CRITICAL(&injected_lock_);
+    return accepted;
 }
 
-bool SensecapWatcherHardware::CancelInjectedPointer() {
-    injected_pointer_pressed_.store(false, std::memory_order_release);
-    return injected_pointer_ != nullptr;
+bool SensecapWatcherHardware::CancelInjectedPointer(uint8_t id) {
+    portENTER_CRITICAL(&injected_lock_);
+    const bool accepted = injected_touches_.Cancel(id);
+    portEXIT_CRITICAL(&injected_lock_);
+    return accepted;
 }
 
 void SensecapWatcherHardware::ReadInjectedPointer(lv_indev_t* indev,
                                                   lv_indev_data_t* data) {
-    auto* self =
-        static_cast<SensecapWatcherHardware*>(lv_indev_get_user_data(indev));
+    auto* self = static_cast<SensecapWatcherHardware*>(lv_indev_get_driver_data(indev));
     if (self == nullptr || data == nullptr) return;
-    data->point.x = self->injected_pointer_x_.load(std::memory_order_relaxed);
-    data->point.y = self->injected_pointer_y_.load(std::memory_order_relaxed);
-    data->state =
-        self->injected_pointer_pressed_.load(std::memory_order_acquire)
-            ? LV_INDEV_STATE_PRESSED
-            : LV_INDEV_STATE_RELEASED;
+    const auto id = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_indev_get_user_data(indev)));
+    bool more = false;
+    portENTER_CRITICAL(&self->injected_lock_);
+    const auto sample = self->injected_touches_.Read(id, more);
+    portEXIT_CRITICAL(&self->injected_lock_);
+    if (sample.cancel) lv_indev_wait_release(indev);
+    data->timestamp = lv_tick_get();
+    data->point = {sample.x, sample.y};
+    data->state = sample.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    data->continue_reading = more;
 }
 
 bool SensecapWatcherHardware::RouteInjectedKey(pxadb::TestControlKey key) {
@@ -1667,19 +1667,19 @@ bool SensecapWatcherHardware::ConfigurePxadbControls() {
     adapter.context = this;
     adapter.width = WATCHER_DISPLAY_WIDTH;
     adapter.height = WATCHER_DISPLAY_HEIGHT;
+    adapter.max_pointers = kDebugPointers;
     adapter.route_pointer_down = [](void* context) {
         return static_cast<SensecapWatcherHardware*>(context)
             ->RouteInjectedPointerDown();
     };
     adapter.inject_pointer = [](void* context, uint8_t id, uint16_t x, uint16_t y,
                                 bool pressed) {
-        return id == 0 && static_cast<SensecapWatcherHardware*>(context)
-            ->InjectPointer(x, y, pressed);
+        return static_cast<SensecapWatcherHardware*>(context)
+            ->InjectPointer(id, x, y, pressed);
     };
     adapter.cancel_pointer = [](void* context, uint8_t id) {
-        if (id != 0) return false;
         return static_cast<SensecapWatcherHardware*>(context)
-            ->CancelInjectedPointer();
+            ->CancelInjectedPointer(id);
     };
     adapter.route_key = [](void* context, pxadb::TestControlKey key) {
         return static_cast<SensecapWatcherHardware*>(context)

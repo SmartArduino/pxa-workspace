@@ -94,6 +94,7 @@ class SimulatorPxaDb:
         self.publisher_key = publisher_key
         self.control_socket = control_socket
         self.lock = threading.Lock()
+        self.pointer_limit: int | None = None
         self.uploads: dict[int, tuple[pathlib.Path, pathlib.Path, int, str]] = {}
         self.state_root.mkdir(mode=0o700, parents=True, exist_ok=True)
 
@@ -162,13 +163,25 @@ class SimulatorPxaDb:
             self.send(connection, sequence, "DATA", f"{offset}\t{data}")
         self.send(connection, sequence, "OK")
 
+    def input_capabilities(self) -> str:
+        payload = self.control("CAPABILITIES").decode("ascii")
+        fields = dict(part.split("=", 1) for part in payload.split(";") if "=" in part)
+        try:
+            count = int(fields.get("max_pointers", "2"))
+        except ValueError as error:
+            raise ServiceError("invalid_input_capabilities") from error
+        if not 1 <= count <= 16:
+            raise ServiceError("invalid_input_capabilities")
+        self.pointer_limit = count
+        # Empty legacy owner response denotes its original two-pointer ABI.
+        return payload if "max_pointers" in fields else "max_pointers=2;keys=back,home,volume-up,volume-down"
+
     def input(self, arguments: list[str]) -> str:
         if not arguments:
             raise ServiceError("invalid_input_command")
         action = arguments[0].upper()
         if action == "CAPABILITIES" and len(arguments) == 1:
-            self.control("CAPABILITIES")
-            return "pointers=2;max_pointers=2;keys=back,home,volume-up,volume-down"
+            return self.input_capabilities()
         if action == "SYNC" and len(arguments) == 1:
             self.control("SYNC")
             return ""
@@ -190,7 +203,11 @@ class SimulatorPxaDb:
                 pointer_id = int(arguments[4])
             except ValueError as error:
                 raise ServiceError("invalid_pointer_id") from error
-            if phase not in {"DOWN", "MOVE", "UP", "CANCEL"} or not 0 <= pointer_id < 2:
+            if phase not in {"DOWN", "MOVE", "UP", "CANCEL"} or not 0 <= pointer_id < 16:
+                raise ServiceError("unsupported_pointer")
+            if self.pointer_limit is None:
+                self.input_capabilities()
+            if pointer_id >= self.pointer_limit:
                 raise ServiceError("unsupported_pointer")
             self.control(f"TOUCH {phase} {pointer_id} {x} {y}")
             return ""

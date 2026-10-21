@@ -86,6 +86,12 @@ ST7789 native scan order, without a TE signal. Build with
 `tools/firmware.sh doit-gamekit build`; see the
 [board guide](firmware/boards/doit-gamekit/README.md) for wiring and controls.
 
+`doit-gamekit-1` targets the V0.8 revision with ST7789V TN hardware landscape
+initialization from the reference firmware, FT6336U touch, 14 keys including
+MENU/RETURN, MAX98357A audio and native four-bit SDMMC. Build with
+`tools/firmware.sh doit-gamekit-1 build`; see the
+[board guide](firmware/boards/doit-gamekit-1/README.md).
+
 ```sh
 tools/firmware.sh pai-touch build
 tools/firmware.sh pai-touch flash --port /dev/ttyACM0 --baud 406800

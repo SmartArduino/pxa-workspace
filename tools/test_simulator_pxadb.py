@@ -139,23 +139,23 @@ class SimulatorMultitouchTest(unittest.TestCase):
     tearDown = SimulatorFileCommandTest.tearDown
 
     def test_independent_contacts_and_real_cancellation(self) -> None:
-        with patch.object(self.service, "control") as owner:
+        with patch.object(self.service, "control", return_value=b"max_pointers=5;width=800;height=480") as owner:
             self.service.input(["POINTER", "DOWN", "75", "150", "0"])
             self.service.input(["POINTER", "DOWN", "225", "115", "1"])
             self.service.input(["POINTER", "MOVE", "75", "100", "0"])
             self.service.input(["POINTER", "CANCEL", "225", "115", "1"])
             self.service.input(["CANCEL"])
             self.assertEqual([call.args[0] for call in owner.call_args_list], [
-                "TOUCH DOWN 0 75 150", "TOUCH DOWN 1 225 115",
+                "CAPABILITIES", "TOUCH DOWN 0 75 150", "TOUCH DOWN 1 225 115",
                 "TOUCH MOVE 0 75 100", "TOUCH CANCEL 1 225 115",
                 "TOUCH CANCEL_ALL",
             ])
             caps = self.service.input(["CAPABILITIES"])
-            self.assertIn("max_pointers=2", caps)
+            self.assertIn("max_pointers=5", caps)
 
     def test_unsupported_identity_never_reaches_owner(self) -> None:
-        with patch.object(self.service, "control") as owner:
-            for identity in ("-1", "2", "255", "bad"):
+        with patch.object(self.service, "control", return_value=b"max_pointers=5;width=800;height=480") as owner:
+            for identity in ("-1", "16", "255", "bad"):
                 with self.assertRaises(simulator_pxadb.ServiceError):
                     self.service.input(["POINTER", "DOWN", "75", "150", identity])
             owner.assert_not_called()
@@ -168,6 +168,19 @@ class SimulatorMultitouchTest(unittest.TestCase):
                 "TOUCH DOWN 0 148 120", "TOUCH UP 0 148 120",
                 "TOUCH DOWN 0 75 150", "TOUCH MOVE 0 75 125", "TOUCH UP 0 75 100",
             ])
+
+
+    def test_fifth_contact_and_legacy_owner_limit(self) -> None:
+        with patch.object(self.service, "control", return_value=b"max_pointers=5") as owner:
+            self.service.input(["POINTER", "DOWN", "100", "120", "4"])
+            self.assertEqual(owner.call_args.args[0], "TOUCH DOWN 4 100 120")
+            with self.assertRaises(simulator_pxadb.ServiceError):
+                self.service.input(["POINTER", "DOWN", "100", "120", "5"])
+        self.service.pointer_limit = None
+        with patch.object(self.service, "control", return_value=b"") as owner:
+            with self.assertRaises(simulator_pxadb.ServiceError):
+                self.service.input(["POINTER", "DOWN", "100", "120", "2"])
+            self.assertEqual(owner.call_args_list, [unittest.mock.call("CAPABILITIES")])
 
 
 class SimulatorPackageCommandTest(unittest.TestCase):

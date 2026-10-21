@@ -114,12 +114,26 @@ bool pxa_esp_package_store_install(const char *identity);
 /* Installs a signed .pxa directly from a user-visible source file. The source
  * remains in place; it is not staged in or removed from the private Inbox. */
 bool pxa_esp_package_store_install_file(const char *source_path);
+bool pxa_esp_package_store_install_file_for_identity(const char *,const uint8_t[32],const char *);
 bool pxa_esp_package_store_publish_transfer(const char *app_id);
 void pxa_esp_package_store_discard_transfers(void);
 bool pxa_esp_package_store_preview_file(const char *source_path,
                                         pxa_esp_package_preview_t *preview);
 /* Development deployment bypasses Inbox duplicate filtering but still runs
  * the normal signed, atomic package installer. */
+/* Accepts only product-trusted, time-valid issuer proofs. Cold control path. */
+pxa_status_t pxa_esp_package_store_register_namespace(const uint8_t *,size_t);
+
+/* Fixed-media provider only, before its first grant; preserves private roots. */
+pxa_status_t pxa_esp_package_store_prepare_media(const char *);
+
+/* Activation owner only: all app handles must be closed before migration. */
+pxa_status_t pxa_esp_package_store_migrate_storage(const char *,char *,size_t);
+
+/* Resolved once at activation. Output paths are Host-owned, never Guest input. */
+pxa_status_t pxa_esp_package_store_storage_paths(const char *identity,
+    char *private_root,size_t private_capacity,char *media_relative,size_t media_capacity);
+
 bool pxa_esp_package_store_deploy(const char *identity);
 bool pxa_esp_package_store_deploy_detailed(
     const char *identity, pxa_esp_package_store_deploy_result_t *result);
@@ -144,6 +158,13 @@ size_t pxa_esp_package_store_installed_manifest_size(const char *identity);
  * zero when the manifest cannot be read or measured. */
 size_t pxa_esp_package_store_installed_manifest_workspace_size(
     const char *identity);
+
+/* Resolves installed full identities or an unambiguous legacy App ID. Copies
+ * one bounded snapshot, without allocating a catalog. BAD_STATE means ambiguous.
+ * Disabled identity resolution is allowed; launch policy is checked separately. */
+pxa_status_t pxa_esp_package_store_resolve_identity(const char *query,
+    uint8_t publisher_root[32], char *identity, size_t identity_capacity,
+    char *app_id, size_t app_id_capacity);
 
 /* The visitor runs while the metadata snapshot is locked. It must only copy
  * the record and must not call back into the Package Store or perform I/O. */

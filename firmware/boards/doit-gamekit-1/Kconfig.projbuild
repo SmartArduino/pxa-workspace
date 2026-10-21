@@ -1,0 +1,48 @@
+menu "DOIT GameKit 1"
+
+config PXA_DOIT1_TOUCH
+    bool "FT6336U capacitive touch"
+    default y
+    help
+        Poll the module at I2C address 0x38 on GPIO13/14, INT=15, RESET=16.
+        Match the reference firmware: swap XY, then mirror Y for MADCTL=0x60.
+
+config PXA_DOIT1_LCD_CLOCK_HZ
+    int "LCD SPI clock (Hz)"
+    range 10000000 80000000
+    default 60000000
+
+config PXA_DOIT1_LCD_FLIP_180
+    bool "Rotate reference landscape orientation by 180 degrees"
+    default n
+    help
+        Default uses the reference ST7789V TN initialization with MADCTL=0x60.
+        This selects MADCTL=0xA0 and adjusts the FT6336U transform together.
+        Output frames are already 320x240; no software display rotation.
+
+config PXA_DOIT1_LCD_INVERT
+    bool "Invert LCD colors"
+    default n
+
+config PXA_DOIT1_LCD_BGR
+    bool "Use BGR panel color order"
+    default n
+
+config PXA_DOIT1_LCD_X_GAP
+    int "Landscape panel X offset (pixels)"
+    range 0 80
+    default 0
+
+config PXA_DOIT1_LCD_Y_GAP
+    int "Landscape panel Y offset (pixels)"
+    range 0 80
+    default 0
+
+config PXA_DOIT1_DENSITY_DPI
+    int "Display density (DPI)"
+    range 80 500
+    default 160
+    help
+        Logical UI density; independent from the panel's physical pixel pitch.
+
+endmenu

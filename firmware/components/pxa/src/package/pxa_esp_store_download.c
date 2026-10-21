@@ -67,6 +67,10 @@ void pxa_esp_store_cleanup_interrupted(int (*keep)(const char *filename, void *c
     closedir(directory);
 }
 
+int pxa_esp_store_job_decode_identity(pxa_esp_store_job_t *job,const uint8_t *payload,size_t size) {
+    if(!job || !payload || size<32 || !pxa_esp_store_job_decode(job,payload+32,size-32))return 0;
+    memcpy(job->expected_root,payload,32);job->has_expected_root=1;return 1;
+}
 int pxa_esp_store_job_decode(pxa_esp_store_job_t *job,
                              const uint8_t *payload, size_t size) {
     static const char prefix[] = "/api/v2/artifacts/";
@@ -76,6 +80,7 @@ int pxa_esp_store_job_decode(pxa_esp_store_job_t *job,
     size_t app_size;
     size_t ticket_size;
     if (job == NULL || payload == NULL || size < 43u) return 0;
+    job->has_expected_root=0;
     app_size = payload[0];
     ticket_size = (size_t)payload[1] | ((size_t)payload[2] << 8);
     if (app_size == 0 || app_size > 64 || ticket_size >= sizeof(job->ticket) ||
@@ -223,7 +228,8 @@ void pxa_esp_store_worker(void *context) {
         sink.file = NULL;
     }
     if (!pxa_esp_package_store_preview_file(path, &job->preview) ||
-        strcmp(job->preview.app_id, job->app_id) != 0) {
+        strcmp(job->preview.app_id, job->app_id) != 0 ||
+        (job->has_expected_root && (!job->preview.has_publisher_root || memcmp(job->expected_root,job->preview.publisher_root,32)))) {
         ESP_LOGW("PxaStore", "Package preview rejected: app=%s", job->app_id);
         job->status = PXA_STATUS_DENIED;
         job->keep_file = 0;
@@ -250,8 +256,9 @@ void pxa_esp_store_worker(void *context) {
         job->status = PXA_STATUS_DENIED;
         goto cleanup;
     }
-    job->status = pxa_host_install_package_file(path)
-                      ? PXA_STATUS_OK : PXA_STATUS_INTERNAL;
+    job->status = (job->has_expected_root
+        ? pxa_host_install_package_file_for_identity(path,job->expected_root,job->app_id)
+        : pxa_host_install_package_file(path)) ? PXA_STATUS_OK : PXA_STATUS_INTERNAL;
     /* An attempted cached install consumes its transport copy too. Declining
      * the confirmation above preserves an explicitly downloaded offline pack. */
     job->keep_file = 0;

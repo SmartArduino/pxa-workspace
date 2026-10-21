@@ -20,7 +20,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-BOARDS = ('pai-touch', 'esp-mosaico', 'esp32s31-korvo-1', 'sensecap-watcher', 'doit-gamekit')
+BOARDS = ('pai-touch', 'esp-mosaico', 'esp32s31-korvo-1', 'sensecap-watcher', 'doit-gamekit', 'doit-gamekit-1')
 
 
 def sha(path: Path) -> str:

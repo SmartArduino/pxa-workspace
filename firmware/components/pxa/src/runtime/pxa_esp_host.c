@@ -77,6 +77,7 @@
 #include "pxa_host_main_loop.h"
 #include "pxa/event_port.h"
 #include "pxa_esp_store_policy.h"
+#include "pxa_package_identity_match.h"
 #include "pxa/pxa_esp_system_font.h"
 
 #define PXA_ESP_HOST_TAG "PxaHost"
@@ -973,8 +974,6 @@ typedef struct {
     uint8_t payload[3072];
     size_t length;
     size_t count;
-    const char *app_id;
-    char identity[PXA_ESP_PACKAGE_ID_BYTES];
 } store_inventory_t;
 
 typedef struct {
@@ -989,7 +988,7 @@ typedef struct {
 static bool store_uninstall_target_visit(const pxa_esp_package_record_t *record,
                                          void *context) {
     store_uninstall_target_t *target = context;
-    if (!record->installed || strcmp(record->app_id, target->app_id) != 0)
+    if (!record->installed || (strchr(target->app_id,':') ? strcmp(record->id,target->app_id) : strcmp(record->app_id,target->app_id)) != 0)
         return true;
     if (++target->matches != 1u) return false;
     snprintf(target->identity, sizeof(target->identity), "%s", record->id);
@@ -1004,11 +1003,6 @@ static bool store_inventory_visit(const pxa_esp_package_record_t *record,
     store_inventory_t *inventory = context;
     size_t app_length, version_length, identity_length;
     if (!record->installed) return true;
-    if (inventory->app_id != NULL) {
-        if (strcmp(record->app_id, inventory->app_id) == 0)
-            snprintf(inventory->identity, sizeof(inventory->identity), "%s", record->id);
-        return inventory->identity[0] == '\0';
-    }
     app_length = strlen(record->app_id);
     version_length = strlen(record->version);
     identity_length = strlen(record->id);
@@ -1087,6 +1081,11 @@ static pxa_status_t host_store_install_control(
                                       store_installer_authorized_visit,
                                       &authorized);
     if (!authorized) return PXA_STATUS_DENIED;
+    if(message->opcode==PXA_STORE_REGISTER_NAMESPACE_REQUEST) {
+        status=pxa_esp_package_store_register_namespace(message->payload.data,message->payload.size);
+        if(status!=PXA_STATUS_OK)return status;
+        return store_complete_now(runtime,component,message,NULL,0);
+    }
     if (message->opcode == PXA_STORE_INSTALLED_LIST_REQUEST) {
         store_inventory_t *inventory;
         if (message->payload.size != 0) return PXA_STATUS_INVALID_ARGUMENT;
@@ -1133,27 +1132,28 @@ static pxa_status_t host_store_install_control(
         (void)store_registry_save();
         return store_complete_now(runtime, component, message, NULL, 0);
     }
-    if (message->opcode == PXA_STORE_LAUNCH_REQUEST) {
-        store_inventory_t inventory = {0};
-        char app_id[65];
-        if (message->payload.size == 0 || message->payload.size > 64u)
+    if (message->opcode == PXA_STORE_LAUNCH_REQUEST || message->opcode == PXA_STORE_LAUNCH_IDENTITY_REQUEST) {
+        char app_id[130],resolved_app_id[65],identity[PXA_ESP_PACKAGE_ID_BYTES];
+        uint8_t publisher_root[32];
+        if (message->payload.size == 0 || message->payload.size > (message->opcode==PXA_STORE_LAUNCH_IDENTITY_REQUEST?129u:64u) ||
+            memchr(message->payload.data,0,message->payload.size))
             return PXA_STATUS_INVALID_ARGUMENT;
-        memcpy(app_id, message->payload.data, message->payload.size);
-        app_id[message->payload.size] = '\0';
-        inventory.app_id = app_id;
-        (void)pxa_esp_package_store_visit(PXA_ESP_PACKAGE_VIEW_RUNNABLE,
-                                          store_inventory_visit, &inventory);
-        if (inventory.identity[0] == '\0') return PXA_STATUS_NOT_FOUND;
-        status = store_complete_now(runtime, component, message, NULL, 0);
-        if (status == PXA_STATUS_OK)
-            (void)pxa_host_request_launch(inventory.identity);
+        memcpy(app_id,message->payload.data,message->payload.size);
+        app_id[message->payload.size]=0;
+        if(message->opcode==PXA_STORE_LAUNCH_IDENTITY_REQUEST && !pxa_package_identity_text_valid(app_id))return PXA_STATUS_INVALID_ARGUMENT;
+        status=pxa_esp_package_store_resolve_identity(app_id,publisher_root,
+            identity,sizeof(identity),resolved_app_id,sizeof(resolved_app_id));
+        if(status!=PXA_STATUS_OK)return status;
+        if(!pxa_esp_package_store_is_enabled(identity))return PXA_STATUS_DENIED;
+        status=store_complete_now(runtime,component,message,NULL,0);
+        if(status==PXA_STATUS_OK)(void)pxa_host_request_launch(identity);
         return status;
     }
-    if (message->opcode == PXA_STORE_UNINSTALL_REQUEST) {
+    if (message->opcode == PXA_STORE_UNINSTALL_REQUEST || message->opcode == PXA_STORE_UNINSTALL_IDENTITY_REQUEST) {
         store_uninstall_target_t target = {0};
         pxa_esp_ui_permission_prompt_t prompt = {0};
-        char app_id[65];
-        if (message->payload.size == 0 || message->payload.size > 64u ||
+        char app_id[130];
+        if (message->payload.size == 0 || message->payload.size > (message->opcode==PXA_STORE_UNINSTALL_IDENTITY_REQUEST?129u:64u) ||
             memchr(message->payload.data, '\0', message->payload.size) != NULL)
             return PXA_STATUS_INVALID_ARGUMENT;
         if (g_store_install != NULL || g_store_uninstall.prompt_id != 0 ||
@@ -1161,6 +1161,7 @@ static pxa_status_t host_store_install_control(
             return PXA_STATUS_BUSY;
         memcpy(app_id, message->payload.data, message->payload.size);
         app_id[message->payload.size] = '\0';
+        if(message->opcode==PXA_STORE_UNINSTALL_IDENTITY_REQUEST && !pxa_package_identity_text_valid(app_id))return PXA_STATUS_INVALID_ARGUMENT;
         target.app_id = app_id;
         (void)pxa_esp_package_store_visit(PXA_ESP_PACKAGE_VIEW_MANAGED,
                                           store_uninstall_target_visit, &target);
@@ -1177,8 +1178,8 @@ static pxa_status_t host_store_install_control(
         copy_utf8_c_string(prompt.app_name, sizeof(prompt.app_name), target.name);
         const bool chinese = g_host.locale[0] == 'z' && g_host.locale[1] == 'h';
         snprintf(prompt.permission_name, sizeof(prompt.permission_name),
-                 chinese ? "卸载 %.36s (%.20s)？" : "Uninstall %.36s (%.20s)?",
-                 app_id, target.version);
+                 chinese ? "卸载此应用 (%.20s)？" : "Uninstall this app (%.20s)?",
+                 target.version);
         snprintf(prompt.scope, sizeof(prompt.scope),
                  chinese ? "确认后将从设备中删除此应用" :
                            "This app will be removed from this device");
@@ -1234,6 +1235,7 @@ static pxa_status_t host_store_install_control(
         return PXA_STATUS_OK;
     }
     if (message->opcode != PXA_STORE_INSTALL_REQUEST &&
+        message->opcode != PXA_STORE_INSTALL_IDENTITY_REQUEST &&
         message->opcode != PXA_STORE_DOWNLOAD_REQUEST)
         return PXA_STATUS_INVALID_ARGUMENT;
     if (g_store_install != NULL || g_store_uninstall.prompt_id != 0)
@@ -1242,8 +1244,9 @@ static pxa_status_t host_store_install_control(
         return PXA_STATUS_RESOURCE_LIMIT;
     job = calloc(1, sizeof(*job));
     if (job == NULL) return PXA_STATUS_RESOURCE_LIMIT;
-    if (!pxa_esp_store_job_decode(job, message->payload.data,
-                                  message->payload.size)) {
+    if (!(message->opcode==PXA_STORE_INSTALL_IDENTITY_REQUEST
+        ? pxa_esp_store_job_decode_identity(job,message->payload.data,message->payload.size)
+        : pxa_esp_store_job_decode(job, message->payload.data,message->payload.size))) {
         ESP_LOGW(PXA_ESP_HOST_TAG, "Store install request rejected: invalid payload");
         free(job);
         return PXA_STATUS_INVALID_ARGUMENT;
@@ -3085,6 +3088,11 @@ static int start_verified(const char *identity) {
         return 0;
     }
     stop_active(PXA_STOP_REPLACED);
+    status=pxa_esp_package_store_migrate_storage(identity,root,sizeof(root));
+    if(status!=PXA_STATUS_OK) {
+        ESP_LOGE(PXA_ESP_HOST_TAG,"Storage migration failed for %s: %ld",identity,(long)status);
+        free(manifest_workspace);free(encoded);return 0;
+    }
     host_log_heap_usage("launch-begin");
     if (!activation_memory_begin(manifest_workspace, manifest_workspace_size,
                                  encoded, encoded_size)) {
@@ -3152,6 +3160,11 @@ static int start_verified(const char *identity) {
     services_config.manifest = manifest;
     services_config.identity = identity;
     services_config.package_root = g_host.activation.active_package_root;
+    char private_root[PXA_ESP_PACKAGE_ROOT_BYTES],media_relative[140];
+    status=pxa_esp_package_store_storage_paths(identity,private_root,sizeof(private_root),media_relative,sizeof(media_relative));
+    if(status!=PXA_STATUS_OK)PXA_ESP_START_FAIL("resolve-app-storage",status);
+    services_config.private_root=private_root;
+    services_config.media_relative=media_relative;
     services_config.assets_notify = on_assets_completion_ready;
     services_config.allocator_context =
         &g_host.activation.activation_memory;
@@ -4536,6 +4549,7 @@ finished:
 
 static void run(void) {
     pxa_esp_host_command_t command;
+    uint64_t idle_at = host_now_us(NULL);
     for (;;) {
         if (g_host.cooperative_exit_pending) {
             pxa_stop_reason_t reason = g_host.cooperative_exit_reason;
@@ -4767,10 +4781,15 @@ static void run(void) {
             }
         }
         if (handled) {
-            /* Timers can keep the queue nonempty indefinitely while a game is
-             * rendering. Block for one scheduler tick so the lower-priority
-             * IDLE task runs and services the system task watchdog. */
-            vTaskDelay(1);
+            /* Budget CPU ownership by elapsed time, as the native event port
+             * already does. Sleeping after every input/timer/maintenance
+             * command serializes a burst into N scheduler ticks even when
+             * those commands do almost no work. Still block periodically so
+             * lower-priority IDLE runs and services the task watchdog. */
+            if (host_now_us(NULL) - idle_at >= 32000) {
+                vTaskDelay(1);
+                idle_at = host_now_us(NULL);
+            }
         } else {
             (void)ulTaskNotifyTake(
                 pdTRUE,
@@ -4781,6 +4800,8 @@ static void run(void) {
                          g_host.lifecycle_effective)
                     ? pdMS_TO_TICKS(50)
                     : portMAX_DELAY);
+            /* The wait may be satisfied immediately by a latched notify.
+             * Keep the elapsed budget rather than assuming IDLE ran. */
         }
     }
 }

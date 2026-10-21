@@ -1998,6 +1998,12 @@ static pxa_status_t c_host_surface_present(
     if (surface == NULL || ((mapped || raster) ? !surface->has_display_frame :
                             surface->current < 0))
         return PXA_STATUS_BAD_STATE;
+    if (!mapped && !raster && surface->display_buffer != NULL) {
+        for (uint32_t y = 0; y < surface->display_height; ++y)
+            memcpy(surface->display_buffer + y * surface->display_stride_bytes,
+                   surface->buffers[surface->current] + y * surface->stride_bytes,
+                   surface->display_stride_bytes);
+    }
     memset(&surface->image, 0, sizeof(surface->image));
     surface->image.header.magic = LV_IMAGE_HEADER_MAGIC;
     surface->image.header.cf =
@@ -2008,7 +2014,7 @@ static pxa_status_t c_host_surface_present(
     surface->image.header.h = surface->display_height;
     surface->image.header.stride = (uint16_t)surface->display_stride_bytes;
     surface->image.data_size = surface->display_frame_bytes;
-    surface->image.data = (mapped || raster)
+    surface->image.data = surface->display_buffer != NULL
                               ? surface->display_buffer
                               : surface->buffers[surface->current];
     for (index = 0; index < surface->fragment_count; ++index) {
@@ -2131,29 +2137,34 @@ static pxa_status_t c_host_surface_create_impl(
         bytes_per_pixel = 4;
     else
         return PXA_STATUS_UNSUPPORTED;
+    if ((uint64_t)desc->width * desc->height * bytes_per_pixel > UINT32_MAX)
+        return PXA_STATUS_LIMIT_EXCEEDED;
     surface = (c_host_surface_t *)calloc(1, sizeof(*surface));
     if (surface == NULL) return PXA_STATUS_RESOURCE_LIMIT;
     if (mapped || raster) {
-        if (desc->format != PXA_SURFACE_FORMAT_RGB565 ||
-            g_display_metrics.width % desc->width != 0 ||
-            g_display_metrics.height % desc->height != 0 ||
-            g_display_metrics.width / desc->width !=
-                g_display_metrics.height / desc->height) {
+        if (desc->format != PXA_SURFACE_FORMAT_RGB565) {
             free(surface);
             return PXA_STATUS_UNSUPPORTED;
         }
-        scale = (uint8_t)(g_display_metrics.width / desc->width);
-        if (scale != 1 && scale != 2 && scale != 3 && scale != 4) {
-            free(surface);
-            return PXA_STATUS_UNSUPPORTED;
+        if (g_display_metrics.width % desc->width == 0 &&
+            g_display_metrics.height % desc->height == 0 &&
+            g_display_metrics.width / desc->width ==
+                g_display_metrics.height / desc->height) {
+            uint32_t fit = g_display_metrics.width / desc->width;
+            if (fit >= 1 && fit <= 4) scale = (uint8_t)fit;
         }
     }
     surface->width = desc->width;
     surface->height = desc->height;
-    surface->display_width = (mapped || raster) ? g_display_metrics.width
-                                                : desc->width;
-    surface->display_height = (mapped || raster) ? g_display_metrics.height
-                                                 : desc->height;
+    /* Keep the presentation image within the viewport. Surface storage uses
+     * the requested dimensions and its full 32-bit stride independently of
+     * LVGL's narrower image header fields. */
+    surface->display_width = desc->width * scale;
+    surface->display_height = desc->height * scale;
+    if (surface->display_width > g_display_metrics.width)
+        surface->display_width = g_display_metrics.width;
+    if (surface->display_height > g_display_metrics.height)
+        surface->display_height = g_display_metrics.height;
     surface->buffer_count = desc->buffer_count;
     surface->stride_bytes = (uint32_t)desc->width * bytes_per_pixel;
     surface->frame_bytes = surface->stride_bytes * desc->height;
@@ -2174,7 +2185,8 @@ static pxa_status_t c_host_surface_create_impl(
         free(surface);
         return PXA_STATUS_RESOURCE_LIMIT;
     }
-    if (mapped || raster) {
+    if (mapped || raster || surface->display_width != surface->width ||
+        surface->display_height != surface->height) {
         surface->display_buffer = malloc(surface->display_frame_bytes);
         if (surface->display_buffer == NULL) {
             free(surface);
@@ -2597,7 +2609,16 @@ static int c_host_surface_process_pending(void) {
         return 0;
     index = (uint8_t)surface->pending;
     frame_id = surface->pending_frame_id;
-    if (!pxa_surface_upscale_rgb565_nearest(
+    if (surface->scale == 1 &&
+        (surface->display_width < surface->width ||
+         surface->display_height < surface->height)) {
+        const uint8_t *source = mapped ? surface->mapped_buffers[index]
+                                      : surface->buffers[index];
+        for (uint32_t y = 0; y < surface->display_height; ++y)
+            memcpy(surface->display_buffer + y * surface->display_stride_bytes,
+                   source + y * surface->stride_bytes,
+                   surface->display_stride_bytes);
+    } else if (!pxa_surface_upscale_rgb565_nearest(
             (const uint16_t *)(mapped ? surface->mapped_buffers[index]
                                      : surface->buffers[index]),
             (uint16_t *)surface->display_buffer, surface->width,
@@ -5334,10 +5355,9 @@ static int c_host_initialize_providers(void) {
     surface_config.struct_size = sizeof(surface_config);
     surface_config.max_surfaces = 1;
     surface_config.max_surfaces_per_component = 1;
-    surface_config.max_width = g_display_metrics.width;
-    surface_config.max_height = g_display_metrics.height;
-    surface_config.max_frame_bytes =
-        g_display_metrics.width * g_display_metrics.height * 4u;
+    surface_config.max_width = UINT16_MAX;
+    surface_config.max_height = UINT16_MAX;
+    surface_config.max_frame_bytes = UINT32_MAX;
     surface_config.min_buffer_count = 2;
     surface_config.max_buffer_count = 3;
     surface_config.backend = surface_backend;

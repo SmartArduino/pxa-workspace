@@ -10,7 +10,7 @@
 
 #define PXA_STORE_INSTALL_SERVICE_ID UINT16_C(20)
 #define PXA_STORE_INSTALL_SERVICE_MAJOR UINT16_C(0)
-#define PXA_STORE_INSTALL_SERVICE_MINOR UINT16_C(5)
+#define PXA_STORE_INSTALL_SERVICE_MINOR UINT16_C(7)
 #define PXA_STORE_INSTALL_REQUEST UINT16_C(1)
 #define PXA_STORE_DOWNLOAD_REQUEST UINT16_C(2)
 #define PXA_STORE_INSTALL_FILE_REQUEST UINT16_C(3)
@@ -19,6 +19,10 @@
 #define PXA_STORE_DELETE_REQUEST UINT16_C(6)
 #define PXA_STORE_LAUNCH_REQUEST UINT16_C(7)
 #define PXA_STORE_UNINSTALL_REQUEST UINT16_C(8)
+#define PXA_STORE_LAUNCH_IDENTITY_REQUEST UINT16_C(9)
+#define PXA_STORE_UNINSTALL_IDENTITY_REQUEST UINT16_C(10)
+#define PXA_STORE_REGISTER_NAMESPACE_REQUEST UINT16_C(11)
+#define PXA_STORE_INSTALL_IDENTITY_REQUEST UINT16_C(12)
 #define PXA_STORE_DOWNLOAD_PROGRESS UINT16_C(0x8001)
 #define PXA_STORE_DOWNLOAD_MAX_BYTES UINT64_C(4194304)
 #define PXA_STORE_WORKER_STACK_BYTES (10u * 1024u)
@@ -31,6 +35,7 @@ typedef struct pxa_esp_store_job {
     uint64_t size;
     uint64_t downloaded_bytes;
     uint8_t digest[32];
+    uint8_t expected_root[32],has_expected_root;
     char app_id[65];
     char ticket[256];
     char filename[24];
@@ -48,6 +53,7 @@ typedef struct pxa_esp_store_job {
 
 int pxa_esp_store_job_decode(pxa_esp_store_job_t *job,
                              const uint8_t *payload, size_t size);
+int pxa_esp_store_job_decode_identity(pxa_esp_store_job_t *,const uint8_t *,size_t);
 void pxa_esp_store_worker(void *context);
 void pxa_esp_store_cleanup_interrupted(int (*keep)(const char *filename, void *context),
                                        void *context);

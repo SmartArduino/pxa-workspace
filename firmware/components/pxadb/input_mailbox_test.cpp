@@ -1,4 +1,5 @@
 #include "include/pxadb_input_mailbox.h"
+#include "include/pxadb_pointer_samples.h"
 
 #include <cassert>
 
@@ -29,6 +30,31 @@ struct Adapter {
 };
 
 int main() {
+    {
+    PointerSamples<5, 3> samples;
+    bool more = false;
+    assert(!samples.active() && !samples.Push(5, 1, 2, true));
+    for (uint8_t id = 0; id < 5; ++id) assert(samples.Push(id, id*10, 2, true));
+    assert(samples.Push(0, 11, 12, true));
+    assert(samples.Push(0, 13, 14, true)); // Only MOVE is coalesced.
+    assert(samples.Push(0, 15, 16, false));
+    assert(!samples.Push(0, 17, 18, true)); // Full edges are never overwritten.
+    auto sample = samples.Read(0, more);
+    assert(sample.pressed && sample.x == 0 && more);
+    sample = samples.Read(0, more);assert(sample.pressed && sample.x == 13 && more);
+    sample = samples.Read(0, more);assert(!sample.pressed && sample.x == 15 && !more);
+    for (uint8_t id = 1; id < 5; ++id) {
+        sample = samples.Read(id, more);assert(sample.pressed && sample.x == id*10);
+    }
+    assert(samples.Cancel(2));sample = samples.Read(2, more);assert(sample.cancel && !sample.pressed);
+    sample = samples.Read(1, more);assert(sample.pressed); // One release cannot release another finger.
+    for (uint8_t id = 0; id < 5; ++id) {
+        assert(samples.Cancel(id));sample = samples.Read(id, more);assert(!sample.pressed);
+    }
+    assert(!samples.active());
+    for (uint8_t id = 0; id < 5; ++id) assert(samples.Push(id, 1, 2, true));
+    samples.Clear();assert(!samples.active());
+    }
     static_assert(sizeof(PointerState) == 2); // Same storage as the old single pointer.
     PointerState pointers;
     assert(!pointers.Apply(PointerAction::kMove, 0));

@@ -285,6 +285,9 @@ bool pxa_esp_surface_has_visible_surface(void);
 /* Reads immutable placement data without acquiring a framebuffer lease. */
 bool pxa_esp_surface_get_present_info(
     pxa_esp_surface_present_info_t *info);
+/* End this reader lease. Mapped buffers remain the current composition
+ * backdrop until a replacement reader lease begins; only the release event
+ * authorizes the Guest to write them again. This requires no pixel copy. */
 void pxa_esp_surface_release_frame(uint64_t lease);
 
 #ifdef __cplusplus

@@ -131,13 +131,16 @@ persists across restarts and replacement installs. Built-in system apps cannot
 be uninstalled. `PACKAGES` reflects the persistent enabled state.
 
 The local simulator also supports `SCREENSHOT`, `INPUT CAPABILITIES`,
-`INPUT POINTER <DOWN|MOVE|UP> X Y 0`, `INPUT TAP X Y`,
+`INPUT POINTER <DOWN|MOVE|UP|CANCEL> X Y ID`, `INPUT CANCEL`, `INPUT TAP X Y`,
 `INPUT SWIPE X1 Y1 X2 Y2 DURATION_MS STEPS`, `INPUT KEY <KEY>`, and
 `INPUT SYNC`. Screenshot replies begin with PNG `META`, followed by offset
 `DATA` response frames and `OK`. The client exposes these as `pxadb screenshot`
 and `pxadb input`; raw PNG bytes remain inside the local control bridge and
 are Base64 encoded only in the response records required by the existing PXADB
 command contract.
+Read `max_pointers` from `INPUT CAPABILITIES` before choosing an ID. The current
+product simulator supports five independent contacts (IDs 0–4); the bridge
+queries the running owner instead of assuming the limit from its screen profile.
 
 ## Firmware performance diagnostics
 

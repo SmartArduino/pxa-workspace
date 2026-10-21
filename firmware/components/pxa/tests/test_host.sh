@@ -62,6 +62,21 @@ build_and_run pointer_mailbox \
   -I"$component_dir/src/runtime" \
   "$tests_dir/pxa_host_pointer_mailbox_test.c" \
   "$component_dir/src/runtime/pxa_host_pointer_mailbox.c"
+build_and_run identity_match \
+  -I"$component_dir/src/package" "$tests_dir/pxa_package_identity_match_test.c"
+build_and_run app_locators \
+  -I"$component_dir/src/package" -I"$pxa_system_dir/libpxa/include" \
+  "$tests_dir/pxa_app_locators_test.c" "$component_dir/src/package/pxa_app_locators.c"
+build_and_run locator_migration \
+  -I"$component_dir/src/package" -I"$pxa_system_dir/libpxa/include" \
+  "$tests_dir/pxa_locator_migration_test.c" "$component_dir/src/package/pxa_locator_migration.c" \
+  "$component_dir/src/package/pxa_app_locators.c"
+if pkg-config --exists libcjson; then
+  build_and_run publisher_profile \
+    -I"$component_dir/src/package" -I"$pxa_system_dir/libpxa/include" \
+    $(pkg-config --cflags libcjson) "$tests_dir/pxa_publisher_profile_test.c" \
+    "$component_dir/src/package/pxa_publisher_profile.c" $(pkg-config --libs libcjson)
+fi
 build_and_run store_policy \
   -I"$component_dir/src/runtime" \
   -I"$component_dir/src/package" \

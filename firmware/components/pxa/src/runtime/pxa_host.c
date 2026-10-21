@@ -90,46 +90,8 @@ static bool resolve_package(
     uint8_t publisher_root[PXA_HOST_PUBLISHER_ROOT_BYTES],
     char *canonical, size_t canonical_capacity,
     char *app_id, size_t app_id_capacity) {
-    pxa_host_package_info_t *packages;
-    const pxa_host_package_info_t *match = NULL;
-    size_t count;
-    size_t index;
-    bool found = false;
-    bool ambiguous = false;
-    if (identity_key == NULL || publisher_root == NULL || canonical == NULL ||
-        canonical_capacity == 0 || app_id == NULL || app_id_capacity == 0) {
-        return false;
-    }
-    count = pxa_esp_host_package_count();
-    if (count == 0 || count > SIZE_MAX / sizeof(*packages)) return false;
-    packages = calloc(count, sizeof(*packages));
-    if (packages == NULL) return false;
-    count = pxa_esp_host_list_packages(packages, count, false);
-    for (index = 0; index < count; ++index) {
-        if (!packages[index].installed || !packages[index].has_publisher_root)
-            continue;
-        if (strcmp(packages[index].id, identity_key) == 0) {
-            match = &packages[index];
-            ambiguous = false;
-            break;
-        }
-        if (strcmp(packages[index].app_id, identity_key) == 0) {
-            if (match != NULL) {
-                ambiguous = true;
-            } else {
-                match = &packages[index];
-            }
-        }
-    }
-    if (!ambiguous && match != NULL) {
-        memcpy(publisher_root, match->publisher_root,
-               PXA_HOST_PUBLISHER_ROOT_BYTES);
-        snprintf(canonical, canonical_capacity, "%s", match->id);
-        snprintf(app_id, app_id_capacity, "%s", match->app_id);
-        found = canonical[0] != '\0' && app_id[0] != '\0';
-    }
-    free(packages);
-    return found;
+    return pxa_esp_package_store_resolve_identity(identity_key,publisher_root,
+        canonical,canonical_capacity,app_id,app_id_capacity)==PXA_STATUS_OK;
 }
 
 static void notify_catalog_changed(void) {
@@ -208,6 +170,13 @@ bool pxa_host_install_package_file(const char *source_path) {
         return false;
     success = pxa_esp_host_install_package_file(source_path);
     if (success) notify_catalog_changed();
+    return success;
+}
+
+bool pxa_host_install_package_file_for_identity(const char *source_path,const uint8_t root[32],const char *app_id) {
+    if(!g_host_ready || !source_path || !root || !app_id)return false;
+    bool success=pxa_esp_package_store_install_file_for_identity(source_path,root,app_id);
+    if(success)notify_catalog_changed();
     return success;
 }
 

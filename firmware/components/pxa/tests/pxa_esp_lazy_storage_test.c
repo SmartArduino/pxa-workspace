@@ -118,6 +118,9 @@ pxa_status_t pxa_esp_fs_roots_create(void *context,
     return PXA_STATUS_UNSUPPORTED;
 }
 
+pxa_status_t pxa_esp_fs_roots_set_media_relative(pxa_esp_fs_roots_t *roots,const char *path) {
+    (void)roots;(void)path;return PXA_STATUS_OK;
+}
 void pxa_esp_fs_roots_bind(pxa_esp_fs_roots_t *roots, pxa_fs_service_t *service) {
     (void)service; assert(roots == NULL);
 }
@@ -295,6 +298,24 @@ int main(void) {
         assert(access(legacy, F_OK) == 0 && access(managed, F_OK) == 0);
         assert(lazy_storage_remove(&services, key) == PXA_STATUS_OK);
         pxa_esp_services_destroy(&services); release_workspaces();
+    }
+    /* Both lazy KV and the file service use the trusted resolved short root. */
+    {
+        char private_root[256],resolved[256];
+        snprintf(private_root,sizeof(private_root),"%s/data/lucinhu/pxa-test",root);
+        host.identity="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:pxa-test";
+        host.private_root=private_root;
+        assert(prepare_resolved_private_root(resolved,sizeof(resolved),&host));
+        assert(!strcmp(resolved,private_root));
+        assert(initialize_storage(&services,&host,&result)==PXA_STATUS_OK);
+        assert(lazy_storage_set(&services,key,value)==PXA_STATUS_OK);
+        pxa_esp_services_destroy(&services);release_workspaces();
+        assert(initialize_storage(&services,&host,&result)==PXA_STATUS_OK);
+        assert(lazy_storage_get(&services,key,bytes,sizeof(bytes),&size)==PXA_STATUS_OK && size==5 && !memcmp(bytes,"saved",5));
+        pxa_esp_services_destroy(&services);release_workspaces();
+        host.private_root="/tmp/unowned-root";
+        assert(!prepare_resolved_private_root(resolved,sizeof(resolved),&host));
+        host.private_root=NULL;
     }
     pxa_runtime_deinit(runtime); free(workspace);
     assert(pxa_posix_fs_remove_tree(root) == PXA_STATUS_OK);

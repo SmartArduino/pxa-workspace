@@ -17,6 +17,7 @@
 #include <lvgl.h>
 #include <iot_button.h>
 #include <pxadb/pxadb_service.h>
+#include <pxadb_pointer_samples.h>
 #include <pxa_board_common/boot_screen.h>
 
 #include "esp32s31_korvo_1_audio.h"
@@ -45,12 +46,11 @@ private:
     static constexpr int kTouchMaxPointers = CONFIG_ESP_LCD_TOUCH_MAX_POINTS;
     static constexpr size_t kDeferredSyncAreaCapacity = 32;
 
-    bool InjectPointer(uint16_t x, uint16_t y, bool pressed);
-    bool CancelInjectedPointer();
+    bool InjectPointer(uint8_t id, uint16_t x, uint16_t y, bool pressed);
+    bool CancelInjectedPointer(uint8_t id);
     bool RouteInjectedKey(pxadb::TestControlKey key);
     bool CaptureRgb565(uint16_t* pixels, size_t pixel_count, bool after_present,
                        pxadb::TestControlCaptureInfo* info);
-    static void ReadInjectedPointer(lv_indev_t* indev, lv_indev_data_t* data);
 
     bool InitializeI2c();
     bool InitializeDisplay();
@@ -94,10 +94,7 @@ private:
     esp_lcd_panel_io_handle_t touch_io_ = nullptr;
     esp_lcd_touch_handle_t touch_ = nullptr;
     lv_indev_t* touch_indevs_[kTouchMaxPointers] = {};
-    lv_indev_t* injected_pointer_ = nullptr;
-    std::atomic<uint16_t> injected_pointer_x_{0};
-    std::atomic<uint16_t> injected_pointer_y_{0};
-    std::atomic<bool> injected_pointer_pressed_{false};
+    pxadb::PointerSamples<kTouchMaxPointers> injected_touches_;
     portMUX_TYPE touch_lock_ = portMUX_INITIALIZER_UNLOCKED;
     KorvoTouchState<kTouchMaxPointers> touch_state_;
     int64_t touch_last_poll_us_ = 0;

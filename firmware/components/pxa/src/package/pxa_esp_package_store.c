@@ -3,6 +3,12 @@
  * disabled policy in NVS. Replaces the legacy C++ package-store implementation. */
 
 #include "pxa_esp_package_store.h"
+#include "pxa_package_identity_match.h"
+#include "pxa_app_locators.h"
+#include "pxa_publisher_profile.h"
+#include "pxa_publisher_binding.h"
+#include "pxa_locator_migration.h"
+#include "pxa_esp_fs_roots.h"
 #include "pxa_esp_package_policy.h"
 
 #if defined(ESP_PLATFORM)
@@ -16,10 +22,21 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <time.h>
+#include "pxa/pxa_publisher_namespace.h"
+
+/* LittleFS/FAT mounts on ESP-IDF are link-free; its libc has no lstat.
+ * Native adapter tests retain POSIX no-follow checks. */
+#if !defined(__linux__) && !defined(__APPLE__)
+#define lstat stat
+#include "pxa/esp/pxa_esp_posix_shim.h"
+#define fstat pxa_esp_fstat
+#endif
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
@@ -33,6 +50,8 @@
 #if defined(__cplusplus)
 extern "C" {
 #endif
+size_t pxa_platform_trusted_namespace_issuers(
+    const PxaPublisherNamespaceIssuer **output_keys) __attribute__((weak));
 size_t pxa_platform_trusted_publishers(
     const PxaTrustedPublisherKey **output_keys) __attribute__((weak));
 #if CONFIG_PXA_TRUST_BUNDLED_DEVELOPMENT_KEY
@@ -109,6 +128,7 @@ typedef struct {
 
 typedef struct {
     uint8_t initialized;
+    pxa_app_locators_t locators;
     pxa_posix_installer_t *installer;
     void *installer_workspace;
     pxa_posix_installer_config_t installer_config;
@@ -677,6 +697,14 @@ static void update_entry_metadata(pxa_esp_package_entry_t *entry,
                                  publisher_root, entry->id);
         (void)filesystem_identity(entry->storage_key, sizeof(entry->storage_key),
                                   publisher_root, entry->id);
+        /* Catalog refreshes run again after reboot and after an update. Never
+         * replace an already committed private locator with its legacy key. */
+        char relative[130]; uint16_t flags = 0;
+        if (pxa_app_locators_find(&g_store->locators, publisher_root, entry->id,
+                &flags, relative, sizeof(relative)) == PXA_STATUS_OK &&
+            !(flags & PXA_LOCATOR_DATA_LEGACY)) {
+            snprintf(entry->storage_key, sizeof(entry->storage_key), "%s", relative);
+        }
     }
 }
 
@@ -774,6 +802,12 @@ static int refresh_entry_from_manifest(const char *app_id, const char *root,
     }
     entry = reserve_entry(app_id, publisher_root);
     if (entry == NULL) return 0;
+    { char relative[130];uint16_t flags;
+      pxa_status_t status=pxa_app_locators_find(&g_store->locators,publisher_root,app_id,&flags,relative,sizeof(relative));
+      if(status!=PXA_STATUS_OK && status!=PXA_STATUS_NOT_FOUND)return 0;
+      if(status==PXA_STATUS_OK && !(flags&PXA_LOCATOR_DATA_LEGACY))
+          snprintf(entry->storage_key,sizeof(entry->storage_key),"%s",relative);
+    }
     update_installed_metadata(entry, manifest);
     snprintf(entry->root, sizeof(entry->root), "%s", root);
     entry->installed = 1;
@@ -1244,8 +1278,9 @@ static void scan_installed(void) {
         result.root_capacity = sizeof(verified_root);
         path_size = snprintf(manifest_path, sizeof(manifest_path),
                              "%s/manifest.pxm", path);
-        if (path_size < 0 || (size_t)path_size >= sizeof(manifest_path) ||
-            !parse_manifest_file(manifest_path, &manifest) ||
+        if (path_size < 0 || (size_t)path_size >= sizeof(manifest_path))continue;
+        if(!is_regular_file(manifest_path))continue;
+        if (!parse_manifest_file(manifest_path, &manifest) ||
             manifest == NULL || manifest->app_id.size == 0 ||
             manifest->app_id.size >= sizeof(app_id) ||
             !manifest_publisher_root(manifest, publisher_root)) {
@@ -1274,6 +1309,19 @@ static void scan_installed(void) {
         }
     }
     closedir(directory);
+    for(size_t i=0;i<g_store->locators.app_count;++i) {
+        const pxa_locator_app_t *a=&g_store->locators.apps[i];
+        if((a->flags&PXA_LOCATOR_PACKAGE_LEGACY) && !(a->flags&PXA_LOCATOR_PACKAGE_MOVING))continue;
+        char relative[130],path[PXA_ESP_PACKAGE_MAX_PATH],manifest_path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];
+        uint8_t root[32];pxa_package_manifest_t *manifest=NULL;
+        if(pxa_app_locators_find(&g_store->locators,a->root,a->app_id,NULL,relative,sizeof(relative))!=PXA_STATUS_OK)continue;
+        int n=snprintf(path,sizeof(path),"%s/%s",g_store->packages_root,relative);
+        if(n<0 || (size_t)n>=sizeof(path))continue;
+        n=snprintf(manifest_path,sizeof(manifest_path),"%s/manifest.pxm",path);
+        if(n<0 || (size_t)n>=sizeof(manifest_path) || !parse_manifest_file(manifest_path,&manifest) ||
+           !manifest_matches_app_id(manifest,a->app_id) || !manifest_publisher_root(manifest,root) || memcmp(root,a->root,32))continue;
+        (void)refresh_entry_from_manifest(a->app_id,path,0,manifest);
+    }
 }
 
 static int reserve_publisher_keys(size_t required) {
@@ -1354,6 +1402,128 @@ static int ensure_publisher_keys(void) {
     return 1;
 }
 
+/* NVS atomically replaces the bounded registry blob. A failed/uncertain
+ * commit disables locator use until reload; corrupt records never become an
+ * empty registry that could reassign another application's directory. */
+static pxa_status_t persist_locators(void *context,uint64_t generation,
+    const pxa_locator_publisher_t *pubs,size_t np,const pxa_locator_app_t *apps,size_t na) {
+    (void)context;
+    uint8_t *bytes=esp_alloc(PXA_LOCATOR_ENCODED_MAX);size_t size=0;
+    if(!bytes)return PXA_STATUS_RESOURCE_LIMIT;
+    pxa_status_t status=pxa_app_locators_encode(generation,pubs,np,apps,na,bytes,PXA_LOCATOR_ENCODED_MAX,&size);
+    nvs_handle_t handle;
+    if(status==PXA_STATUS_OK) {
+        esp_err_t error=nvs_open("pxa_apps",NVS_READWRITE,&handle);
+        if(error==ESP_OK) {
+            error=nvs_set_blob(handle,"locators_v1",bytes,size);
+            if(error==ESP_OK)error=nvs_commit(handle);
+            nvs_close(handle);
+        }
+        if(error!=ESP_OK)status=PXA_STATUS_IO_ERROR;
+    }
+    heap_caps_free(bytes);return status;
+}
+static int locator_available(void *context,const char *publisher,const char *app) {
+    (void)context;char path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];struct stat st;
+    const char *roots[2]={g_store->packages_root,g_store->data_root};
+    for(unsigned i=0;i<2;++i) {
+        int n=app?snprintf(path,sizeof(path),"%s/%s/%s",roots[i],publisher,app):snprintf(path,sizeof(path),"%s/%s",roots[i],publisher);
+        if(n<0 || (size_t)n>=sizeof(path) || lstat(path,&st)==0 || errno!=ENOENT)return 0;
+    }
+    return 1;
+}
+static bool initialize_locators(void) {
+    pxa_app_locators_init(&g_store->locators,NULL,persist_locators);
+    g_store->locators.available=locator_available;
+    nvs_handle_t handle;size_t size=0;
+    esp_err_t error=nvs_open("pxa_apps",NVS_READONLY,&handle);
+    if(error==ESP_ERR_NVS_NOT_FOUND)return true;
+    if(error!=ESP_OK)return false;
+    error=nvs_get_blob(handle,"locators_v1",NULL,&size);
+    if(error==ESP_ERR_NVS_NOT_FOUND){nvs_close(handle);return true;}
+    if(error!=ESP_OK || size<24 || size>PXA_LOCATOR_ENCODED_MAX){nvs_close(handle);return false;}
+    uint8_t *bytes=esp_alloc(size);
+    if(!bytes){nvs_close(handle);return false;}
+    error=nvs_get_blob(handle,"locators_v1",bytes,&size);nvs_close(handle);
+    pxa_status_t status=error==ESP_OK?pxa_app_locators_decode(&g_store->locators,bytes,size):PXA_STATUS_IO_ERROR;
+    heap_caps_free(bytes);return status==PXA_STATUS_OK;
+}
+static pxa_status_t lookup_locator(void *context,const pxa_posix_installer_identity_t *identity,
+    uint8_t kind,char *out,size_t capacity) {
+    (void)context;char app_id[65];uint16_t flags=0;
+    if(!identity || identity->publisher_key_id.size!=32 || !identity->publisher_key_id.data ||
+       !identity->app_id.data || !identity->app_id.size || identity->app_id.size>64)return PXA_STATUS_INVALID_ARGUMENT;
+    memcpy(app_id,identity->app_id.data,identity->app_id.size);app_id[identity->app_id.size]=0;
+    pxa_status_t status=pxa_app_locators_find(&g_store->locators,identity->publisher_key_id.data,app_id,&flags,out,capacity);
+    if(status==PXA_STATUS_OK && (flags&(PXA_LOCATOR_PACKAGE_MOVING|PXA_LOCATOR_DATA_MOVING)))return PXA_STATUS_BAD_STATE;
+    if(status==PXA_STATUS_OK && (flags&(kind==PXA_POSIX_INSTALLER_PATH_PACKAGE?PXA_LOCATOR_PACKAGE_LEGACY:PXA_LOCATOR_DATA_LEGACY)))
+        return PXA_STATUS_NOT_FOUND;
+    return status;
+}
+static pxa_status_t legacy_layout_flags(const uint8_t root[32],const char *app_id,uint16_t *flags) {
+    char key[130],path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];
+    if(!filesystem_identity(key,sizeof(key),root,app_id))return PXA_STATUS_INVALID_ARGUMENT;
+    *flags=PXA_LOCATOR_MEDIA_LEGACY; /* removable media may be absent today */
+    const char *bases[2]={g_store->packages_root,g_store->data_root};
+    for(unsigned i=0;i<2;++i) {
+        int n=snprintf(path,sizeof(path),"%s/%s",bases[i],key);
+        if(n<0 || (size_t)n>=sizeof(path))return PXA_STATUS_RESOURCE_LIMIT;
+        if(is_directory(path))*flags|=(uint16_t)(1u<<i);
+        if(i==1) {
+            key[64]=':';n=snprintf(path,sizeof(path),"%s/%s",bases[i],key);
+            if(n<0 || (size_t)n>=sizeof(path))return PXA_STATUS_RESOURCE_LIMIT;
+            if(is_directory(path))*flags|=PXA_LOCATOR_DATA_LEGACY;
+        }
+    }
+    return PXA_STATUS_OK;
+}
+static pxa_status_t verified_incoming_layout(void *context,
+    const pxa_posix_installer_identity_t *identity,const char *incoming) {
+    (void)context;
+    char app_id[65],relative[130],manifest_path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];
+    uint16_t flags=0;uint8_t app_key[32];
+    memcpy(app_id,identity->app_id.data,identity->app_id.size);app_id[identity->app_id.size]=0;
+    pxa_status_t status=pxa_app_locators_find(&g_store->locators,identity->publisher_key_id.data,app_id,&flags,relative,sizeof(relative));
+    if(status!=PXA_STATUS_OK && status!=PXA_STATUS_NOT_FOUND)return status;
+    int already_registered=status==PXA_STATUS_OK;
+    pxa_package_manifest_t *manifest=NULL;
+    int n=snprintf(manifest_path,sizeof(manifest_path),"%s/manifest.pxm",incoming);
+    if(n<0 || (size_t)n>=sizeof(manifest_path) || !parse_manifest_file(manifest_path,&manifest))return PXA_STATUS_DENIED;
+    pxa_publisher_profile_t profile={0};
+    const char *profile_path="assets/pxa-publisher.json";
+    const pxa_package_file_t *file=pxa_package_file_find(manifest,(pxa_bytes_t){(const uint8_t *)profile_path,strlen(profile_path)});
+    if(file) {
+        uint8_t bytes[PXA_PUBLISHER_PROFILE_BYTES],hash[32];
+        n=snprintf(manifest_path,sizeof(manifest_path),"%s/%s",incoming,profile_path);
+        if(n<0 || (size_t)n>=sizeof(manifest_path) || file->size>sizeof(bytes))return PXA_STATUS_DENIED;
+        int fd=open(manifest_path,O_RDONLY|O_NOFOLLOW);struct stat st;
+        if(fd<0)return PXA_STATUS_DENIED;
+        ssize_t count=read(fd,bytes,sizeof(bytes));
+        int valid=fstat(fd,&st)==0 && S_ISREG(st.st_mode) && count>=0 && (uint64_t)count==file->size && (uint64_t)st.st_size==file->size;
+        close(fd);
+        if(!valid || pxa_esp_mbedtls_sha256(bytes,(size_t)count,hash)!=PXA_STATUS_OK || memcmp(hash,file->sha256,32) ||
+           pxa_publisher_profile_parse(bytes,(size_t)count,&profile)!=PXA_STATUS_OK)return PXA_STATUS_DENIED;
+    } else {
+        /* An old package without signed author metadata keeps its legacy
+         * adapter. It must not reserve a generic handle for all future apps
+         * signed by this root. An existing verified binding stays intact. */
+        return PXA_STATUS_OK;
+    }
+    if(already_registered)return PXA_STATUS_OK;
+    static const char domain[]="PXA-APPKEY-1";
+    uint8_t key_input[sizeof(domain)-1+32+2+64];size_t prefix=sizeof(domain)-1;
+    memcpy(key_input,domain,prefix);memcpy(key_input+prefix,identity->publisher_key_id.data,32);
+    key_input[prefix+32]=(uint8_t)identity->app_id.size;key_input[prefix+33]=0;
+    memcpy(key_input+prefix+34,app_id,identity->app_id.size);
+    if(pxa_esp_mbedtls_sha256(key_input,prefix+34+identity->app_id.size,app_key)!=PXA_STATUS_OK)return PXA_STATUS_INTERNAL;
+    /* Determine the legacy adapter before the catalog exists at cold recovery.
+     * Ownership still comes from the verified manifest/installer owner record. */
+    status=legacy_layout_flags(identity->publisher_key_id.data,app_id,&flags);
+    if(status!=PXA_STATUS_OK)return status;
+    return pxa_app_locators_reserve(&g_store->locators,PXA_LOCATOR_SELF_NAMESPACE,
+        identity->publisher_key_id.data,profile.handle,identity->publisher_key_id.data,app_id,app_key,flags);
+}
+
 static bool initialization_failed(const char *stage) {
     ESP_LOGE(PXA_ESP_PACKAGE_TAG,
              "Package store initialization failed at %s: errno=%d", stage,
@@ -1396,6 +1566,7 @@ bool pxa_esp_package_store_initialize(void) {
     if (!pxa_esp_package_policy_initialize()) {
         return initialization_failed("load-disabled-policy");
     }
+    if (!initialize_locators())return initialization_failed("load-app-locators");
     if (!ensure_publisher_keys()) {
         return initialization_failed("load-publisher-keys");
     }
@@ -1412,6 +1583,8 @@ bool pxa_esp_package_store_initialize(void) {
                    PXA_POSIX_INSTALLER_FLAG_COMPOSITE_IDENTITY;
     config.verify = pxa_esp_mbedtls_p256_verify;
     config.verify_context = &g_store->trust;
+    config.resolve_locator=lookup_locator;
+    config.incoming_ready=verified_incoming_layout;
     /* The parser and installer workspaces are allocated from ESP memory at
      * initialization. Retain the protocol defaults instead of adding a
      * smaller ESP catalog quota for manifest contents. */
@@ -1461,6 +1634,15 @@ bool pxa_esp_package_store_initialize(void) {
     scan_installed();
     (void)scan_inbox(1);
     g_store->initialized = 1;
+    for(size_t i=0;i<g_store->entry_count;++i) {
+        pxa_esp_package_entry_t *entry=&g_store->entries[i];char relative[130],root[PXA_ESP_PACKAGE_MAX_PATH];uint16_t flags=0;
+        if(pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative))==PXA_STATUS_OK &&
+           (flags&(PXA_LOCATOR_PACKAGE_MOVING|PXA_LOCATOR_DATA_MOVING|PXA_LOCATOR_MEDIA_MOVING))) {
+            pxa_status_t recovered=pxa_esp_package_store_migrate_storage(entry->identity,root,sizeof(root));
+            if(recovered!=PXA_STATUS_OK)ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Locator recovery pending for %s: %ld",entry->identity,(long)recovered);
+            if(!g_store->locators.ready)return initialization_failed("recover-app-locators");
+        }
+    }
     ESP_LOGI(PXA_ESP_PACKAGE_TAG, "Package store ready (%d installed)",
              (int)g_store->entry_count);
     return true;
@@ -1648,6 +1830,29 @@ bool pxa_esp_package_store_sync_builtins_async(void) {
     return true;
 }
 
+static bool resolve_identity_visit(const pxa_esp_package_record_t *record,void *context) {
+    if(record->installed && record->has_publisher_root)
+        pxa_package_identity_consider(context,record->id,record->app_id,record->publisher_root);
+    return true;
+}
+pxa_status_t pxa_esp_package_store_resolve_identity(const char *query,
+    uint8_t publisher_root[32],char *identity,size_t identity_capacity,
+    char *app_id,size_t app_id_capacity) {
+    if(!query || !*query || !publisher_root || !identity || !identity_capacity ||
+       !app_id || !app_id_capacity)return PXA_STATUS_INVALID_ARGUMENT;
+    memset(publisher_root,0,32);identity[0]=app_id[0]=0;
+    pxa_package_identity_match_t match={.query=query};
+    pxa_esp_package_store_visit(PXA_ESP_PACKAGE_VIEW_MANAGED,resolve_identity_visit,&match);
+    if(match.matches>1){ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Ambiguous App ID: %s",query);return PXA_STATUS_BAD_STATE;}
+    if(!match.matches)return PXA_STATUS_NOT_FOUND;
+    if(strlen(match.identity)>=identity_capacity || strlen(match.app_id)>=app_id_capacity)
+        return PXA_STATUS_RESOURCE_LIMIT;
+    memcpy(publisher_root,match.publisher_root,32);
+    memcpy(identity,match.identity,strlen(match.identity)+1);
+    memcpy(app_id,match.app_id,strlen(match.app_id)+1);
+    return PXA_STATUS_OK;
+}
+
 bool pxa_esp_package_store_is_enabled(const char *identity) {
     int enabled;
     pxa_esp_package_entry_t *entry;
@@ -1691,7 +1896,7 @@ bool pxa_esp_package_store_install(const char *identity) {
     return already_builtin || pxa_esp_package_store_deploy(identity);
 }
 
-bool pxa_esp_package_store_install_file(const char *source_path) {
+static bool install_file_for_owner(const char *source_path,const uint8_t *expected_root,const char *expected_app_id) {
     char app_id[PXA_ESP_PACKAGE_MAX_ID];
     char identity[PXA_ESP_PACKAGE_MAX_IDENTITY];
     char installed_root[PXA_ESP_PACKAGE_MAX_PATH];
@@ -1735,6 +1940,7 @@ bool pxa_esp_package_store_install_file(const char *source_path) {
                             app_id)) {
         goto done;
     }
+    if(expected_root && (!expected_app_id || memcmp(expected_root,publisher_root,32) || strcmp(expected_app_id,app_id)))goto done;
     {
         pxa_esp_package_entry_t *entry = find_entry(identity);
         if (entry != NULL && entry->installed && entry->built_in) goto done;
@@ -1756,6 +1962,13 @@ done:
     release_lock(g_store->metadata_lock);
     release_lock(g_store->transaction_lock);
     return success;
+}
+
+bool pxa_esp_package_store_install_file(const char *source_path) {
+    return install_file_for_owner(source_path,NULL,NULL);
+}
+bool pxa_esp_package_store_install_file_for_identity(const char *source_path,const uint8_t root[32],const char *app_id) {
+    return root && app_id && install_file_for_owner(source_path,root,app_id);
 }
 
 static bool publish_transfer_locked(const char *app_id) {
@@ -1883,6 +2096,211 @@ done:
     release_lock(g_store->metadata_lock);
     release_lock(g_store->transaction_lock);
     return success != 0;
+}
+
+typedef struct {
+    const PxaPublisherNamespaceIssuer *issuers;
+    size_t count;
+    pxa_esp_mbedtls_publisher_key_t selected;
+    pxa_esp_mbedtls_trust_t trust;
+} namespace_verification_t;
+static pxa_status_t namespace_authority(void *context,const uint8_t key_id[32],uint8_t authority[32]) {
+    namespace_verification_t *v=context;
+    for(size_t i=0;i<v->count;++i) {
+        const PxaPublisherNamespaceIssuer *issuer=&v->issuers[i];uint8_t hash[32];
+        if(!issuer->spki || !issuer->spki_bytes || issuer->spki_bytes>128)continue;
+        if(pxa_esp_mbedtls_sha256(issuer->spki,issuer->spki_bytes,hash)!=PXA_STATUS_OK)return PXA_STATUS_INTERNAL;
+        if(memcmp(hash,key_id,32))continue;
+        uint8_t any=0;for(unsigned j=0;j<32;++j)any|=issuer->authority_id[j];
+        if(!any)return PXA_STATUS_DENIED;
+        memcpy(authority,issuer->authority_id,32);
+        v->selected=(pxa_esp_mbedtls_publisher_key_t){issuer->spki,issuer->spki_bytes};
+        v->trust=(pxa_esp_mbedtls_trust_t){.struct_size=sizeof(v->trust),.keys=&v->selected,.key_count=1};
+        return PXA_STATUS_OK;
+    }
+    return PXA_STATUS_DENIED;
+}
+static pxa_status_t namespace_signature(void *context,pxa_bytes_t key,pxa_bytes_t domain,pxa_bytes_t message,pxa_bytes_t signature) {
+    namespace_verification_t *v=context;
+    return pxa_esp_mbedtls_p256_verify(&v->trust,key,domain,message,signature);
+}
+pxa_status_t pxa_esp_package_store_register_namespace(const uint8_t *token,size_t bytes) {
+    if(!store_is_initialized())return PXA_STATUS_BAD_STATE;
+    if(!pxa_platform_trusted_namespace_issuers)return PXA_STATUS_UNAVAILABLE;
+    namespace_verification_t verification={0};
+    verification.count=pxa_platform_trusted_namespace_issuers(&verification.issuers);
+    if(!verification.count)return PXA_STATUS_UNAVAILABLE;
+    if(verification.count>16 || !verification.issuers)return PXA_STATUS_DENIED;
+    time_t now=time(NULL);if(now<1577836800)return PXA_STATUS_UNAVAILABLE;
+    pxa_publisher_binding_t binding;
+    pxa_status_t status=pxa_publisher_binding_verify(token,bytes,(uint64_t)now,&verification,namespace_authority,namespace_signature,&binding);
+    if(status!=PXA_STATUS_OK)return status;
+    uint8_t input[sizeof(PXA_PUBLISHER_NAMESPACE_DOMAIN)-1+48],namespace_key[32],app_key[32];
+    size_t prefix=sizeof(PXA_PUBLISHER_NAMESPACE_DOMAIN)-1;
+    memcpy(input,PXA_PUBLISHER_NAMESPACE_DOMAIN,prefix);memcpy(input+prefix,binding.authority,32);memcpy(input+prefix+32,binding.namespace_id,16);
+    status=pxa_esp_mbedtls_sha256(input,sizeof(input),namespace_key);if(status!=PXA_STATUS_OK)return status;
+    static const char domain[]="PXA-APPKEY-1";
+    uint8_t app_input[sizeof(domain)-1+34+64];prefix=sizeof(domain)-1;size_t length=strlen(binding.app_id);
+    memcpy(app_input,domain,prefix);memcpy(app_input+prefix,binding.root,32);app_input[prefix+32]=(uint8_t)length;app_input[prefix+33]=0;
+    memcpy(app_input+prefix+34,binding.app_id,length);
+    status=pxa_esp_mbedtls_sha256(app_input,prefix+34+length,app_key);if(status!=PXA_STATUS_OK)return status;
+    if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
+    if(!take_lock(g_store->metadata_lock)){release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
+    char identity[130];uint16_t flags=0;
+    if(!canonical_identity(identity,sizeof(identity),binding.root,binding.app_id))status=PXA_STATUS_DENIED;
+    else {
+        status=legacy_layout_flags(binding.root,binding.app_id,&flags);
+        if(status==PXA_STATUS_OK)status=pxa_app_locators_reserve(&g_store->locators,PXA_LOCATOR_VERIFIED_NAMESPACE,namespace_key,
+            binding.profile.handle,binding.root,binding.app_id,app_key,flags);
+    }
+    release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);return status;
+}
+
+static pxa_status_t legacy_media_relative(const uint8_t root[32],const char *app_id,char out[75]) {
+    static const char domain[]="PXA-APPKEY-1",hex[]="0123456789abcdef";
+    uint8_t input[sizeof(domain)-1+34+64],hash[32];size_t prefix=sizeof(domain)-1,length=strlen(app_id);
+    if(length>64)return PXA_STATUS_INVALID_ARGUMENT;
+    memcpy(input,domain,prefix);memcpy(input+prefix,root,32);
+    input[prefix+32]=(uint8_t)length;input[prefix+33]=0;memcpy(input+prefix+34,app_id,length);
+    pxa_status_t status=pxa_esp_mbedtls_sha256(input,prefix+34+length,hash);
+    if(status!=PXA_STATUS_OK)return status;
+    memcpy(out,"PXA/media/",10);
+    for(size_t i=0;i<32;++i){out[10+2*i]=hex[hash[i]>>4];out[11+2*i]=hex[hash[i]&15];}out[74]=0;
+    return PXA_STATUS_OK;
+}
+static int migration_probe(void *context,const char *path) {
+    (void)context;struct stat st;
+    if(lstat(path,&st)==0)return S_ISDIR(st.st_mode)?1:-1;
+    return errno==ENOENT?0:-1;
+}
+static pxa_status_t migration_move(void *context,const char *from,const char *to) {
+    (void)context;
+    char parent[384];if(strlen(to)>=sizeof(parent))return PXA_STATUS_RESOURCE_LIMIT;
+    strcpy(parent,to);char *last=strrchr(parent,'/');if(!last)return PXA_STATUS_DENIED;*last=0;
+    for(char *p=parent+1;;++p) {
+        if(*p && *p!='/')continue;
+        char saved=*p;*p=0;struct stat st;
+        if((mkdir(parent,0700)!=0 && errno!=EEXIST) || lstat(parent,&st)!=0 || !S_ISDIR(st.st_mode)){*p=saved;return PXA_STATUS_IO_ERROR;}
+        *p=saved;if(!saved)break;
+    }
+    if(migration_probe(NULL,to)!=0)return PXA_STATUS_DENIED;
+    if(rename(from,to)!=0)return PXA_STATUS_IO_ERROR;
+#ifndef ESP_PLATFORM
+    int fd=open(parent,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+    if(fd<0)return PXA_STATUS_IO_ERROR;
+    int synced=fsync(fd);close(fd);if(synced)return PXA_STATUS_IO_ERROR;
+    strcpy(parent,from);last=strrchr(parent,'/');*last=0;
+    fd=open(parent,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);if(fd<0)return PXA_STATUS_IO_ERROR;
+    synced=fsync(fd);close(fd);if(synced)return PXA_STATUS_IO_ERROR;
+#endif
+    return PXA_STATUS_OK;
+}
+static pxa_status_t migrate_media_locked(pxa_esp_package_entry_t *entry,const char *relative) {
+    char mount[192],legacy[75],old_path[384],next_path[384];
+    pxa_status_t status=pxa_esp_fs_roots_media_mount(mount,sizeof(mount));
+    if(status!=PXA_STATUS_OK)return status;
+    status=legacy_media_relative(entry->publisher_key_id,entry->id,legacy);
+    if(status!=PXA_STATUS_OK)return status;
+    int n=snprintf(old_path,sizeof(old_path),"%s/%s",mount,legacy);
+    int m=snprintf(next_path,sizeof(next_path),"%s/PXA/media/%s",mount,relative);
+    if(n<0 || m<0 || (size_t)n>=sizeof(old_path) || (size_t)m>=sizeof(next_path))return PXA_STATUS_RESOURCE_LIMIT;
+    pxa_locator_migration_io_t io={NULL,migration_probe,migration_move};
+    return pxa_locator_migrate(&g_store->locators,entry->publisher_key_id,entry->id,PXA_LOCATOR_MEDIA_LEGACY,old_path,next_path,&io);
+}
+/* Fixed-media provider calls this before creating its first grant. It never
+ * moves private data or package files while an application is running. */
+pxa_status_t pxa_esp_package_store_prepare_media(const char *identity) {
+    if(!store_is_initialized() || !identity)return PXA_STATUS_INVALID_ARGUMENT;
+    if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
+    if(!take_lock(g_store->metadata_lock)){release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
+    pxa_status_t status=PXA_STATUS_NOT_FOUND;pxa_esp_package_entry_t *entry=find_entry(identity);
+    if(entry && entry->installed) {
+        char relative[130];uint16_t flags=0;
+        status=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
+        if(status==PXA_STATUS_NOT_FOUND)status=PXA_STATUS_OK;
+        else if(status==PXA_STATUS_OK && (flags&3u))status=PXA_STATUS_BAD_STATE;
+        else if(status==PXA_STATUS_OK && (flags&PXA_LOCATOR_MEDIA_LEGACY))status=migrate_media_locked(entry,relative);
+    }
+    release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);return status;
+}
+
+/* Only the activation owner calls this, after stopping the old app. Each move
+ * is preceded by a durable intent; boot/relaunch can finish an interrupted move.
+ * Legacy adapters remain available for packages without a publisher profile. */
+pxa_status_t pxa_esp_package_store_migrate_storage(const char *identity,char *root_out,size_t capacity) {
+    if(!store_is_initialized() || !identity || !root_out || !capacity)return PXA_STATUS_INVALID_ARGUMENT;
+    if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
+    if(!take_lock(g_store->metadata_lock)){release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
+    pxa_esp_package_entry_t *entry=find_entry(identity);pxa_status_t status=PXA_STATUS_NOT_FOUND;
+    if(!entry || !entry->installed)goto migration_done;
+    uint16_t flags=0;char relative[130],old_key[130],old_path[384],next_path[384];
+    status=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
+    if(status==PXA_STATUS_NOT_FOUND){status=PXA_STATUS_OK;goto migration_copy;}
+    if(status!=PXA_STATUS_OK)goto migration_done;
+    if(!filesystem_identity(old_key,sizeof(old_key),entry->publisher_key_id,entry->id)){status=PXA_STATUS_DENIED;goto migration_done;}
+    pxa_locator_migration_io_t io={NULL,migration_probe,migration_move};
+    const char *bases[2]={g_store->packages_root,g_store->data_root};
+    for(unsigned i=0;i<2;++i) {
+        if(!(flags&(1u<<i)))continue;
+        int n=snprintf(old_path,sizeof(old_path),"%s/%s",bases[i],old_key);
+        int m=snprintf(next_path,sizeof(next_path),"%s/%s",bases[i],relative);
+        if(n<0 || m<0 || (size_t)n>=sizeof(old_path) || (size_t)m>=sizeof(next_path)){status=PXA_STATUS_RESOURCE_LIMIT;goto migration_done;}
+        if(i==1 && migration_probe(NULL,old_path)==0) {
+            /* Very old runtimes used the canonical colon spelling. */
+            char colon[384];n=snprintf(colon,sizeof(colon),"%s/%s",bases[i],entry->identity);
+            if(n<0 || (size_t)n>=sizeof(colon)){status=PXA_STATUS_RESOURCE_LIMIT;goto migration_done;}
+            if(migration_probe(NULL,colon)==1 && migration_move(NULL,colon,old_path)!=PXA_STATUS_OK){status=PXA_STATUS_IO_ERROR;goto migration_done;}
+        }
+        status=pxa_locator_migrate(&g_store->locators,entry->publisher_key_id,entry->id,(uint16_t)(1u<<i),old_path,next_path,&io);
+        if(status!=PXA_STATUS_OK)goto migration_done;
+        if(i==0) {
+            if(strlen(next_path)>=sizeof(entry->root)){status=PXA_STATUS_RESOURCE_LIMIT;goto migration_done;}
+            memcpy(entry->root,next_path,strlen(next_path)+1);
+        }
+        else snprintf(entry->storage_key,sizeof(entry->storage_key),"%s",relative);
+    }
+    if(flags&PXA_LOCATOR_MEDIA_LEGACY) {
+        pxa_status_t media=migrate_media_locked(entry,relative);
+        if(media!=PXA_STATUS_OK && media!=PXA_STATUS_UNAVAILABLE)
+            ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Media migration deferred for %s: %ld",entry->identity,(long)media);
+        /* Removable-media failures never prevent private/Flash use. A first
+         * fixed-root open retries this journal before exposing any directory. */
+        if(!g_store->locators.ready){status=media;goto migration_done;}
+    }
+    status=PXA_STATUS_OK;
+migration_copy:
+    {int n=snprintf(root_out,capacity,"%s",entry->root);if(n<0 || (size_t)n>=capacity)status=PXA_STATUS_RESOURCE_LIMIT;}
+migration_done:
+    release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);
+    if(status!=PXA_STATUS_OK)root_out[0]=0;
+    return status;
+}
+
+pxa_status_t pxa_esp_package_store_storage_paths(const char *identity,
+    char *private_root,size_t private_capacity,char *media_relative,size_t media_capacity) {
+    if(!identity || !private_root || !media_relative || !store_is_initialized())return PXA_STATUS_INVALID_ARGUMENT;
+    if(!take_lock(g_store->metadata_lock))return PXA_STATUS_UNAVAILABLE;
+    pxa_status_t status=PXA_STATUS_NOT_FOUND;pxa_esp_package_entry_t *entry=find_entry(identity);
+    if(entry && entry->installed && entry->has_publisher_key_id) {
+        char relative[130];uint16_t flags=0;
+        status=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
+        if(status==PXA_STATUS_OK || status==PXA_STATUS_NOT_FOUND) {
+            int n=snprintf(private_root,private_capacity,"%s/%s",g_store->data_root,entry->storage_key);
+            if(n<0 || (size_t)n>=private_capacity){status=PXA_STATUS_RESOURCE_LIMIT;goto paths_done;}
+            if(status==PXA_STATUS_OK)
+                n=snprintf(media_relative,media_capacity,"PXA/media/%s",relative);
+            else {
+                char legacy[75];status=legacy_media_relative(entry->publisher_key_id,entry->id,legacy);
+                if(status!=PXA_STATUS_OK)goto paths_done;
+                n=snprintf(media_relative,media_capacity,"%s",legacy);
+            }
+            status=n<0 || (size_t)n>=media_capacity?PXA_STATUS_RESOURCE_LIMIT:PXA_STATUS_OK;
+        }
+    }
+paths_done:
+    release_lock(g_store->metadata_lock);
+    if(status!=PXA_STATUS_OK){if(private_capacity)private_root[0]=0;if(media_capacity)media_relative[0]=0;}
+    return status;
 }
 
 bool pxa_esp_package_store_deploy_detailed(
@@ -2070,6 +2488,13 @@ static bool uninstall_package(const char *identity, bool keep_data) {
         return false;
     }
     entry = find_entry(identity);
+    if(entry) {
+        char relative[130];uint16_t flags=0;
+        pxa_status_t mapped=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
+        if((mapped!=PXA_STATUS_OK && mapped!=PXA_STATUS_NOT_FOUND) || (flags&(PXA_LOCATOR_PACKAGE_MOVING|PXA_LOCATOR_DATA_MOVING))) {
+            release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);return false;
+        }
+    }
     if (entry == NULL || !entry->installed || entry->built_in ||
         !entry->has_publisher_key_id) {
         release_lock(g_store->metadata_lock);
@@ -2205,6 +2630,11 @@ bool pxa_esp_package_store_clear_data(const char *identity) {
         release_lock(g_store->metadata_lock);
         goto done;
     }
+    {char relative[130];uint16_t flags=0;
+     pxa_status_t mapped=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
+     if((mapped!=PXA_STATUS_OK && mapped!=PXA_STATUS_NOT_FOUND) || (flags&(PXA_LOCATOR_PACKAGE_MOVING|PXA_LOCATOR_DATA_MOVING))) {
+         release_lock(g_store->metadata_lock);goto done;
+     }}
     snprintf(canonical, sizeof(canonical), "%s", entry->identity);
     snprintf(storage_key, sizeof(storage_key), "%s", entry->storage_key);
     release_lock(g_store->metadata_lock);

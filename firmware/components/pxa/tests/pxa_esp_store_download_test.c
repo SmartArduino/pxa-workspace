@@ -14,7 +14,7 @@ typedef uint32_t StackType_t;
 static esp_http_client_config_t http;
 static unsigned random_id, deletes, completions, saved;
 static bool short_body, valid_preview = true, approve = true, install_ok = true;
-static bool low_space;
+static bool low_space,preview_has_root=true;
 static unsigned confirmations, installs;
 static bool cancel_after_confirmation;
 static pxa_esp_store_job_t *waiting_job;
@@ -51,13 +51,17 @@ esp_err_t esp_littlefs_info(const char *label, size_t *total, size_t *used) {
 }
 bool pxa_esp_package_store_preview_file(const char *source, pxa_esp_package_preview_t *preview) {
     (void)source; memset(preview, 0, sizeof(*preview));
-    strcpy(preview->app_id, "pxa-store-test"); return valid_preview;
+    strcpy(preview->app_id, "pxa-store-test");preview->has_publisher_root=preview_has_root; return valid_preview;
 }
 bool pxa_host_install_package_file(const char *source) {
     (void)source;
     assert(approve && waiting_job == NULL && !cancel_after_confirmation);
     ++installs;
     return install_ok;
+}
+bool pxa_host_install_package_file_for_identity(const char *source,const uint8_t root[32],const char *app_id) {
+    const uint8_t expected[32]={0};assert(!memcmp(root,expected,32) && !strcmp(app_id,"pxa-store-test"));
+    return pxa_host_install_package_file(source);
 }
 static void notified(pxa_esp_store_job_t *job, uint8_t phase) {
     if (phase == 1) {
@@ -153,6 +157,17 @@ int main(void) {
     approve = true; install_ok = false;
     pxa_esp_store_worker(&value); assert(!exists(&value));
     assert(confirmations == 6 && installs == 3);
+    unsigned before_confirmations=confirmations,before_installs=installs;
+    value=job(0);value.has_expected_root=1;value.expected_root[0]=1;
+    pxa_esp_store_worker(&value);
+    assert(value.status==PXA_STATUS_DENIED && !exists(&value) && confirmations==before_confirmations && installs==before_installs);
+    value=job(0);value.has_expected_root=1;preview_has_root=false;
+    pxa_esp_store_worker(&value);
+    assert(value.status==PXA_STATUS_DENIED && !exists(&value) && confirmations==before_confirmations && installs==before_installs);
+    preview_has_root=true;install_ok=true;
+    value=job(0);value.has_expected_root=1;
+    pxa_esp_store_worker(&value);
+    assert(value.status==PXA_STATUS_OK && !exists(&value) && confirmations==before_confirmations+1 && installs==before_installs+1);
     assert(deletes == completions);
     pxa_esp_store_cleanup_interrupted(NULL, NULL);
     assert(rmdir(state) == 0 && rmdir(CONFIG_PXA_MOUNT_POINT) == 0);

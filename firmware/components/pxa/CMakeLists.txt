@@ -21,6 +21,10 @@ set(PXA_SRCS
     "src/package/pxa_esp_package_icon.c"
     "src/package/pxa_esp_package_policy.c"
     "src/package/pxa_esp_package_store.c"
+    "src/package/pxa_publisher_profile.c"
+    "src/package/pxa_publisher_binding.c"
+    "src/package/pxa_app_locators.c"
+    "src/package/pxa_locator_migration.c"
     "src/package/pxa_esp_store_download.c"
     "src/package/pxa_esp_permission_store.c"
     "src/ui/pxa_esp_ui_assets.c"
@@ -90,6 +94,7 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/image/vendor/pngle.c"
     "${PXA_C_CORE_ROOT}/adapters/image/vendor/miniz.c")
 set(PXA_PRIV_REQUIRES
+    espressif__cjson
     mbedtls
     espressif__esp_audio_codec
     esp_http_client
@@ -169,4 +174,10 @@ if(CONFIG_IDF_TARGET_ESP32S3 OR CONFIG_IDF_TARGET_ESP32S31)
             "${PXSYS_WAMR_OVERLAY_TOOL}")
     endif()
     pxsys_configure_wamr_esp_idf(__idf_wamr)
+endif()
+
+# Optional product-owned namespace issuer policy. This is firmware input, never
+# an App or Store-supplied key. Export public authority data and review/pin it.
+if(DEFINED PXA_NAMESPACE_ISSUERS_SOURCE AND NOT PXA_NAMESPACE_ISSUERS_SOURCE STREQUAL "")
+    target_sources(${COMPONENT_LIB} PRIVATE "${PXA_NAMESPACE_ISSUERS_SOURCE}")
 endif()
