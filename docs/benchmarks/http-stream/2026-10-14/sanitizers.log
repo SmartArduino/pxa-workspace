@@ -1,9 +1,0 @@
-Test project /tmp/pxa-http-san
-    Start 15: pxa_core_test
-1/2 Test #15: pxa_core_test ....................   Passed    0.27 sec
-    Start 16: pxa_http_stream_test
-2/2 Test #16: pxa_http_stream_test .............   Passed    0.04 sec
-
-100% tests passed out of 2
-
-Total Test time (real) =   0.31 sec

@@ -1,1 +1,0 @@
-PASS: 8192 comparisons with current Quake kernel; 1..8 voices, 1..1024 frames, all gain quantization buckets, stereo accumulators
