@@ -18,8 +18,9 @@ CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 CONFIG_SPIRAM_ALLOW_NOINIT_SEG_EXTERNAL_MEMORY=y
 CONFIG_SPIRAM_MEMTEST=n
 CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC=y
-# Keep the 16 KiB instruction cache while internal RAM is tight. A 64-byte
-# data cache line improves frame/PNG PSRAM traffic without growing the cache.
+# AOT code executes from PSRAM. The larger instruction cache reduces fetch
+# stalls; keep the data cache size and use 64-byte lines for frame traffic.
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
 CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
@@ -81,6 +82,8 @@ CONFIG_PXA_HOST_MANAGED_HEAP_SIZE=16384
 CONFIG_PXA_RUNTIME_TASK_STACK_SIZE=12288
 CONFIG_PXA_RUNTIME_TASK_PRIORITY=3
 CONFIG_PXA_RUNTIME_TASK_AFFINITY=1
+# Mix/resample on CPU0 while the Guest emulates and paints on CPU1.
+CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY=0
 # The App runtime is pinned to CPU1; the raster worker runs on CPU0.
 CONFIG_PXA_PARALLEL_RASTER=y
 CONFIG_PXA_RASTER_WORKER_AFFINITY=0

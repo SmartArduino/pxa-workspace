@@ -157,9 +157,6 @@ static pxa_status_t audio_open_format(void *context, const pxa_audio_format_t *f
     if (!pxa_esp_audio_initialize()) return PXA_STATUS_RESOURCE_LIMIT;
     audio_lock(audio);
     const uint32_t output_rate = audio->device_wake ? audio->output_rate : PXA_ESP_AUDIO_SAMPLE_RATE;
-    if (format->sample_rate > output_rate) {
-        audio_unlock(audio); return PXA_STATUS_UNSUPPORTED;
-    }
     for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index) {
         pxa_esp_audio_slot_t *slot = &audio->slots[index];
         if (!slot->active && !slot->closing) {

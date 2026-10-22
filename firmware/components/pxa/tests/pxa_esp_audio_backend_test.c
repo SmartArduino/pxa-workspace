@@ -305,6 +305,21 @@ int main(void) {
     assert(!b.query(b.context, a, &state) && state.accepted_samples == 160 && !state.queued_samples);
     b.close(b.context, a);
     pxa_esp_audio_deinitialize();
+    assert(pxa_esp_audio_set_pull_device(16000,device_wake,&device_wakes));
+    f=(pxa_audio_format_t){32768,2,20};
+    assert(!b.open_pcm(b.context,&f,&info,&a));
+    assert(info.sink_rate==16000 && info.sink_channels==1 && info.queue_frames==PXA_AUDIO_MIXER_PACKETS*(32768u/50u));
+    pxa_audio_graph_t native_gain={.route=PXA_AUDIO_ROUTE_SPEAKER};
+    assert(!b.commit(b.context,a,&native_gain));
+    uint8_t native_pcm[548*4];
+    for(unsigned i=0;i<548*2;++i){native_pcm[i*2]=0x10;native_pcm[i*2+1]=0x27;}
+    assert(!b.submit(b.context,a,native_pcm,sizeof(native_pcm)));
+    assert(pxa_esp_audio_render(rendered,320)==267);
+    for(unsigned i=0;i<267;++i)assert(rendered[i]==10000);
+    for(unsigned i=267;i<320;++i)assert(rendered[i]==0);
+    assert(!b.query(b.context,a,&state) && state.submitted_samples==548 &&
+        state.accepted_samples==548 && !state.queued_samples);
+    b.close(b.context,a);pxa_esp_audio_deinitialize();
     pxa_memory_stats_t stats;
     assert(!pxa_memory_budget_stats(&audio_budget, audio_allocator.owner, &stats));
     assert(!stats.charged[PXA_MEMORY_INTERNAL] && !stats.charged[PXA_MEMORY_EXTERNAL]);
