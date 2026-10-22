@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(pxa_display_composition CXX)
+list(APPEND CMAKE_MODULE_PATH "${PXA_CMAKE_MODULE_DIR}")
+include(PxaGuest)
+pxa_add_app(pxa_main COMPONENT_ID main SOURCES ../display-benchmark/main.cpp)
+target_compile_definitions(pxa_main PRIVATE PXA_DISPLAY_BENCHMARK_SYSTEM_BARS=1)

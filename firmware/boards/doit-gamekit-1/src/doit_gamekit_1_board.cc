@@ -38,6 +38,7 @@
 #include <pxa_board_api.h>
 #include <pxa_board_common/ledc_backlight.h>
 #include <pxa_board_common/boot_screen.h>
+#include <pxa_board_common/lcd_render_trace.h>
 #include <pxadb/pxadb_service.h>
 #include <pxadb_pointer_samples.h>
 #include <sdmmc_cmd.h>
@@ -48,23 +49,30 @@
 #define CONFIG_PXA_DOIT1_LCD_INVERT 0
 #endif
 
+#ifndef CONFIG_PXA_DOIT1_LCD_PSRAM_DMA_DIRECT
+#define CONFIG_PXA_DOIT1_LCD_PSRAM_DMA_DIRECT 0
+#endif
+
 namespace {
 using namespace doit_gamekit_1;
 constexpr char kTag[] = "doit_gamekit_1";
 constexpr size_t kPixels = kWidth * kHeight;
-constexpr size_t kDrawBytes = kWidth * 8 * sizeof(uint16_t);
-// Small internal bounce buffers keep SPI DMA independent of the external cache.
-constexpr size_t kDmaBytes = kNativeWidth * 4 * sizeof(uint16_t);
 constexpr size_t kFrameBytes = kPixels * sizeof(uint16_t);
 constexpr size_t kOutputAlignment = 64;
-constexpr auto kRotation = LandscapeRotation::None;
+// Aligned, immutable PSRAM output frames are read directly by DMA. Keep the
+// requested transfer size below S31's hardware cap; the driver may round its
+// descriptor capacity. TX cache writeback accepts partial cache lines, so a
+// rounded chunk need not share the output buffer's 64-byte base alignment.
+constexpr bool kDirectDma = CONFIG_PXA_DOIT1_LCD_PSRAM_DMA_DIRECT;
+constexpr size_t kDmaBytes = kNativeWidth * (kDirectDma ? 64 : 4) * sizeof(uint16_t);
 #if CONFIG_PXA_DOIT1_LCD_FLIP_180
-constexpr auto kTouchRotation = LandscapeRotation::Deg90;
+constexpr auto kRotation = LandscapeRotation::Deg90;
 #else
-constexpr auto kTouchRotation = LandscapeRotation::Deg270;
+constexpr auto kRotation = LandscapeRotation::Deg270;
 #endif
+constexpr auto kTouchRotation = kRotation;
 constexpr char kPanelName[] = "ST7789V TN";
-constexpr char kCaptureSource[] = "st7789-reference-landscape-completed";
+constexpr char kCaptureSource[] = "st7789-sw-rotation-completed";
 static_assert(kFrameBytes % kOutputAlignment == 0);
 static_assert(kControllerMask == PXA_HOST_CONTROLLER_BUTTON_MASK);
 static_assert(X == PXA_HOST_CONTROLLER_X && R == PXA_HOST_CONTROLLER_R);
@@ -132,6 +140,8 @@ private:
     lv_indev_t* pointer_ = nullptr;
     lv_obj_t* cursor_ = nullptr;
     uint16_t* frame_ = nullptr;
+    pxa::board::LcdRenderTrace ui_trace_;
+    pxa::board::LcdTransferTrace transfer_trace_;
     uint16_t* native_frames_[2]{};
     struct Output {
         uint8_t index; bool content;
@@ -259,28 +269,36 @@ bool Gamekit::InitializeDisplay() {
         .pclk_hz = CONFIG_PXA_DOIT1_LCD_CLOCK_HZ, .trans_queue_depth = 4,
         .user_ctx = this,
         .lcd_cmd_bits = 8, .lcd_param_bits = 8,
-        .flags = {.psram_dma_direct = false},
+        .flags = {.psram_dma_direct = kDirectDma},
     };
     if (esp_lcd_new_panel_io_spi(esp_lcd_spi_bus_handle_t(SPI2_HOST), &io, &io_) != ESP_OK ||
         !panel_.Initialize(io_))
         return false;
 
+    // Query the SPI master only after the LCD IO has registered its device.
+    size_t dma_chunk_bytes = 0;
+    if (spi_bus_get_max_transaction_len(SPI2_HOST, &dma_chunk_bytes) != ESP_OK ||
+        (kDirectDma && dma_chunk_bytes < kDmaBytes)) {
+        ESP_LOGE(kTag, "LCD DMA capacity is smaller than the requested chunk");
+        return false;
+    }
+    ESP_LOGI(kTag, "LCD DMA: direct_psram=%d chunk=%u frame=%u alignment=%u",
+             kDirectDma, unsigned(dma_chunk_bytes), unsigned(kFrameBytes),
+             unsigned(kOutputAlignment));
+
     dma_done_ = xSemaphoreCreateBinary();
-    frame_ = static_cast<uint16_t*>(heap_caps_calloc(kPixels, sizeof(uint16_t),
+    frame_ = static_cast<uint16_t*>(heap_caps_aligned_calloc(kOutputAlignment, kPixels, sizeof(uint16_t),
                                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     for (auto& native : native_frames_)
         native = static_cast<uint16_t*>(heap_caps_aligned_alloc(kOutputAlignment, kFrameBytes,
                                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     free_outputs_ = xQueueCreateStatic(2, sizeof(uint8_t), free_items_, &free_queue_storage_);
     ready_outputs_ = xQueueCreateStatic(2, sizeof(Output), ready_items_, &ready_queue_storage_);
-    // LVGL rejects buffers that do not meet LV_DRAW_BUF_ALIGN. DMA-capable
-    // malloc alone only guarantees the SPI alignment, which can be smaller.
-    void* draw1 = heap_caps_aligned_alloc(LV_DRAW_BUF_ALIGN, kDrawBytes,
-                                         MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    void* draw2 = heap_caps_aligned_alloc(LV_DRAW_BUF_ALIGN, kDrawBytes,
-                                         MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    // LVGL draws directly into the retained logical PSRAM frame, as on
+    // PAI Touch. Small partial buffers repeatedly walk text/shadow draw tasks.
+    // SPI reads separate rotated outputs, so no second logical buffer is needed.
     if (!dma_done_ || !frame_ || !native_frames_[0] || !native_frames_[1] ||
-        !free_outputs_ || !ready_outputs_ || !draw1 || !draw2) return false;
+        !free_outputs_ || !ready_outputs_) return false;
     for (uint8_t index = 0; index < 2; ++index) xQueueSend(free_outputs_, &index, 0);
     if (xTaskCreatePinnedToCore([](void* context) {
             static_cast<Gamekit*>(context)->SubmitFrames();
@@ -295,7 +313,7 @@ bool Gamekit::InitializeDisplay() {
     if (display_) {
         lv_display_set_color_format(display_, LV_COLOR_FORMAT_RGB565);
         lv_display_set_user_data(display_, this);
-        lv_display_set_buffers(display_, draw1, draw2, kDrawBytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
+        lv_display_set_buffers(display_, frame_, nullptr, kFrameBytes, LV_DISPLAY_RENDER_MODE_DIRECT);
         if (!lv_display_get_buf_active(display_)) {
             ESP_LOGE(kTag, "LVGL rejected the aligned SPI draw buffers");
             lv_unlock();
@@ -316,11 +334,13 @@ bool Gamekit::InitializeDisplay() {
                     *area = {0, 0, kWidth - 1, kHeight - 1};
                 }
             } else if (lv_event_get_code(event) == LV_EVENT_RENDER_START) {
+                self->ui_trace_.Begin();
                 self->direct_active_ = false;
                 self->refresh_.BeginRender();
                 self->surface_acquired_ = pxa_esp_surface_acquire_latest(&self->surface_);
                 self->system_modal_ = self->surface_acquired_ && self->surface_.suppress_guest_alpha;
             } else if (lv_event_get_code(event) == LV_EVENT_RENDER_READY) {
+                self->ui_trace_.End(kTag, self->surface_acquired_, true);
                 self->refresh_.EndRender();
                 if (self->surface_acquired_) {
                     // DMA reads our rotated output frame, never the borrowed Surface.
@@ -342,8 +362,8 @@ bool Gamekit::InitializeDisplay() {
     lv_unlock();
     UnlockDisplay();
     ESP_ERROR_CHECK(panel_.DisplayOn());
-    ESP_LOGI(kTag, "Reference hardware landscape: logical=%dx%d output=%dx%d, "
-             "no software rotation, double-buffered %d MHz SPI, no TE",
+    ESP_LOGI(kTag, "Native portrait, software rotation: logical=%dx%d output=%dx%d, "
+             "tiled software rotation, double-buffered %d MHz SPI, no TE",
              kWidth, kHeight, kNativeWidth, kNativeHeight,
              CONFIG_PXA_DOIT1_LCD_CLOCK_HZ / 1000000);
     // The backlight stays off until a complete frame has reached the panel.
@@ -376,9 +396,12 @@ void Gamekit::Flush(lv_display_t* display, const lv_area_t* area, uint8_t* bytes
         ESP_LOGI(kTag, "LCD flush %lu: (%ld,%ld)-(%ld,%ld), last=%d",
                  static_cast<unsigned long>(self->flush_count_), long(area->x1), long(area->y1),
                  long(area->x2), long(area->y2), int(lv_display_flush_is_last(display)));
-    auto* pixels = reinterpret_cast<uint16_t*>(bytes);
+    // DIRECT mode supplies the full framebuffer base even for a dirty rectangle.
+    auto* pixels = reinterpret_cast<uint16_t*>(bytes) + area->y1 * kWidth + area->x1;
     const int width = lv_area_get_width(area), height = lv_area_get_height(area);
-    const size_t stride = lv_draw_buf_width_to_stride(width, LV_COLOR_FORMAT_RGB565) / 2;
+    constexpr size_t stride = kWidth;
+    self->ui_trace_.Tile();
+    auto phase = self->ui_trace_.Mark();
     if (self->surface_acquired_)
         Compose(self->surface_, pixels, area->x1, area->y1, width, height, stride);
     // The virtual cursor must remain above a composed game and trusted UI.
@@ -390,18 +413,18 @@ void Gamekit::Flush(lv_display_t* display, const lv_area_t* area, uint8_t* bytes
             if (radius <= 16) pixels[y * stride + x] = radius >= 9 ? 0 : 0xffff;
         }
     }
-    // Retain all logical dirty tiles, including their composed Surface/cursor.
-    // Submit only a complete frame, in native portrait scan order. Sending
-    // individually rotated landscape tiles would instead update native columns.
-    for (int y = 0; y < height; ++y)
-        std::memcpy(self->frame_ + (area->y1 + y) * kWidth + area->x1,
-                    pixels + y * stride, width * sizeof(uint16_t));
+    self->ui_trace_.Add(pxa::board::LcdRenderTrace::Compose, phase);
+    // Dirty pixels already live at their final logical offsets in frame_.
     if (!lv_display_flush_is_last(display)) {
         lv_display_flush_ready(display);
         return;
     }
+    phase = self->ui_trace_.Mark();
     const uint8_t output = self->AcquireOutput();
+    self->ui_trace_.Add(pxa::board::LcdRenderTrace::Wait, phase);
+    phase = self->ui_trace_.Mark();
     RotateRgb565(self->frame_, kWidth, self->native_frames_[output], kWidth, kHeight, kRotation);
+    self->ui_trace_.Add(pxa::board::LcdRenderTrace::Rotate, phase);
     self->QueueOutput(output, self->refresh_.content(),
                       self->surface_acquired_ ? &self->surface_ : nullptr);
     // The source and LVGL tiles are no longer borrowed. SPI owns a separate
@@ -427,10 +450,12 @@ void Gamekit::SubmitFrames() {
     Output output;
     for (;;) {
         xQueueReceive(ready_outputs_, &output, portMAX_DELAY);
+        const uint64_t transfer_started = transfer_trace_.Begin();
         const auto result = panel_.Draw(native_frames_[output.index]);
         // A no-command parameter transaction drains SPI's queue, including
         // partial submissions on error. Never recycle a buffer before this.
         ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io_, -1, nullptr, 0));
+        transfer_trace_.End(kTag, transfer_started, result == ESP_OK);
         if (result == ESP_OK) {
             completed_output_.store(output.index, std::memory_order_release);
             const uint64_t completed_us = esp_timer_get_time();

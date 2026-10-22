@@ -19,8 +19,8 @@ int main() {
     bytes[0] = 3;
     assert(!DecodeTouchReport(bytes, sizeof(bytes), LandscapeRotation::Deg270, report));
     bytes[0] = 1;
-    // Reference touch native dimensions stay 240x320 while the LCD RAM is
-    // addressed in 320x240 landscape. Check every sensor pixel and all edges.
+    // Touch and LCD RAM both use native 240x320 coordinates.
+    // Check that both software rotations invert every sensor pixel and edge.
     for (auto rotation : {LandscapeRotation::Deg90, LandscapeRotation::Deg270})
         for (int y = 0; y < kTouchNativeHeight; ++y)
             for (int x = 0; x < kTouchNativeWidth; ++x) {

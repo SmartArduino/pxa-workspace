@@ -40,18 +40,16 @@ bool DoitGamekit1Panel::Initialize(esp_lcd_panel_io_handle_t io) {
     vTaskDelay(pdMS_TO_TICKS(150));
     if (esp_lcd_panel_io_tx_param(io_, 0x11, nullptr, 0) != ESP_OK) return false;
     vTaskDelay(pdMS_TO_TICKS(120));
-#if CONFIG_PXA_DOIT1_LCD_FLIP_180
-    uint8_t madctl = 0xa0;
-#else
-    uint8_t madctl = 0x60;
-#endif
+    // Keep memory writes in the panel's native scan order. Hardware MV turns
+    // a frame boundary into a diagonal seam; orientation belongs to the copier.
+    uint8_t madctl = 0;
 #if CONFIG_PXA_DOIT1_LCD_BGR
     madctl |= 0x08;
 #endif
     for (const auto& command : kInitialization) {
         if (esp_lcd_panel_io_tx_param(io_, command.command, command.bytes, command.count) != ESP_OK)
             return false;
-        // Reference ordering: COLMOD=0x05 followed by MADCTL=0x60.
+        // Preserve reference command ordering, gamma, voltage and pixel format.
         if (command.command == 0x3a && esp_lcd_panel_io_tx_param(io_, 0x36, &madctl, 1) != ESP_OK)
             return false;
     }

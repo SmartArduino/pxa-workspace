@@ -7,7 +7,7 @@ mkdir -p "$test_build"
 for test in input touch wire; do
 "${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
-    -I"$test_dir/../include" "$test_dir/${test}_test.cc" -o "$test_build/${test}_test"
+    -I"$test_dir/../include" -I"$project_dir/firmware/components/pxa_board_common/include" "$test_dir/${test}_test.cc" -o "$test_build/${test}_test"
 "$test_build/${test}_test"
 done
-echo "DOIT GameKit 1 input, touch and reference wire tests passed"
+echo "DOIT GameKit 1 input, touch and native portrait wire tests passed"

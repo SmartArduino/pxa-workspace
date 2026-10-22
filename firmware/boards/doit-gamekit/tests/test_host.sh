@@ -7,7 +7,7 @@ mkdir -p "$test_build"
 for test in input surface rotation; do
 "${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  -I"$test_dir/../include" -I"$project_dir/firmware/components/pxa/include" \
+  -I"$test_dir/../include" -I"$project_dir/firmware/components/pxa_board_common/include" -I"$project_dir/firmware/components/pxa/include" \
   -I"$project_dir/deps/pxa-system/libpxa/include" \
   "$test_dir/${test}_test.cc" -o "$test_build/${test}_test"
 "$test_build/${test}_test"

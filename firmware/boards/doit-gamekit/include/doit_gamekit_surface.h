@@ -4,6 +4,7 @@
 #include <cstring>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_surface_transform.h>
+#include <pxa_board_common/surface_rgb565_rows.h>
 
 namespace doit_gamekit {
 // A direct frame must cover the display and leave every trusted overlay intact.
@@ -64,6 +65,8 @@ inline void Compose(const pxa_esp_surface_frame_t& frame, uint16_t* pixels,
         origin_x = (kWidth - frame.width * scale) / 2;
         origin_y = (kHeight - frame.height * scale) / 2;
     }
+    if (pxa::board::ComposeRgb565Rows(frame, pixels, tile_x, tile_y, width, height,
+                                      stride, origin_x, origin_y, scale)) return;
     for (int row = 0; row < height; ++row) {
         for (int column = 0; column < width; ++column) {
             const int x = tile_x + column, y = tile_y + row;

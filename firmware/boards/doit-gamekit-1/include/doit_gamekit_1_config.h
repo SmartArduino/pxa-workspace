@@ -6,8 +6,8 @@
 namespace doit_gamekit_1 {
 inline constexpr char kName[] = "DOIT GameKit 1";
 inline constexpr int kWidth = 320, kHeight = 240;
-// game_-console: MADCTL=0x60 addresses the LCD as 320x240 directly.
-inline constexpr int kNativeWidth = kWidth, kNativeHeight = kHeight;
+// Match the physical scan direction; rotate logical landscape frames in software.
+inline constexpr int kNativeWidth = kHeight, kNativeHeight = kWidth;
 inline constexpr int kTouchNativeWidth = 240, kTouchNativeHeight = 320;
 inline constexpr int kLcdBacklight = 7, kLcdReset = 8, kLcdDc = 9;
 inline constexpr int kLcdCs = 10, kLcdMosi = 11, kLcdClock = 12;

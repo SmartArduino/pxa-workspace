@@ -5,20 +5,28 @@ config PXA_DOIT1_TOUCH
     default y
     help
         Poll the module at I2C address 0x38 on GPIO13/14, INT=15, RESET=16.
-        Match the reference firmware: swap XY, then mirror Y for MADCTL=0x60.
+        Match the reference firmware: swap XY, then mirror Y for the default software rotation.
+
+config PXA_DOIT1_LCD_PSRAM_DMA_DIRECT
+    bool "Send aligned output frames directly from PSRAM"
+    default y
+    help
+        Use SPI DMA on the cache-aligned PSRAM output frame, without internal
+        bounce copies. The submit worker drains DMA before recycling a frame.
+        Disable to use four-line internal bounce buffers for troubleshooting.
 
 config PXA_DOIT1_LCD_CLOCK_HZ
     int "LCD SPI clock (Hz)"
     range 10000000 80000000
-    default 60000000
+    default 80000000
 
 config PXA_DOIT1_LCD_FLIP_180
-    bool "Rotate reference landscape orientation by 180 degrees"
+    bool "Rotate landscape orientation by 180 degrees"
     default n
     help
-        Default uses the reference ST7789V TN initialization with MADCTL=0x60.
-        This selects MADCTL=0xA0 and adjusts the FT6336U transform together.
-        Output frames are already 320x240; no software display rotation.
+        The panel keeps native 240x320 addressing (MADCTL MV/MX/MY cleared).
+        Default software rotation is 270 degrees; select 90 degrees instead.
+        The FT6336U coordinate transform changes together with the display.
 
 config PXA_DOIT1_LCD_INVERT
     bool "Invert LCD colors"
@@ -29,12 +37,12 @@ config PXA_DOIT1_LCD_BGR
     default n
 
 config PXA_DOIT1_LCD_X_GAP
-    int "Landscape panel X offset (pixels)"
+    int "Native portrait panel X offset (pixels)"
     range 0 80
     default 0
 
 config PXA_DOIT1_LCD_Y_GAP
-    int "Landscape panel Y offset (pixels)"
+    int "Native portrait panel Y offset (pixels)"
     range 0 80
     default 0
 

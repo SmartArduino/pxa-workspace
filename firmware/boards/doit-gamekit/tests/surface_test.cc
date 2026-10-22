@@ -1,6 +1,8 @@
 #include "doit_gamekit_surface.h"
 #include <array>
 #include <cassert>
+#include <vector>
+#include <cstring>
 
 using namespace doit_gamekit;
 static void CheckDirectEligibility() {
@@ -49,8 +51,58 @@ static void CheckDirectEligibility() {
     }
 }
 
+// Compare clipped row copies against the independent scalar pixel definition,
+// including odd source alignment/stride, letterboxes and overlapping planes.
+static void CheckRowComposition() {
+    uint32_t random = 0x78f31;
+    const auto next = [&] { random = random * 1664525u + 1013904223u; return random; };
+    std::vector<uint8_t> source(647 * kHeight + 1);
+    for (auto& v : source) v = uint8_t(next() >> 24);
+    constexpr int pw = 67, ph = 39, ps = pw + 2, as = pw + 3;
+    std::vector<uint16_t> colors(ps * ph);
+    std::vector<uint8_t> alpha(as * ph);
+    for (auto& v : colors) v = uint16_t(next() >> 16);
+    for (size_t i = 0; i < alpha.size(); ++i) alpha[i] = i % 3 ? uint8_t(next() >> 24) : 255;
+    for (const auto dims : {std::array{320,240}, std::array{160,144}, std::array{37,199}})
+    for (const auto origin : {std::array{0,0}, std::array{-23,17}, std::array{319,-200}})
+    for (int opacity : {0,1,128,255})
+    for (bool suppress : {false,true}) {
+        pxa_esp_surface_frame_t f{};
+        f.pixels=source.data()+1; f.width=dims[0]; f.height=dims[1];
+        f.stride_bytes=647; f.format=PXA_SURFACE_FORMAT_RGB565; f.visible=1;
+        f.x=origin[0]; f.y=origin[1]; f.suppress_guest_alpha=suppress;
+        f.ui_alpha_plane={.pixels=colors.data(), .alpha=alpha.data(),
+            .pixel_stride_bytes=ps*2,.alpha_stride_bytes=as,
+            .x=3,.y=39,.width=pw,.height=ph,.opacity=uint8_t(opacity),.visible=1,.revision=0};
+        f.system_alpha_plane=f.ui_alpha_plane;
+        f.system_alpha_plane.x=-7; f.system_alpha_plane.y=27;
+        int ox=f.x, oy=f.y;
+        if (!ox && !oy && (f.width<kWidth || f.height<kHeight)) {
+            ox=(kWidth-f.width)/2; oy=(kHeight-f.height)/2;
+        }
+        for (int ty : {-9,0,26,38,47,50,77,233})
+        for (int tx : {-8,0,2,37,68,79,158,311}) {
+            constexpr int w=17,h=11,stride=23;
+            std::array<uint16_t,stride*h+2> actual{}, expected{};
+            actual.fill(0x07e0); expected=actual;
+            for(int y=0;y<h;++y) for(int x=0;x<w;++x) {
+                const int lx=tx+x,ly=ty+y; uint16_t v=0x07e0;
+                if(lx>=ox && ly>=oy && lx<ox+f.width && ly<oy+f.height) {
+                    const auto* p=f.pixels+(ly-oy)*f.stride_bytes+(lx-ox)*2;
+                    v=uint16_t(p[0]|p[1]<<8);
+                }
+                if(!suppress) v=BlendPlane(v,f.ui_alpha_plane,lx,ly);
+                expected[1+y*stride+x]=BlendPlane(v,f.system_alpha_plane,lx,ly);
+            }
+            Compose(f,actual.data()+1,tx,ty,w,h,stride);
+            assert(actual==expected);
+        }
+    }
+}
+
 int main() {
     CheckDirectEligibility();
+    CheckRowComposition();
     std::array<uint16_t, 160 * 120> source{};
     source[0] = 0xf800; source[1] = 0x001f;
     pxa_esp_surface_frame_t frame{};

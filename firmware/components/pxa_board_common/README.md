@@ -22,3 +22,13 @@ Keep this component dependency-light: every directory under
 so packages such as `espressif/button`, `espressif/esp_codec_dev` or
 `espressif/adc_battery_estimation` stay in opt-in satellite components rather
 than here.
+
+`rgb565_rotation.h` supplies tiled 90/270-degree wire conversion, integer scaling
+and inverse capture for SPI boards. `surface_rgb565_rows.h` copies unscaled opaque
+Surface rows and clips alpha-plane work to their intersections; region masks and
+other formats retain the board fallback. These helpers borrow frame pixels only
+for the duration of the existing Surface lease.
+
+`lcd_render_trace.h` reports LVGL render/draw, composition, copy, output-buffer
+wait, rotation and drained SPI transfer times when the existing Performance log
+setting is enabled. Logging off avoids timer reads in the display hot path.

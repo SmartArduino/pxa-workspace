@@ -1,5 +1,13 @@
 menu "DOIT GameKit"
 
+config PXA_DOIT_LCD_PSRAM_DMA_DIRECT
+    bool "Send aligned output frames directly from PSRAM"
+    default y
+    help
+        Use SPI DMA on the cache-aligned PSRAM output frame, without internal
+        bounce copies. The submit worker drains DMA before recycling a frame.
+        Disable to use four-line internal bounce buffers for troubleshooting.
+
 config PXA_DOIT_LCD_CLOCK_HZ
     int "ST7789 SPI clock (Hz)"
     range 10000000 80000000
