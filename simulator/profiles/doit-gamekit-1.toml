@@ -1,7 +1,7 @@
 [desktop]
 width = 320
 height = 240
-density_dpi = 160
+density_dpi = 125
 locale = "zh-CN"
 theme = "dark"
 gestures = false

@@ -41,8 +41,9 @@ config PXA_DOIT1_LCD_Y_GAP
 config PXA_DOIT1_DENSITY_DPI
     int "Display density (DPI)"
     range 80 500
-    default 160
+    default 125
     help
-        Logical UI density; independent from the panel's physical pixel pitch.
+        Approximately 125 DPI for a 320x240 panel with a 65x50 mm active area.
+        Keep the simulator profile at the same density.
 
 endmenu
