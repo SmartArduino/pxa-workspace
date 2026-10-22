@@ -26,6 +26,16 @@ for test in navigation refresh; do
     "$test_dir/${test}_test.cc" "$lvgl_library" "${libraries[@]}" -lm \
     -o "$test_build/${test}_test"
 "$test_build/${test}_test"
+if [[ "$test" == navigation ]]; then
+"${CXX:-clang++}" -std=c++20 -O1 -g -Wall -Wextra -Werror -Wno-deprecated-declarations \
+    -fsanitize=address,undefined -fno-omit-frame-pointer -pthread -DLV_KCONFIG_IGNORE \
+    -DPXA_TEST_GAMEKIT_1 \
+    "-DLV_CONF_PATH=\"$project_dir/firmware/components/pxa_integration/tests/lv_conf_overlay.h\"" \
+    -I"$project_dir/firmware/boards/doit-gamekit-1/include" -I"$lvgl_source" -I"$lvgl_source/include" \
+    "$test_dir/navigation_test.cc" "$lvgl_library" "${libraries[@]}" -lm \
+    -o "$test_build/navigation_gamekit1_test"
+"$test_build/navigation_gamekit1_test"
+fi
 done
 
 # Compile the real shared IME frontend with sanitizers too. The local decoder

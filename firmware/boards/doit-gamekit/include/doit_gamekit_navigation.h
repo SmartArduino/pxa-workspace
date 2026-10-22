@@ -101,6 +101,20 @@ public:
         lv_obj_t* focused = lv_group_get_focused(group_);
         if (!focused) { held_ = buttons; return; }
         NormalizeFocus();
+        bool delete_action = false;
+        if ((buttons & X) && !(held_ & X))
+            for (uint32_t i = 0; i < lv_obj_get_event_count(focused); ++i)
+                delete_action |= (lv_obj_get_event_dsc(focused, i)->filter &
+                                  ~LV_EVENT_PREPROCESS) == LV_EVENT_KEY;
+        if (delete_action) {
+            if (pressed_) Cancel();
+            // Native task cards use Delete to close; game-owned controller
+            // input bypasses this keypad adapter entirely.
+            uint32_t key = LV_KEY_DEL;
+            lv_obj_send_event(focused, LV_EVENT_KEY, &key);
+            held_ = buttons;
+            return;
+        }
         if (buttons & A) {
             const bool activate_editor = !(held_ & A) && activate_text_ &&
                 lv_obj_has_class(focused, &lv_textarea_class);

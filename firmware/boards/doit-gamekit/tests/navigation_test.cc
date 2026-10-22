@@ -1,8 +1,16 @@
+#ifdef PXA_TEST_GAMEKIT_1
+#include "doit_gamekit_1_navigation.h"
+#else
 #include "doit_gamekit_navigation.h"
+#endif
 #include <cassert>
 #include <cstdio>
 
+#ifdef PXA_TEST_GAMEKIT_1
+using namespace doit_gamekit_1;
+#else
 using namespace doit_gamekit;
+#endif
 static uint32_t tick;
 static unsigned clicks, releases, typed;
 alignas(64) static uint32_t frame[320 * 240];
@@ -78,6 +86,15 @@ int main() {
     Tap(navigation, Left);
     Tap(navigation, Down);
     assert(navigation.focused() == below);
+    unsigned deletions = 0;
+    lv_obj_add_event_cb(below, [](lv_event_t* event) {
+        if (lv_event_get_key(event) == LV_KEY_DEL)
+            ++*static_cast<unsigned*>(lv_event_get_user_data(event));
+    }, LV_EVENT_KEY, &deletions);
+    Update(navigation, X);
+    Update(navigation, X);
+    assert(deletions == 1);
+    Update(navigation, 0);
     Tap(navigation, A);
     assert(clicks == 1);
 

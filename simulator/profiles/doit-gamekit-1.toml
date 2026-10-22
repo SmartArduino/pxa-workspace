@@ -2,6 +2,7 @@
 width = 320
 height = 240
 density_dpi = 125
+safe_insets = [0, 0, 0, 0]
 locale = "zh-CN"
 theme = "dark"
 gestures = false

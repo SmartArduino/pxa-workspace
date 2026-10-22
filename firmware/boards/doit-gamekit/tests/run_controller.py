@@ -35,6 +35,8 @@ public:
     ControllerSamples<> remote_controller_;
     int controller_lock_ = 0;
     bool reported_connected_ = true;
+    bool gamepad_consumed_ = false;
+    bool swallow_until_release_ = false, pointer_mode_ = false, focus_mode_ = false;
     uint32_t report_tick_ = 0, reported_buttons_ = 0;
     void ReportController(uint32_t report, uint32_t now);
 };
@@ -83,6 +85,24 @@ int main() {
     assert(board.remote_controller_.Peek().buttons() == 0);
     board.ReportController(0, 115);
     assert(!board.remote_controller_.Peek().pending);
+
+    // Unlocking consumes physical and remote buttons alike. Suppressed queued
+    // edges still commit, otherwise a press could reappear after unlocking.
+    board.remote_controller_.Clear();
+    board.gamepad_consumed_ = true;
+    assert(board.remote_controller_.Push(true, 16));
+    assert(board.remote_controller_.Push(true, 0));
+    board.ReportController(32, 120);
+    assert(delivered.back().buttons == 0);
+    assert(board.remote_controller_.Peek().buttons() == 0);
+    board.ReportController(32, 125);
+    assert(delivered.back().buttons == 0 && !board.remote_controller_.Peek().pending);
+    board.gamepad_consumed_ = false;
+    assert(board.remote_controller_.Push(true, 32));
+    board.ReportController(0, 130);
+    assert(delivered.back().buttons == 32);
+    board.remote_controller_.Clear();
+    board.ReportController(0, 135);
 
     // Heartbeat arithmetic remains valid across the 32-bit LVGL tick wrap.
     board.report_tick_ = UINT32_MAX - 10;

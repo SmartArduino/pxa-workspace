@@ -38,12 +38,18 @@ struct InputActions {
 // This prevents its trailing release from clicking UI or holding a game key.
 class Shortcuts {
 public:
-    InputActions Update(uint32_t buttons, uint32_t now_ms) {
+    InputActions Update(uint32_t buttons, uint32_t now_ms, bool system_ui = true) {
         InputActions result{.buttons = buttons};
         if (consumed_ && !(buttons & consumed_)) consumed_ = 0;
+        if (!consumed_ && system_ui && buttons == (L | R)) {
+            consumed_ = L | R;
+            since_ = now_ms;
+            fired_ = false;
+        }
         if (!consumed_ && (buttons & Select)) {
-            for (uint32_t other : {uint32_t(Start), uint32_t(X), uint32_t(Y),
+            for (uint32_t other : {uint32_t(Start), uint32_t(Y),
                                    uint32_t(L), uint32_t(R)}) {
+                if (!system_ui && other != Start) continue;
                 if (!(buttons & other)) continue;
                 consumed_ = Select | other;
                 since_ = now_ms;
@@ -52,10 +58,17 @@ public:
             }
         }
         if (!consumed_) return result;
-        result.buttons = 0;
+        // With no dedicated system key, only a deliberate long Home chord is
+        // reserved in games. Short START+SELECT presses still reach the game.
+        result.buttons = system_ui || fired_ ? 0 : buttons;
         if ((buttons & consumed_) != consumed_) return result;
         const uint32_t elapsed = now_ms - since_;
-        if (consumed_ & (L | R)) {
+        if (consumed_ == (L | R)) {
+            if (!fired_ && elapsed >= 600) {
+                result.toggle_pointer = true;
+                fired_ = true;
+            }
+        } else if (consumed_ & (L | R)) {
             if (!fired_ || elapsed >= 250) {
                 result.volume_delta = (consumed_ & R) ? 5 : -5;
                 fired_ = true;
@@ -63,10 +76,10 @@ public:
             }
         } else if (!fired_) {
             if ((consumed_ & Start) && elapsed >= 600) result.home = true;
-            if (consumed_ & X) result.toggle_pointer = true;
             if ((consumed_ & Y) && elapsed >= 1200) result.provision_wifi = true;
             fired_ = result.home || result.toggle_pointer || result.provision_wifi;
         }
+        if (fired_) result.buttons = 0;
         return result;
     }
 private:

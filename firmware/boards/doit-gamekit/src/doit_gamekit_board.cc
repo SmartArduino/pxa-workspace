@@ -181,6 +181,7 @@ private:
     Shortcuts shortcuts_;
     KeyNavigation navigation_;
     bool force_pointer_ = false, pointer_mode_ = false, focus_mode_ = true, pointer_down_ = false;
+    bool gamepad_consumed_ = false;
     uint32_t previous_delivered_ = 0;
     int cursor_x_ = kWidth / 2, cursor_y_ = kHeight / 2;
     uint32_t input_tick_ = 0, report_tick_ = 0, reported_buttons_ = 0;
@@ -702,6 +703,7 @@ bool Gamekit::InitializeButtons() {
 }
 
 void Gamekit::PollInput() {
+    const bool screen_was_off = !screen_on_;
     const uint32_t now = lv_tick_get();
     const uint32_t elapsed = std::min(now - input_tick_, uint32_t(40));
     input_tick_ = now;
@@ -740,22 +742,38 @@ void Gamekit::PollInput() {
         }
     }
     const uint32_t buttons = debounce_.Update(raw, now);
-    if (!screen_on_ && buttons) {
+    portENTER_CRITICAL(&controller_lock_);
+    const auto remote = remote_controller_.Peek();
+    portEXIT_CRITICAL(&controller_lock_);
+    const uint32_t gamepad_buttons = buttons | (remote.connected() ? remote.buttons() : 0);
+    if (screen_was_off && gamepad_buttons) {
         screen_on_ = true;
         ApplyBacklight();
         swallow_until_release_ = true;
         lv_display_trigger_activity(display_);
     }
-    if (swallow_until_release_) {
-        if (buttons == 0) swallow_until_release_ = false;
+    // A wake press (including injected input) and its release never reach the
+    // lock policy. A fresh press is required once the lock screen is visible.
+    gamepad_consumed_ = !swallow_until_release_ &&
+        pxsys_reference_lvgl_handle_gamepad(ui_, gamepad_buttons);
+    if (swallow_until_release_ || gamepad_consumed_) {
+        if (gamepad_buttons == 0) swallow_until_release_ = false;
         pointer_down_ = false;
         navigation_.Cancel();
+        if (gamepad_consumed_ || screen_was_off || gamepad_buttons) {
+            navigation_.Update(nullptr, false, 0, now);
+            lv_obj_set_hidden(cursor_, true);
+            shortcuts_ = {};
+        }
         previous_delivered_ = 0;
         ReportController(0, now);
         return;
     }
-    if (buttons) lv_display_trigger_activity(display_);
-    const auto action = shortcuts_.Update(buttons, now);
+    if (gamepad_buttons) lv_display_trigger_activity(display_);
+    const bool system_shortcuts = force_pointer_ || NativeNavigation(false,
+        NavigationScope() || system_modal_, pxa_host_accepts_controller_input(),
+        pxa_esp_surface_has_visible_surface());
+    const auto action = shortcuts_.Update(gamepad_buttons, now, system_shortcuts);
     if (action.home && ui_) {
         force_pointer_ = false;
         (void)pxsys_reference_lvgl_home(ui_);
@@ -778,7 +796,7 @@ void Gamekit::PollInput() {
         focus_mode_ = focus_mode;
         pointer_down_ = false;
         // Never turn an already-held game A into a click after a UI transition.
-        swallow_until_release_ = buttons != 0;
+        swallow_until_release_ = gamepad_buttons != 0;
         delivered = 0;
         lv_indev_reset(pointer_, nullptr);
         navigation_.Cancel();
@@ -792,7 +810,7 @@ void Gamekit::PollInput() {
     // Act on a standalone START release so joining SELECT can reserve Home
     // without first opening Recents during the same button sequence.
     if ((cursor_mode || focus_mode) && ui_ && !(delivered & Start) &&
-        !(buttons & Select) && (previous_delivered_ & Start)) {
+        !(gamepad_buttons & Select) && (previous_delivered_ & Start)) {
         navigation_.Cancel();
         (void)pxsys_reference_lvgl_show_recents(ui_);
         scope = NavigationScope();
@@ -840,6 +858,7 @@ void Gamekit::ReportController(uint32_t report, uint32_t now) {
         connected = remote.connected();
         report = remote.buttons();
     }
+    if (gamepad_consumed_ || swallow_until_release_ || pointer_mode_ || focus_mode_) report = 0;
     // Retry failed queue submissions and periodically refresh complete state,
     // including zero, so app startup/resume never inherits stale held keys.
     if (remote.pending || report != reported_buttons_ ||

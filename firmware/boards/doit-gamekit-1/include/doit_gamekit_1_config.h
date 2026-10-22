@@ -34,7 +34,7 @@ inline constexpr uint32_t kControllerMask = 0xfff;
 inline constexpr uint32_t kButtonMask = kControllerMask | Menu | Return;
 // All switches connect to ground; configure internal pull-ups.
 inline constexpr std::array<int, 14> kButtonPins = {
-    45, 42, 44, 43, 2, 17, 39, 40, 1, 3, 46, 0, 18, 19,
+    45, 42, 44, 43, 2, 17, 39, 40, 1, 3, 46, 0, 19, 18,
 };
 
 constexpr bool PinsAreUnique() {

@@ -40,12 +40,17 @@ int main() {
     assert(hotkeys.Update(0, 902).buttons == 0);
     assert(hotkeys.Update(X | Y | L | R, 903).buttons == (X | Y | L | R));
 
-    auto cursor = hotkeys.Update(Select | X, 1000);
-    assert(cursor.toggle_pointer && cursor.buttons == 0);
-    assert(!hotkeys.Update(Select | X, 1001).toggle_pointer);
-    assert(hotkeys.Update(X | A, 1002).buttons == 0);
-    (void)hotkeys.Update(0, 1003);
-    assert(hotkeys.Update(A, 1004).buttons == A);
+    assert(!hotkeys.Update(Select | X, 1000).toggle_pointer);
+    assert(hotkeys.Update(Select | X, 1001).buttons == (Select | X));
+    (void)hotkeys.Update(0, 1002);
+    auto cursor = hotkeys.Update(L | R, 1100);
+    assert(!cursor.toggle_pointer && cursor.buttons == 0);
+    assert(!hotkeys.Update(L | R, 1699).toggle_pointer);
+    assert(hotkeys.Update(L | R, 1700).toggle_pointer);
+    assert(!hotkeys.Update(L | R, 1701).toggle_pointer);
+    assert(hotkeys.Update(R | A, 1702).buttons == 0);
+    (void)hotkeys.Update(0, 1703);
+    assert(hotkeys.Update(A, 1704).buttons == A);
 
     assert(!hotkeys.Update(Select | Y, 2000).provision_wifi);
     assert(!hotkeys.Update(Select | Y, 3199).provision_wifi);
@@ -64,4 +69,22 @@ int main() {
     assert(!hotkeys.Update(Start, 6000).home);
     (void)hotkeys.Update(0, 6001);
     assert(hotkeys.Update(Start, 6002).buttons == Start);
+
+    Shortcuts game_keys;
+    for (const uint32_t chord : {Select | L, Select | R, Select | X, Select | Y, L | R}) {
+        auto action = game_keys.Update(chord, 0, false);
+        assert(action.buttons == chord && !action.volume_delta &&
+               !action.toggle_pointer && !action.provision_wifi);
+        action = game_keys.Update(chord, 5000, false);
+        assert(action.buttons == chord && !action.provision_wifi);
+        (void)game_keys.Update(0, 5001, false);
+    }
+    assert(game_keys.Update(Select | Start, 6000, false).buttons == (Select | Start));
+    auto held_home = game_keys.Update(Select | Start, 6600, false);
+    assert(held_home.home && held_home.buttons == 0);
+    assert(game_keys.Update(Start, 6601, false).buttons == 0);
+    (void)game_keys.Update(0, 6602, false);
+    assert(game_keys.Update(Select | Start, 7000, false).buttons == (Select | Start));
+    assert(game_keys.Update(Start, 7100, false).buttons == Start);
+    assert(!game_keys.Update(0, 7101, false).home);
 }

@@ -39,8 +39,9 @@ struct InputActions {
 // This prevents its trailing release from clicking UI or holding a game key.
 class Shortcuts {
 public:
-    InputActions Update(uint32_t buttons, uint32_t now_ms) {
+    InputActions Update(uint32_t buttons, uint32_t now_ms, bool system_ui = true) {
         InputActions result{.buttons = buttons & kControllerMask};
+        if (consumed_ && !(buttons & consumed_)) consumed_ = 0;
         // Dedicated system keys work in games too and never enter controller 0.
         const bool menu_down = (buttons & Menu) != 0;
         const bool was_menu_down = (previous_system_ & Menu) != 0;
@@ -48,16 +49,37 @@ public:
         if (menu_down && !was_menu_down) {
             menu_since_ = now_ms;
             menu_home_ = false;
+            menu_volume_ = false;
+            menu_pointer_ = false;
+            volume_direction_ = 0;
         }
-        if (menu_down && !menu_home_ && now_ms - menu_since_ >= 600) {
+        if (menu_down && (buttons & X) && !menu_volume_) {
+            if (!menu_pointer_) result.toggle_pointer = true;
+            menu_pointer_ = true;
+            consumed_ = Menu | X;
+        }
+        const uint32_t volume_direction = menu_down && !menu_pointer_ ? buttons & (L | R) : 0;
+        if (volume_direction) {
+            menu_volume_ = true;
+            consumed_ = Menu | L | R;
+            if (volume_direction != volume_direction_ || now_ms - volume_since_ >= 250) {
+                result.volume_delta = volume_direction == L ? -5 : volume_direction == R ? 5 : 0;
+                volume_since_ = now_ms;
+            }
+        }
+        volume_direction_ = volume_direction;
+        if (menu_down && !menu_volume_ && !menu_pointer_ && !menu_home_ && now_ms - menu_since_ >= 600) {
             result.home = true;
             menu_home_ = true;
         }
-        result.recents = was_menu_down && !menu_down && !menu_home_;
+        result.recents = was_menu_down && !menu_down && !menu_home_ && !menu_volume_ && !menu_pointer_;
         previous_system_ = buttons & (Menu | Return);
-        if (consumed_ && !(buttons & consumed_)) consumed_ = 0;
-        if (!consumed_ && (buttons & Select)) {
-            for (uint32_t other : {uint32_t(Start), uint32_t(X), uint32_t(Y),
+        if (menu_down || (was_menu_down && (menu_volume_ || menu_pointer_))) {
+            result.buttons = 0;
+            return result;
+        }
+        if (!consumed_ && system_ui && (buttons & Select)) {
+            for (uint32_t other : {uint32_t(Start), uint32_t(Y),
                                    uint32_t(L), uint32_t(R)}) {
                 if (!(buttons & other)) continue;
                 consumed_ = Select | other;
@@ -78,7 +100,6 @@ public:
             }
         } else if (!fired_) {
             if ((consumed_ & Start) && elapsed >= 600) result.home = true;
-            if (consumed_ & X) result.toggle_pointer = true;
             if ((consumed_ & Y) && elapsed >= 1200) result.provision_wifi = true;
             fired_ = result.home || result.toggle_pointer || result.provision_wifi;
         }
@@ -88,6 +109,7 @@ private:
     uint32_t consumed_ = 0, since_ = 0;
     bool fired_ = false;
     uint32_t previous_system_ = 0, menu_since_ = 0;
-    bool menu_home_ = false;
+    uint32_t volume_direction_ = 0, volume_since_ = 0;
+    bool menu_home_ = false, menu_volume_ = false, menu_pointer_ = false;
 };
 }
