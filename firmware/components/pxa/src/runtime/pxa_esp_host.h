@@ -48,6 +48,9 @@ bool pxa_esp_host_locale_is_chinese(void);
 bool pxa_esp_host_set_window_insets(const pxa_window_insets_t *safe_insets,
                                     const pxa_window_insets_t *system_bar_insets);
 bool pxa_esp_host_set_display_geometry(uint32_t shape, const uint16_t radii[4]);
+/* Foreground root subscription, independent of Surface/Canvas visibility. */
+bool pxa_esp_host_accepts_controller_input(void);
+
 bool pxa_esp_host_post_controller_state(uint8_t controller, bool connected,
                                         uint32_t buttons);
 bool pxa_esp_host_active_identity(char *identity, size_t capacity);

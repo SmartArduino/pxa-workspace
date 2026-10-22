@@ -517,6 +517,10 @@ bool pxa_host_post_app_system_event(const char *identity_key, uint16_t opcode,
                                               payload_size);
 }
 
+bool pxa_host_accepts_controller_input(void) {
+    return g_host_ready && pxa_esp_host_accepts_controller_input();
+}
+
 bool pxa_host_post_controller_state(uint8_t controller, bool connected,
     uint32_t buttons) {
     if (!g_host_ready || (!connected && buttons != 0) ||

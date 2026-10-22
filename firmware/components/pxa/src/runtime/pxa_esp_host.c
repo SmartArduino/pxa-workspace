@@ -179,6 +179,7 @@ typedef struct {
     uint8_t package_active;
     uint8_t main_active;
     uint8_t volume_key_capture_active;
+    uint8_t controller_input_active;
 } pxa_esp_host_public_state_t;
 
 typedef struct {
@@ -907,6 +908,7 @@ static void publish_main_stopped(void) {
     instance_id = g_host.public_state.main_instance_id;
     g_host.public_state.main_active = 0;
     g_host.public_state.volume_key_capture_active = 0;
+    g_host.public_state.controller_input_active = 0;
     portEXIT_CRITICAL(&g_public_state_lock);
     notify_runtime_event(PXA_HOST_RUNTIME_STOPPED, identity, instance_id,
                          PXA_STOP_NORMAL);
@@ -2101,8 +2103,8 @@ static void maintain_jobs(void) {
     }
 }
 
-static void refresh_volume_key_capture_state(void) {
-    uint8_t captures = 0;
+static void refresh_input_capture_state(void) {
+    uint8_t captures = 0, controller = 0;
     if (g_host.activation.services.ui != NULL &&
         g_host.activation.ui_component != PXA_COMPONENT_INVALID &&
         g_host.activation.active_component != PXA_COMPONENT_INVALID) {
@@ -2111,10 +2113,14 @@ static void refresh_volume_key_capture_state(void) {
             PXA_UI_PRIMARY_SURFACE, 1u, PXA_UI_EVENT_KEY)
                        ? 1u
                        : 0u;
+        controller = pxa_ui_accepts_event(
+            g_host.activation.services.ui, g_host.activation.ui_component,
+            PXA_UI_PRIMARY_SURFACE, 1u, PXA_UI_EVENT_CONTROLLER_STATE) ? 1u : 0u;
     }
     portENTER_CRITICAL(&g_public_state_lock);
     if (g_host.public_state.main_active) {
         g_host.public_state.volume_key_capture_active = captures;
+        g_host.public_state.controller_input_active = controller;
     }
     portEXIT_CRITICAL(&g_public_state_lock);
 }
@@ -2161,7 +2167,7 @@ static int drain_active_events(void) {
         wake_runtime_thread();
     }
     pxa_esp_ime_drain();
-    refresh_volume_key_capture_state();
+    refresh_input_capture_state();
     return 1;
 }
 
@@ -3451,7 +3457,7 @@ static int start_verified(const char *identity) {
         PXA_ESP_START_FAIL("drain-startup-events", PXA_STATUS_INTERNAL);
     }
     publish_active_state();
-    refresh_volume_key_capture_state();
+    refresh_input_capture_state();
     host_log_heap_usage("launch-ready");
     host_log_wamr_usage();
     ESP_LOGI(PXA_ESP_HOST_TAG, "Started verified Package %s", identity);
@@ -5494,6 +5500,20 @@ bool pxa_esp_host_post_key(uint16_t key) {
     command.payload.ui_event.instance_id = public_state.main_instance_id;
     command.payload.ui_event.timestamp_us = host_now_us(NULL);
     return post_command(&command) != 0;
+}
+
+bool pxa_esp_host_accepts_controller_input(void) {
+    if (!g_host.initialized) return false;
+    /* Called by the board input poll: read flags only, never copy identities
+     * or traverse a UI registry owned by the runtime task. */
+    portENTER_CRITICAL(&g_public_state_lock);
+    const uint8_t accepts = g_host.public_state.main_active &&
+        g_host.public_state.controller_input_active;
+    portEXIT_CRITICAL(&g_public_state_lock);
+    portENTER_CRITICAL(&g_process_state_lock);
+    const uint8_t foreground = g_host.ui_foreground_requested;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    return foreground && accepts;
 }
 
 bool pxa_esp_host_post_controller_state(uint8_t controller, bool connected,

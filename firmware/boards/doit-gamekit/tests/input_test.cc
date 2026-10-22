@@ -4,6 +4,14 @@
 
 using namespace doit_gamekit;
 int main() {
+    // A paused emulator hides its Surface but retains a root controller listener.
+    assert(!NativeNavigation(false, false, true, false));
+    assert(!NativeNavigation(false, false, true, true));
+    assert(NativeNavigation(false, true, true, false)); // Permission / IME / recents.
+    assert(NativeNavigation(false, true, true, true));
+    assert(NativeNavigation(false, false, false, false)); // Native launcher.
+    assert(!NativeNavigation(false, false, false, true)); // Legacy game Surface.
+    assert(!NativeNavigation(true, true, true, false)); // Explicit cursor mode.
     Debouncer keys;
     assert(keys.Update(Up | A, 100) == 0);
     assert(keys.Update(Up | A, 111) == 0);

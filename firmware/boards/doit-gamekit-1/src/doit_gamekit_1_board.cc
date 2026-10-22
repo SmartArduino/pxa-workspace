@@ -855,8 +855,9 @@ void Gamekit::PollInput() {
     }
     auto* scope = NavigationScope();
     const bool cursor_mode = force_pointer_;
-    const bool focus_mode = !cursor_mode &&
-        (scope || system_modal_ || !pxa_esp_surface_has_visible_surface());
+    const bool focus_mode = doit_gamekit_1::NativeNavigation(cursor_mode,
+        scope || system_modal_, pxa_host_accepts_controller_input(),
+        pxa_esp_surface_has_visible_surface());
     uint32_t delivered = swallow_until_release_ ? 0 : action.buttons;
     if (cursor_mode != pointer_mode_ || focus_mode != focus_mode_) {
         pointer_mode_ = cursor_mode;

@@ -2,6 +2,13 @@
 #include "doit_gamekit_1_config.h"
 
 namespace doit_gamekit_1 {
+// Canvas applications may own controller input without a visible Surface.
+// Native modal/IME scopes always take priority over an app subscription.
+inline bool NativeNavigation(bool cursor, bool modal, bool app_controller,
+                             bool surface_visible) {
+    return !cursor && (modal || (!app_controller && !surface_visible));
+}
+
 class Debouncer {
 public:
     uint32_t Update(uint32_t raw, uint32_t now_ms) {

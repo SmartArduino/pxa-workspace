@@ -233,3 +233,5 @@ Core 2 原生 AOT 游戏及 Surface 画面、游戏音频 PCM 提交/播放链�
 `out/firmware/doit-gamekit/`。出厂整包从 `0x0` 写入，会替换内部数据；日常更新
 使用 `firmware.bin` 写入 `0x10000`。
 屏幕模组实际朝向/色序、实体按键手感与扬声器声音尚待人工反馈。
+
+手柄路由依据前台 PXA 根节点的 controller 事件订阅，不以游戏 Surface 是否显示判断。应用的 Canvas 菜单继续接收手柄；原生系统弹窗、输入法和最近任务始终优先导航。未订阅 controller 的界面仍用原生焦点，显式鼠标模式保持可用。

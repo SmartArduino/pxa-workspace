@@ -318,6 +318,9 @@ bool pxa_host_post_app_system_event(const char *identity_key, uint16_t opcode,
 #define PXA_HOST_CONTROLLER_R (UINT32_C(1) << 11)
 #define PXA_HOST_CONTROLLER_BUTTON_MASK UINT32_C(0xfff)
 
+/* Foreground root subscription, independent of Surface/Canvas visibility. */
+bool pxa_host_accepts_controller_input(void);
+
 bool pxa_host_post_controller_state(uint8_t controller, bool connected,
                                     uint32_t buttons);
 
