@@ -3,6 +3,9 @@
  * disabled policy in NVS. Replaces the legacy C++ package-store implementation. */
 
 #include "pxa_esp_package_store.h"
+#include "pxa_esp_package_limits.h"
+#include "pxa_esp_app_transfer.h"
+#include "pxa_esp_legacy_adoption.h"
 #include "pxa_package_identity_match.h"
 #include "pxa_app_locators.h"
 #include "pxa_publisher_profile.h"
@@ -11,6 +14,7 @@
 #include "pxa_private_data_move.h"
 #include "pxa_esp_fs_roots.h"
 #include "pxa_esp_package_policy.h"
+#include "pxa/pxa_esp_storage.h"
 
 #if defined(ESP_PLATFORM)
 #include "sdkconfig.h"
@@ -36,7 +40,9 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_littlefs.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
@@ -47,18 +53,17 @@
 #include "pxa/posix/pxa_posix_installer.h"
 #include "pxa/pxa_publisher_trust.h"
 #include "pxa_esp_permission_store.h"
+#include "pxa_esp_package_trust.h"
+#include "pxa_esp_installations.h"
+#include "pxa_esp_install_approval.h"
+#include "pxa_esp_resource_transfer.h"
+#include "pxa_esp_volumes.h"
 
 #if defined(__cplusplus)
 extern "C" {
 #endif
 size_t pxa_platform_trusted_namespace_issuers(
     const PxaPublisherNamespaceIssuer **output_keys) __attribute__((weak));
-size_t pxa_platform_trusted_publishers(
-    const PxaTrustedPublisherKey **output_keys) __attribute__((weak));
-#if CONFIG_PXA_TRUST_BUNDLED_DEVELOPMENT_KEY
-size_t pxa_bundled_development_publishers(
-    const PxaTrustedPublisherKey **output_keys);
-#endif
 #if defined(__cplusplus)
 }
 #endif
@@ -110,6 +115,12 @@ typedef struct {
     uint8_t publisher_key_id[PXA_PACKAGE_DIGEST_BYTES];
     uint64_t release_sequence;
     uint64_t staged_release_sequence;
+    uint64_t mount_epoch,install_generation,data_generation;
+    uint8_t install_id[16];
+    uint8_t manifest_sha256[32];
+    uint8_t volume_local,ambiguous,archived,managed_media;
+    uint8_t permission_summary_known;
+    uint64_t granted_permissions;
     uint32_t builtin_scan_generation;
     uint16_t lineage_count;
     uint16_t staged_lineage_count;
@@ -129,6 +140,7 @@ typedef struct {
 
 typedef struct {
     uint8_t initialized;
+    uint8_t legacy_ready;
     pxa_app_locators_t locators;
     pxa_posix_installer_t *installer;
     void *installer_workspace;
@@ -138,9 +150,6 @@ typedef struct {
     uint8_t *encoded;
     size_t encoded_capacity;
     pxa_esp_mbedtls_trust_t trust;
-    pxa_esp_mbedtls_publisher_key_t *trust_keys;
-    size_t trust_key_count;
-    size_t trust_key_capacity;
     pxa_package_limits_t limits;
     pxa_esp_package_entry_t *entries;
     size_t entry_count;
@@ -157,6 +166,7 @@ typedef struct {
     pxa_esp_package_store_sync_fn sync_callback;
     void *sync_callback_user_data;
     uint32_t builtin_scan_generation;
+    pxa_esp_installations_t *pending_volume_owner;
 } pxa_esp_package_store_t;
 
 static pxa_esp_package_store_t *g_store;
@@ -209,7 +219,7 @@ static void *esp_alloc(size_t size) {
 
 static int ensure_encoded_capacity(size_t required) {
     uint8_t *resized;
-    if (required == 0) return 0;
+    if (required == 0 || required > PXA_ESP_SIGNED_MANIFEST_MAX_BYTES) return 0;
     if (g_store->encoded_capacity >= required) return 1;
     if (g_store->encoded == NULL) {
         resized = esp_alloc(required);
@@ -312,7 +322,6 @@ static void release_store(void) {
     if (g_store->installer != NULL)
         pxa_posix_installer_deinit(g_store->installer);
     heap_caps_free(g_store->entries);
-    heap_caps_free(g_store->trust_keys);
     heap_caps_free(g_store->manifest_workspace);
     heap_caps_free(g_store->encoded);
     heap_caps_free(g_store->installer_workspace);
@@ -568,7 +577,13 @@ static int parse_entry_manifest(const pxa_esp_package_entry_t *entry,
     path_size = snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.pxm",
                          entry->root);
     if (path_size < 0 || (size_t)path_size >= sizeof(manifest_path)) return 0;
-    return parse_manifest_file(manifest_path, manifest_out);
+    if(!parse_manifest_file(manifest_path,manifest_out))return 0;
+    if(entry->volume_local) {
+        uint8_t hash[32];
+        if(pxa_esp_mbedtls_sha256((*manifest_out)->encoded.data,(*manifest_out)->encoded.size,hash)!=PXA_STATUS_OK ||
+            memcmp(hash,entry->manifest_sha256,32))return 0;
+    }
+    return 1;
 }
 
 static void copy_bytes_text(char *output, size_t capacity, pxa_bytes_t value) {
@@ -696,6 +711,7 @@ static void update_entry_metadata(pxa_esp_package_entry_t *entry,
         entry->has_publisher_key_id = 1;
         (void)canonical_identity(entry->identity, sizeof(entry->identity),
                                  publisher_root, entry->id);
+        if(entry->volume_local)return;
         (void)filesystem_identity(entry->storage_key, sizeof(entry->storage_key),
                                   publisher_root, entry->id);
         /* Catalog refreshes run again after reboot and after an update. Never
@@ -727,7 +743,8 @@ static void update_installed_metadata(
             ? UINT8_MAX
             : (uint8_t)manifest->permission_count;
     entry->granted_permission_count =
-        granted_permission_count(entry->identity, manifest);
+        entry->volume_local?0:granted_permission_count(entry->identity, manifest);
+    if(entry->volume_local) {entry->granted_permissions=0;entry->permission_summary_known=0;}
 }
 
 static void update_staged_metadata(pxa_esp_package_entry_t *entry,
@@ -971,6 +988,9 @@ static void remove_entry_at(size_t index) {
     --g_store->entry_count;
 }
 
+static bool package_entry_has_home(const pxa_esp_package_entry_t *entry) {
+    return entry->installed || (entry->volume_local && entry->archived);
+}
 static int scan_inbox(int cleanup_incomplete) {
     DIR *directory;
     struct dirent *source_entry;
@@ -1044,7 +1064,8 @@ static int scan_inbox(int cleanup_incomplete) {
 
     for (index = g_store->entry_count; index != 0; --index) {
         const pxa_esp_package_entry_t *entry = &g_store->entries[index - 1u];
-        if (!entry->installed && !entry->staged) remove_entry_at(index - 1u);
+        if (!package_entry_has_home(entry) && !entry->staged)
+            remove_entry_at(index - 1u);
     }
     return 1;
 }
@@ -1098,7 +1119,7 @@ bool pxa_esp_package_store_stage_file(const char *source_path) {
     const char *name;
     int success = 0;
 
-    if (!store_is_initialized() || source_path == NULL ||
+    if (!store_is_initialized() || !g_store->legacy_ready || source_path == NULL ||
         !path_is_within(source_path, CONFIG_PXA_MOUNT_POINT) ||
         !is_regular_file(source_path)) {
         return false;
@@ -1325,82 +1346,95 @@ static void scan_installed(void) {
     }
 }
 
-static int reserve_publisher_keys(size_t required) {
-    pxa_esp_mbedtls_publisher_key_t *resized;
-    size_t capacity;
-    size_t bytes;
-    if (required <= g_store->trust_key_capacity) return 1;
-    if (required > SIZE_MAX / sizeof(*g_store->trust_keys)) return 0;
-    capacity = g_store->trust_key_capacity == 0
-                   ? required
-                   : g_store->trust_key_capacity;
-    while (capacity < required) {
-        if (capacity > SIZE_MAX / 2u) {
-            capacity = required;
-            break;
-        }
-        capacity *= 2u;
+/* Compatibility metadata is optional garbage once a local record owns the
+ * installation. Retry on catalog discovery, including after an interrupted
+ * cleanup; Flash/NVS failures must never disable the new installation. */
+static __attribute__((noinline)) void collect_legacy_locator(const pxa_posix_app_home_t *home) {
+    if(!g_store->legacy_ready || !g_store->locators.ready)return;
+    char relative[130],legacy[130],path[PXA_ESP_PACKAGE_MAX_PATH];uint16_t flags;
+    pxa_status_t status=pxa_app_locators_find(&g_store->locators,home->record.publisher_root,
+        home->record.app_id,&flags,relative,sizeof(relative));
+    if(status!=PXA_STATUS_OK || (flags&(PXA_LOCATOR_PACKAGE_MOVING|PXA_LOCATOR_DATA_MOVING)))return;
+    if(!filesystem_identity(legacy,sizeof(legacy),home->record.publisher_root,home->record.app_id))return;
+    const char *locations[]={relative,legacy};
+    const char *roots[]={g_store->packages_root,g_store->data_root};
+    for(unsigned root=0;root<2;++root)for(unsigned i=0;i<2;++i) {
+        int n=snprintf(path,sizeof(path),"%s/%s",roots[root],locations[i]);struct stat st;
+        if(n<0 || (size_t)n>=sizeof(path) || !lstat(path,&st) || errno!=ENOENT)return;
     }
-    if (capacity > SIZE_MAX / sizeof(*g_store->trust_keys)) return 0;
-    bytes = capacity * sizeof(*g_store->trust_keys);
-    if (g_store->trust_keys == NULL) {
-        resized = esp_alloc(bytes);
+    /* A much older runtime used the canonical colon spelling for saves.
+     * Retained orphan data also keeps its compatibility locator for recovery. */
+    legacy[64]=':';int n=snprintf(path,sizeof(path),"%s/%s",g_store->data_root,legacy);struct stat st;
+    if(n<0 || (size_t)n>=sizeof(path) || !lstat(path,&st) || errno!=ENOENT)return;
+    status=pxa_app_locators_forget(&g_store->locators,home->record.publisher_root,home->record.app_id);
+    if(status!=PXA_STATUS_OK && status!=PXA_STATUS_NOT_FOUND)
+        ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Retired legacy locator retained: app=%s status=%ld",home->record.app_id,(long)status);
+    char identity[PXA_ESP_PACKAGE_ID_BYTES];
+    if(canonical_identity(identity,sizeof(identity),home->record.publisher_root,home->record.app_id) &&
+        pxa_esp_package_policy_is_disabled(identity) && !pxa_esp_package_policy_set_enabled(identity,true))
+        ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Retired legacy disabled policy retained: app=%s",home->record.app_id);
+}
+typedef struct {uint64_t epoch;size_t rejected;} volume_catalog_context_t;
+static int catalog_volume_home(void *context,const pxa_posix_app_home_t *home) {
+    volume_catalog_context_t *scan=context;pxa_package_manifest_t *manifest=NULL;
+    char root[PXA_ESP_PACKAGE_MAX_PATH],path[PXA_ESP_PACKAGE_MAX_ASSET_PATH],identity[PXA_ESP_PACKAGE_MAX_IDENTITY];
+    uint8_t hash[32],publisher[32];
+    const int archived=!!(home->record.flags&PXA_INSTALL_RECORD_ARCHIVED);
+    memcpy(publisher,home->record.publisher_root,32);
+    if(!canonical_identity(identity,sizeof(identity),publisher,home->record.app_id)) {
+        ++scan->rejected;return 1;
+    }
+    if(!archived && (pxa_posix_app_home_path(home,PXA_POSIX_APP_HOME_PACKAGE,root,sizeof(root))!=PXA_STATUS_OK ||
+        snprintf(path,sizeof(path),"%s/manifest.pxm",root)>=(int)sizeof(path) ||
+        !parse_manifest_file(path,&manifest) ||
+        pxa_esp_mbedtls_sha256(manifest->encoded.data,manifest->encoded.size,hash)!=PXA_STATUS_OK ||
+        memcmp(hash,home->record.manifest_sha256,32) ||
+        !manifest_matches_app_id(manifest,home->record.app_id) ||
+        !manifest_publisher_root(manifest,publisher) || memcmp(publisher,home->record.publisher_root,32))) {
+        ++scan->rejected;return 1;
+    }
+    pxa_esp_package_entry_t *entry=find_entry(identity);
+    if(entry && (entry->installed || entry->volume_local) && (!entry->volume_local || entry->mount_epoch!=scan->epoch)) {
+        /* A logical identity is not an installation selector. Quarantine the
+         * ambiguity until the Host explicitly resolves/migrates the instances. */
+        entry->ambiguous=1;entry->enabled=0;++scan->rejected;return 1;
+    }
+    if(!entry)entry=reserve_entry(home->record.app_id,publisher);
+    if(!entry) {++scan->rejected;return 0;}
+    entry->volume_local=1;entry->mount_epoch=scan->epoch;entry->install_generation=home->record.generation;
+    entry->data_generation=home->record.data_generation;
+    entry->managed_media=!!(home->record.flags&PXA_INSTALL_RECORD_MANAGED_MEDIA);
+    memcpy(entry->install_id,home->record.install_id,16);
+    memcpy(entry->manifest_sha256,home->record.manifest_sha256,32);
+    snprintf(entry->storage_key,sizeof(entry->storage_key),"%s",home->locator);
+    if(!archived) {
+        update_installed_metadata(entry,manifest);
+        snprintf(entry->root,sizeof(entry->root),"%s",root);
     } else {
-        resized = heap_caps_realloc(g_store->trust_keys, bytes,
-                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (resized == NULL) {
-            resized = heap_caps_realloc(g_store->trust_keys, bytes,
-                                        MALLOC_CAP_8BIT);
-        }
+        entry->root[0]=0;
+        /* A cold archive has no package metadata to localize. Keep its signed
+         * App ID readable, including in move-progress notifications. */
+        if(!entry->name[0])snprintf(entry->name,sizeof(entry->name),"%s",home->record.app_id);
     }
-    if (resized == NULL) return 0;
-    g_store->trust_keys = resized;
-    g_store->trust_key_capacity = capacity;
-    return 1;
+    entry->archived=archived;entry->installed=!archived;entry->built_in=0;
+    entry->enabled=!archived && !!(home->record.flags&PXA_INSTALL_RECORD_ENABLED) && !entry->ambiguous;
+    entry->has_private_data=1;collect_legacy_locator(home);return 1;
 }
-
-static int append_publisher_keys(const PxaTrustedPublisherKey *keys,
-                                 size_t count, size_t *stored) {
-    size_t index;
-    if (stored == NULL || (count != 0 && keys == NULL) ||
-        count > SIZE_MAX - *stored ||
-        !reserve_publisher_keys(*stored + count)) {
-        return 0;
+static void scan_volume_homes(void) {
+    pxa_volume_info_t *volumes=esp_alloc(sizeof(*volumes)*PXA_ESP_STORAGE_MAX_VOLUMES);
+    if(!volumes)return;
+    size_t count=pxa_esp_storage_volumes(volumes,PXA_ESP_STORAGE_MAX_VOLUMES);
+    for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
+        pxa_esp_installations_t *owner=NULL;size_t invalid=0;
+        if(volumes[i].state!=PXA_VOLUME_READY || volumes[i].ambiguous)continue;
+        pxa_status_t status=pxa_esp_installations_open(volumes[i].mount_epoch,&owner);
+        volume_catalog_context_t scan={volumes[i].mount_epoch,0};
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_visit(owner,catalog_volume_home,&scan,&invalid);
+        (void)pxa_esp_installations_close(&owner);
+        if(status!=PXA_STATUS_OK || invalid || scan.rejected)
+            ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Volume catalog: status=%ld invalid=%u rejected=%u",(long)status,(unsigned)invalid,(unsigned)scan.rejected);
     }
-    for (index = 0; index < count; ++index) {
-        if (keys[index].spki_der == NULL || keys[index].spki_der_size == 0) {
-            return 0;
-        }
-        g_store->trust_keys[*stored].spki = keys[index].spki_der;
-        g_store->trust_keys[*stored].spki_size = keys[index].spki_der_size;
-        ++*stored;
-    }
-    return 1;
-}
-
-static int ensure_publisher_keys(void) {
-    const PxaTrustedPublisherKey *keys = NULL;
-    size_t stored = 0;
-    size_t count;
-    if (pxa_platform_trusted_publishers != NULL) {
-        count = pxa_platform_trusted_publishers(&keys);
-        if (!append_publisher_keys(keys, count, &stored)) return 0;
-    }
-#if CONFIG_PXA_TRUST_BUNDLED_DEVELOPMENT_KEY
-    keys = NULL;
-    count = pxa_bundled_development_publishers(&keys);
-    if (!append_publisher_keys(keys, count, &stored)) return 0;
-#endif
-    memset(&g_store->trust, 0, sizeof(g_store->trust));
-    g_store->trust.struct_size = sizeof(g_store->trust);
-    g_store->trust.keys = g_store->trust_keys;
-    g_store->trust.key_count = stored;
-    g_store->trust_key_count = stored;
-    if (stored == 0) {
-        ESP_LOGW(PXA_ESP_PACKAGE_TAG,
-                 "No trusted publishers configured; Package installation is disabled");
-    }
-    return 1;
+    heap_caps_free(volumes);
 }
 
 /* NVS atomically replaces the bounded registry blob. A failed/uncertain
@@ -1541,9 +1575,6 @@ bool pxa_esp_package_store_initialize(void) {
     if (!allocate_store()) return false;
     snprintf(g_store->state_root, sizeof(g_store->state_root), "%s/%s",
              CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT);
-    if (!ensure_directory_tree(CONFIG_PXA_STATE_ROOT)) {
-        return initialization_failed("create-state-root");
-    }
     snprintf(g_store->packages_root, sizeof(g_store->packages_root), "%s/%s/%s",
              CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT,
              CONFIG_PXA_PACKAGES_DIR);
@@ -1555,37 +1586,27 @@ bool pxa_esp_package_store_initialize(void) {
     snprintf(g_store->inbox_root, sizeof(g_store->inbox_root), "%s/%s/%s",
              CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT,
              CONFIG_PXA_INBOX_DIR);
-    if (!ensure_directory_tree(CONFIG_PXA_STATE_ROOT "/" CONFIG_PXA_PACKAGES_DIR)) {
-        return initialization_failed("create-packages-root");
+    /* Legacy Flash state is an optional compatibility adapter. A missing,
+     * full or damaged primary filesystem cannot prevent discovering complete
+     * applications on other volumes, and must never create an SD substitute
+     * for the old per-app Flash registry. */
+    pxa_app_locators_init(&g_store->locators,NULL,NULL);
+    if(CONFIG_PXA_STORAGE_PARTITION_LABEL[0] && esp_littlefs_mounted(CONFIG_PXA_STORAGE_PARTITION_LABEL)) {
+        g_store->legacy_ready=ensure_directory_tree(CONFIG_PXA_STATE_ROOT) &&
+            ensure_directory_tree(CONFIG_PXA_STATE_ROOT "/" CONFIG_PXA_PACKAGES_DIR) &&
+            ensure_directory_tree(CONFIG_PXA_STATE_ROOT "/" CONFIG_PXA_PRIVATE_DATA_DIR) &&
+            ensure_directory_tree(CONFIG_PXA_STATE_ROOT "/" CONFIG_PXA_INBOX_DIR) &&
+            pxa_esp_package_policy_initialize() && initialize_locators();
+        if(!g_store->legacy_ready) {
+            pxa_app_locators_init(&g_store->locators,NULL,NULL);
+            ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Legacy primary store unavailable; volume-local installations remain independent");
+        }
     }
-    if (!ensure_directory_tree(CONFIG_PXA_STATE_ROOT "/" CONFIG_PXA_PRIVATE_DATA_DIR)) {
-        return initialization_failed("create-data-root");
-    }
-    if (!ensure_directory_tree(CONFIG_PXA_STATE_ROOT "/" CONFIG_PXA_INBOX_DIR)) {
-        return initialization_failed("create-inbox-root");
-    }
-    if (!pxa_esp_package_policy_initialize()) {
-        return initialization_failed("load-disabled-policy");
-    }
-    if (!initialize_locators())return initialization_failed("load-app-locators");
-    if (!ensure_publisher_keys()) {
+    if (pxa_esp_package_installer_profile(&config,&g_store->trust)!=PXA_STATUS_OK)
         return initialization_failed("load-publisher-keys");
-    }
-    memset(&config, 0, sizeof(config));
-    config.struct_size = sizeof(config);
     config.storage_root = g_store->state_root;
-    config.trust = (pxa_openssl_trust_t){
-        .struct_size = sizeof(pxa_openssl_trust_t),
-        .keys = (const pxa_openssl_publisher_key_t *)g_store->trust.keys,
-        .key_count = g_store->trust.key_count,
-    };
-    config.flags = PXA_POSIX_INSTALLER_FLAG_SKIP_LOCK |
-                   PXA_POSIX_INSTALLER_FLAG_REPAIR_CORRUPT |
-                   PXA_POSIX_INSTALLER_FLAG_COMPOSITE_IDENTITY;
-    config.verify = pxa_esp_mbedtls_p256_verify;
-    config.verify_context = &g_store->trust;
-    config.resolve_locator=lookup_locator;
-    config.incoming_ready=verified_incoming_layout;
+    config.resolve_locator=g_store->legacy_ready?lookup_locator:NULL;
+    config.incoming_ready=g_store->legacy_ready?verified_incoming_layout:NULL;
     /* The parser and installer workspaces are allocated from ESP memory at
      * initialization. Retain the protocol defaults instead of adding a
      * smaller ESP catalog quota for manifest contents. */
@@ -1627,16 +1648,20 @@ bool pxa_esp_package_store_initialize(void) {
         ESP_LOGE(PXA_ESP_PACKAGE_TAG, "Package store lock allocation failed");
         return initialization_failed("allocate-locks");
     }
-    installer_status = pxa_posix_installer_recover_pending(g_store->installer);
-    if (installer_status != PXA_STATUS_OK)
-        ESP_LOGW(PXA_ESP_PACKAGE_TAG, "Some pending transactions need recovery: %d", (int)installer_status);
-    (void)pxa_posix_installer_discard_transfers(g_store->installer);
-    (void)unlink(CONFIG_PXA_MOUNT_POINT "/.pxadb-upload");
-    scan_installed();
-    (void)scan_inbox(1);
+    if(g_store->legacy_ready) {
+        installer_status = pxa_posix_installer_recover_pending(g_store->installer);
+        if (installer_status != PXA_STATUS_OK)
+            ESP_LOGW(PXA_ESP_PACKAGE_TAG, "Some pending transactions need recovery: %d", (int)installer_status);
+        (void)pxa_posix_installer_discard_transfers(g_store->installer);
+        (void)unlink(CONFIG_PXA_MOUNT_POINT "/.pxadb-upload");
+        scan_installed();
+        (void)scan_inbox(1);
+    }
+    scan_volume_homes();
     g_store->initialized = 1;
     for(size_t i=0;i<g_store->entry_count;++i) {
         pxa_esp_package_entry_t *entry=&g_store->entries[i];char relative[130],root[PXA_ESP_PACKAGE_MAX_PATH];uint16_t flags=0;
+        if(!g_store->legacy_ready || entry->volume_local)continue;
         if(pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative))==PXA_STATUS_OK &&
            (flags&(PXA_LOCATOR_PACKAGE_MOVING|PXA_LOCATOR_DATA_MOVING))) {
             pxa_status_t recovered=pxa_esp_package_store_migrate_storage(entry->identity,root,sizeof(root));
@@ -1795,7 +1820,7 @@ void pxa_esp_package_store_set_sync_callback(
 }
 
 void pxa_esp_package_store_sync_builtins(void) {
-    if (!store_is_initialized() || !take_lock(g_store->sync_lock)) return;
+    if (!store_is_initialized() || !g_store->legacy_ready || !take_lock(g_store->sync_lock)) return;
     sync_builtins_locked();
     release_lock(g_store->sync_lock);
 }
@@ -1812,6 +1837,7 @@ static void builtin_sync_task(void *arg) {
 
 bool pxa_esp_package_store_sync_builtins_async(void) {
     TaskHandle_t task = NULL;
+    if(store_is_initialized() && !g_store->legacy_ready)return true;
     if (!store_is_initialized() || !take_lock(g_store->metadata_lock)) return false;
     if (g_store->sync_task != NULL) {
         release_lock(g_store->metadata_lock);
@@ -1862,8 +1888,8 @@ bool pxa_esp_package_store_is_enabled(const char *identity) {
         return false;
     }
     entry = find_entry(identity);
-    enabled = entry != NULL &&
-              !pxa_esp_package_policy_is_disabled(entry->identity);
+    enabled = entry != NULL && !entry->ambiguous && (entry->volume_local?entry->enabled:
+              !pxa_esp_package_policy_is_disabled(entry->identity));
     release_lock(g_store->metadata_lock);
     return enabled;
 }
@@ -1871,18 +1897,27 @@ bool pxa_esp_package_store_is_enabled(const char *identity) {
 bool pxa_esp_package_store_set_enabled(const char *identity, bool enabled) {
     int success = 0;
     pxa_esp_package_entry_t *entry;
-    if (!store_is_initialized() || identity == NULL ||
-        !take_lock(g_store->metadata_lock)) {
-        return false;
-    }
+    if (!store_is_initialized() || identity == NULL || !take_lock(g_store->transaction_lock))return false;
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return false;}
     entry = find_entry(identity);
     if (entry == NULL || !entry->installed) goto done;
+    if(entry->ambiguous)goto done;
+    if(entry->volume_local) {
+        pxa_esp_installations_t *owner=NULL;pxa_posix_app_home_t home={0};
+        pxa_status_t status=pxa_esp_installations_open(entry->mount_epoch,&owner);
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_set_enabled(owner,entry->storage_key,entry->install_generation,enabled,&home);
+        (void)pxa_esp_installations_close(&owner);
+        if(home.record.generation) {entry->enabled=!!(home.record.flags&PXA_INSTALL_RECORD_ENABLED);entry->install_generation=home.record.generation;}
+        success=status==PXA_STATUS_OK;
+        goto done;
+    }
     if (!pxa_esp_package_policy_set_enabled(entry->identity, enabled)) goto done;
     (void)refresh_existing_entry(entry->identity);
     success = 1;
 
 done:
     release_lock(g_store->metadata_lock);
+    release_lock(g_store->transaction_lock);
     return success;
 }
 
@@ -1908,7 +1943,7 @@ static bool install_file_for_owner(const char *source_path,const uint8_t *expect
     pxa_status_t status;
     int success = 0;
     const char *name;
-    if (!store_is_initialized() || source_path == NULL ||
+    if (!store_is_initialized() || !g_store->legacy_ready || source_path == NULL ||
         !path_is_within(source_path, CONFIG_PXA_MOUNT_POINT) ||
         !is_regular_file(source_path)) {
         return false;
@@ -1966,10 +2001,555 @@ done:
 }
 
 bool pxa_esp_package_store_install_file(const char *source_path) {
-    return install_file_for_owner(source_path,NULL,NULL);
+    return pxa_esp_package_store_install_file_on_volume(source_path,0,NULL,NULL)==PXA_STATUS_OK;
 }
 bool pxa_esp_package_store_install_file_for_identity(const char *source_path,const uint8_t root[32],const char *app_id) {
-    return root && app_id && install_file_for_owner(source_path,root,app_id);
+    return root && app_id && pxa_esp_package_store_install_file_on_volume(source_path,0,root,app_id)==PXA_STATUS_OK;
+}
+
+static pxa_status_t retry_volume_cleanup(void) {
+    return pxa_esp_installations_close(&g_store->pending_volume_owner);
+}
+static pxa_status_t close_volume_operation(pxa_esp_installations_t **owner,pxa_status_t status) {
+    pxa_status_t closed=pxa_esp_installations_close(owner);
+    if(*owner) {g_store->pending_volume_owner=*owner;*owner=NULL;}
+    return status==PXA_STATUS_OK?closed:status;
+}
+static pxa_status_t retain_source_volume(const char *source,uint64_t *epoch) {
+    pxa_volume_info_t volume;char physical[PXA_ESP_STORAGE_PATH_BYTES];*epoch=0;
+    pxa_status_t status=pxa_esp_storage_resolve_volume(source,&volume);
+    if(status!=PXA_STATUS_OK)return status;
+    if(!(volume.capabilities&PXA_VOLUME_READ))return PXA_STATUS_DENIED;
+    status=pxa_esp_storage_volume_path(volume.mount_epoch,physical,sizeof(physical));
+    if(status!=PXA_STATUS_OK)return status;
+    /* A temporary private VFS alias has a separate session lifetime. Package
+     * sources use physical public volumes, not another app's leased alias. */
+    if(!path_is_within(source,physical))return PXA_STATUS_DENIED;
+    status=pxa_esp_volumes_retain(volume.mount_epoch);
+    if(status==PXA_STATUS_OK)*epoch=volume.mount_epoch;
+    return status;
+}
+static pxa_status_t installation_path_fits(uint64_t epoch,const char *locator) {
+    char mount[PXA_ESP_STORAGE_PATH_BYTES],package[PXA_ESP_PACKAGE_ROOT_BYTES];
+    pxa_status_t status=pxa_esp_storage_volume_path(epoch,mount,sizeof(mount));
+    if(status!=PXA_STATUS_OK)return status;
+    int length=snprintf(package,sizeof(package),"%s/PXA/apps/%s/package",mount,locator);
+    return length<0 || (size_t)length>=sizeof(package)?PXA_STATUS_LIMIT_EXCEEDED:PXA_STATUS_OK;
+}
+static pxa_status_t default_install_volume(const pxa_package_manifest_t *manifest,uint64_t *epoch) {
+    uint8_t publisher[32];char app[65],locator[PXA_POSIX_APP_LOCATOR_BYTES];
+    if(!manifest_publisher_root(manifest,publisher) || !manifest->app_id.size || manifest->app_id.size>=sizeof(app))return PXA_STATUS_DENIED;
+    copy_bytes_text(app,sizeof(app),manifest->app_id);
+    pxa_status_t locator_status=pxa_esp_installations_locator(publisher,app,locator,sizeof(locator));
+    if(locator_status!=PXA_STATUS_OK)return locator_status;
+    pxa_volume_info_t *volumes=esp_alloc(sizeof(*volumes)*PXA_ESP_STORAGE_MAX_VOLUMES);
+    if(!volumes)return PXA_STATUS_RESOURCE_LIMIT;
+    size_t count=pxa_esp_storage_volumes(volumes,PXA_ESP_STORAGE_MAX_VOLUMES);*epoch=0;
+    pxa_status_t status=PXA_STATUS_UNAVAILABLE;
+    for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
+        pxa_volume_info_t *volume=&volumes[i];pxa_esp_installations_t *owner=NULL;pxa_install_plan_t plan;
+        const uint64_t required=PXA_VOLUME_READ|PXA_VOLUME_WRITE|PXA_VOLUME_INSTALLABLE;
+        if(volume->state!=PXA_VOLUME_READY || volume->ambiguous || (volume->capabilities&required)!=required)continue;
+        if(manifest->package_kind!=PXA_PACKAGE_KIND_RESOURCES &&
+            installation_path_fits(volume->mount_epoch,locator)!=PXA_STATUS_OK)continue;
+        status=pxa_esp_installations_open(volume->mount_epoch,&owner);
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_plan(owner,manifest,0,
+            manifest->package_kind!=PXA_PACKAGE_KIND_RESOURCES,&plan);
+        (void)pxa_esp_installations_close(&owner);
+        if(status!=PXA_STATUS_OK)continue;
+        if(!*epoch || !(volume->capabilities&PXA_VOLUME_REMOVABLE))*epoch=volume->mount_epoch;
+        if(!(volume->capabilities&PXA_VOLUME_REMOVABLE))break;
+    }
+    heap_caps_free(volumes);return *epoch?PXA_STATUS_OK:status;
+}
+static pxa_status_t idle_volume_home(uint64_t epoch,const char *locator) {
+    char mount[PXA_ESP_STORAGE_PATH_BYTES],home[PXA_POSIX_APP_PATH_BYTES];
+    pxa_status_t status=pxa_esp_storage_volume_path(epoch,mount,sizeof(mount));
+    if(status!=PXA_STATUS_OK)return status;
+    int length=snprintf(home,sizeof(home),"%s/PXA/apps/%s",mount,locator);
+    if(length<0 || (size_t)length>=sizeof(home))return PXA_STATUS_LIMIT_EXCEEDED;
+    status=pxa_esp_volumes_bind_app_home(home,epoch);
+    if(status==PXA_STATUS_OK)status=pxa_esp_volumes_unbind_private(home,epoch);
+    return status;
+}
+static pxa_status_t storage_paths_locked(const char *,int,char *,size_t,char *,size_t);
+typedef struct {
+    char private_root[512],media_relative[160],mount[PXA_ESP_STORAGE_PATH_BYTES];
+    char media_mount[PXA_ESP_STORAGE_PATH_BYTES],absolute[512];
+    pxa_volume_info_t volume;
+} legacy_paths_t;
+static pxa_status_t legacy_media_at(legacy_paths_t *paths,pxa_esp_legacy_source_t *source) {
+    int n=snprintf(paths->absolute,sizeof(paths->absolute),"%s/%s%s%s",CONFIG_PXA_MOUNT_POINT,
+        paths->media_mount,paths->media_mount[0]?"/":"",paths->media_relative);
+    if(n<0 || (size_t)n>=sizeof(paths->absolute))return PXA_STATUS_LIMIT_EXCEEDED;
+    struct stat st;
+    if(lstat(paths->absolute,&st))return errno==ENOENT?PXA_STATUS_NOT_FOUND:PXA_STATUS_IO_ERROR;
+    if(!S_ISDIR(st.st_mode))return PXA_STATUS_DENIED;
+    pxa_status_t status=pxa_esp_storage_resolve_volume(paths->absolute,&paths->volume);
+    if(status==PXA_STATUS_OK) {
+        source->media_epoch=paths->volume.mount_epoch;
+        snprintf(source->media,sizeof(source->media),"%s",paths->media_relative);
+    }
+    return status;
+}
+static pxa_status_t legacy_media_source(legacy_paths_t *paths,pxa_esp_legacy_source_t *source,
+    const uint8_t publisher[32],const char *app_id) {
+    pxa_status_t status=pxa_esp_storage_media_mount(paths->media_mount,sizeof(paths->media_mount));
+    if(status==PXA_STATUS_UNAVAILABLE || status==PXA_STATUS_NOT_FOUND)return PXA_STATUS_OK;
+    if(status!=PXA_STATUS_OK)return status;
+    status=legacy_media_at(paths,source);
+    if(status!=PXA_STATUS_NOT_FOUND)return status;
+    /* Only the explicit upgrade recognizes an EXISTING old AppKey directory.
+     * Normal runtime paths remain publisher/App roots and never create this
+     * obsolete alternate namespace. Missing media is not manufactured. */
+    static const char domain[]="PXA-APPKEY-1",hex[]="0123456789abcdef";
+    uint8_t input[sizeof(domain)-1+34+64],hash[32];size_t n=sizeof(domain)-1,len=strlen(app_id);
+    memcpy(input,domain,n);memcpy(input+n,publisher,32);input[n+32]=(uint8_t)len;input[n+33]=0;
+    memcpy(input+n+34,app_id,len);
+    status=pxa_esp_mbedtls_sha256(input,n+34+len,hash);if(status!=PXA_STATUS_OK)return status;
+    memcpy(paths->media_relative,"PXA/media/",10);
+    for(unsigned i=0;i<32;++i) {paths->media_relative[10+2*i]=hex[hash[i]>>4];paths->media_relative[11+2*i]=hex[hash[i]&15];}
+    paths->media_relative[74]=0;
+    status=legacy_media_at(paths,source);return status==PXA_STATUS_NOT_FOUND?PXA_STATUS_OK:status;
+}
+/* Metadata lock held. Snapshot only existing catalog/legacy adapters; this
+ * does not reserve a new namespace or persist any NVS locator. */
+static pxa_status_t legacy_source_locked(const pxa_esp_package_entry_t *entry,pxa_esp_legacy_source_t *source) {
+    if(!entry || !entry->installed || entry->volume_local || entry->built_in || entry->ambiguous || !entry->has_publisher_key_id)
+        return PXA_STATUS_BAD_STATE;
+    memset(source,0,sizeof(*source));
+    legacy_paths_t *paths=esp_alloc(sizeof(*paths));if(!paths)return PXA_STATUS_RESOURCE_LIMIT;
+    uint16_t flags=0;char relative[130];
+    pxa_status_t status=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
+    if(status==PXA_STATUS_NOT_FOUND)status=PXA_STATUS_OK;
+    if(status==PXA_STATUS_OK && (flags&(PXA_LOCATOR_PACKAGE_MOVING|PXA_LOCATOR_DATA_MOVING)))status=PXA_STATUS_BUSY;
+    if(status==PXA_STATUS_OK)status=storage_paths_locked(entry->identity,1,paths->private_root,sizeof(paths->private_root),
+        paths->media_relative,sizeof(paths->media_relative));
+    if(status==PXA_STATUS_OK)status=pxa_esp_storage_resolve_volume(entry->root,&paths->volume);
+    if(status==PXA_STATUS_OK && !(paths->volume.capabilities&PXA_VOLUME_PRIVATE_NATIVE))status=PXA_STATUS_UNSUPPORTED;
+    if(status==PXA_STATUS_OK) {
+        source->app_epoch=paths->volume.mount_epoch;
+        status=pxa_esp_storage_volume_path(source->app_epoch,paths->mount,sizeof(paths->mount));
+    }
+    if(status==PXA_STATUS_OK) {
+        size_t prefix=strlen(paths->mount);
+        if(strncmp(entry->root,paths->mount,prefix) || entry->root[prefix]!='/' ||
+            strncmp(paths->private_root,paths->mount,prefix) || paths->private_root[prefix]!='/')status=PXA_STATUS_DENIED;
+        else if(strlen(entry->root+prefix+1)>=sizeof(source->package) ||
+            strlen(paths->private_root+prefix+1)>=sizeof(source->private_root))status=PXA_STATUS_LIMIT_EXCEEDED;
+        else {strcpy(source->package,entry->root+prefix+1);strcpy(source->private_root,paths->private_root+prefix+1);}
+    }
+    if(status==PXA_STATUS_OK)status=legacy_media_source(paths,source,entry->publisher_key_id,entry->id);
+    heap_caps_free(paths);return status;
+}
+static pxa_status_t prepare_move_kind(const char *identity,pxa_esp_move_approval_t *approval,uint8_t resources_only) {
+    if(!approval || !identity || !store_is_initialized())return PXA_STATUS_INVALID_ARGUMENT;
+    memset(approval,0,sizeof(*approval));
+    approval->resources_only=resources_only;
+    if(!take_lock(g_store->transaction_lock))return PXA_STATUS_BUSY;
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return PXA_STATUS_BUSY;}
+    pxa_esp_package_entry_t *entry=find_entry(identity);pxa_status_t status=PXA_STATUS_BAD_STATE;
+    if(!entry || !package_entry_has_home(entry) ||
+        entry->built_in || entry->ambiguous)goto metadata_done;
+    if(resources_only && entry->archived) {status=PXA_STATUS_UNSUPPORTED;goto metadata_done;}
+    if(!entry->volume_local) {
+        if(resources_only) {status=PXA_STATUS_UNSUPPORTED;goto metadata_done;}
+        status=legacy_source_locked(entry,&approval->legacy);
+        if(status!=PXA_STATUS_OK)goto metadata_done;
+        approval->legacy_upgrade=1;approval->source_epoch=approval->legacy.app_epoch;
+        approval->source.flags=entry->enabled?PXA_INSTALL_RECORD_ENABLED:0;
+        snprintf(approval->identity,sizeof(approval->identity),"%s",entry->identity);
+        snprintf(approval->name,sizeof(approval->name),"%.*s",(int)sizeof(approval->name)-1,entry->name);
+        snprintf(approval->version,sizeof(approval->version),"%s",entry->version);
+        goto metadata_done;
+    }
+    approval->source_epoch=entry->mount_epoch;
+    approval->source.generation=entry->install_generation;
+    snprintf(approval->identity,sizeof(approval->identity),"%s",entry->identity);
+    snprintf(approval->locator,sizeof(approval->locator),"%s",entry->storage_key);
+    snprintf(approval->name,sizeof(approval->name),"%.*s",(int)sizeof(approval->name)-1,entry->name);
+    snprintf(approval->version,sizeof(approval->version),"%s",entry->version);
+    status=PXA_STATUS_OK;
+metadata_done:
+    release_lock(g_store->metadata_lock);
+    if(status!=PXA_STATUS_OK)goto done;
+    if(approval->legacy_upgrade) {
+        status=pxa_esp_legacy_adoption_prepare(&approval->legacy,!!(approval->source.flags&PXA_INSTALL_RECORD_ENABLED),
+            &approval->source,&approval->choices[0].estimate);
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_locator(approval->source.publisher_root,approval->source.app_id,
+            approval->locator,sizeof(approval->locator));
+        if(status==PXA_STATUS_OK)status=pxa_esp_storage_volume(approval->source_epoch,&approval->choices[0].volume);
+        if(status==PXA_STATUS_OK) {
+            approval->count=1;
+            snprintf(approval->current_volume,sizeof(approval->current_volume),"%s",approval->choices[0].volume.name);
+            if(approval->legacy.media_epoch) {
+                pxa_volume_info_t media;
+                if(pxa_esp_storage_volume(approval->legacy.media_epoch,&media)==PXA_STATUS_OK)
+                    snprintf(approval->media_volume,sizeof(approval->media_volume),"%s",media.name);
+            }
+        }
+        goto done;
+    }
+    status=idle_volume_home(approval->source_epoch,approval->locator);
+    if(status==PXA_STATUS_OK)status=pxa_esp_storage_refresh_volume(approval->source_epoch);
+    if(status!=PXA_STATUS_OK)goto done;
+    pxa_volume_info_t *volumes=heap_caps_aligned_calloc(8,PXA_ESP_STORAGE_MAX_VOLUMES,sizeof(*volumes),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    pxa_install_record_t *record=heap_caps_aligned_calloc(8,1,sizeof(*record),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!volumes || !record) {heap_caps_free(volumes);heap_caps_free(record);status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    size_t count=pxa_esp_storage_volumes(volumes,PXA_ESP_STORAGE_MAX_VOLUMES);
+    uint64_t generation=approval->source.generation;pxa_status_t last=PXA_STATUS_UNAVAILABLE;
+    for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
+        pxa_volume_info_t *volume=&volumes[i];
+        if(!resources_only && volume->mount_epoch==approval->source_epoch) {
+            snprintf(approval->current_volume,sizeof(approval->current_volume),"%s",volume->name);continue;
+        }
+        const uint64_t required=PXA_VOLUME_READ|PXA_VOLUME_WRITE|PXA_VOLUME_INSTALLABLE;
+        if(volume->state!=PXA_VOLUME_READY || volume->ambiguous || (volume->capabilities&required)!=required)continue;
+        if(pxa_esp_storage_refresh_volume(volume->mount_epoch)!=PXA_STATUS_OK ||
+            pxa_esp_storage_volume(volume->mount_epoch,volume)!=PXA_STATUS_OK)continue;
+        pxa_esp_install_choice_t *choice=&approval->choices[approval->count];
+        uint64_t media_epoch=0;
+        if(resources_only)last=pxa_esp_resource_transfer_plan(approval->source_epoch,volume->mount_epoch,
+            approval->locator,generation,record,&media_epoch,&choice->estimate);
+        else last=pxa_esp_app_transfer_plan(approval->source_epoch,volume->mount_epoch,approval->locator,generation,record,&choice->estimate);
+        if(last!=PXA_STATUS_OK)continue;
+        approval->source=*record;choice->volume=*volume;
+        if(resources_only)approval->source_media_epoch=media_epoch;
+        if(++approval->count==PXA_ESP_INSTALL_CHOICES)break;
+    }
+    if(approval->count && resources_only) {
+        for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
+            if(volumes[i].mount_epoch==approval->source_media_epoch)
+                snprintf(approval->current_volume,sizeof(approval->current_volume),"%s",volumes[i].name);
+            if(volumes[i].mount_epoch==approval->source_epoch)
+                snprintf(approval->media_volume,sizeof(approval->media_volume),"%s",volumes[i].name);
+        }
+    } else if(approval->count && (approval->source.flags&PXA_INSTALL_RECORD_HAS_MEDIA))
+        for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i)
+            if(!memcmp(volumes[i].id.bytes,approval->source.media_volume.bytes,16))
+                snprintf(approval->media_volume,sizeof(approval->media_volume),"%s",volumes[i].name);
+    heap_caps_free(volumes);heap_caps_free(record);
+    status=approval->count?PXA_STATUS_OK:last;
+done:
+    release_lock(g_store->transaction_lock);return status;
+}
+pxa_status_t pxa_esp_package_store_prepare_move(const char *identity,pxa_esp_move_approval_t *approval) {
+    return prepare_move_kind(identity,approval,0);
+}
+pxa_status_t pxa_esp_package_store_prepare_move_resources(const char *identity,pxa_esp_move_approval_t *approval) {
+    return prepare_move_kind(identity,approval,1);
+}
+pxa_status_t pxa_esp_package_store_commit_move(const pxa_esp_move_approval_t *approval,size_t choice,
+    pxa_esp_transfer_progress_fn progress,void *context) {
+    if(!approval || choice>=approval->count || choice>=PXA_ESP_INSTALL_CHOICES || !store_is_initialized())
+        return PXA_STATUS_INVALID_ARGUMENT;
+    pxa_posix_app_home_t *home=heap_caps_aligned_calloc(8,1,sizeof(*home),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!home)return PXA_STATUS_RESOURCE_LIMIT;
+    if(!take_lock(g_store->transaction_lock)) {heap_caps_free(home);return PXA_STATUS_BUSY;}
+    const uint64_t target=approval->choices[choice].volume.mount_epoch;
+    pxa_status_t status=PXA_STATUS_OK;
+    if(approval->legacy_upgrade) {
+        if(!take_lock(g_store->metadata_lock))status=PXA_STATUS_BUSY;
+        else {
+            const pxa_esp_package_entry_t *entry=find_entry(approval->identity);
+            if(!entry || !entry->installed || entry->volume_local || entry->built_in || entry->ambiguous ||
+                entry->enabled!=!!(approval->source.flags&PXA_INSTALL_RECORD_ENABLED))status=PXA_STATUS_BAD_STATE;
+            release_lock(g_store->metadata_lock);
+        }
+    }
+    if(status==PXA_STATUS_OK)status=idle_volume_home(approval->source_epoch,approval->locator);
+    if(status==PXA_STATUS_OK && !approval->resources_only)status=idle_volume_home(target,approval->locator);
+    const pxa_esp_app_transfer_control_t control={context,NULL,progress};
+    if(status==PXA_STATUS_OK) {
+        if(approval->legacy_upgrade) {
+            if(target!=approval->source_epoch)status=PXA_STATUS_BAD_STATE;
+            else status=pxa_esp_legacy_adoption_begin(&approval->legacy,&approval->source,&control,home);
+        } else if(approval->resources_only)status=pxa_esp_resource_transfer_begin_approved(approval->source_epoch,
+            approval->source_media_epoch,target,approval->locator,&approval->source,home);
+        else status=pxa_esp_app_transfer_begin_approved(approval->source_epoch,target,
+            approval->locator,&approval->source,&control,NULL,home);
+    }
+    if(take_lock(g_store->metadata_lock)) {
+        if(status==PXA_STATUS_OK || (approval->resources_only && home->record.generation)) {
+            pxa_esp_package_entry_t *entry=find_entry(approval->identity);
+            if(entry) {entry->installed=0;entry->volume_local=0;entry->ambiguous=0;}
+            volume_catalog_context_t scan={approval->resources_only?approval->source_epoch:target,0};
+            if((!catalog_volume_home(&scan,home) || scan.rejected) && status==PXA_STATUS_OK)status=PXA_STATUS_RESOURCE_LIMIT;
+        }
+        release_lock(g_store->metadata_lock);
+    } else if(status==PXA_STATUS_OK)status=PXA_STATUS_BUSY;
+    release_lock(g_store->transaction_lock);heap_caps_free(home);return status;
+}
+typedef struct {
+    pxa_posix_app_home_t home;
+    char locator[PXA_POSIX_APP_LOCATOR_BYTES];
+} volume_move_t;
+pxa_status_t pxa_esp_package_store_move_volume_with_progress(const char *identity,uint64_t target_epoch,uint8_t resume,
+    pxa_esp_transfer_progress_fn progress,void *context) {
+    if(!store_is_initialized() || !identity || !target_epoch || resume>1 || strlen(identity)<66 ||
+        strlen(identity)>=PXA_ESP_PACKAGE_ID_BYTES || identity[64]!=':')return PXA_STATUS_INVALID_ARGUMENT;
+    volume_move_t *move=heap_caps_aligned_calloc(8,1,sizeof(*move),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!move)return PXA_STATUS_RESOURCE_LIMIT;
+    pxa_status_t status=PXA_STATUS_UNAVAILABLE;uint64_t source_epoch=0,generation=0;
+    const pxa_esp_app_transfer_control_t control={context,NULL,progress};
+    const char *stage="lock";
+    if(!take_lock(g_store->transaction_lock))goto free_move;
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);goto free_move;}
+    pxa_esp_package_entry_t *entry=find_entry(identity);
+    if(!resume && (!entry || !package_entry_has_home(entry) || !entry->volume_local || entry->ambiguous || entry->built_in)) {
+        status=entry && !entry->volume_local?PXA_STATUS_UNSUPPORTED:PXA_STATUS_BAD_STATE;
+        release_lock(g_store->metadata_lock);goto done;
+    }
+    strcpy(move->locator,identity);move->locator[64]='/';
+    if(entry) {source_epoch=entry->mount_epoch;generation=entry->install_generation;}
+    release_lock(g_store->metadata_lock);
+    stage="idle-home";status=idle_volume_home(target_epoch,move->locator);
+    if(status==PXA_STATUS_OK && !resume)status=idle_volume_home(source_epoch,move->locator);
+    if(status!=PXA_STATUS_OK)goto done;
+    stage="transfer";
+    if(resume) {
+        status=pxa_esp_legacy_adoption_resume(target_epoch,move->locator,&control,&move->home);
+        if(status==PXA_STATUS_UNSUPPORTED)status=pxa_esp_app_transfer_resume(target_epoch,move->locator,&control,NULL,&move->home);
+    } else status=pxa_esp_app_transfer_begin(source_epoch,target_epoch,move->locator,generation,&control,NULL,&move->home);
+    if(take_lock(g_store->metadata_lock)) {
+        entry=find_entry(identity);
+        if(status==PXA_STATUS_OK) {
+            if(entry) {entry->installed=0;entry->volume_local=0;entry->ambiguous=0;}
+            volume_catalog_context_t scan={target_epoch,0};
+            if(!catalog_volume_home(&scan,&move->home) || scan.rejected)status=PXA_STATUS_RESOURCE_LIMIT;
+        }
+        release_lock(g_store->metadata_lock);
+    } else if(status==PXA_STATUS_OK)status=PXA_STATUS_UNAVAILABLE;
+done:
+    release_lock(g_store->transaction_lock);
+free_move:
+    if(status!=PXA_STATUS_OK)ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Whole-app move failed at %s: status=%ld",stage,(long)status);
+    heap_caps_free(move);return status;
+}
+pxa_status_t pxa_esp_package_store_move_volume(const char *identity,uint64_t target_epoch,uint8_t resume) {
+    return pxa_esp_package_store_move_volume_with_progress(identity,target_epoch,resume,NULL,NULL);
+}
+typedef struct {uint64_t epoch;size_t completed,pending;} transfer_bootstrap_t;
+static int recover_transfer(void *context,const char *locator) {
+    transfer_bootstrap_t *scan=context;char identity[PXA_ESP_PACKAGE_ID_BYTES];
+    snprintf(identity,sizeof(identity),"%s",locator);identity[64]=':';
+    pxa_status_t status=pxa_esp_package_store_move_volume(identity,scan->epoch,1);
+    if(status==PXA_STATUS_OK)++scan->completed;
+    else {
+        ++scan->pending;
+        ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Transfer recovery remains pending: app=%s status=%ld",locator+65,(long)status);
+    }
+    return 1;
+}
+pxa_status_t pxa_esp_package_store_recover_transfers(size_t *completed,size_t *pending) {
+    if(!completed || !pending)return PXA_STATUS_INVALID_ARGUMENT;
+    *completed=*pending=0;
+    if(!store_is_initialized())return PXA_STATUS_UNAVAILABLE;
+    pxa_volume_info_t *volumes=heap_caps_aligned_calloc(8,PXA_ESP_STORAGE_MAX_VOLUMES,sizeof(*volumes),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!volumes)return PXA_STATUS_RESOURCE_LIMIT;
+    size_t count=pxa_esp_storage_volumes(volumes,PXA_ESP_STORAGE_MAX_VOLUMES);pxa_status_t result=PXA_STATUS_OK;
+    for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
+        if(volumes[i].state!=PXA_VOLUME_READY || volumes[i].ambiguous)continue;
+        transfer_bootstrap_t scan={volumes[i].mount_epoch,0,0};size_t found=0;
+        pxa_status_t status=pxa_esp_app_transfer_visit(scan.epoch,recover_transfer,&scan,&found);
+        *completed+=scan.completed;*pending+=scan.pending;
+        if(status!=PXA_STATUS_OK)result=status;
+    }
+    heap_caps_free(volumes);
+    if(*completed) {
+        pxa_esp_package_store_sync_fn callback=NULL;void *context=NULL;
+        if(take_lock(g_store->metadata_lock)) {
+            callback=g_store->sync_callback;context=g_store->sync_callback_user_data;
+            release_lock(g_store->metadata_lock);
+        }
+        if(callback)callback(context);
+    }
+    return result!=PXA_STATUS_OK?result:*pending?PXA_STATUS_WOULD_BLOCK:PXA_STATUS_OK;
+}
+static __attribute__((noinline)) pxa_status_t bind_prepared_media(const pxa_package_manifest_t *manifest,
+    uint64_t app_epoch,pxa_install_record_t *record) {
+    if(manifest->format_minor<8)return PXA_STATUS_OK;
+    if(!manifest->resource_manifest_sha256) {
+        if(!(record->flags&PXA_INSTALL_RECORD_MANAGED_MEDIA))return PXA_STATUS_OK;
+        record->flags&=~(PXA_INSTALL_RECORD_HAS_MEDIA|PXA_INSTALL_RECORD_MANAGED_MEDIA);
+        memset(record->media_set_sha256,0,32);memset(&record->media_volume,0,sizeof(record->media_volume));
+        return PXA_STATUS_OK;
+    }
+    struct {pxa_volume_info_t volumes[PXA_ESP_STORAGE_MAX_VOLUMES];char relative[256],path[512],mount[PXA_ESP_STORAGE_PATH_BYTES];} *scratch=
+        heap_caps_calloc(1,sizeof(*scratch),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!scratch)return PXA_STATUS_RESOURCE_LIMIT;
+    record->flags|=PXA_INSTALL_RECORD_HAS_MEDIA|PXA_INSTALL_RECORD_MANAGED_MEDIA;
+    memcpy(record->media_set_sha256,manifest->resource_manifest_sha256,32);
+    pxa_status_t status=pxa_esp_installations_media_path(record,scratch->relative,sizeof(scratch->relative));
+    if(status!=PXA_STATUS_OK)goto done;
+    size_t count=pxa_esp_storage_volumes(scratch->volumes,PXA_ESP_STORAGE_MAX_VOLUMES);
+    status=PXA_STATUS_UNAVAILABLE;
+    for(unsigned pass=0;pass<3 && status!=PXA_STATUS_OK;++pass)for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
+        const pxa_volume_info_t *volume=&scratch->volumes[i];struct stat info;
+        if(volume->state!=PXA_VOLUME_READY || volume->ambiguous || !(volume->capabilities&PXA_VOLUME_READ))continue;
+        if(pass==0 && memcmp(volume->id.bytes,record->media_volume.bytes,16))continue;
+        if(pass==1 && volume->mount_epoch!=app_epoch)continue;
+        if(pxa_esp_storage_volume_path(volume->mount_epoch,scratch->mount,sizeof(scratch->mount))!=PXA_STATUS_OK)continue;
+        int n=snprintf(scratch->path,sizeof(scratch->path),"%s/%s",scratch->mount,scratch->relative);
+        if(n<0 || (size_t)n>=sizeof(scratch->path) || stat(scratch->path,&info)!=0 || !S_ISDIR(info.st_mode))continue;
+        /* Presence is only a placement/reuse hint. The installation's media
+         * callback fully checks this exact signed generation before commit. */
+        record->media_volume=volume->id;status=PXA_STATUS_OK;break;
+    }
+done:
+    heap_caps_free(scratch);return status;
+}
+pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *source,uint64_t epoch,
+    const uint8_t expected_root[32],const char *expected_app) {
+    pxa_esp_installations_t *owner=NULL;pxa_package_manifest_t *manifest=NULL;
+    pxa_posix_installer_result_t result={0};pxa_install_record_t approved={0};
+    pxa_posix_app_home_t home;pxa_install_plan_t plan={0};pxa_volume_info_t volume;
+    char root[PXA_ESP_PACKAGE_MAX_PATH],identity[PXA_ESP_PACKAGE_MAX_IDENTITY],locator[PXA_POSIX_APP_LOCATOR_BYTES];
+    uint8_t publisher[32],digest[32];char app_id[65];uint64_t expected=0,source_epoch=0;pxa_status_t status;
+    int legacy_update=0,created_entry=0;
+    char *resource_result_root=NULL;
+    if(!store_is_initialized() || !source || (expected_root && !expected_app))return PXA_STATUS_INVALID_ARGUMENT;
+    status=retain_source_volume(source,&source_epoch);if(status!=PXA_STATUS_OK)return status;
+    if(!is_regular_file(source)) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_INVALID_ARGUMENT;}
+    if(!take_lock(g_store->transaction_lock)) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
+    status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
+    result.struct_size=sizeof(result);result.manifest=&manifest;result.root=root;result.root_capacity=sizeof(root);
+    status=read_source_into_store(source,&result,1);if(status!=PXA_STATUS_OK)goto done;
+    if(!manifest || !manifest->app_id.size || manifest->app_id.size>=sizeof(app_id) ||
+        !manifest_publisher_root(manifest,publisher)) {status=PXA_STATUS_DENIED;goto done;}
+    memcpy(app_id,manifest->app_id.data,manifest->app_id.size);app_id[manifest->app_id.size]=0;
+    if((expected_root && (memcmp(expected_root,publisher,32) || strcmp(expected_app,app_id))) ||
+        !canonical_identity(identity,sizeof(identity),publisher,app_id)) {status=PXA_STATUS_DENIED;goto done;}
+    status=pxa_esp_mbedtls_sha256(manifest->encoded.data,manifest->encoded.size,digest);if(status!=PXA_STATUS_OK)goto done;
+    status=pxa_esp_installations_locator(publisher,app_id,locator,sizeof(locator));if(status!=PXA_STATUS_OK)goto done;
+    if(manifest->package_kind==PXA_PACKAGE_KIND_RESOURCES) {
+        resource_result_root=heap_caps_malloc(PXA_POSIX_APP_PATH_BYTES,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+        if(!resource_result_root) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+        result.root=resource_result_root;result.root_capacity=PXA_POSIX_APP_PATH_BYTES;
+        if(!epoch) {status=default_install_volume(manifest,&epoch);if(status!=PXA_STATUS_OK)goto done;}
+        status=pxa_esp_storage_volume(epoch,&volume);if(status!=PXA_STATUS_OK)goto done;
+        approved.flags=PXA_INSTALL_RECORD_HAS_MEDIA|PXA_INSTALL_RECORD_MANAGED_MEDIA;
+        approved.media_volume=volume.id;memcpy(approved.publisher_root,publisher,32);
+        memcpy(approved.media_set_sha256,digest,32);strcpy(approved.app_id,app_id);
+        status=pxa_esp_installations_open(epoch,&owner);
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_plan(owner,manifest,0,0,&plan);
+        if(status==PXA_STATUS_OK)status=pxa_esp_storage_reserve_plan(&plan);
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_install_resources(owner,&approved,source,&plan,&result);
+        goto done;
+    }
+    pxa_esp_package_entry_t *entry=find_entry(identity);
+    if(!epoch && entry && entry->installed && !entry->volume_local && !entry->ambiguous) {legacy_update=1;goto done;}
+    if(!epoch && entry && entry->volume_local)epoch=entry->mount_epoch;
+    if(!epoch) {status=default_install_volume(manifest,&epoch);if(status!=PXA_STATUS_OK)goto done;}
+    status=installation_path_fits(epoch,locator);if(status!=PXA_STATUS_OK)goto done;
+    if(entry && (entry->installed || entry->volume_local) && (!entry->volume_local || entry->mount_epoch!=epoch || entry->ambiguous)) {
+        status=PXA_STATUS_BAD_STATE;goto done; /* Explicit migration/instance resolution, never a second save. */
+    }
+    if(!entry) {entry=reserve_entry(app_id,publisher);created_entry=entry!=NULL;}
+    if(!entry) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    status=pxa_esp_storage_volume(epoch,&volume);if(status!=PXA_STATUS_OK)goto done;
+    status=pxa_esp_installations_open(epoch,&owner);if(status!=PXA_STATUS_OK)goto done;
+    if(entry->installed || entry->archived) {
+        /* The transaction lock excludes new activation while this probe is
+         * released. Existing activation pins the home and rejects replacement
+         * before any executable slot is renamed. */
+        status=idle_volume_home(epoch,locator);if(status!=PXA_STATUS_OK)goto done;
+        if(!bind_store_result_buffers(&result)) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+        status=pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home);if(status!=PXA_STATUS_OK)goto done;
+        approved=home.record;expected=approved.generation;approved.flags&=~PXA_INSTALL_RECORD_ARCHIVED;
+        /* Reload the exact candidate after recovery reused result buffers. */
+        status=read_source_into_store(source,&result,1);if(status!=PXA_STATUS_OK)goto done;
+    } else {
+        approved.flags=PXA_INSTALL_RECORD_ENABLED;approved.app_volume=volume.id;
+        approved.data_generation=1;
+        memcpy(approved.publisher_root,publisher,32);strcpy(approved.app_id,app_id);
+        do {esp_fill_random(approved.install_id,16);} while(!memcmp(approved.install_id,(uint8_t[16]){0},16));
+    }
+    status=bind_prepared_media(manifest,epoch,&approved);if(status!=PXA_STATUS_OK)goto done;
+    status=pxa_esp_installations_plan(owner,manifest,0,!expected,&plan);if(status!=PXA_STATUS_OK)goto done;
+    status=pxa_esp_storage_reserve_plan(&plan);if(status!=PXA_STATUS_OK)goto done;
+    status=pxa_esp_installations_install(owner,source,locator,&approved,expected,digest,&plan,NULL,NULL,&result,&home);
+    if(status==PXA_STATUS_OK) {
+        volume_catalog_context_t scan={epoch,0};
+        if(!catalog_volume_home(&scan,&home) || scan.rejected)status=PXA_STATUS_RESOURCE_LIMIT;
+    }
+done:
+    if(plan.reserved) {
+        (void)pxa_esp_storage_release_plan(&plan);
+        (void)pxa_esp_storage_refresh_volume(epoch);
+    }
+    status=close_volume_operation(&owner,status);
+    heap_caps_free(resource_result_root);
+    if(status!=PXA_STATUS_OK && created_entry) {
+        pxa_esp_package_entry_t *failed=find_entry(identity);
+        if(failed && !failed->installed && !failed->staged)remove_entry_at((size_t)(failed-g_store->entries));
+    }
+    release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);
+    if(legacy_update)status=install_file_for_owner(source,expected_root,expected_app)?PXA_STATUS_OK:PXA_STATUS_INTERNAL;
+    pxa_esp_volumes_release(source_epoch);return status;
+}
+
+pxa_status_t pxa_esp_package_store_open_storage(const char *identity,pxa_esp_app_storage_t **storage,
+    uint64_t *media_epoch,char *media_relative,size_t media_capacity,pxa_posix_installer_result_t *verification) {
+    pxa_status_t status=PXA_STATUS_NOT_FOUND;pxa_esp_installations_t *owner=NULL;
+    pxa_posix_app_home_t home;
+    char locator[PXA_POSIX_APP_LOCATOR_BYTES];
+    uint8_t install_id[16],manifest_hash[32];uint64_t epoch,generation;
+    if(!store_is_initialized() || !identity || !storage || !media_epoch || !media_relative || !media_capacity || !verification)
+        return PXA_STATUS_INVALID_ARGUMENT;
+    *storage=NULL;*media_epoch=0;media_relative[0]=0;
+    if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
+    pxa_esp_package_entry_t *entry=find_entry(identity);
+    if(!entry || !entry->installed || entry->ambiguous || !entry->volume_local) {
+        status=!entry || !entry->installed?PXA_STATUS_NOT_FOUND:
+            entry->ambiguous?PXA_STATUS_BAD_STATE:PXA_STATUS_OK;
+        release_lock(g_store->metadata_lock);goto done;
+    }
+    epoch=entry->mount_epoch;generation=entry->install_generation;
+    memcpy(install_id,entry->install_id,16);memcpy(manifest_hash,entry->manifest_sha256,32);
+    snprintf(locator,sizeof(locator),"%s",entry->storage_key);
+    /* Bulk verification uses the activation's own PSRAM buffers. Catalog
+     * readers never wait for payload hashing or a private-image mount. */
+    release_lock(g_store->metadata_lock);
+    status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
+    status=pxa_esp_installations_open(epoch,&owner);if(status!=PXA_STATUS_OK)goto done;
+    status=pxa_esp_installations_load(owner,locator,NULL,NULL,verification,&home);if(status!=PXA_STATUS_OK)goto done;
+    if(memcmp(home.record.install_id,install_id,16) || home.record.generation<generation ||
+        memcmp(home.record.manifest_sha256,manifest_hash,32)) {
+        status=PXA_STATUS_BAD_STATE;goto done;
+    }
+    /* The authenticated disk record is authoritative after an uncertain
+     * policy/data commit. Heal a stale cache without accepting other code. */
+    if(!take_lock(g_store->metadata_lock)) {status=PXA_STATUS_UNAVAILABLE;goto done;}
+    entry=find_entry(identity);
+    if(!entry || !entry->volume_local || entry->mount_epoch!=epoch || memcmp(entry->install_id,install_id,16)) {
+        release_lock(g_store->metadata_lock);status=PXA_STATUS_BAD_STATE;goto done;
+    }
+    entry->install_generation=home.record.generation;entry->data_generation=home.record.data_generation;
+    entry->enabled=!!(home.record.flags&PXA_INSTALL_RECORD_ENABLED) && !(home.record.flags&PXA_INSTALL_RECORD_ARCHIVED);
+    release_lock(g_store->metadata_lock);
+    if(!(home.record.flags&PXA_INSTALL_RECORD_ENABLED) || (home.record.flags&PXA_INSTALL_RECORD_ARCHIVED)) {
+        status=PXA_STATUS_DENIED;goto done;
+    }
+    uint64_t selected_media_epoch=epoch;
+    if(home.record.flags&PXA_INSTALL_RECORD_HAS_MEDIA) {
+        pxa_volume_info_t media_volume;
+        status=pxa_esp_storage_find_volume(&home.record.media_volume,&media_volume);
+        if(status!=PXA_STATUS_OK)goto done;
+        selected_media_epoch=media_volume.mount_epoch;
+        status=pxa_esp_installations_media_path(&home.record,media_relative,media_capacity);
+        if(status!=PXA_STATUS_OK)goto done;
+    } else {
+        int n=snprintf(media_relative,media_capacity,"PXA/media/%s",home.locator);
+        if(n<0 || (size_t)n>=media_capacity) {status=PXA_STATUS_LIMIT_EXCEEDED;goto done;}
+    }
+    status=pxa_esp_installations_storage(owner,&home,storage);
+    if(status==PXA_STATUS_OK)*media_epoch=selected_media_epoch;
+done:
+    status=close_volume_operation(&owner,status);
+    release_lock(g_store->transaction_lock);return status;
 }
 
 static bool publish_transfer_locked(const char *app_id) {
@@ -2012,7 +2592,7 @@ static bool publish_transfer_locked(const char *app_id) {
 }
 
 bool pxa_esp_package_store_publish_transfer(const char *app_id) {
-    if (!store_is_initialized() || !safe_app_id(app_id) ||
+    if (!store_is_initialized() || !g_store->legacy_ready || !safe_app_id(app_id) ||
         !take_lock(g_store->transaction_lock)) return false;
     if (!take_lock(g_store->metadata_lock)) {
         release_lock(g_store->transaction_lock);
@@ -2025,15 +2605,462 @@ bool pxa_esp_package_store_publish_transfer(const char *app_id) {
 }
 
 void pxa_esp_package_store_discard_transfers(void) {
-    if (!store_is_initialized() || !take_lock(g_store->transaction_lock)) return;
+    if (!store_is_initialized() || !g_store->legacy_ready || !take_lock(g_store->transaction_lock)) return;
     (void)pxa_posix_installer_discard_transfers(g_store->installer);
     release_lock(g_store->transaction_lock);
+}
+
+pxa_status_t pxa_esp_package_store_try_discard_transfers(void) {
+    if (!store_is_initialized() || !g_store->legacy_ready) return PXA_STATUS_OK;
+    SemaphoreHandle_t lock=g_store->transaction_lock;
+    if (!lock || xSemaphoreGetMutexHolder(lock)==xTaskGetCurrentTaskHandle() ||
+        xSemaphoreTake(lock,0)!=pdTRUE) return PXA_STATUS_WOULD_BLOCK;
+    pxa_status_t status=pxa_posix_installer_discard_transfers(g_store->installer);
+    release_lock(lock);
+    return status;
+}
+
+static int preview_manifest(const pxa_package_manifest_t *manifest,pxa_esp_package_preview_t *preview) {
+    uint8_t publisher_root[32];
+    memset(preview,0,sizeof(*preview));
+    copy_bytes_text(preview->app_id, sizeof(preview->app_id), manifest->app_id);
+    if (!manifest_publisher_root(manifest, publisher_root) ||
+        !canonical_identity(preview->id, sizeof(preview->id), publisher_root,
+                            preview->app_id)) {
+        return 0;
+    }
+    memcpy(preview->publisher_root, publisher_root,
+           sizeof(preview->publisher_root));
+    preview->has_publisher_root = true;
+    copy_bytes_text(preview->name, sizeof(preview->name), manifest->name);
+    copy_bytes_text(preview->version, sizeof(preview->version), manifest->version);
+    copy_bytes_text(preview->description, sizeof(preview->description),
+                    manifest->description);
+    if (preview->id[0] == '\0' || preview->name[0] == '\0' ||
+        preview->version[0] == '\0') {
+        return 0;
+    }
+    for (size_t index = 0;
+         index < manifest->permission_count &&
+         preview->permission_count < PXA_ESP_PACKAGE_PREVIEW_PERMISSION_MAX;
+         ++index) {
+        const pxa_package_permission_t *permission = &manifest->permissions[index];
+        pxa_esp_package_permission_info_t *target =
+            &preview->permissions[preview->permission_count];
+        copy_bytes_text(target->name, sizeof(target->name), permission->name);
+        copy_scope_text(target->scope, sizeof(target->scope), permission->scope);
+        if (target->name[0] == '\0') return 0;
+        target->required = permission->required != 0;
+        ++preview->permission_count;
+    }
+    return 1;
+}
+
+pxa_status_t pxa_esp_package_store_prepare_install(const uint8_t *prefix,size_t bytes,uint64_t total,uint64_t transfer,uint8_t download_only,
+    const uint8_t expected_root[32],const char *expected_app,
+    pxa_esp_package_preview_t *preview,pxa_esp_install_approval_t *approval) {
+    pxa_container_header_t header;pxa_package_limits_t limits;size_t workspace;
+    pxa_package_manifest_t *manifest=NULL;pxa_posix_installer_result_t result={0};
+    char metadata_root[1];
+    pxa_esp_installations_t *owner=NULL;pxa_posix_app_home_t home;
+    pxa_status_t status;uint64_t existing_epoch=0;
+    if(!store_is_initialized() || !prefix || !preview || !approval || (expected_root && !expected_app) ||
+        bytes<PXA_CONTAINER_HEADER_BYTES)return PXA_STATUS_INVALID_ARGUMENT;
+    memset(approval,0,sizeof(*approval));memset(preview,0,sizeof(*preview));
+    approval->download_only=!!download_only;
+    status=pxa_container_header_parse((pxa_bytes_t){prefix,PXA_CONTAINER_HEADER_BYTES},total,&header);
+    if(status!=PXA_STATUS_OK)return status;
+    if(header.payload_offset!=bytes)return PXA_STATUS_DENIED;
+    if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
+    status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
+    if(!manifest_workspace_for_encoded(prefix+header.manifest_offset,header.manifest_size,&limits,&workspace) ||
+        !ensure_encoded_capacity(header.manifest_size) || !ensure_manifest_workspace_capacity(workspace)) {
+        status=PXA_STATUS_RESOURCE_LIMIT;goto done;
+    }
+    result.struct_size=sizeof(result);result.manifest=&manifest;result.root=metadata_root;result.root_capacity=sizeof(metadata_root);
+    if(!bind_store_result_buffers(&result)) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    status=pxa_posix_installer_read_install_metadata(g_store->installer,(pxa_bytes_t){prefix,bytes},total,&result,&header);
+    if(status!=PXA_STATUS_OK)goto done;
+    if(manifest->package_kind!=PXA_PACKAGE_KIND_APPLICATION) {status=PXA_STATUS_UNSUPPORTED;goto done;}
+    if(!preview_manifest(manifest,preview) || (expected_app && strcmp(preview->app_id,expected_app)) ||
+        (expected_root && memcmp(expected_root,preview->publisher_root,32))) {status=PXA_STATUS_DENIED;goto done;}
+    strcpy(approval->identity,preview->id);
+    status=pxa_esp_installations_locator(preview->publisher_root,preview->app_id,approval->locator,sizeof(approval->locator));
+    if(status==PXA_STATUS_OK)status=pxa_esp_mbedtls_sha256(manifest->encoded.data,manifest->encoded.size,approval->manifest_sha256);
+    if(status!=PXA_STATUS_OK)goto done;
+    pxa_esp_package_entry_t *entry=find_entry(preview->id);
+    if(!download_only && entry && (entry->installed || entry->volume_local)) {
+        if(entry->ambiguous) {status=PXA_STATUS_BAD_STATE;goto done;}
+        /* Legacy data must be explicitly migrated before a whole-app update;
+         * never create an apparently fresh installation on another volume. */
+        if(!entry->volume_local) {status=PXA_STATUS_UNSUPPORTED;goto done;}
+        existing_epoch=entry->mount_epoch;
+        status=pxa_esp_installations_open(existing_epoch,&owner);
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_lookup(owner,approval->locator,&home);
+        if(status==PXA_STATUS_OK) {
+            approval->record=home.record;approval->expected_generation=home.record.generation;
+            approval->record.flags&=~PXA_INSTALL_RECORD_ARCHIVED;
+        }
+        status=close_volume_operation(&owner,status);if(status!=PXA_STATUS_OK)goto done;
+    } else {
+        approval->record.flags=PXA_INSTALL_RECORD_ENABLED;approval->record.data_generation=1;
+        memcpy(approval->record.publisher_root,preview->publisher_root,32);
+        strcpy(approval->record.app_id,preview->app_id);
+        do {esp_fill_random(approval->record.install_id,16);} while(!memcmp(approval->record.install_id,(uint8_t[16]){0},16));
+    }
+    if(manifest->format_minor>=8) {
+        if(manifest->resource_manifest_sha256) {
+            approval->requires_resources=1;
+            approval->record.flags|=PXA_INSTALL_RECORD_HAS_MEDIA|PXA_INSTALL_RECORD_MANAGED_MEDIA;
+            memcpy(approval->record.media_set_sha256,manifest->resource_manifest_sha256,32);
+        } else if(approval->record.flags&PXA_INSTALL_RECORD_MANAGED_MEDIA) {
+            approval->record.flags&=~(PXA_INSTALL_RECORD_HAS_MEDIA|PXA_INSTALL_RECORD_MANAGED_MEDIA);
+            memset(&approval->record.media_volume,0,sizeof(approval->record.media_volume));
+            memset(approval->record.media_set_sha256,0,32);
+        }
+    }
+    pxa_volume_info_t *volumes=esp_alloc(sizeof(*volumes)*PXA_ESP_STORAGE_MAX_VOLUMES);
+    if(!volumes) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    size_t count=pxa_esp_storage_volumes(volumes,PXA_ESP_STORAGE_MAX_VOLUMES);
+    status=PXA_STATUS_QUOTA_EXCEEDED;
+    for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
+        const uint64_t required=PXA_VOLUME_READ|PXA_VOLUME_WRITE|PXA_VOLUME_INSTALLABLE;
+        pxa_volume_info_t *volume=&volumes[i];
+        if(volume->state!=PXA_VOLUME_READY || volume->ambiguous || (volume->capabilities&required)!=required ||
+            (existing_epoch && volume->mount_epoch!=existing_epoch))continue;
+        if(!download_only && installation_path_fits(volume->mount_epoch,approval->locator)!=PXA_STATUS_OK)continue;
+        pxa_status_t candidate;
+        pxa_esp_install_choice_t *choice=&approval->choices[approval->count];
+        candidate=pxa_install_file_allocation(volume,transfer,&choice->temporary_bytes);
+        if(candidate!=PXA_STATUS_OK)continue;
+        if(download_only) {
+            pxa_install_requirements_t requirements={.app_bytes=UINT64_C(5)*volume->allocation_unit,.volume_headroom_bytes=4096};
+            candidate=pxa_install_file_allocation(volume,transfer,&requirements.app_temporary_bytes);
+            if(candidate==PXA_STATUS_OK)candidate=pxa_esp_storage_plan(&requirements,volume->mount_epoch,0,&choice->estimate);
+        } else {
+            candidate=pxa_esp_installations_open(volume->mount_epoch,&owner);
+            if(candidate==PXA_STATUS_OK)candidate=pxa_esp_installations_plan(owner,manifest,transfer,!existing_epoch,&choice->estimate);
+        }
+        candidate=close_volume_operation(&owner,candidate);
+        if(candidate!=PXA_STATUS_OK)continue;
+        (void)pxa_esp_storage_volume(volume->mount_epoch,&choice->volume);
+        if(!approval->count || ((approval->choices[approval->selected].volume.capabilities&PXA_VOLUME_REMOVABLE) &&
+            !(volume->capabilities&PXA_VOLUME_REMOVABLE)))approval->selected=approval->count;
+        ++approval->count;
+    }
+    heap_caps_free(volumes);if(approval->count)status=PXA_STATUS_OK;
+done:
+    release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);
+    if(status!=PXA_STATUS_OK) {memset(approval,0,sizeof(*approval));memset(preview,0,sizeof(*preview));}
+    return status;
+}
+
+pxa_status_t pxa_esp_package_store_reserve_install(pxa_esp_install_approval_t *approval,size_t index) {
+    if(!approval || index>=approval->count || approval->plan.reserved)return PXA_STATUS_INVALID_ARGUMENT;
+    pxa_status_t status=pxa_esp_package_store_evaluate_install(approval,index,approval->media_selected,&approval->plan);
+    if(status==PXA_STATUS_OK)status=pxa_esp_storage_reserve_plan(&approval->plan);
+    if(status==PXA_STATUS_OK) {
+        approval->selected=index;approval->record.app_volume=approval->choices[index].volume.id;
+        if(approval->requires_resources)approval->record.media_volume=approval->media_choices[approval->media_selected].volume.id;
+    }
+    return status;
+}
+
+
+pxa_status_t pxa_esp_package_store_prepare_resources(pxa_esp_install_approval_t *approval,
+    const uint8_t *prefix,size_t bytes,uint64_t total,uint64_t transfer) {
+    if(!store_is_initialized() || !approval || !approval->requires_resources || approval->plan.reserved ||
+        (!prefix && (bytes || total || transfer)))return PXA_STATUS_INVALID_ARGUMENT;
+    if(approval->download_only)return PXA_STATUS_UNSUPPORTED; /* Resource cache bundles have a separate capability. */
+    pxa_package_manifest_t *manifest=NULL;pxa_package_limits_t limits;pxa_container_header_t header;
+    pxa_posix_installer_result_t result={0};char empty_root[1];size_t workspace;
+    pxa_esp_installations_t *owner=NULL;pxa_status_t status;
+    struct {pxa_volume_info_t volumes[PXA_ESP_STORAGE_MAX_VOLUMES];char relative[256],path[512],mount[PXA_ESP_STORAGE_PATH_BYTES];} *scratch=NULL;
+    if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
+    approval->media_count=0;memset(approval->media_fit,0,sizeof(approval->media_fit));
+    status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
+    if(prefix) {
+        status=pxa_container_header_parse((pxa_bytes_t){prefix,bytes<PXA_CONTAINER_HEADER_BYTES?bytes:PXA_CONTAINER_HEADER_BYTES},total,&header);
+        if(status!=PXA_STATUS_OK || header.payload_offset!=bytes) {status=PXA_STATUS_DENIED;goto done;}
+        if(!manifest_workspace_for_encoded(prefix+header.manifest_offset,header.manifest_size,&limits,&workspace) ||
+            !ensure_encoded_capacity(header.manifest_size) || !ensure_manifest_workspace_capacity(workspace)) {
+            status=PXA_STATUS_RESOURCE_LIMIT;goto done;
+        }
+        result.struct_size=sizeof(result);result.manifest=&manifest;result.root=empty_root;result.root_capacity=sizeof(empty_root);
+        if(!bind_store_result_buffers(&result)) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+        status=pxa_posix_installer_read_install_metadata(g_store->installer,(pxa_bytes_t){prefix,bytes},total,&result,&header);
+        if(status!=PXA_STATUS_OK)goto done;
+        uint8_t digest[32];
+        status=pxa_esp_mbedtls_sha256(manifest->encoded.data,manifest->encoded.size,digest);
+        if(status!=PXA_STATUS_OK)goto done;
+        if(manifest->package_kind!=PXA_PACKAGE_KIND_RESOURCES || memcmp(digest,approval->record.media_set_sha256,32) ||
+            memcmp(manifest->management_key_id,approval->record.publisher_root,32) ||
+            manifest->app_id.size!=strlen(approval->record.app_id) ||
+            memcmp(manifest->app_id.data,approval->record.app_id,manifest->app_id.size)) {status=PXA_STATUS_DENIED;goto done;}
+        approval->resource_container_bytes=total;
+    }
+    scratch=heap_caps_calloc(1,sizeof(*scratch),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!scratch) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    status=pxa_esp_installations_media_path(&approval->record,scratch->relative,sizeof(scratch->relative));
+    if(status!=PXA_STATUS_OK)goto done;
+    size_t count=pxa_esp_storage_volumes(scratch->volumes,PXA_ESP_STORAGE_MAX_VOLUMES);
+    for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
+        pxa_volume_info_t *volume=&scratch->volumes[i];struct stat info;
+        if(volume->state!=PXA_VOLUME_READY || volume->ambiguous || !(volume->capabilities&PXA_VOLUME_READ))continue;
+        if(pxa_esp_storage_volume_path(volume->mount_epoch,scratch->mount,sizeof(scratch->mount))!=PXA_STATUS_OK)continue;
+        int n=snprintf(scratch->path,sizeof(scratch->path),"%s/%s",scratch->mount,scratch->relative);
+        if(n<0 || (size_t)n>=sizeof(scratch->path))continue;
+        pxa_esp_install_choice_t *choice=&approval->media_choices[approval->media_count];memset(choice,0,sizeof(*choice));
+        if(stat(scratch->path,&info)==0 && S_ISDIR(info.st_mode))choice->reuse=1;
+        else {
+            const uint64_t writable=PXA_VOLUME_READ|PXA_VOLUME_WRITE|PXA_VOLUME_INSTALLABLE;
+            if(!manifest || (volume->capabilities&writable)!=writable)continue;
+            status=pxa_esp_installations_open(volume->mount_epoch,&owner);
+            if(status==PXA_STATUS_OK)status=pxa_esp_installations_plan(owner,manifest,transfer,0,&choice->estimate);
+            status=close_volume_operation(&owner,status);if(status!=PXA_STATUS_OK)continue;
+            status=pxa_install_file_allocation(volume,transfer,&choice->temporary_bytes);if(status!=PXA_STATUS_OK)continue;
+        }
+        if(pxa_esp_storage_volume(volume->mount_epoch,&choice->volume)!=PXA_STATUS_OK)continue;
+        ++approval->media_count;
+    }
+    status=PXA_STATUS_QUOTA_EXCEEDED;
+    for(size_t app=0;app<approval->count;++app)for(size_t media=0;media<approval->media_count;++media) {
+        pxa_install_plan_t candidate;
+        if(pxa_esp_package_store_evaluate_install(approval,app,media,&candidate)==PXA_STATUS_OK)
+            approval->media_fit[app]|=(uint8_t)(1u<<media);
+    }
+    /* Existing installations retain their explicit resource volume. New
+     * installs first seek a whole fitting volume, then a fitting split. */
+    for(unsigned pass=0;pass<4 && status!=PXA_STATUS_OK;++pass) {
+        for(size_t order=0;order<approval->count && status!=PXA_STATUS_OK;++order) {
+            size_t app=order==0?approval->selected:order<=approval->selected?order-1:order;
+            if(approval->expected_generation && app!=approval->selected)continue;
+            for(size_t media=0;media<approval->media_count;++media) {
+                if(!(approval->media_fit[app]&(1u<<media)))continue;
+                if(pass==0 && (!approval->expected_generation ||
+                    memcmp(approval->media_choices[media].volume.id.bytes,approval->record.media_volume.bytes,16)))continue;
+                if((pass==1 || pass==2) && approval->choices[app].volume.mount_epoch!=approval->media_choices[media].volume.mount_epoch)continue;
+                if(!approval->expected_generation && pass==1 && (approval->choices[app].volume.capabilities&PXA_VOLUME_REMOVABLE))continue;
+                if(!approval->expected_generation && pass==2 && !(approval->choices[app].volume.capabilities&PXA_VOLUME_REMOVABLE))continue;
+                approval->selected=app;approval->media_selected=media;status=PXA_STATUS_OK;break;
+            }
+        }
+    }
+done:
+    heap_caps_free(scratch);release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);return status;
+}
+
+pxa_status_t pxa_esp_package_store_commit_resources(const char *source,pxa_esp_install_approval_t *approval) {
+    if(!store_is_initialized() || !source || !approval || !approval->requires_resources ||
+        !approval->plan.reserved || approval->media_selected>=approval->media_count)return PXA_STATUS_INVALID_ARGUMENT;
+    if(approval->media_choices[approval->media_selected].reuse)return PXA_STATUS_OK;
+    uint64_t source_epoch=0;pxa_status_t status=retain_source_volume(source,&source_epoch);
+    if(status!=PXA_STATUS_OK)return status;
+    if(!take_lock(g_store->transaction_lock)) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
+    pxa_esp_installations_t *owner=NULL;pxa_package_manifest_t *manifest=NULL;
+    char *root=heap_caps_malloc(PXA_POSIX_APP_PATH_BYTES,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    pxa_posix_installer_result_t result={.struct_size=sizeof(result),.manifest=&manifest,
+        .root=root,.root_capacity=PXA_POSIX_APP_PATH_BYTES};
+    status=retry_volume_cleanup();
+    if(status==PXA_STATUS_OK && !root)status=PXA_STATUS_RESOURCE_LIMIT;
+    if(status==PXA_STATUS_OK)status=read_source_into_store(source,&result,1);
+    if(status==PXA_STATUS_OK)status=pxa_esp_installations_open(approval->media_choices[approval->media_selected].volume.mount_epoch,&owner);
+    if(status==PXA_STATUS_OK)status=pxa_esp_installations_install_resources(owner,&approval->record,source,&approval->plan,&result);
+    status=close_volume_operation(&owner,status);heap_caps_free(root);
+    release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);pxa_esp_volumes_release(source_epoch);return status;
+}
+
+pxa_status_t pxa_esp_package_store_commit_install(const char *source,pxa_esp_install_approval_t *approval) {
+    pxa_esp_installations_t *owner=NULL;pxa_posix_app_home_t *home=NULL;uint64_t source_epoch=0;
+    pxa_package_manifest_t *manifest=NULL;char root[PXA_ESP_PACKAGE_MAX_PATH];
+    pxa_posix_installer_result_t result={.struct_size=sizeof(result),.manifest=&manifest,.root=root,.root_capacity=sizeof(root)};
+    if(!store_is_initialized() || !source || !approval || !approval->plan.reserved || approval->download_only)return PXA_STATUS_INVALID_ARGUMENT;
+    pxa_status_t status=retain_source_volume(source,&source_epoch);if(status!=PXA_STATUS_OK)return status;
+    if(!take_lock(g_store->transaction_lock)) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
+    status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
+    if(approval->requires_resources) {
+        if(approval->media_selected>=approval->media_count) {status=PXA_STATUS_BAD_STATE;goto done;}
+        const pxa_esp_install_choice_t *selected=&approval->media_choices[approval->media_selected];
+        pxa_volume_info_t mounted;
+        status=pxa_esp_storage_volume(selected->volume.mount_epoch,&mounted);
+        if(status!=PXA_STATUS_OK || mounted.state!=PXA_VOLUME_READY || mounted.ambiguous ||
+            memcmp(mounted.id.bytes,approval->record.media_volume.bytes,16)) {status=PXA_STATUS_UNAVAILABLE;goto done;}
+    }
+    pxa_esp_package_entry_t *entry=find_entry(approval->identity);
+    if(entry && (entry->installed || entry->volume_local) && (!entry->volume_local || entry->ambiguous ||
+        entry->mount_epoch!=approval->plan.app_mount_epoch || !approval->expected_generation ||
+        memcmp(entry->install_id,approval->record.install_id,16))) {status=PXA_STATUS_BAD_STATE;goto done;}
+    home=heap_caps_calloc(1,sizeof(*home),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!home) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    status=idle_volume_home(approval->plan.app_mount_epoch,approval->locator);if(status!=PXA_STATUS_OK)goto done;
+    if(!bind_store_result_buffers(&result)) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    status=pxa_esp_installations_open(approval->plan.app_mount_epoch,&owner);
+    if(status==PXA_STATUS_OK)status=pxa_esp_installations_install(owner,source,approval->locator,&approval->record,
+        approval->expected_generation,approval->manifest_sha256,&approval->plan,NULL,NULL,&result,home);
+    if(status==PXA_STATUS_OK) {
+        volume_catalog_context_t scan={approval->plan.app_mount_epoch,0};
+        if(!catalog_volume_home(&scan,home) || scan.rejected)status=PXA_STATUS_RESOURCE_LIMIT;
+    }
+done:
+    status=close_volume_operation(&owner,status);heap_caps_free(home);
+    release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);
+    pxa_esp_volumes_release(source_epoch);
+    if(status==PXA_STATUS_OK && g_store->sync_callback)g_store->sync_callback(g_store->sync_callback_user_data);
+    return status;
+}
+
+
+/* Local installation uses the same signed preflight and commit as Store,
+ * with a retained physical source instead of a download worker/cache token. */
+static int file_source_path_valid(const char *source) {
+    if(!source || source[0]!='/')return 0;
+    const char *part=source+1;
+    for(const char *p=part;;++p)if(!*p || *p=='/') {
+        const size_t n=(size_t)(p-part);
+        if(!n || (n==1 && part[0]=='.') || (n==2 && part[0]=='.' && part[1]=='.'))return 0;
+        if(!*p)return 1;
+        part=p+1;
+    }
+}
+static pxa_status_t file_signed_prefix(pxa_esp_file_install_t *file,uint8_t *prefix,size_t *bytes,uint64_t *total) {
+    const size_t limit=PXA_ESP_SIGNED_MANIFEST_MAX_BYTES+PXA_CONTAINER_HEADER_BYTES+216u;
+    int fd=open(file->source,O_RDONLY|O_NOFOLLOW|O_CLOEXEC);
+    struct stat info;pxa_status_t status=PXA_STATUS_DENIED;
+    if(fd<0)return errno==ENOENT?PXA_STATUS_NOT_FOUND:PXA_STATUS_IO_ERROR;
+    if(fstat(fd,&info)!=0 || !S_ISREG(info.st_mode) || info.st_nlink>1 || info.st_size<(off_t)PXA_CONTAINER_HEADER_BYTES)goto done;
+    *total=(uint64_t)info.st_size;
+    size_t have=0,need=PXA_CONTAINER_HEADER_BYTES;
+    for(;;) {
+        while(have<need) {
+            ssize_t got=read(fd,prefix+have,need-have);
+            if(got<0 && errno==EINTR)continue;
+            if(got<=0) {status=PXA_STATUS_IO_ERROR;goto done;}
+            have+=(size_t)got;
+        }
+        if(need!=PXA_CONTAINER_HEADER_BYTES)break;
+        pxa_container_header_t header;
+        status=pxa_container_header_parse((pxa_bytes_t){prefix,have},*total,&header);
+        if(status!=PXA_STATUS_OK)goto done;
+        if(header.manifest_size>PXA_ESP_SIGNED_MANIFEST_MAX_BYTES ||
+            header.payload_offset>limit || header.payload_offset<=have) {status=PXA_STATUS_LIMIT_EXCEEDED;goto done;}
+        need=(size_t)header.payload_offset;
+    }
+    *bytes=have;status=PXA_STATUS_OK;
+done:
+    if(close(fd)!=0 && status==PXA_STATUS_OK)status=PXA_STATUS_IO_ERROR;
+    return status;
+}
+static pxa_status_t file_resource_choices(pxa_esp_file_install_t *file,const uint8_t *prefix,size_t bytes,uint64_t total) {
+    pxa_package_manifest_t *manifest=NULL;pxa_package_limits_t limits;pxa_container_header_t header;
+    pxa_posix_installer_result_t result={0};char root[1];size_t workspace;
+    pxa_esp_install_approval_t *approval=&file->placement;
+    pxa_esp_installations_t *owner=NULL;pxa_volume_info_t *volumes=NULL;
+    pxa_status_t status=pxa_container_header_parse((pxa_bytes_t){prefix,PXA_CONTAINER_HEADER_BYTES},total,&header);
+    if(status!=PXA_STATUS_OK || header.payload_offset!=bytes)return PXA_STATUS_DENIED;
+    if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
+    status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
+    if(!ensure_encoded_capacity(header.manifest_size) ||
+        !manifest_workspace_for_encoded(prefix+header.manifest_offset,header.manifest_size,&limits,&workspace) ||
+        !ensure_manifest_workspace_capacity(workspace)) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    result.struct_size=sizeof(result);result.manifest=&manifest;result.root=root;result.root_capacity=sizeof(root);
+    if(!bind_store_result_buffers(&result)) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    status=pxa_posix_installer_read_install_metadata(g_store->installer,(pxa_bytes_t){prefix,bytes},total,&result,&header);
+    if(status!=PXA_STATUS_OK)goto done;
+    if(manifest->package_kind==PXA_PACKAGE_KIND_APPLICATION) {status=PXA_STATUS_OK;goto done;}
+    if(manifest->package_kind!=PXA_PACKAGE_KIND_RESOURCES || !preview_manifest(manifest,&file->preview)) {
+        status=PXA_STATUS_UNSUPPORTED;goto done;
+    }
+    file->resources_only=1;approval->requires_resources=1;
+    approval->record.flags=PXA_INSTALL_RECORD_HAS_MEDIA|PXA_INSTALL_RECORD_MANAGED_MEDIA;
+    memcpy(approval->record.publisher_root,file->preview.publisher_root,32);
+    strcpy(approval->record.app_id,file->preview.app_id);
+    strcpy(approval->identity,file->preview.id);
+    status=pxa_esp_mbedtls_sha256(manifest->encoded.data,manifest->encoded.size,approval->record.media_set_sha256);
+    if(status!=PXA_STATUS_OK)goto done;
+    volumes=esp_alloc(sizeof(*volumes)*PXA_ESP_STORAGE_MAX_VOLUMES);
+    if(!volumes) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    size_t count=pxa_esp_storage_volumes(volumes,PXA_ESP_STORAGE_MAX_VOLUMES);
+    for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES && approval->count<PXA_ESP_INSTALL_CHOICES;++i) {
+        pxa_volume_info_t *volume=&volumes[i];
+        const uint64_t writable=PXA_VOLUME_READ|PXA_VOLUME_WRITE|PXA_VOLUME_INSTALLABLE;
+        if(volume->state!=PXA_VOLUME_READY || volume->ambiguous || (volume->capabilities&writable)!=writable)continue;
+        pxa_esp_install_choice_t *choice=&approval->choices[approval->count];
+        status=pxa_esp_installations_open(volume->mount_epoch,&owner);
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_plan(owner,manifest,0,0,&choice->estimate);
+        status=close_volume_operation(&owner,status);if(status!=PXA_STATUS_OK)continue;
+        if(pxa_esp_storage_volume(volume->mount_epoch,&choice->volume)!=PXA_STATUS_OK)continue;
+        /* Match the source when it fits: a copied offline resource package
+         * normally lives on the user's intended storage already. */
+        if(!approval->count || volume->mount_epoch==file->source_epoch)approval->selected=approval->count;
+        ++approval->count;
+    }
+    approval->media_count=approval->count;
+    memcpy(approval->media_choices,approval->choices,sizeof(approval->media_choices));
+    status=approval->count?PXA_STATUS_OK:PXA_STATUS_QUOTA_EXCEEDED;
+done:
+    heap_caps_free(volumes);release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);return status;
+}
+void pxa_esp_file_install_close(pxa_esp_file_install_t *file) {
+    if(!file)return;
+    if(file->placement.plan.reserved)(void)pxa_esp_storage_release_plan(&file->placement.plan);
+    if(file->source_epoch) {(void)pxa_esp_volumes_release(file->source_epoch);file->source_epoch=0;}
+}
+pxa_status_t pxa_esp_file_install_prepare(pxa_esp_file_install_t *file) {
+    if(!store_is_initialized() || !file || file->source_epoch || file->placement.plan.reserved ||
+        strnlen(file->source,sizeof(file->source))>=sizeof(file->source) || !file_source_path_valid(file->source))return PXA_STATUS_INVALID_ARGUMENT;
+    memset(&file->placement,0,sizeof(file->placement));memset(&file->preview,0,sizeof(file->preview));file->resources_only=0;
+    pxa_status_t status=retain_source_volume(file->source,&file->source_epoch);
+    uint8_t *prefix=NULL;size_t bytes=0;uint64_t total=0;
+    if(status!=PXA_STATUS_OK)goto done;
+    prefix=heap_caps_malloc(PXA_ESP_SIGNED_MANIFEST_MAX_BYTES+PXA_CONTAINER_HEADER_BYTES+216u,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!prefix) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    status=file_signed_prefix(file,prefix,&bytes,&total);
+    if(status==PXA_STATUS_OK)status=file_resource_choices(file,prefix,bytes,total);
+    if(status==PXA_STATUS_OK && !file->resources_only) {
+        status=pxa_esp_package_store_prepare_install(prefix,bytes,total,0,0,NULL,NULL,&file->preview,&file->placement);
+        if(status==PXA_STATUS_OK && file->placement.requires_resources)
+            status=pxa_esp_package_store_prepare_resources(&file->placement,NULL,0,0,0);
+    }
+done:
+    heap_caps_free(prefix);
+    if(status!=PXA_STATUS_OK)pxa_esp_file_install_close(file);
+    return status;
+}
+pxa_status_t pxa_esp_file_install_commit(pxa_esp_file_install_t *file,size_t app,size_t media) {
+    if(!file || !file->source_epoch || file->placement.plan.reserved || app>=file->placement.count)return PXA_STATUS_INVALID_ARGUMENT;
+    pxa_volume_info_t source;
+    pxa_status_t status=pxa_esp_storage_resolve_volume(file->source,&source);
+    if(status!=PXA_STATUS_OK || source.mount_epoch!=file->source_epoch || source.state!=PXA_VOLUME_READY || source.ambiguous)
+        return PXA_STATUS_UNAVAILABLE;
+    pxa_esp_install_approval_t *approval=&file->placement;
+    if(file->resources_only) {
+        if(media)return PXA_STATUS_INVALID_ARGUMENT;
+        approval->plan=approval->choices[app].estimate;
+        status=pxa_esp_storage_reserve_plan(&approval->plan);
+        if(status==PXA_STATUS_OK) {
+            approval->selected=app;approval->media_selected=app;
+            approval->record.media_volume=approval->choices[app].volume.id;
+            status=pxa_esp_package_store_commit_resources(file->source,approval);
+        }
+    } else {
+        if(approval->requires_resources) {
+            if(media>=approval->media_count || !(approval->media_fit[app]&(1u<<media)))return PXA_STATUS_INVALID_ARGUMENT;
+        } else if(media)return PXA_STATUS_INVALID_ARGUMENT;
+        approval->media_selected=media;
+        status=pxa_esp_package_store_reserve_install(approval,app);
+        if(status==PXA_STATUS_OK)status=pxa_esp_package_store_commit_install(file->source,approval);
+    }
+    return status;
 }
 
 bool pxa_esp_package_store_preview_file(const char *source_path,
                                         pxa_esp_package_preview_t *preview) {
     char verified_root[PXA_ESP_PACKAGE_MAX_PATH];
-    uint8_t publisher_root[PXA_PACKAGE_DIGEST_BYTES];
     pxa_posix_installer_result_t result;
     pxa_package_manifest_t *manifest = NULL;
     const char *name;
@@ -2061,36 +3088,7 @@ bool pxa_esp_package_store_preview_file(const char *source_path,
         manifest == NULL || manifest->app_id.size == 0) {
         goto done;
     }
-    copy_bytes_text(preview->app_id, sizeof(preview->app_id), manifest->app_id);
-    if (!manifest_publisher_root(manifest, publisher_root) ||
-        !canonical_identity(preview->id, sizeof(preview->id), publisher_root,
-                            preview->app_id)) {
-        goto done;
-    }
-    memcpy(preview->publisher_root, publisher_root,
-           sizeof(preview->publisher_root));
-    preview->has_publisher_root = true;
-    copy_bytes_text(preview->name, sizeof(preview->name), manifest->name);
-    copy_bytes_text(preview->version, sizeof(preview->version), manifest->version);
-    copy_bytes_text(preview->description, sizeof(preview->description),
-                    manifest->description);
-    if (preview->id[0] == '\0' || preview->name[0] == '\0' ||
-        preview->version[0] == '\0') {
-        goto done;
-    }
-    for (size_t index = 0;
-         index < manifest->permission_count &&
-         preview->permission_count < PXA_ESP_PACKAGE_PREVIEW_PERMISSION_MAX;
-         ++index) {
-        const pxa_package_permission_t *permission = &manifest->permissions[index];
-        pxa_esp_package_permission_info_t *target =
-            &preview->permissions[preview->permission_count];
-        copy_bytes_text(target->name, sizeof(target->name), permission->name);
-        copy_scope_text(target->scope, sizeof(target->scope), permission->scope);
-        if (target->name[0] == '\0') goto done;
-        target->required = permission->required != 0;
-        ++preview->permission_count;
-    }
+    if(!preview_manifest(manifest,preview))goto done;
     success = 1;
 done:
     if (!success) memset(preview, 0, sizeof(*preview));
@@ -2150,9 +3148,17 @@ pxa_status_t pxa_esp_package_store_register_namespace(const uint8_t *token,size_
     char identity[130];uint16_t flags=0;
     if(!canonical_identity(identity,sizeof(identity),binding.root,binding.app_id))status=PXA_STATUS_DENIED;
     else {
-        status=legacy_layout_flags(binding.root,binding.app_id,&flags);
-        if(status==PXA_STATUS_OK)status=pxa_app_locators_reserve(&g_store->locators,PXA_LOCATOR_VERIFIED_NAMESPACE,namespace_key,
-            binding.profile.handle,binding.root,binding.app_id,app_key,flags);
+        pxa_esp_package_entry_t *entry=find_entry(identity);char relative[130];
+        /* New homes derive their namespace from the signed publisher root.
+         * Verifying a display binding must not allocate a per-app NVS row. */
+        if(!g_store->legacy_ready || (entry && entry->volume_local) ||
+            pxa_app_locators_find(&g_store->locators,binding.root,binding.app_id,NULL,relative,sizeof(relative))!=PXA_STATUS_OK)
+            status=PXA_STATUS_OK;
+        else {
+            status=legacy_layout_flags(binding.root,binding.app_id,&flags);
+            if(status==PXA_STATUS_OK)status=pxa_app_locators_reserve(&g_store->locators,PXA_LOCATOR_VERIFIED_NAMESPACE,namespace_key,
+                binding.profile.handle,binding.root,binding.app_id,app_key,flags);
+        }
     }
     release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);return status;
 }
@@ -2193,6 +3199,8 @@ pxa_status_t pxa_esp_package_store_migrate_storage(const char *identity,char *ro
     if(!take_lock(g_store->metadata_lock)){release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
     pxa_esp_package_entry_t *entry=find_entry(identity);pxa_status_t status=PXA_STATUS_NOT_FOUND;
     if(!entry || !entry->installed)goto migration_done;
+    if(entry->ambiguous) {status=PXA_STATUS_BAD_STATE;goto migration_done;}
+    if(entry->volume_local) {status=PXA_STATUS_OK;goto migration_copy;}
     uint16_t flags=0;char relative[130],old_key[130],old_path[384],next_path[384];
     status=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
     if(status==PXA_STATUS_NOT_FOUND){status=PXA_STATUS_OK;goto migration_copy;}
@@ -2234,6 +3242,9 @@ static pxa_status_t storage_paths_locked(const char *identity,int allow_legacy,
     char *private_root,size_t private_capacity,char *media_relative,size_t media_capacity) {
     uint8_t publisher[32];char app_id[65],key[130],relative[130];uint16_t flags=0;
     pxa_esp_package_entry_t *entry=find_entry(identity);
+    /* A volume-local private filesystem is a leased session, possibly an
+     * unmounted image. Never fabricate an old Flash path for it. */
+    if(entry && entry->volume_local)return PXA_STATUS_UNSUPPORTED;
     if(entry && entry->has_publisher_key_id) {
         memcpy(publisher,entry->publisher_key_id,32);
         snprintf(app_id,sizeof(app_id),"%s",entry->id);
@@ -2256,12 +3267,8 @@ static pxa_status_t storage_paths_locked(const char *identity,int allow_legacy,
     if(status==PXA_STATUS_OK) {
         if(!(flags&PXA_LOCATOR_DATA_LEGACY))snprintf(key,sizeof(key),"%s",relative);
     } else if(status==PXA_STATUS_NOT_FOUND && allow_legacy) {
-        static const char domain[]="PXA-APPKEY-1",hex[]="0123456789abcdef";
-        uint8_t input[sizeof(domain)-1+32+2+64],hash[32];size_t n=sizeof(domain)-1,len=strlen(app_id);
-        memcpy(input,domain,n);memcpy(input+n,publisher,32);input[n+32]=(uint8_t)len;input[n+33]=0;
-        memcpy(input+n+34,app_id,len);
-        status=pxa_esp_mbedtls_sha256(input,n+34+len,hash);if(status!=PXA_STATUS_OK)return status;
-        for(unsigned i=0;i<32;++i){relative[2*i]=hex[hash[i]>>4];relative[2*i+1]=hex[hash[i]&15];}relative[64]=0;
+        if(!canonical_identity(relative,sizeof(relative),publisher,app_id))return PXA_STATUS_INVALID_ARGUMENT;
+        relative[64]='/';
     } else return status;
     if(entry && entry->storage_key[0])snprintf(key,sizeof(key),"%s",entry->storage_key);
     int n=snprintf(private_root,private_capacity,"%s/%s",g_store->data_root,key);
@@ -2284,8 +3291,12 @@ pxa_status_t pxa_esp_package_store_storage_paths(const char *identity,
     if(!identity || !private_root || !media_relative || !store_is_initialized())return PXA_STATUS_INVALID_ARGUMENT;
     if(!take_lock(g_store->metadata_lock))return PXA_STATUS_UNAVAILABLE;
     pxa_esp_package_entry_t *entry=find_entry(identity);
+    /* A verified legacy package may predate signed publisher profiles and
+     * have no NVS locator row. Its existing composite private namespace and
+     * fixed publisher/App media directory remain valid until adoption. This
+     * fallback is only available for an installed catalog identity. */
     pxa_status_t status=entry && entry->installed?
-        storage_paths_locked(identity,0,private_root,private_capacity,media_relative,media_capacity):PXA_STATUS_NOT_FOUND;
+        storage_paths_locked(identity,1,private_root,private_capacity,media_relative,media_capacity):PXA_STATUS_NOT_FOUND;
     release_lock(g_store->metadata_lock);
     if(status!=PXA_STATUS_OK){if(private_capacity)private_root[0]=0;if(media_capacity)media_relative[0]=0;}
     return status;
@@ -2496,6 +3507,37 @@ static bool uninstall_package(const char *identity, bool keep_data) {
         return false;
     }
     entry = find_entry(identity);
+    if(entry && entry->ambiguous) {
+        release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);return false;
+    }
+    if(entry && entry->volume_local) {
+        pxa_esp_installations_t *owner=NULL;pxa_posix_app_home_t home={0};
+        uint64_t epoch=entry->mount_epoch,generation=entry->install_generation;
+        uint8_t install_id[16];memcpy(install_id,entry->install_id,16);
+        snprintf(canonical,sizeof(canonical),"%s",entry->identity);
+        snprintf(storage_key,sizeof(storage_key),"%s",entry->storage_key);
+        release_lock(g_store->metadata_lock);
+        status=retry_volume_cleanup();
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_open(epoch,&owner);
+        if(status==PXA_STATUS_OK)status=idle_volume_home(epoch,storage_key);
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_remove(owner,storage_key,generation,keep_data,&home);
+        status=close_volume_operation(&owner,status);
+        (void)pxa_esp_storage_refresh_volume(epoch);
+        if(take_lock(g_store->metadata_lock)) {
+            entry=find_entry(canonical);
+            if(entry && entry->volume_local && entry->mount_epoch==epoch && !memcmp(entry->install_id,install_id,16)) {
+                if(status==PXA_STATUS_OK && !keep_data) {
+                    remove_entry_at((size_t)(entry-g_store->entries));
+                    (void)scan_inbox(0);
+                } else if(home.record.generation) {
+                    entry->install_generation=home.record.generation;entry->archived=1;
+                    entry->installed=0;entry->enabled=0;entry->root[0]=0;
+                }
+            }
+            release_lock(g_store->metadata_lock);
+        } else status=PXA_STATUS_UNAVAILABLE;
+        release_lock(g_store->transaction_lock);return status==PXA_STATUS_OK;
+    }
     if(entry) {
         char relative[130];uint16_t flags=0;
         pxa_status_t mapped=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
@@ -2634,6 +3676,31 @@ bool pxa_esp_package_store_clear_data(const char *identity) {
     }
     if (!take_lock(g_store->metadata_lock)) goto done;
     entry = find_entry(identity);
+    if(entry && entry->ambiguous) {release_lock(g_store->metadata_lock);goto done;}
+    if(entry && entry->volume_local) {
+        pxa_esp_installations_t *owner=NULL;pxa_posix_app_home_t home={0};
+        uint64_t epoch=entry->mount_epoch,generation=entry->install_generation,data_generation=entry->data_generation;
+        uint8_t install_id[16];memcpy(install_id,entry->install_id,sizeof(install_id));
+        snprintf(canonical,sizeof(canonical),"%s",entry->identity);
+        snprintf(storage_key,sizeof(storage_key),"%s",entry->storage_key);
+        release_lock(g_store->metadata_lock);
+        status=retry_volume_cleanup();
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_open(epoch,&owner);
+        if(status==PXA_STATUS_OK)status=idle_volume_home(epoch,storage_key);
+        if(status==PXA_STATUS_OK)status=pxa_esp_installations_reset_data(owner,storage_key,generation,data_generation,&home);
+        status=close_volume_operation(&owner,status);
+        (void)pxa_esp_storage_refresh_volume(epoch);
+        if(take_lock(g_store->metadata_lock)) {
+            entry=find_entry(canonical);
+            if(entry && entry->volume_local && entry->mount_epoch==epoch &&
+                !memcmp(entry->install_id,install_id,16) && home.record.generation) {
+                entry->install_generation=home.record.generation;entry->data_generation=home.record.data_generation;
+                entry->granted_permission_count=0;entry->granted_permissions=0;entry->permission_summary_known=0;
+            }
+            release_lock(g_store->metadata_lock);
+        } else status=PXA_STATUS_UNAVAILABLE;
+        success=status==PXA_STATUS_OK;goto done;
+    }
     if (entry == NULL || !entry->installed || entry->storage_key[0] == '\0') {
         release_lock(g_store->metadata_lock);
         goto done;
@@ -2680,6 +3747,7 @@ bool pxa_esp_package_store_load_installed(
     char manifest_path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];
     size_t app_id_size;
     pxa_status_t status;
+    uint8_t volume_local=0,manifest_sha256[32];
     if (!store_is_initialized() || identity == NULL || root == NULL ||
         manifest_workspace == NULL || encoded == NULL ||
         manifest == NULL) {
@@ -2688,7 +3756,7 @@ bool pxa_esp_package_store_load_installed(
     *manifest = NULL;
     if (!take_lock(g_store->metadata_lock)) return false;
     entry = find_entry(identity);
-    if (entry == NULL || !entry->installed || !entry->has_publisher_key_id) {
+    if (entry == NULL || !entry->installed || !entry->has_publisher_key_id || entry->ambiguous) {
         release_lock(g_store->metadata_lock);
         return false;
     }
@@ -2703,6 +3771,8 @@ bool pxa_esp_package_store_load_installed(
         return false;
     }
     memcpy(publisher_key_id, entry->publisher_key_id, sizeof(publisher_key_id));
+    volume_local=entry->volume_local;
+    if(volume_local)memcpy(manifest_sha256,entry->manifest_sha256,32);
     snprintf(app_id, sizeof(app_id), "%s", entry->id);
     release_lock(g_store->metadata_lock);
     if (root_capacity == 0 ||
@@ -2733,6 +3803,11 @@ bool pxa_esp_package_store_load_installed(
                        sizeof(publisher_key_id)) != 0) {
                 status = PXA_STATUS_DENIED;
             }
+        }
+        if(status==PXA_STATUS_OK && volume_local) {
+            uint8_t hash[32];
+            if(pxa_esp_mbedtls_sha256((*manifest)->encoded.data,(*manifest)->encoded.size,hash)!=PXA_STATUS_OK ||
+                memcmp(hash,manifest_sha256,32))status=PXA_STATUS_DENIED;
         }
     }
     release_lock(g_store->transaction_lock);
@@ -2870,7 +3945,11 @@ static void fill_package_record(const pxa_esp_package_entry_t *entry,
     record->installed = entry->installed != 0;
     record->staged = entry->staged != 0;
     record->enabled = entry->enabled != 0;
-    record->has_private_data = entry->installed && entry->has_private_data;
+    record->archived=entry->volume_local && entry->archived;
+    record->has_private_data = (entry->installed || record->archived) && entry->has_private_data;
+    record->movable=(entry->installed || record->archived) && !entry->built_in && !entry->ambiguous;
+    record->resources_movable=record->movable && entry->installed && entry->volume_local && entry->managed_media;
+    record->legacy_storage=record->movable && !entry->volume_local;
     record->input_method = entry->installed && entry->input_method;
     if (entry->installed) {
         record->has_release_sequence = entry->has_release_sequence != 0;
@@ -2900,7 +3979,7 @@ static bool package_entry_matches_view(
     if (view == PXA_ESP_PACKAGE_VIEW_RUNNABLE) {
         return entry->installed && entry->enabled;
     }
-    return entry->installed || entry->staged;
+    return package_entry_has_home(entry) || entry->staged;
 }
 
 static size_t count_package_records_locked(pxa_esp_package_view_t view) {
@@ -3020,6 +4099,43 @@ size_t pxa_esp_package_store_permission_count(const char *identity) {
     return count;
 }
 
+/* Caller holds transaction + metadata locks. The provider and manifest are
+ * borrowed until the owner closes; no authority falls back to Flash. */
+static pxa_status_t maintenance_permissions(pxa_esp_package_entry_t *entry,
+    pxa_esp_installations_t **owner,pxa_permission_store_t *provider) {
+    *owner=NULL;memset(provider,0,sizeof(*provider));provider->struct_size=sizeof(*provider);
+    if(!entry || entry->ambiguous)return PXA_STATUS_NOT_FOUND;
+    if(!entry->volume_local) {
+        provider->load=pxa_esp_permission_store_load;provider->save=pxa_esp_permission_store_save;
+        return PXA_STATUS_OK;
+    }
+    pxa_status_t status=retry_volume_cleanup();pxa_posix_app_home_t home;
+    if(status==PXA_STATUS_OK)status=pxa_esp_installations_open(entry->mount_epoch,owner);
+    if(status==PXA_STATUS_OK)status=pxa_esp_installations_lookup(*owner,entry->storage_key,&home);
+    if(status==PXA_STATUS_OK && (memcmp(home.record.install_id,entry->install_id,16) ||
+        home.record.generation<entry->install_generation || memcmp(home.record.manifest_sha256,entry->manifest_sha256,32)))
+        status=PXA_STATUS_BAD_STATE;
+    if(status==PXA_STATUS_OK)status=pxa_esp_installations_permissions(*owner,&home,provider);
+    return status;
+}
+static bool cache_permission_summary(pxa_esp_package_entry_t *entry,const pxa_package_manifest_t *manifest,
+    const pxa_permission_store_t *provider) {
+    uint64_t bits=0;uint8_t count=0;
+    if(!entry || !manifest || !provider || !provider->load || manifest->permission_count>64)return false;
+    entry->granted_permissions=0;entry->granted_permission_count=0;entry->permission_summary_known=0;
+    pxa_bytes_t identity={(const uint8_t *)entry->identity,strlen(entry->identity)};
+    for(uint16_t i=0;i<manifest->permission_count;++i) {
+        pxa_permission_decision_t decision=PXA_PERMISSION_DENY;
+        pxa_status_t status=provider->load(provider->context,identity,manifest->permissions[i].name,
+            manifest->permissions[i].scope,&decision);
+        if(status!=PXA_STATUS_OK && status!=PXA_STATUS_NOT_FOUND)return false;
+        if(decision==PXA_PERMISSION_ALLOW) {bits|=UINT64_C(1)<<i;++count;}
+    }
+    entry->permission_count=(uint8_t)manifest->permission_count;
+    entry->granted_permission_count=count;entry->granted_permissions=bits;entry->permission_summary_known=1;
+    return true;
+}
+
 size_t pxa_esp_package_store_visit_permissions(
     const char *identity, pxa_esp_package_permission_visitor_fn visitor,
     void *user_data) {
@@ -3027,14 +4143,22 @@ size_t pxa_esp_package_store_visit_permissions(
     pxa_package_manifest_t *manifest = NULL;
     size_t count = 0;
     size_t index;
+    pxa_esp_installations_t *owner=NULL;pxa_permission_store_t provider;
     if (!store_is_initialized() || identity == NULL || visitor == NULL ||
-        !take_lock(g_store->metadata_lock)) {
+        !take_lock(g_store->transaction_lock)) {
         return 0;
     }
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return 0;}
     entry = find_entry(identity);
     if (!parse_entry_manifest(entry, &manifest)) {
         release_lock(g_store->metadata_lock);
+        release_lock(g_store->transaction_lock);
         return 0;
+    }
+    if(entry->volume_local && !entry->permission_summary_known) {
+        if(maintenance_permissions(entry,&owner,&provider)==PXA_STATUS_OK)
+            (void)cache_permission_summary(entry,manifest,&provider);
+        (void)close_volume_operation(&owner,PXA_STATUS_OK);
     }
     for (index = 0; index < manifest->permission_count; ++index) {
         const pxa_package_permission_t *permission =
@@ -3044,11 +4168,13 @@ size_t pxa_esp_package_store_visit_permissions(
         copy_bytes_text(info.name, sizeof(info.name), permission->name);
         copy_scope_text(info.scope, sizeof(info.scope), permission->scope);
         info.required = permission->required != 0;
-        info.granted = permission_granted(entry->identity, permission);
+        info.granted = entry->volume_local?
+            (index<64 && !!(entry->granted_permissions&(UINT64_C(1)<<index))):permission_granted(entry->identity, permission);
         ++count;
         if (!visitor(&info, user_data)) break;
     }
     release_lock(g_store->metadata_lock);
+    release_lock(g_store->transaction_lock);
     return count;
 }
 
@@ -3059,28 +4185,41 @@ bool pxa_esp_package_store_set_permission(const char *identity,
     pxa_package_manifest_t *manifest = NULL;
     const pxa_package_permission_t *permission;
     pxa_status_t status;
+    pxa_esp_installations_t *owner=NULL;pxa_permission_store_t provider;
     if (!store_is_initialized() || identity == NULL ||
-        !take_lock(g_store->metadata_lock)) {
+        !take_lock(g_store->transaction_lock)) {
         return false;
     }
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return false;}
     entry = find_entry(identity);
-    if (!parse_entry_manifest(entry, &manifest) ||
+    if ((entry && entry->ambiguous) || !parse_entry_manifest(entry, &manifest) ||
         permission_index >= manifest->permission_count) {
         release_lock(g_store->metadata_lock);
+        release_lock(g_store->transaction_lock);
         return false;
     }
     permission = &manifest->permissions[permission_index];
-    status = pxa_esp_permission_store_save(
-               NULL,
+    const char *stage="open-private-policy";
+    status=maintenance_permissions(entry,&owner,&provider);
+    if(status==PXA_STATUS_OK) {stage="save-private-policy";status = provider.save(
+               provider.context,
                (pxa_bytes_t){(const uint8_t *)entry->identity,
                              strlen(entry->identity)},
                permission->name, permission->scope,
-               granted ? PXA_PERMISSION_ALLOW : PXA_PERMISSION_DENY);
+               granted ? PXA_PERMISSION_ALLOW : PXA_PERMISSION_DENY);}
     if (status == PXA_STATUS_OK) {
-        entry->granted_permission_count =
-            granted_permission_count(entry->identity, manifest);
+        stage="refresh-policy-view";
+        if(!cache_permission_summary(entry,manifest,&provider))status=PXA_STATUS_UNAVAILABLE;
+    }
+    if(status==PXA_STATUS_OK)stage="close-private-policy";
+    status=close_volume_operation(&owner,status);
+    if(status!=PXA_STATUS_OK) {
+        if(entry->volume_local) {entry->permission_summary_known=0;entry->granted_permissions=0;entry->granted_permission_count=0;}
+        ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Permission update failed: app=%s stage=%s status=%ld errno=%d",
+            entry->identity,stage,(long)status,errno);
     }
     release_lock(g_store->metadata_lock);
+    release_lock(g_store->transaction_lock);
     return status == PXA_STATUS_OK;
 }
 
@@ -3088,22 +4227,32 @@ bool pxa_esp_package_store_refresh_permission_summary(const char *identity) {
     pxa_esp_package_entry_t *entry;
     pxa_package_manifest_t *manifest = NULL;
     if (!store_is_initialized() || identity == NULL ||
-        !take_lock(g_store->metadata_lock)) {
+        !take_lock(g_store->transaction_lock)) {
         return false;
     }
+    if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return false;}
     entry = find_entry(identity);
     if (!parse_entry_manifest(entry, &manifest)) {
         release_lock(g_store->metadata_lock);
+        release_lock(g_store->transaction_lock);
         return false;
     }
-    entry->permission_count =
-        manifest->permission_count > UINT8_MAX
-            ? UINT8_MAX
-            : (uint8_t)manifest->permission_count;
-    entry->granted_permission_count =
-        granted_permission_count(entry->identity, manifest);
+    pxa_esp_installations_t *owner=NULL;pxa_permission_store_t provider;
+    pxa_status_t status=maintenance_permissions(entry,&owner,&provider);
+    bool success=status==PXA_STATUS_OK && cache_permission_summary(entry,manifest,&provider);
+    status=close_volume_operation(&owner,status);
     release_lock(g_store->metadata_lock);
-    return true;
+    release_lock(g_store->transaction_lock);
+    return success && status==PXA_STATUS_OK;
+}
+
+bool pxa_esp_package_store_refresh_permission_summary_with_storage(const char *identity,pxa_esp_app_storage_t *storage) {
+    if(!storage)return pxa_esp_package_store_refresh_permission_summary(identity);
+    if(!store_is_initialized() || !identity || !take_lock(g_store->metadata_lock))return false;
+    pxa_esp_package_entry_t *entry=find_entry(identity);pxa_package_manifest_t *manifest=NULL;pxa_permission_store_t provider;
+    bool success=entry && entry->volume_local && !entry->ambiguous && parse_entry_manifest(entry,&manifest) &&
+        pxa_esp_app_storage_permissions(storage,&provider)==PXA_STATUS_OK && cache_permission_summary(entry,manifest,&provider);
+    release_lock(g_store->metadata_lock);return success;
 }
 
 pxa_posix_installer_t *pxa_esp_package_store_installer(void) {

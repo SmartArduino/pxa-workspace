@@ -578,6 +578,7 @@ static void theme_changed(void* context, const pxsys_theme_snapshot_t* snapshot)
         rgba[index] = (argb << 8u) | (argb >> 24u);
     }
     (void)pxa_host_set_ui_palette_extended(rgba);
+    (void)pxa_host_set_ui_metrics(snapshot->base_spacing_px, snapshot->base_radius_px);
     (void)pxa_host_set_color_scheme(
         snapshot->effective_scheme == PXSYS_COLOR_SCHEME_DARK
             ? PXA_HOST_COLOR_SCHEME_DARK

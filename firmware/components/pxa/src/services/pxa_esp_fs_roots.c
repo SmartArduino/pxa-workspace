@@ -1,6 +1,10 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include "pxa_esp_fs_roots.h"
 #include "pxa_esp_storage_path_policy.h"
 #include "pxa_esp_media_path.h"
+#include "pxa_esp_volumes.h"
 #include "pxa/pxa_esp_storage.h"
 #include "pxa_esp_ui_shell.h"
 #include "pxa/pxa_esp_surface.h"
@@ -10,6 +14,7 @@
 #include "esp_heap_caps.h"
 #include "mbedtls/md.h"
 #include "pxa/wire.h"
+#include "pxa/esp/pxa_esp_posix_shim.h"
 #include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
@@ -23,10 +28,9 @@
 #define MAX_GRANTS 4u
 #define GRANT_RECORD_BYTES 304u
 #define GRANT_FILE_BYTES (16u+MAX_GRANTS*GRANT_RECORD_BYTES+32u)
-static void *g_volume_workspace;
-static pxa_volume_registry_t *g_volumes;
-static pxa_scoped_fs_mount_t g_mounts[PXA_ESP_STORAGE_MAX_VOLUMES];
-static uint16_t g_mount_count;
+static const char *const protected_paths[]={"PXA/apps","PXA/system","PXA/cache",CONFIG_PXA_STATE_ROOT};
+#define g_volumes (pxa_esp_volumes_registry())
+#define g_mounts (pxa_esp_volumes_mounts())
 static uint64_t g_app_media_epoch;
 static uint8_t g_activated;
 static pthread_mutex_t g_choice_lock=PTHREAD_MUTEX_INITIALIZER;
@@ -39,9 +43,12 @@ struct pxa_esp_fs_roots {
     pxa_fs_roots_backend_t base,api;
     pxa_fs_service_t *service;
     pxa_scoped_fs_grant_t grants[MAX_GRANTS+1];
-    char media_relative[140];
+    char media_relative[256];
     char identity[130];
-    char store_path[320],app_name[64];
+    char store_path[PXA_POSIX_APP_PATH_BYTES+32],app_name[64];
+    pxa_esp_app_storage_t *app_storage;
+    uint64_t media_mount_epoch;
+    uint8_t media_retained;
     void *notify_context; void (*notify)(void *);
     pxa_component_t component; pxa_request_token_t token;
     uint32_t prompt_id,rights;
@@ -54,61 +61,18 @@ static int digest(const void *p,size_t n,uint8_t out[32]) {
     return md && mbedtls_md(md,p,n,out)==0;
 }
 static pxa_status_t initialize_volumes(void) {
-    uint64_t seed;
-    if (g_volumes) return PXA_STATUS_OK;
-    size_t bytes=pxa_volume_registry_workspace_size(PXA_ESP_STORAGE_MAX_VOLUMES);
-    if(!g_volume_workspace) g_volume_workspace=heap_caps_calloc(1,bytes,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
-    if(!g_volume_workspace) g_volume_workspace=heap_caps_calloc(1,bytes,MALLOC_CAP_8BIT);
-    if(!g_volume_workspace) return PXA_STATUS_RESOURCE_LIMIT;
-    seed=(((uint64_t)esp_random()<<32)|esp_random()) & (UINT64_MAX>>1);
-    return pxa_volume_registry_init(g_volume_workspace,bytes,
-        PXA_ESP_STORAGE_MAX_VOLUMES,seed?seed:1,&g_volumes);
-}
-pxa_status_t pxa_esp_storage_register_fat(const char *path,const char *name,
-    const void *device,size_t device_bytes,uint32_t serial,uint8_t serial_known,
-    uint64_t total,uint64_t free_bytes,uint8_t space_known) {
-    uint8_t device_hash[32],input[40],hash[32]; pxa_volume_info_t info={0};
-    uint64_t epoch; pxa_status_t status;
-    if (g_activated) return PXA_STATUS_BAD_STATE;
-    if (!path || path[0]!='/' || strlen(path)>=PXA_ESP_STORAGE_PATH_BYTES ||
-        !name || strlen(name)>=sizeof(info.name) || !device || !device_bytes ||
-        g_mount_count>=PXA_ESP_STORAGE_MAX_VOLUMES) return PXA_STATUS_INVALID_ARGUMENT;
-    status=initialize_volumes(); if (status!=PXA_STATUS_OK) return status;
-    if (!digest(device,device_bytes,device_hash)) return PXA_STATUS_INTERNAL;
-    memcpy(input,device_hash,32); memcpy(input+32,"FAT1",4);
-    pxa_write_u32(input+36,serial_known?serial:0);
-    if (!digest(input,sizeof(input),hash)) return PXA_STATUS_INTERNAL;
-    memcpy(info.device_id.bytes,device_hash,16); memcpy(info.id.bytes,hash,16);
-    info.capabilities=PXA_VOLUME_READ|PXA_VOLUME_REMOVABLE|
-        PXA_VOLUME_CASE_INSENSITIVE|PXA_VOLUME_RANDOM_READ;
-    info.identity_strength=serial_known?PXA_VOLUME_ID_MEDIA_BOUND:PXA_VOLUME_ID_WEAK;
-    info.state=PXA_VOLUME_READY; info.total_bytes=total; info.free_bytes=free_bytes;
-    info.space_known=space_known; info.max_file_bytes=UINT32_MAX;
-    strcpy(info.name,name);
-    char *owned_path=heap_caps_malloc(strlen(path)+1,MALLOC_CAP_8BIT);
-    if(!owned_path) return PXA_STATUS_RESOURCE_LIMIT;
-    strcpy(owned_path,path);
-    status=pxa_volume_register(g_volumes,&info,&epoch);
-    if (status!=PXA_STATUS_OK) { heap_caps_free(owned_path); return status; }
-    g_mounts[g_mount_count]=(pxa_scoped_fs_mount_t){epoch,owned_path,1};
-    ++g_mount_count; return PXA_STATUS_OK;
-}
-size_t pxa_esp_storage_volumes(pxa_volume_info_t *out,size_t capacity) {
-    uint16_t cursor=0; size_t n=0; uint64_t revision;
-    if (!g_volumes || !out) return 0;
-    revision=pxa_volume_revision(g_volumes);
-    while (n<capacity && pxa_volume_next(g_volumes,revision,&cursor,&out[n])==PXA_STATUS_OK) ++n;
-    return n;
+    return pxa_esp_volumes_initialize();
 }
 static const pxa_scoped_fs_mount_t *mount_for(uint64_t epoch) {
     uint16_t i;
-    for(i=0;i<g_mount_count;++i) if(g_mounts[i].mount_epoch==epoch) return &g_mounts[i];
+    if(!epoch)return NULL;
+    for(i=0;i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) if(g_mounts[i].mount_epoch==epoch) return &g_mounts[i];
     return NULL;
 }
-pxa_status_t pxa_esp_storage_select_app_media(const char *path) {
+static pxa_status_t select_app_media(const char *path) {
     if(g_activated || g_app_media_epoch) return PXA_STATUS_BAD_STATE;
     if(!path) return PXA_STATUS_INVALID_ARGUMENT;
-    for(uint16_t i=0;i<g_mount_count;++i) if(!strcmp(path,g_mounts[i].host_path)) {
+    for(uint16_t i=0;i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) if(g_mounts[i].host_path && !strcmp(path,g_mounts[i].host_path)) {
         pxa_volume_info_t v;
         if(pxa_volume_get(g_volumes,g_mounts[i].mount_epoch,&v)!=PXA_STATUS_OK ||
             v.ambiguous || v.state!=PXA_VOLUME_READY) return PXA_STATUS_UNAVAILABLE;
@@ -117,7 +81,7 @@ pxa_status_t pxa_esp_storage_select_app_media(const char *path) {
     }
     return PXA_STATUS_NOT_FOUND;
 }
-pxa_status_t pxa_esp_storage_media_mount(char *output,size_t capacity) {
+static pxa_status_t media_mount(char *output,size_t capacity) {
     const pxa_scoped_fs_mount_t *m=mount_for(g_app_media_epoch);
     pxa_volume_info_t v;
     if(!output || !capacity)return PXA_STATUS_INVALID_ARGUMENT;
@@ -125,13 +89,14 @@ pxa_status_t pxa_esp_storage_media_mount(char *output,size_t capacity) {
     if(!m || pxa_volume_get(g_volumes,g_app_media_epoch,&v)!=PXA_STATUS_OK ||
         v.ambiguous || v.state!=PXA_VOLUME_READY)return PXA_STATUS_UNAVAILABLE;
     size_t prefix=strlen(CONFIG_PXA_MOUNT_POINT);
+    if(!strcmp(m->host_path,CONFIG_PXA_MOUNT_POINT))return PXA_STATUS_OK;
     if(strncmp(m->host_path,CONFIG_PXA_MOUNT_POINT,prefix) ||
         m->host_path[prefix]!='/')return PXA_STATUS_DENIED;
     int n=snprintf(output,capacity,"%s",m->host_path+prefix+1);
     return n<0 || (size_t)n>=capacity?PXA_STATUS_RESOURCE_LIMIT:PXA_STATUS_OK;
 }
-bool pxa_esp_storage_debug_path(const char *relative,bool system_unlocked,char *temporary,size_t capacity) {
-    const char *base=CONFIG_PXA_MOUNT_POINT; size_t prefix=strlen(base); uint16_t i;
+static bool debug_path(const char *relative,bool system_unlocked,char *temporary,size_t capacity) {
+    const char *base=CONFIG_PXA_MOUNT_POINT;
     if(!relative || !pxa_fs_scoped_path_is_valid(
         (pxa_bytes_t){(const uint8_t *)relative,strlen(relative)})) return false;
     /* The optional FAT replacement mode deletes an old destination before
@@ -139,25 +104,25 @@ bool pxa_esp_storage_debug_path(const char *relative,bool system_unlocked,char *
 #ifdef CONFIG_FATFS_VFS_RENAME_REPLACES_DESTINATION
     return false;
 #endif
-    for(i=0;i<g_mount_count;++i) {
-        const char *p=g_mounts[i].host_path; pxa_volume_info_t v;
-        if(strncmp(p,base,prefix) || p[prefix]!='/') continue;
-        p+=prefix+1; size_t n=strlen(p);
-        if(strncmp(relative,p,n) || relative[n]!='/' || !relative[n+1]) continue;
-        /* Apply the same timed PXADB system unlock to SD system descendants.
-         * Ordinary card paths stay writable; protected roots stay in place. */
-        if(!pxa_esp_storage_debug_child_writable(relative+n+1,system_unlocked)) return false;
-        if(pxa_volume_get(g_volumes,g_mounts[i].mount_epoch,&v)!=PXA_STATUS_OK ||
-            v.ambiguous || v.state!=PXA_VOLUME_READY) return false;
-        if(temporary) {
-            int len=snprintf(temporary,capacity,"%s/.pxa-pxadb-upload",g_mounts[i].host_path);
-            if(len<0 || (size_t)len>=capacity) return false;
-        }
-        return true;
+    char absolute[2*PXA_ESP_STORAGE_PATH_BYTES],mount[PXA_ESP_STORAGE_PATH_BYTES];pxa_volume_info_t volume;
+    int n=snprintf(absolute,sizeof(absolute),"%s/%s",base,relative);
+    if(n<0 || (size_t)n>=sizeof(absolute) || pxa_esp_storage_resolve_volume(absolute,&volume)!=PXA_STATUS_OK ||
+        !(volume.capabilities&PXA_VOLUME_WRITE) ||
+        pxa_esp_storage_volume_path(volume.mount_epoch,mount,sizeof(mount))!=PXA_STATUS_OK)return false;
+    /* Public media is importable on internal Flash too. Keep application
+     * code/private state behind the primary filesystem's legacy policy. */
+    if(!strcmp(mount,base) && (volume.capabilities&PXA_VOLUME_PRIVATE_NATIVE) &&
+        !pxa_esp_storage_debug_primary_writable(relative,system_unlocked))return false;
+    size_t prefix=strlen(mount);
+    if(strncmp(absolute,mount,prefix) || absolute[prefix]!='/' || !absolute[prefix+1] ||
+        !pxa_esp_storage_debug_child_writable(absolute+prefix+1,system_unlocked))return false;
+    if(temporary) {
+        n=snprintf(temporary,capacity,"%s/.pxa-pxadb-upload",mount);
+        if(n<0 || (size_t)n>=capacity)return false;
     }
-    return false;
+    return true;
 }
-pxa_status_t pxa_esp_storage_folders(uint64_t epoch,const char *relative,
+static pxa_status_t folders(uint64_t epoch,const char *relative,
     uint32_t skip,pxa_esp_storage_folder_t *out,size_t capacity,size_t *count,uint8_t *more) {
     char path[768]; DIR *directory; struct dirent *entry; uint32_t seen=0,scanned=0;
     const pxa_scoped_fs_mount_t *m=mount_for(epoch); pxa_volume_info_t v;
@@ -185,10 +150,27 @@ pxa_status_t pxa_esp_storage_folders(uint64_t epoch,const char *relative,
     closedir(directory);
     return scanned>4096 ? PXA_STATUS_LIMIT_EXCEEDED : PXA_STATUS_OK;
 }
+pxa_status_t pxa_esp_storage_select_app_media(const char *path) {
+    pxa_status_t status=initialize_volumes();if(status!=PXA_STATUS_OK)return status;
+    pxa_esp_volumes_lock();status=select_app_media(path);pxa_esp_volumes_unlock();return status;
+}
+pxa_status_t pxa_esp_storage_media_mount(char *output,size_t capacity) {
+    pxa_status_t status;
+    pxa_esp_volumes_lock();status=media_mount(output,capacity);pxa_esp_volumes_unlock();return status;
+}
+bool pxa_esp_storage_debug_path(const char *relative,bool unlocked,char *temporary,size_t capacity) {
+    bool result;
+    pxa_esp_volumes_lock();result=debug_path(relative,unlocked,temporary,capacity);pxa_esp_volumes_unlock();return result;
+}
+pxa_status_t pxa_esp_storage_folders(uint64_t epoch,const char *relative,
+    uint32_t skip,pxa_esp_storage_folder_t *out,size_t capacity,size_t *count,uint8_t *more) {
+    pxa_status_t status;
+    pxa_esp_volumes_lock();status=folders(epoch,relative,skip,out,capacity,count,more);pxa_esp_volumes_unlock();return status;
+}
 static int save_grants(pxa_esp_fs_roots_t *r) {
-    uint8_t encoded[GRANT_FILE_BYTES]={0}; char temporary[336];
+    uint8_t encoded[GRANT_FILE_BYTES]={0}; char temporary[sizeof(r->store_path)+5];
     FILE *f; unsigned i; int ok;
-    memcpy(encoded,"PXAGRNT1",8); pxa_write_u16(encoded+8,MAX_GRANTS);
+    memcpy(encoded,r->app_storage?"PXAGRNT2":"PXAGRNT1",8); pxa_write_u16(encoded+8,MAX_GRANTS);
     for(i=0;i<MAX_GRANTS;++i) if(r->persisted_mask & (1u<<i)) {
         const pxa_scoped_fs_grant_t *g=&r->grants[i];
         uint8_t *p=encoded+16+i*GRANT_RECORD_BYTES; size_t n=strlen(g->relative_path);
@@ -197,7 +179,10 @@ static int save_grants(pxa_esp_fs_roots_t *r) {
         p[44]=g->active; pxa_write_u16(p+46,(uint16_t)n);
         memcpy(p+48,g->relative_path,n);
     }
-    if(!digest(encoded,sizeof(encoded)-32,encoded+sizeof(encoded)-32)) return 0;
+    if(r->app_storage) {
+        if(pxa_esp_app_storage_seal_grants(r->app_storage,
+            (pxa_bytes_t){encoded,sizeof(encoded)-32},encoded+sizeof(encoded)-32)!=PXA_STATUS_OK)return 0;
+    } else if(!digest(encoded,sizeof(encoded)-32,encoded+sizeof(encoded)-32)) return 0;
     int n=snprintf(temporary,sizeof(temporary),"%s.tmp",r->store_path);
     if(n<0 || (size_t)n>=sizeof(temporary)) return 0;
     f=fopen(temporary,"wb"); if(!f) return 0;
@@ -206,6 +191,15 @@ static int save_grants(pxa_esp_fs_roots_t *r) {
     if(ok && fsync(fileno(f))!=0) ok=0;
     if(fclose(f)!=0) ok=0;
     if(ok && rename(temporary,r->store_path)!=0) ok=0;
+    if(ok && r->app_storage) {
+        const char *root;int parent=-1;
+        if(pxa_esp_app_storage_root(r->app_storage,&root)!=PXA_STATUS_OK ||
+            (parent=pxa_esp_open(root,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW))<0)ok=0;
+        if(parent>=0) {
+            if(pxa_esp_fsync(parent)!=0)ok=0;
+            if(pxa_esp_close(parent)!=0)ok=0;
+        }
+    }
     if(!ok) unlink(temporary);
     return ok;
 }
@@ -215,10 +209,12 @@ static void load_grants(pxa_esp_fs_roots_t *r) {
     if(!f) return;
     size_t n=fread(encoded,1,sizeof(encoded),f);
     int extra=fgetc(f); fclose(f);
-    if(n!=sizeof(encoded) || extra!=EOF || memcmp(encoded,"PXAGRNT1",8) ||
-        pxa_read_u16(encoded+8)!=MAX_GRANTS ||
-        !digest(encoded,sizeof(encoded)-32,hash) ||
-        memcmp(hash,encoded+sizeof(encoded)-32,32)) return;
+    if(n!=sizeof(encoded) || extra!=EOF || memcmp(encoded,r->app_storage?"PXAGRNT2":"PXAGRNT1",8) ||
+        pxa_read_u16(encoded+8)!=MAX_GRANTS)return;
+    if(r->app_storage) {
+        if(pxa_esp_app_storage_verify_grants(r->app_storage,
+            (pxa_bytes_t){encoded,sizeof(encoded)-32},encoded+sizeof(encoded)-32)!=PXA_STATUS_OK)return;
+    } else if(!digest(encoded,sizeof(encoded)-32,hash) || memcmp(hash,encoded+sizeof(encoded)-32,32))return;
     for(i=0;i<MAX_GRANTS;++i) {
         const uint8_t *p=encoded+16+i*GRANT_RECORD_BYTES;
         pxa_scoped_fs_grant_t *g=&r->grants[i]; uint16_t len=pxa_read_u16(p+46);
@@ -246,10 +242,20 @@ static int create_folder(const char *path) {
 static pxa_status_t app_media_grant(pxa_esp_fs_roots_t *r) {
     pxa_scoped_fs_grant_t *g=&r->grants[MAX_GRANTS];
     pxa_volume_info_t v; char path[384];
-    const pxa_scoped_fs_mount_t *m=mount_for(g_app_media_epoch);
-    if(!m || pxa_volume_get(g_volumes,g_app_media_epoch,&v)!=PXA_STATUS_OK ||
+    const pxa_scoped_fs_mount_t *m=mount_for(r->media_mount_epoch);
+    if(!m || pxa_volume_get(g_volumes,r->media_mount_epoch,&v)!=PXA_STATUS_OK ||
         v.ambiguous || v.state!=PXA_VOLUME_READY) return PXA_STATUS_UNAVAILABLE;
     if(g->active) return pxa_scoped_fs_validate_grant(r->fs,g);
+    if(pxa_esp_media_relative_managed(r->media_relative) ||
+        pxa_esp_app_storage_media_epoch(r->app_storage)) {
+        /* Explicit bindings were checked by activation: signed generations
+         * were authenticated; manual imports retain their original directory.
+         * Missing media never becomes an empty replacement. */
+        struct stat info;
+        int n=snprintf(path,sizeof(path),"%s/%s",m->host_path,r->media_relative);
+        if(n<0 || (size_t)n>=sizeof(path))return PXA_STATUS_LIMIT_EXCEEDED;
+        if(stat(path,&info)!=0 || !S_ISDIR(info.st_mode))return PXA_STATUS_UNAVAILABLE;
+    } else {
     /* These registered FAT mounts are Host-owned, link-free and contain no
      * nested mounts. Never accept a Guest-selected native path here. */
     int n=snprintf(path,sizeof(path),"%s/PXA",m->host_path);
@@ -263,6 +269,7 @@ static pxa_status_t app_media_grant(pxa_esp_fs_roots_t *r) {
     }
     n=snprintf(path,sizeof(path),"%s/%s",m->host_path,r->media_relative);
     if(n<0 || (size_t)n>=sizeof(path) || !create_folder(path)) return PXA_STATUS_IO_ERROR;
+    }
     for(unsigned attempt=0;attempt<8;++attempt) {
         uint8_t any=0; int duplicate=0; esp_fill_random(g->id,16);
         for(unsigned j=0;j<16;++j) any|=g->id[j];
@@ -278,13 +285,14 @@ static pxa_status_t app_media_grant(pxa_esp_fs_roots_t *r) {
 }
 static pxa_status_t app_open_root(void *c,uint8_t k,const uint8_t id[16],void **d,uint32_t *rights) {
     pxa_esp_fs_roots_t *r=c;
+    pxa_status_t status;
+    pxa_esp_volumes_lock();
     if(k==PXA_FS_ROOT_APP_MEDIA) {
-        pxa_status_t s=app_media_grant(r);
-        if(s!=PXA_STATUS_OK) return s;
-        return r->base.open_root(r->base.context,PXA_FS_ROOT_GRANT,
+        status=app_media_grant(r);
+        if(status==PXA_STATUS_OK)status=r->base.open_root(r->base.context,PXA_FS_ROOT_GRANT,
             r->grants[MAX_GRANTS].id,d,rights);
-    }
-    return r->base.open_root(r->base.context,k,id,d,rights);
+    } else status=r->base.open_root(r->base.context,k,id,d,rights);
+    pxa_esp_volumes_unlock();return status;
 }
 static pxa_status_t app_open_at(void *c,void *d,pxa_bytes_t p,uint32_t flags,
     void **f,pxa_fs_entry_t *i,uint64_t *features) {
@@ -313,7 +321,8 @@ static pxa_status_t request_access(void *context,pxa_component_t c,
     if(rights!=3) return PXA_STATUS_UNSUPPORTED;
     if(r->prompt_id) return PXA_STATUS_BUSY;
     if(purpose.size>=sizeof(prompt.purpose)) return PXA_STATUS_LIMIT_EXCEEDED;
-    if(!g_mount_count) return PXA_STATUS_UNAVAILABLE;
+    pxa_volume_info_t first;
+    if(!pxa_esp_storage_volumes(&first,1)) return PXA_STATUS_UNAVAILABLE;
     prompt.prompt_id=++g_prompt_sequence;
     if(!prompt.prompt_id) prompt.prompt_id=++g_prompt_sequence;
     strcpy(prompt.app_name,r->app_name); memcpy(prompt.purpose,purpose.data,purpose.size);
@@ -356,8 +365,8 @@ void pxa_esp_fs_roots_poll(pxa_esp_fs_roots_t *r) {
     component=r->component; token=r->token;
     if(epoch) {
         pxa_volume_info_t v;
-        status=pxa_volume_get(g_volumes,epoch,&v);
-        if(status==PXA_STATUS_OK && r->persistent && v.identity_strength!=PXA_VOLUME_ID_MEDIA_BOUND)
+        status=pxa_esp_storage_volume(epoch,&v);
+        if(status==PXA_STATUS_OK && r->persistent && v.identity_strength<PXA_VOLUME_ID_FILESYSTEM)
             status=PXA_STATUS_UNSUPPORTED;
         if(status==PXA_STATUS_OK) {
             for(i=0;i<MAX_GRANTS;++i) {
@@ -406,31 +415,37 @@ static pxa_status_t app_media_path(void *context,char *out,size_t capacity,size_
     if(n<0 || (size_t)n>=capacity)return PXA_STATUS_RESOURCE_LIMIT;
     *size=(size_t)n;return PXA_STATUS_OK;
 }
-pxa_status_t pxa_esp_fs_roots_create(void *allocator_context,
-    void *(*allocate)(void *,size_t),const char *identity,const char *name,
-    const char *media_relative,
-    uint8_t user_directories,
-    void *notify_context,void (*notify)(void *),pxa_esp_fs_roots_t **out,
+static void enter_inventory(void *context) {(void)context;pxa_esp_volumes_lock();}
+static void leave_inventory(void *context) {(void)context;pxa_esp_volumes_unlock();}
+pxa_status_t pxa_esp_fs_roots_create(const pxa_esp_fs_roots_config_t *config,pxa_esp_fs_roots_t **out,
     pxa_fs_roots_backend_t **backend) {
     pxa_esp_fs_roots_t *r; pxa_scoped_fs_config_t c={0}; void *workspace;
     pxa_status_t status; unsigned i; char root[192]; int n;
-    if(!out || !backend || !allocate || !identity || strlen(identity)>129 ||
-       !pxa_esp_media_relative_valid(media_relative))
+    if(!config || !out || !backend || !config->allocate || !config->identity || strlen(config->identity)>129 ||
+       !pxa_esp_media_relative_valid(config->media_relative))
         return PXA_STATUS_INVALID_ARGUMENT;
     *out=NULL; *backend=NULL;
     status=initialize_volumes(); if(status!=PXA_STATUS_OK) return status;
     g_activated=1;
-    r=allocate(allocator_context,sizeof(*r)); if(!r) return PXA_STATUS_RESOURCE_LIMIT;
-    memset(r,0,sizeof(*r)); r->notify_context=notify_context; r->notify=notify;
-    memcpy(r->identity,identity,strlen(identity)+1);
-    strcpy(r->media_relative,media_relative);
-    const char *display=name?name:identity;
-    if(!strcmp(display,identity) && strchr(identity,':')) display=strchr(identity,':')+1;
+    r=config->allocate(config->allocator_context,sizeof(*r)); if(!r) return PXA_STATUS_RESOURCE_LIMIT;
+    memset(r,0,sizeof(*r)); r->notify_context=config->notify_context; r->notify=config->notify;
+    r->app_storage=config->app_storage;
+    r->media_mount_epoch=config->media_mount_epoch?config->media_mount_epoch:g_app_media_epoch;
+    memcpy(r->identity,config->identity,strlen(config->identity)+1);
+    strcpy(r->media_relative,config->media_relative);
+    const char *display=config->name?config->name:config->identity;
+    if(!strcmp(display,config->identity) && strchr(config->identity,':')) display=strchr(config->identity,':')+1;
     snprintf(r->app_name,sizeof(r->app_name),"%.63s",display);
-    if(user_directories) {
-        n=snprintf(root,sizeof(root),"%s/%s/grants",CONFIG_PXA_MOUNT_POINT,CONFIG_PXA_STATE_ROOT);
-        if(n<0 || (size_t)n>=sizeof(root) || !create_folder(root)) return PXA_STATUS_IO_ERROR;
-        n=snprintf(r->store_path,sizeof(r->store_path),"%s/%s",root,identity);
+    if(config->user_directories) {
+        if(r->app_storage) {
+            const char *private_root;
+            status=pxa_esp_app_storage_root(r->app_storage,&private_root);if(status!=PXA_STATUS_OK)return status;
+            n=snprintf(r->store_path,sizeof(r->store_path),"%s/.pxa-directory-grants",private_root);
+        } else {
+            n=snprintf(root,sizeof(root),"%s/%s/grants",CONFIG_PXA_MOUNT_POINT,CONFIG_PXA_STATE_ROOT);
+            if(n<0 || (size_t)n>=sizeof(root) || !create_folder(root)) return PXA_STATUS_IO_ERROR;
+            n=snprintf(r->store_path,sizeof(r->store_path),"%s/%s",root,config->identity);
+        }
         if(n<0 || (size_t)n>=sizeof(r->store_path)) return PXA_STATUS_LIMIT_EXCEEDED;
         load_grants(r);
     }
@@ -438,19 +453,28 @@ pxa_status_t pxa_esp_fs_roots_create(void *allocator_context,
     for(i=0;i<MAX_GRANTS;++i) if(r->grants[i].active && r->grants[i].revision>=r->next_grant_revision)
         r->next_grant_revision=r->grants[i].revision==UINT64_MAX?UINT64_MAX:r->grants[i].revision+1;
     c.struct_size=sizeof(c); c.volumes=g_volumes; c.mounts=g_mounts;
-    c.mount_count=g_mount_count; c.grants=r->grants; c.grant_count=MAX_GRANTS+1;
+    c.mount_count=PXA_ESP_STORAGE_MAX_VOLUMES; c.grants=r->grants; c.grant_count=MAX_GRANTS+1;
+    c.enter_inventory=enter_inventory;c.leave_inventory=leave_inventory;
+    c.protected_paths=protected_paths;c.protected_path_count=sizeof(protected_paths)/sizeof(protected_paths[0]);
     c.max_open_resources=8;
     size_t bytes=pxa_scoped_fs_workspace_size(&c);
-    workspace=allocate(allocator_context,bytes); if(!workspace) return PXA_STATUS_RESOURCE_LIMIT;
-    status=pxa_scoped_fs_init(workspace,bytes,&c,&r->fs,&r->base);
+    workspace=config->allocate(config->allocator_context,bytes); if(!workspace) return PXA_STATUS_RESOURCE_LIMIT;
+    pxa_esp_volumes_lock();status=pxa_scoped_fs_init(workspace,bytes,&c,&r->fs,&r->base);pxa_esp_volumes_unlock();
     if(status!=PXA_STATUS_OK) return status;
     r->api=r->base; r->api.context=r;
     r->api.open_root=app_open_root; r->api.open_at=app_open_at;
     r->api.stat_at=app_stat_at; r->api.query_root=app_query_root;
-    r->api.request_access=user_directories?request_access:NULL;
-    r->api.cancel_access=user_directories?cancel_access:NULL;
+    /* read_at deliberately keeps files.context, unlike root callbacks which
+     * use api.context. Copying the base callback preserves that contract. */
+    r->api.request_access=config->user_directories?request_access:NULL;
+    r->api.cancel_access=config->user_directories?cancel_access:NULL;
     r->api.app_media_path=app_media_path;
     r->api.features=PXA_FS_FEATURE_APP_MEDIA_ROOT|PXA_FS_FEATURE_APP_MEDIA_PATH;
+    if(r->media_mount_epoch) {
+        status=pxa_esp_volumes_retain(r->media_mount_epoch);
+        if(status!=PXA_STATUS_OK && config->media_mount_epoch) {pxa_scoped_fs_deinit(r->fs);return status;}
+        if(status==PXA_STATUS_OK)r->media_retained=1;
+    }
     *out=r; *backend=&r->api; return PXA_STATUS_OK;
 }
 void pxa_esp_fs_roots_bind(pxa_esp_fs_roots_t *r,pxa_fs_service_t *service) {
@@ -466,4 +490,5 @@ void pxa_esp_fs_roots_destroy(pxa_esp_fs_roots_t *r) {
     if(!r) return;
     cancel_access(r,r->component,r->token);
     pxa_scoped_fs_deinit(r->fs); r->service=NULL;
+    if(r->media_retained) {pxa_esp_volumes_release(r->media_mount_epoch);r->media_retained=0;}
 }

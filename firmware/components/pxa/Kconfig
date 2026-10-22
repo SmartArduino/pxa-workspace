@@ -4,7 +4,6 @@ menu "PXA Development Apps"
     config PXA_ENABLED
         bool "Enable PXA Draft 0.1 platform"
         default n
-        select LITTLEFS_SPIFFS_COMPAT
         select LITTLEFS_OPEN_DIR
         select LITTLEFS_FCNTL_GET_PATH
         select WAMR_LINEAR_MEMORY_RESERVE_MAX
@@ -19,6 +18,9 @@ menu "PXA Development Apps"
                 LittleFS partition used for PXA Packages, private state and
                 optional factory content. This must match a data/littlefs
                 partition in the selected board's partition table.
+                Leave empty for a product using only board-provided storage
+                volumes. Missing or unmountable internal storage never causes
+                external application homes to be formatted or discarded.
 
         config PXA_MOUNT_POINT
             string "PXA storage mount point"

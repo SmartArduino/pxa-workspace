@@ -25,6 +25,8 @@
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
 #include <esp_log.h>
+#include <esp_littlefs.h>
+#include <esp_partition.h>
 #include <esp_lv_decoder.h>
 #include <esp_netif_sntp.h>
 #include <esp_timer.h>
@@ -215,10 +217,7 @@ bool Gamekit::Initialize() {
                 ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(std::max(delay, uint32_t(1))));
             }
         }, "gamekit_lvgl", 12288, this, 4, nullptr, 1) != pdPASS) return false;
-    // Product LittleFS has already mounted. Nest the removable volume below
-    // it so the existing Files UI and PXADB can access /sdcard without a new
-    // storage ABI or replacing installed apps, fonts and private saves.
-    if (!InitializeSd()) ESP_LOGW(kTag, "No usable SD card; internal PXA storage remains available");
+    if (!InitializeSd()) ESP_LOGW(kTag, "No usable SD card");
     audio_ready_ = audio_.Initialize();
     if (!audio_ready_) ESP_LOGW(kTag, "MAX98357A output unavailable");
     wifi_ready_ = InitializeWifi();
@@ -565,8 +564,13 @@ void Gamekit::DrawPerformanceOverlay(uint16_t* native) {
 }
 
 bool Gamekit::InitializeSd() {
-    constexpr char mount[] = CONFIG_PXA_MOUNT_POINT "/sdcard";
-    if (mkdir(mount, 0775) != 0 && errno != EEXIST) return false;
+    const auto* board=pxa_board_current();
+    const bool primary=CONFIG_PXA_STORAGE_PARTITION_LABEL[0] &&
+        (esp_littlefs_mounted(CONFIG_PXA_STORAGE_PARTITION_LABEL) ||
+         (board && board->initialize_before_storage && esp_partition_find_first(
+             ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_LITTLEFS,CONFIG_PXA_STORAGE_PARTITION_LABEL)));
+    const char* mount=primary?CONFIG_PXA_MOUNT_POINT "/sdcard":CONFIG_PXA_MOUNT_POINT;
+    if(primary && mkdir(mount,0775)!=0 && errno!=EEXIST && errno!=ENOENT)return false;
     const gpio_config_t unused_data = {
         .pin_bit_mask = (1ULL << kSdD1) | (1ULL << kSdD2),
         .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE,
@@ -596,17 +600,22 @@ bool Gamekit::InitializeSd() {
     }
     ESP_LOGI(kTag, "SD mounted at %s: %llu MiB, SPI3 20 MHz", mount,
              static_cast<unsigned long long>(card->csd.capacity) * card->csd.sector_size / (1024 * 1024));
-    DWORD serial = 0;
-    bool serial_known = false;
-#if CONFIG_FATFS_USE_LABEL
     char drive[8];
     std::snprintf(drive, sizeof(drive), "%u:", unsigned(ff_diskio_get_pdrv_card(card)));
-    serial_known = f_getlabel(drive, nullptr, &serial) == FR_OK;
+    DWORD free_clusters = 0;
+    FATFS* filesystem = nullptr;
+    uint32_t allocation_unit = 0;
+    if (f_getfree(drive, &free_clusters, &filesystem) == FR_OK && filesystem) {
+#if FF_MAX_SS != FF_MIN_SS
+        allocation_unit = uint32_t(filesystem->csize) * filesystem->ssize;
+#else
+        allocation_unit = uint32_t(filesystem->csize) * FF_MIN_SS;
 #endif
+    }
     uint64_t total = 0, free = 0;
     const bool space_known = esp_vfs_fat_info(mount, &total, &free) == ESP_OK;
     const auto storage = pxa_esp_storage_register_fat(mount, "SD card", &card->cid,
-        sizeof(card->cid), serial, serial_known, total, free, space_known ? 3 : 0);
+        sizeof(card->cid), total, free, space_known ? 3 : 0, allocation_unit);
     if (storage != PXA_STATUS_OK)
         ESP_LOGW(kTag, "SD data volume registration: %ld", long(storage));
     else {

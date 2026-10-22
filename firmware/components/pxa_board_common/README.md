@@ -6,6 +6,17 @@ board starts from the same shell instead of copying the previous board's
 control, touch slot bookkeeping and the PXADB control adapters belong here as
 they are extracted.
 
+Every board with gamepad input follows the shared reference-UI lock policy:
+call `pxsys_reference_lvgl_handle_gamepad()` each poll before shortcuts, focus
+navigation and game input. While it consumes input, clear focus, hide the cursor
+and report zero buttons for physical and injected controllers. Any fresh button
+press unlocks an already-lit lock screen; hold,
+chord and release events from that sequence cannot reach the resumed UI or game.
+An already-held sequence must be released before it can unlock. Keep touch-only
+lock-screen gestures available when the gamepad is idle.
+The board must consume a sleeping screen's wake sequence, including its release,
+before calling this policy. Wake and unlock require two separate presses.
+
 What deliberately stays in `firmware/boards/<board>/`:
 
 - panel and controller bring-up, vendor init tables and their shims,

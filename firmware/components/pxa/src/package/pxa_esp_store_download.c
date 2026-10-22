@@ -1,4 +1,5 @@
 #include "pxa_esp_store_download.h"
+#include "pxa_esp_package_limits.h"
 
 #if defined(ESP_PLATFORM)
 #include "sdkconfig.h"
@@ -13,7 +14,10 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_random.h"
-#include "esp_littlefs.h"
+#include "esp_heap_caps.h"
+#include "pxa_esp_store_cache.h"
+#include "pxa_esp_volumes.h"
+#include "pxa/container.h"
 #include "mbedtls/md.h"
 #include "pxa/pxa_host.h"
 #include "pxa/status.h"
@@ -28,44 +32,10 @@ typedef struct {
     mbedtls_md_context_t sha;
     uint64_t received;
     uint64_t expected;
+    uint64_t progress_base;
+    uint8_t hash_enabled;
     int failed;
 } download_sink_t;
-
-void pxa_esp_store_cleanup_interrupted(int (*keep)(const char *filename, void *context),
-                                       void *context) {
-    const char root[] = CONFIG_PXA_MOUNT_POINT "/" CONFIG_PXA_STATE_ROOT;
-    static const char prefix[] = ".store-";
-    DIR *directory = opendir(root);
-    struct dirent *entry;
-    if (directory == NULL) return;
-    while ((entry = readdir(directory)) != NULL) {
-        char path[160];
-        struct stat metadata;
-        const char *name = entry->d_name;
-        size_t index;
-        if (strncmp(name, prefix, sizeof(prefix) - 1u) != 0 ||
-            strlen(name) != sizeof(prefix) - 1u + 8u + 4u) continue;
-        for (index = sizeof(prefix) - 1u; index < sizeof(prefix) - 1u + 8u;
-             ++index) {
-            if (!((name[index] >= '0' && name[index] <= '9') ||
-                  (name[index] >= 'a' && name[index] <= 'f'))) break;
-        }
-        if (index != sizeof(prefix) - 1u + 8u ||
-            strcmp(name + index, ".pxa") != 0 ||
-            snprintf(path, sizeof(path), "%s/%s", root, name) >=
-                (int)sizeof(path) || stat(path, &metadata) != 0 ||
-            !S_ISREG(metadata.st_mode)) continue;
-        if (keep != NULL && keep(name, context)) continue;
-        if (unlink(path) == 0) {
-            /* LittleFS can shift its directory cursor after unlink. Restart
-             * so several interrupted downloads are all reclaimed this boot. */
-            closedir(directory);
-            directory = opendir(root);
-            if (directory == NULL) return;
-        }
-    }
-    closedir(directory);
-}
 
 int pxa_esp_store_job_decode_identity(pxa_esp_store_job_t *job,const uint8_t *payload,size_t size) {
     if(!job || !payload || size<32 || !pxa_esp_store_job_decode(job,payload+32,size-32))return 0;
@@ -134,16 +104,17 @@ static esp_err_t download_event(esp_http_client_event_t *event) {
     length = (size_t)event->data_len;
     if (sink->failed || length > sink->expected - sink->received ||
         fwrite(event->data, 1, length, sink->file) != length ||
-        mbedtls_md_update(&sink->sha, event->data, length) != 0) {
+        (sink->hash_enabled && mbedtls_md_update(&sink->sha, event->data, length) != 0)) {
         sink->failed = 1;
         return ESP_FAIL;
     }
     sink->received += length;
     if (sink->job != NULL && sink->expected != 0u) {
-        uint8_t percent = (uint8_t)(sink->received * 100u / sink->expected);
+        uint64_t total=sink->job->total_bytes?sink->job->total_bytes:sink->expected;
+        uint8_t percent = (uint8_t)((sink->progress_base+sink->received) * 100u / total);
         if (percent >= sink->job->reported_percent + 5u ||
             sink->received == sink->expected) {
-            sink->job->downloaded_bytes = sink->received;
+            sink->job->downloaded_bytes = sink->progress_base+sink->received;
             sink->job->reported_percent = percent;
             sink->job->notify(sink->job, 4u);
         }
@@ -151,139 +122,218 @@ static esp_err_t download_event(esp_http_client_event_t *event) {
     return ESP_OK;
 }
 
-void pxa_esp_store_worker(void *context) {
-    pxa_esp_store_job_t *job = (pxa_esp_store_job_t *)context;
-    download_sink_t sink = {0};
-    esp_http_client_config_t config = {0};
-    esp_http_client_handle_t client = NULL;
-    char path[160];
-    char url[512];
-    uint8_t digest[32];
-    int descriptor = -1;
-    int downloaded = 0;
-    esp_err_t http_result = ESP_FAIL;
-    const char *origin = CONFIG_PXA_STORE_ORIGIN;
-    size_t origin_size = strlen(origin);
-    job->status = PXA_STATUS_IO_ERROR;
-    if (origin_size < 9u || strncmp(origin, "https://", 8u) != 0 ||
-        strchr(origin + 8u, '/') != NULL || strchr(origin + 8u, '?') != NULL ||
-        origin_size + strlen(job->ticket) >= sizeof(url) ||
-        snprintf(url, sizeof(url), "%s%s", origin, job->ticket) >= (int)sizeof(url))
-        goto done;
-    if (job->separate == 2u) {
-        if (snprintf(path, sizeof(path), "%s/%s/%s", CONFIG_PXA_MOUNT_POINT,
-                     CONFIG_PXA_STATE_ROOT, job->filename) >= (int)sizeof(path)) goto done;
-        job->keep_file = 1;
-    } else {
-        size_t total = 0, used = 0;
-        /* Reject before writing a partial container when even the encoded
-         * body cannot fit. Keep flash metadata/compaction headroom; decoded
-         * admission remains the authenticated installer's responsibility. */
-        if (esp_littlefs_info(CONFIG_PXA_STORAGE_PARTITION_LABEL, &total, &used) != ESP_OK)
-            goto done;
-        if (used > total || job->size > total - used ||
-            total - used - job->size < UINT64_C(128) * 1024) {
-            job->status = PXA_STATUS_QUOTA_EXCEEDED;
-            goto done;
+/* Read at most the signed metadata prefix. A server cannot turn preflight
+ * into an unbounded allocation or a full container download. */
+#define METADATA_MAX (PXA_ESP_SIGNED_MANIFEST_MAX_BYTES+PXA_CONTAINER_HEADER_BYTES+216u)
+static int cancelled(const pxa_esp_store_job_t *job) {
+    return __atomic_load_n(&job->cancelled,__ATOMIC_ACQUIRE);
+}
+static __attribute__((noinline)) pxa_status_t read_metadata(pxa_esp_store_job_t *job,const char *url,
+    uint64_t expected_bytes,uint8_t cached,uint8_t *prefix,size_t *bytes) {
+    FILE *file=NULL;esp_http_client_handle_t client=NULL;pxa_container_header_t header;
+    esp_http_client_config_t config={.method=HTTP_METHOD_GET,.timeout_ms=30000,
+        .disable_auto_redirect=true,.crt_bundle_attach=esp_crt_bundle_attach,.buffer_size=1024};
+    pxa_status_t status=PXA_STATUS_IO_ERROR;size_t have=0,need=PXA_CONTAINER_HEADER_BYTES;
+    char metadata_url[512];
+    if(cached)file=fopen(job->path,"rb");
+    else {
+        const char *suffix=strstr(url,"/download?expires=");
+        if(!suffix || snprintf(metadata_url,sizeof(metadata_url),"%.*s/install-metadata%s",
+            (int)(suffix-url),url,suffix+9)>=(int)sizeof(metadata_url))return PXA_STATUS_INVALID_ARGUMENT;
+        config.url=metadata_url;client=esp_http_client_init(&config);
+        if(!client || esp_http_client_open(client,0)!=ESP_OK)goto done;
+        int64_t length=esp_http_client_fetch_headers(client);
+        if(esp_http_client_get_status_code(client)==404) {
+            /* Older stores can serve the same bounded prefix from the
+             * container. Read only that prefix, then close the response. */
+            esp_http_client_cleanup(client);config.url=url;client=esp_http_client_init(&config);
+            /* The metadata URL is no longer needed; reuse its buffer for the
+             * bounded fallback range instead of growing this worker frame. */
+            (void)snprintf(metadata_url,sizeof(metadata_url),"bytes=0-%u",(unsigned)(METADATA_MAX-1u));
+            if(!client || esp_http_client_set_header(client,"Range",metadata_url)!=ESP_OK ||
+                esp_http_client_open(client,0)!=ESP_OK)goto done;
+            (void)esp_http_client_fetch_headers(client);
+            int code=esp_http_client_get_status_code(client);
+            if(code!=200 && code!=206)goto done;
+        } else if(esp_http_client_get_status_code(client)!=200 || length>(int64_t)METADATA_MAX)goto done;
+    }
+    if(!file && !client)goto done;
+    for(;;) {
+        if(cancelled(job)) {status=PXA_STATUS_CANCELLED;goto done;}
+        while(have<need) {
+            int got=file?(int)fread(prefix+have,1,need-have,file):esp_http_client_read(client,(char *)prefix+have,(int)(need-have));
+            if(got<=0) {status=PXA_STATUS_IO_ERROR;goto done;}
+            have+=(size_t)got;
+            if(cancelled(job)) {status=PXA_STATUS_CANCELLED;goto done;}
         }
-        if (snprintf(path, sizeof(path), "%s/%s/.store-%08lx.pxa",
-                     CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT,
-                     (unsigned long)esp_random()) >= (int)sizeof(path)) goto done;
-        snprintf(job->filename, sizeof(job->filename), "%s", strrchr(path, '/') + 1);
-        descriptor = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-        if (descriptor < 0) goto done;
-        sink.file = fdopen(descriptor, "wb");
-        if (sink.file == NULL) goto done;
-        descriptor = -1;
-        sink.expected = job->size;
-        sink.job = job;
-        mbedtls_md_init(&sink.sha);
-        if (mbedtls_md_setup(&sink.sha, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
-                             0) != 0 || mbedtls_md_starts(&sink.sha) != 0)
-            goto cleanup;
-        config.url = url;
-        config.method = HTTP_METHOD_GET;
-        config.timeout_ms = 30000;
-        config.disable_auto_redirect = true;
-        config.crt_bundle_attach = esp_crt_bundle_attach;
-        config.event_handler = download_event;
-        config.user_data = &sink;
-        config.buffer_size = 1024;
-        client = esp_http_client_init(&config);
-        if (client != NULL) http_result = esp_http_client_perform(client);
-        if (client == NULL || http_result != ESP_OK || sink.failed ||
-            esp_http_client_get_status_code(client) != 200 ||
-            sink.received != job->size ||
-            mbedtls_md_finish(&sink.sha, digest) != 0 ||
-            memcmp(digest, job->digest, sizeof(digest)) != 0 ||
-            fflush(sink.file) != 0) {
-            ESP_LOGW("PxaStore", "Download failed: http=%s code=%d bytes=%llu/%llu sink=%d",
-                     esp_err_to_name(http_result),
-                     client != NULL ? esp_http_client_get_status_code(client) : 0,
-                     (unsigned long long)sink.received,
-                     (unsigned long long)job->size, sink.failed);
-            goto cleanup;
-        }
-        if (fclose(sink.file) != 0) { sink.file = NULL; goto cleanup; }
-        sink.file = NULL;
+        if(need!=PXA_CONTAINER_HEADER_BYTES)break;
+        uint64_t declared=expected_bytes?expected_bytes:pxa_read_u64(prefix+48);
+        if(!declared || declared>PXA_STORE_DOWNLOAD_MAX_BYTES) {status=PXA_STATUS_LIMIT_EXCEEDED;goto done;}
+        status=pxa_container_header_parse((pxa_bytes_t){prefix,have},declared,&header);
+        if(status!=PXA_STATUS_OK)goto done;
+        if(header.payload_offset>METADATA_MAX || header.payload_offset<=have) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+        need=(size_t)header.payload_offset;
     }
-    if (!pxa_esp_package_store_preview_file(path, &job->preview) ||
-        strcmp(job->preview.app_id, job->app_id) != 0 ||
-        (job->has_expected_root && (!job->preview.has_publisher_root || memcmp(job->expected_root,job->preview.publisher_root,32)))) {
-        ESP_LOGW("PxaStore", "Package preview rejected: app=%s", job->app_id);
-        job->status = PXA_STATUS_DENIED;
-        job->keep_file = 0;
-        goto cleanup;
+    *bytes=have;status=PXA_STATUS_OK;
+ done:
+    if(file)fclose(file);
+    if(client)esp_http_client_cleanup(client);
+    return status;
+}
+static __attribute__((noinline)) pxa_status_t create_cache_directory(uint64_t epoch) {
+    char path[384];struct stat st;
+    pxa_status_t status=pxa_esp_storage_volume_path(epoch,path,sizeof(path));if(status!=PXA_STATUS_OK)return status;
+    const char *parts[]={"/PXA","/cache","/store"};
+    for(size_t i=0;i<3;++i) {
+        if(strlen(path)+strlen(parts[i])>=sizeof(path))return PXA_STATUS_LIMIT_EXCEEDED;
+        strcat(path,parts[i]);
+        if(mkdir(path,0700) && errno!=EEXIST)return PXA_STATUS_IO_ERROR;
+        if(stat(path,&st) || !S_ISDIR(st.st_mode))return PXA_STATUS_BAD_STATE;
     }
-    if (__atomic_load_n(&job->cancelled, __ATOMIC_ACQUIRE)) {
-        job->status = PXA_STATUS_CANCELLED;
-        goto cleanup;
+    return PXA_STATUS_OK;
+}
+/* Close transport and crypto before entering the filesystem coordinator.
+ * This separate frame is also retired before the SDK/FAT call depth. */
+static __attribute__((noinline)) pxa_status_t download_file(pxa_esp_store_job_t *job,const char *url,
+    uint64_t epoch,uint64_t bytes,const uint8_t *expected_digest,uint64_t progress_base,
+    char *path,size_t path_bytes,char *filename,size_t filename_bytes) {
+    download_sink_t sink={0};esp_http_client_handle_t client=NULL;int descriptor=-1,owned=0;
+    uint8_t digest[32];pxa_status_t status=create_cache_directory(epoch);
+    path[0]=0;mbedtls_md_init(&sink.sha);
+    if(status!=PXA_STATUS_OK)goto done;
+    for(unsigned attempt=0;attempt<8;++attempt) {
+        snprintf(filename,filename_bytes,".store-%08lx.pxa",(unsigned long)esp_random());
+        status=pxa_esp_store_cache_path(epoch,filename,path,path_bytes);
+        if(status!=PXA_STATUS_OK)goto done;
+        descriptor=open(path,O_CREAT|O_EXCL|O_WRONLY,0600);
+        if(descriptor>=0 || errno!=EEXIST)break;
     }
-    downloaded = 1;
-    if (job->separate == 1u) {
-        job->status = PXA_STATUS_OK;
-        job->keep_file = 1;
-        job->notify(job, 3u);
-        goto cleanup;
-    } else {
-        /* No approval may carry over into a fresh install/update attempt. Only
-         * the Host confirmation callback can approve this particular job. */
-        job->approved = 0;
-        job->notify(job, 1u);
-        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    if(descriptor<0) {path[0]=0;status=PXA_STATUS_IO_ERROR;goto done;}
+    owned=1;sink.file=fdopen(descriptor,"wb");
+    if(!sink.file) {status=PXA_STATUS_IO_ERROR;goto done;}descriptor=-1;
+    sink.expected=bytes;sink.job=job;sink.progress_base=progress_base;sink.hash_enabled=expected_digest!=NULL;
+    if(sink.hash_enabled && (mbedtls_md_setup(&sink.sha,mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),0) || mbedtls_md_starts(&sink.sha))) {
+        status=PXA_STATUS_RESOURCE_LIMIT;goto done;
     }
-    if (!job->approved || __atomic_load_n(&job->cancelled, __ATOMIC_ACQUIRE)) {
-        job->status = PXA_STATUS_DENIED;
-        goto cleanup;
-    }
-    job->status = (job->has_expected_root
-        ? pxa_host_install_package_file_for_identity(path,job->expected_root,job->app_id)
-        : pxa_host_install_package_file(path)) ? PXA_STATUS_OK : PXA_STATUS_INTERNAL;
-    /* An attempted cached install consumes its transport copy too. Declining
-     * the confirmation above preserves an explicitly downloaded offline pack. */
-    job->keep_file = 0;
-    if (job->status != PXA_STATUS_OK) {
-        size_t total = 0;
-        size_t used = 0;
-        struct stat source;
-        if (stat(path, &source) == 0 && source.st_size > 0 &&
-            esp_littlefs_info(CONFIG_PXA_STORAGE_PARTITION_LABEL,
-                              &total, &used) == ESP_OK && used <= total &&
-            total - used < (size_t)source.st_size * 2u)
-            job->status = PXA_STATUS_QUOTA_EXCEEDED;
-    }
-cleanup:
-    if (client != NULL) esp_http_client_cleanup(client);
-    mbedtls_md_free(&sink.sha);
-    if (sink.file != NULL) fclose(sink.file);
-    if (!job->keep_file) unlink(path);
+    esp_http_client_config_t config={.url=url,.method=HTTP_METHOD_GET,.timeout_ms=30000,
+        .disable_auto_redirect=true,.crt_bundle_attach=esp_crt_bundle_attach,.event_handler=download_event,
+        .user_data=&sink,.buffer_size=1024};
+    client=esp_http_client_init(&config);
+    esp_err_t fetched=client?esp_http_client_perform(client):ESP_FAIL;
+    status=PXA_STATUS_IO_ERROR;
+    if(cancelled(job)) {status=PXA_STATUS_CANCELLED;goto done;}
+    if(!client || fetched!=ESP_OK || esp_http_client_get_status_code(client)!=200 || sink.failed ||
+        sink.received!=bytes || (sink.hash_enabled && (mbedtls_md_finish(&sink.sha,digest) || memcmp(digest,expected_digest,32))) ||
+        fflush(sink.file) || fsync(fileno(sink.file)))goto done;
+    int closed=fclose(sink.file);sink.file=NULL;
+    if(closed)goto done;
+    status=PXA_STATUS_OK;
 done:
-    if (descriptor >= 0) { close(descriptor); unlink(path); }
-    if (!downloaded && job->status == PXA_STATUS_IO_ERROR)
-        job->status = PXA_STATUS_UNAVAILABLE;
-    ESP_LOGI("PxaStore", "Worker stack spare: %u bytes",
-             (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t)));
-    job->notify(job, 2u);
-    vTaskDelete(NULL);
+    if(client)esp_http_client_cleanup(client);
+    mbedtls_md_free(&sink.sha);
+    if(sink.file)fclose(sink.file);
+    if(descriptor>=0)close(descriptor);
+    if(status!=PXA_STATUS_OK && owned) {unlink(path);path[0]=0;}
+    return status;
+}
+void pxa_esp_store_worker(void *context) {
+    pxa_esp_store_job_t *job=context;
+    uint8_t *prefix=NULL;size_t prefix_bytes=0;char url[512]={0},resource_filename[24];
+    int attempted_install=0,owned_file=0;uint64_t retained_epoch=0,retained_media_epoch=0;
+    const char *origin=CONFIG_PXA_STORE_ORIGIN;size_t origin_size=strlen(origin);
+    job->status=PXA_STATUS_IO_ERROR;job->resource_path[0]=0;job->total_bytes=job->size;
+    job->keep_file=job->separate==2;
+    if(cancelled(job)) {job->status=PXA_STATUS_CANCELLED;goto done;}
+    if(job->separate==2) {
+        job->keep_file=1;job->status=pxa_esp_volumes_retain(job->cache_epoch);
+        if(job->status!=PXA_STATUS_OK)goto done;
+        retained_epoch=job->cache_epoch;
+    } else if(origin_size<9 || strncmp(origin,"https://",8) || strchr(origin+8,'/') || strchr(origin+8,'?') ||
+        snprintf(url,sizeof(url),"%s%s",origin,job->ticket)>=(int)sizeof(url)) {
+        job->status=PXA_STATUS_INVALID_ARGUMENT;goto done;
+    }
+    prefix=heap_caps_malloc(METADATA_MAX,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!prefix) {job->status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
+    job->status=read_metadata(job,url,job->size,job->separate==2,prefix,&prefix_bytes);
+    if(job->status!=PXA_STATUS_OK)goto done;
+    job->status=pxa_esp_package_store_prepare_install(prefix,prefix_bytes,job->size,
+        job->separate==2?0:job->size,job->separate==1,job->has_expected_root?job->expected_root:NULL,job->app_id,&job->preview,&job->placement);
+    if(job->status!=PXA_STATUS_OK)goto done;
+    if(job->placement.requires_resources) {
+        if(job->separate==1) {job->status=PXA_STATUS_UNSUPPORTED;goto done;}
+        if(job->separate==2)job->status=pxa_esp_package_store_prepare_resources(&job->placement,NULL,0,0,0);
+        else {
+            const char *tail=strstr(url,"/download?expires=");
+            if(!tail || snprintf(job->resource_url,sizeof(job->resource_url),"%.*s/resources%s",
+                (int)(tail-url),url,tail)>=(int)sizeof(job->resource_url)) {job->status=PXA_STATUS_INVALID_ARGUMENT;goto done;}
+            job->status=read_metadata(job,job->resource_url,0,0,prefix,&prefix_bytes);
+            if(job->status==PXA_STATUS_OK) {
+                uint64_t bytes=pxa_read_u64(prefix+48);
+                job->status=pxa_esp_package_store_prepare_resources(&job->placement,prefix,prefix_bytes,bytes,bytes);
+            }
+        }
+        if(job->status!=PXA_STATUS_OK)goto done;
+    }
+    heap_caps_free(prefix);prefix=NULL;
+    job->approved=0;job->notify(job,1);(void)ulTaskNotifyTake(pdTRUE,portMAX_DELAY);
+    if(cancelled(job)) {job->status=PXA_STATUS_CANCELLED;goto done;}
+    if(!job->approved) {job->status=PXA_STATUS_DENIED;goto done;}
+    job->status=pxa_esp_package_store_reserve_install(&job->placement,job->placement.selected);
+    if(job->status!=PXA_STATUS_OK)goto done;
+    if(job->separate!=2) {
+        job->cache_epoch=job->placement.plan.app_mount_epoch;
+        job->status=pxa_esp_volumes_retain(job->cache_epoch);if(job->status!=PXA_STATUS_OK)goto done;
+        retained_epoch=job->cache_epoch;
+    }
+    if(job->placement.requires_resources) {
+        uint64_t epoch=job->placement.media_choices[job->placement.media_selected].volume.mount_epoch;
+        job->status=pxa_esp_volumes_retain(epoch);if(job->status!=PXA_STATUS_OK)goto done;
+        retained_media_epoch=epoch;
+        if(!job->placement.media_choices[job->placement.media_selected].reuse)
+            job->total_bytes+=job->placement.resource_container_bytes;
+    }
+    if(job->separate!=2) {
+        job->status=download_file(job,url,job->cache_epoch,job->size,job->digest,0,
+            job->path,sizeof(job->path),job->filename,sizeof(job->filename));
+        if(job->status!=PXA_STATUS_OK)goto done;
+        owned_file=1;
+    }
+    if(cancelled(job)) {job->status=PXA_STATUS_CANCELLED;goto done;}
+    if(job->placement.requires_resources && !job->placement.media_choices[job->placement.media_selected].reuse) {
+        job->status=download_file(job,job->resource_url,retained_media_epoch,job->placement.resource_container_bytes,NULL,job->size,
+            job->resource_path,sizeof(job->resource_path),resource_filename,sizeof(resource_filename));
+        if(job->status!=PXA_STATUS_OK)goto done;
+        if(cancelled(job)) {job->status=PXA_STATUS_CANCELLED;goto done;}
+        /* The application signature binds the resource manifest, and the
+         * SDK authenticates both resource signatures and every decoded file.
+         * No unsigned HTTP header becomes a resource trust credential. */
+        job->status=pxa_esp_package_store_commit_resources(job->resource_path,&job->placement);
+        if(job->status!=PXA_STATUS_OK)goto done;
+        if(unlink(job->resource_path)!=0) {job->status=PXA_STATUS_IO_ERROR;goto done;}
+        job->resource_path[0]=0;
+    }
+    if(cancelled(job)) {job->status=PXA_STATUS_CANCELLED;goto done;}
+    if(job->separate==1) {
+        job->status=PXA_STATUS_OK;job->keep_file=1;
+        job->notify(job,3);(void)ulTaskNotifyTake(pdTRUE,portMAX_DELAY);
+    } else {
+        attempted_install=1;job->status=pxa_esp_package_store_commit_install(job->path,&job->placement);
+        if(job->status==PXA_STATUS_OK)job->keep_file=0;
+    }
+done:
+    heap_caps_free(prefix);
+    if(job->resource_path[0])unlink(job->resource_path);
+    if(!job->keep_file && job->path[0] && (owned_file || job->separate==2))unlink(job->path);
+    if(job->placement.plan.reserved) {
+        pxa_esp_storage_release_plan(&job->placement.plan);
+        pxa_esp_storage_refresh_volume(job->placement.plan.app_mount_epoch);
+        if(retained_media_epoch && retained_media_epoch!=job->placement.plan.app_mount_epoch)
+            pxa_esp_storage_refresh_volume(retained_media_epoch);
+    }
+    if(retained_media_epoch)pxa_esp_volumes_release(retained_media_epoch);
+    if(retained_epoch)pxa_esp_volumes_release(retained_epoch);
+    ESP_LOGI("PxaStore","Transfer completed: status=%ld install=%d stack_spare=%u",(long)job->status,attempted_install,
+        (unsigned)(uxTaskGetStackHighWaterMark(NULL)*sizeof(StackType_t)));
+    job->notify(job,2);vTaskDelete(NULL);
 }
 #endif

@@ -67,6 +67,7 @@ enum { HTTP_EVENT_ON_HEADER, HTTP_EVENT_ON_DATA };
 #define MALLOC_CAP_INTERNAL 4
 #define MALLOC_CAP_DMA 8
 #define ESP_LOGI(...) test_log(__VA_ARGS__)
+#define ESP_LOGD(...) test_log(__VA_ARGS__)
 #define ESP_LOGW(...) test_log(__VA_ARGS__)
 #define ESP_LOGE(...) test_log(__VA_ARGS__)
 #define portENTER_CRITICAL(lock) ((void)(lock), test_enter())
@@ -75,6 +76,7 @@ enum { HTTP_EVENT_ON_HEADER, HTTP_EVENT_ON_DATA };
 #define taskEXIT_CRITICAL(lock) portEXIT_CRITICAL(lock)
 
 void test_log(const char *, const char *, ...);
+const char *esp_err_to_name(esp_err_t);
 static inline void esp_log_write(esp_log_level_t level, const char *tag,
                                  const char *format, ...) {
     (void)level;

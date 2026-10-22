@@ -19,6 +19,8 @@
 #include <esp_attr.h>
 #include <esp_littlefs.h>
 #include <esp_log.h>
+#include <esp_mac.h>
+#include <esp_partition.h>
 #include <esp_lvgl_port.h>
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
@@ -26,6 +28,8 @@
 #include <nvs.h>
 #include <pxa/pxa_host.h>
 #include <pxa/pxa_esp_surface.h>
+#include <pxa/pxa_esp_storage.h>
+#include <pxa/pxa_esp_font_source.h>
 #include <pxa/version.h>
 #include <pxadb/pxadb_service.h>
 #include <pxsys/esp_pxa_bridge.h>
@@ -67,6 +71,7 @@ pxsys_reference_lvgl_t* g_reference_ui;
 lv_obj_t* g_reference_ui_viewport;
 bool g_display_observer_registered;
 lv_font_t* g_typography_fonts[PXSYS_TYPOGRAPHY_ROLE_COUNT];
+pxa_esp_font_source_t* g_typography_source;
 uint32_t g_display_width = 0;
 uint32_t g_display_height = 0;
 UserPreferences g_preferences;
@@ -508,7 +513,48 @@ bool ForgetSavedWifi(void*, const char* ssid) {
     return false;
 }
 
+pxa_status_t PrimaryVolumeSpace(void*,const char*,uint64_t* total,uint64_t* free_bytes,uint8_t* known) {
+    size_t capacity=0,used=0;
+    *known=0;
+    if(esp_littlefs_info(CONFIG_PXA_STORAGE_PARTITION_LABEL,&capacity,&used)!=ESP_OK || used>capacity)
+        return PXA_STATUS_IO_ERROR;
+    *total=capacity;*free_bytes=capacity-used;
+    *known=PXA_VOLUME_TOTAL_KNOWN|PXA_VOLUME_FREE_KNOWN;
+    return PXA_STATUS_OK;
+}
+
+void RegisterPrimaryVolume() {
+    uint8_t physical_id[32]={};
+    const auto* partition=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+        ESP_PARTITION_SUBTYPE_DATA_LITTLEFS,CONFIG_PXA_STORAGE_PARTITION_LABEL);
+    if(!partition || !partition->erase_size)return;
+    if(esp_efuse_mac_get_default(physical_id)!=ESP_OK) {
+        ESP_LOGW(kTag,"Primary volume device identity unavailable");return;
+    }
+    std::memcpy(physical_id+6,"onboard-spi-flash",16);
+    pxa_esp_storage_volume_config_t config={};
+    config.struct_size=sizeof(config);config.mount_path=CONFIG_PXA_MOUNT_POINT;
+    config.name="Internal storage";config.device_identity=physical_id;
+    config.device_identity_bytes=sizeof(physical_id);
+    config.capabilities=PXA_VOLUME_READ|PXA_VOLUME_WRITE|PXA_VOLUME_RANDOM_READ|
+        PXA_VOLUME_INSTALLABLE|PXA_VOLUME_PRIVATE_NATIVE;
+    config.max_file_bytes=INT32_MAX;config.allocation_unit=partition->erase_size;
+    config.link_free=1;config.query_space=PrimaryVolumeSpace;
+    uint64_t epoch=0;
+    const auto status=pxa_esp_storage_register_volume(&config,&epoch);
+    if(status!=PXA_STATUS_OK)
+        ESP_LOGW(kTag,"Primary volume registration: %ld; existing storage is preserved",long(status));
+}
+
 bool MountPxaStorage() {
+    /* App homes are discovered on registered volumes. An internal filesystem
+     * is optional; a board may provide only SD or another storage device. */
+    if(CONFIG_PXA_STORAGE_PARTITION_LABEL[0]=='\0' ||
+       esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_LITTLEFS,
+                                CONFIG_PXA_STORAGE_PARTITION_LABEL)==nullptr) {
+        ESP_LOGI(kTag,"No internal PXA data partition; using board storage volumes");
+        return true;
+    }
 #ifdef CONFIG_PXA_STORAGE_FORMAT_IF_MOUNT_FAILED
     constexpr bool format_if_mount_failed =
         CONFIG_PXA_STORAGE_FORMAT_IF_MOUNT_FAILED;
@@ -525,12 +571,17 @@ bool MountPxaStorage() {
         .grow_on_mount = false,
     };
     const esp_err_t result = esp_vfs_littlefs_register(&config);
-    if (result == ESP_OK || result == ESP_ERR_INVALID_STATE)
+    if (result == ESP_OK || (result == ESP_ERR_INVALID_STATE &&
+                            esp_littlefs_mounted(CONFIG_PXA_STORAGE_PARTITION_LABEL))) {
+        RegisterPrimaryVolume();
         return true;
-    ESP_LOGE(kTag, "Cannot mount PXA storage '%s' at '%s': %s",
+    }
+    ESP_LOGW(kTag, "Cannot mount PXA storage '%s' at '%s': %s",
              CONFIG_PXA_STORAGE_PARTITION_LABEL, CONFIG_PXA_MOUNT_POINT,
              esp_err_to_name(result));
-    return false;
+    /* Preserve a damaged/full internal filesystem. External volumes and the
+     * storage-independent recovery UI must still get a chance to start. */
+    return true;
 }
 
 void ShowStartupRecovery(const pxa_board_port_t* board) {
@@ -600,8 +651,10 @@ bool ResolveAppIcon(void* context, const pxsys_app_descriptor_t* app,
 }
 
 void RefreshLauncherApps(void*) {
+    lv_lock();
     if (g_reference_ui != nullptr)
         pxsys_reference_lvgl_refresh_apps(g_reference_ui);
+    lv_unlock();
 }
 
 bool LoadLauncherOrder(void*, char* order, size_t capacity) {
@@ -688,14 +741,12 @@ void FillDeviceInfo(
                   (double)heap_caps_get_free_size(MALLOC_CAP_SPIRAM) /
                       (1024.0 * 1024.0));
     {
-        size_t total = 0;
-        size_t used = 0;
-        if (esp_littlefs_info(CONFIG_PXA_STORAGE_PARTITION_LABEL, &total,
-                              &used) == ESP_OK) {
+        uint64_t total=0,free_bytes=0;size_t volumes=0;
+        if (pxa_esp_storage_usage(&total,&free_bytes,&volumes)==PXA_STATUS_OK) {
             std::snprintf(values[PXSYS_REFERENCE_DEVICE_STORAGE],
                           PXSYS_REFERENCE_DEVICE_VALUE_MAX,
                           "%.1f / %.1f MB",
-                          (double)used / (1024.0 * 1024.0),
+                          (double)(total-free_bytes) / (1024.0 * 1024.0),
                           (double)total / (1024.0 * 1024.0));
         }
     }
@@ -731,6 +782,10 @@ size_t ListManagedApps(void*,
             capacity, sizeof(pxa_host_package_info_t)));
     if (packages == nullptr) return 0;
     const size_t listed = list(packages, capacity);
+    pxsys_locale_snapshot_t locale={};locale.struct_size=sizeof(locale);
+    const char* locale_tag="en-US";
+    if(g_system && pxsys_locale_service_get(pxsys_standard_system_locale(g_system),&locale)==PXSYS_STATUS_OK)
+        locale_tag=locale.tag;
     for (size_t index = 0; index < listed; ++index) {
         const pxa_host_package_info_t* info = &packages[index];
         pxsys_reference_managed_app_t* app = &apps[index];
@@ -742,11 +797,15 @@ size_t ListManagedApps(void*,
         app->enabled = info->enabled ? 1 : 0;
         app->has_private_data = info->has_private_data ? 1 : 0;
         app->active = info->active ? 1 : 0;
+        app->movable = info->movable ? 1 : 0;
+        app->resources_movable = info->resources_movable ? 1 : 0;
+        app->legacy_storage = info->legacy_storage ? 1 : 0;
+        app->archived = info->archived ? 1 : 0;
         bool named = false;
         if (info->has_publisher_root) {
             pxa_host_package_metadata_t metadata = {};
             if (pxa_host_resolve_package_metadata(
-                    info->publisher_root, info->app_id, "zh-CN", &metadata) &&
+                    info->publisher_root, info->app_id, locale_tag, &metadata) &&
                 metadata.name[0] != '\0') {
                 CopyText(app->name, sizeof(app->name), metadata.name);
                 named = true;
@@ -766,6 +825,10 @@ bool ManageApp(void*, const char* identity,
     if (identity == nullptr || identity[0] == '\0') return false;
     pxa_host_app_action_t mapped;
     switch (action) {
+        case PXSYS_REFERENCE_APP_ACTION_MOVE:
+            return pxa_host_request_move_package(identity);
+        case PXSYS_REFERENCE_APP_ACTION_MOVE_RESOURCES:
+            return pxa_host_request_move_resources(identity);
         case PXSYS_REFERENCE_APP_ACTION_ENABLE:
             mapped = PXA_HOST_APP_ACTION_ENABLE;
             break;
@@ -1064,6 +1127,12 @@ bool FileSize(void*, const char* path, uint64_t* size, bool* done) {
     return true;
 }
 
+bool RequestFileInstall(void*, const char* path) {
+    char absolute[PXSYS_REFERENCE_FILE_PATH_MAX + 64];
+    return path != nullptr && BuildAbsolutePath(path, absolute, sizeof(absolute)) &&
+           pxa_host_request_install_package_file(absolute);
+}
+
 bool ManageFile(void*, const char* path, const char* destination,
                 pxsys_reference_file_action_t action) {
     char absolute[PXSYS_REFERENCE_FILE_PATH_MAX + 64];
@@ -1082,7 +1151,7 @@ bool ManageFile(void*, const char* path, const char* destination,
     if (action == PXSYS_REFERENCE_FILE_ACTION_INSTALL) {
         const char* extension = std::strrchr(path, '.');
         return extension != nullptr && std::strcmp(extension, ".pxa") == 0 &&
-               pxa_host_install_package_file(absolute);
+               pxa_host_request_install_package_file(absolute);
     }
     if (destination == nullptr || destination[0] == '\0' ||
         !BuildAbsolutePath(destination, target, sizeof(target))) return false;
@@ -1245,6 +1314,9 @@ bool CreateSystem(const pxa_board_port_t* board,
         if (ui_config.parent == nullptr) return false;
         if (ui_config.parent != lv_display_get_layer_top(display))
             g_reference_ui_viewport = ui_config.parent;
+        if (profile->font_path != nullptr && *profile->font_path)
+            (void)pxa_esp_font_source_acquire(profile->font_path,&g_typography_source);
+        const char* font_path=pxa_esp_font_source_path(g_typography_source);
         for (size_t i = 0; i < PXSYS_TYPOGRAPHY_ROLE_COUNT; ++i) {
             const uint16_t size = system_config.initial_theme.typography_px[i];
             const lv_font_t* fallback = kTypographySymbolFallbacks[i];
@@ -1255,7 +1327,7 @@ bool CreateSystem(const pxa_board_port_t* board,
 #if CONFIG_LV_FONT_MONTSERRAT_24
             if (size >= 24) fallback = &lv_font_montserrat_24;
 #endif
-            ui_config.fonts[i] = LoadFont(profile->font_path, size,
+            ui_config.fonts[i] = LoadFont(font_path, size,
                                           &g_typography_fonts[i], fallback);
         }
         ui_config.text_font = ui_config.fonts[PXSYS_TYPOGRAPHY_BODY];
@@ -1300,6 +1372,7 @@ bool CreateSystem(const pxa_board_port_t* board,
         ui_config.app_permission_set = SetAppPermission;
         ui_config.file_list = ListFiles;
         ui_config.file_action = ManageFile;
+        ui_config.file_install = RequestFileInstall;
         ui_config.file_size = FileSize;
 #endif
 #if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
@@ -1394,6 +1467,14 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     if (profile->mount_storage && !MountPxaStorage()) return false;
     ESP_LOGI(kTag, "Startup storage ready at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
     if (!board->initialize_before_storage && !board->initialize(board->context)) return false;
+    /* Boards may explicitly select SD during initialization. Without such a
+     * selection, the primary registered volume is also a usable media source. */
+    char media_mount[128];
+    if (pxa_esp_storage_media_mount(media_mount, sizeof(media_mount)) != PXA_STATUS_OK) {
+        const auto media_status = pxa_esp_storage_select_app_media(CONFIG_PXA_MOUNT_POINT);
+        if (media_status != PXA_STATUS_OK)
+            ESP_LOGI(kTag, "No default app media volume: %ld", long(media_status));
+    }
     if (!pxa_system_clock_initialize()) return false;
     ESP_LOGI(kTag, "Startup board ready at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
     // Host semantic fonts are created during initialization, before CreateSystem.
@@ -1522,4 +1603,5 @@ extern "C" void pxa_integration_stop(void) {
     }
 #endif
     std::memset(g_typography_fonts, 0, sizeof(g_typography_fonts));
+    (void)pxa_esp_font_source_release(&g_typography_source);
 }

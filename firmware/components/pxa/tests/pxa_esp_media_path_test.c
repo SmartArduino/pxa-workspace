@@ -20,5 +20,11 @@ int main(void) {
     assert(pxa_esp_media_relative_valid(maximum));
     maximum[139]='b';maximum[140]=0;
     assert(!pxa_esp_media_relative_valid(maximum));
+    char managed[256]="PXA/media/";
+    memset(managed+10,'a',64);strcpy(managed+74,"/quake/");
+    memset(managed+81,'b',64);strcpy(managed+145,"/package");
+    assert(pxa_esp_media_relative_valid(managed) && pxa_esp_media_relative_managed(managed));
+    managed[81]='B';assert(!pxa_esp_media_relative_valid(managed));managed[81]='b';
+    managed[149]='X';assert(!pxa_esp_media_relative_valid(managed));
     puts("PASS: media roots require publisher/app paths; AppKey-only roots rejected");
 }

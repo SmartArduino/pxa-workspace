@@ -19,6 +19,12 @@ extern "C" {
 pxa_status_t pxa_esp_permission_store_load(
     void *context, pxa_bytes_t app_identity, pxa_bytes_t name,
     pxa_bytes_t scope, pxa_permission_decision_t *decision);
+/* Trusted legacy-conversion snapshot. Uses the same verified file policy and
+ * old NVS fallback, but never lazily migrates, erases or persists a decision.
+ * Safe while preparing an unpublished destination, including full Flash. */
+pxa_status_t pxa_esp_permission_store_peek(
+    void *context,pxa_bytes_t app_identity,pxa_bytes_t name,
+    pxa_bytes_t scope,pxa_permission_decision_t *decision);
 pxa_status_t pxa_esp_permission_store_save(
     void *context, pxa_bytes_t app_identity, pxa_bytes_t name,
     pxa_bytes_t scope, pxa_permission_decision_t decision);

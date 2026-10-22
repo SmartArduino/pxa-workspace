@@ -58,6 +58,10 @@ typedef struct {
     bool active;
     uint8_t permission_count;
     uint8_t granted_permission_count;
+    bool movable;
+    bool resources_movable;
+    bool legacy_storage;
+    bool archived;
 } pxa_host_package_info_t;
 
 typedef struct {
@@ -186,10 +190,34 @@ bool pxa_host_scan_packages(void);
 bool pxa_host_refresh_inbox(void);
 bool pxa_host_stage_package_file(const char *source_path);
 bool pxa_host_install_package_file(const char *source_path);
+/* Queue a system-owned local install confirmation; performs no file I/O on
+ * the caller/UI thread. true means accepted, not committed. */
+bool pxa_host_request_install_package_file(const char *source_path);
 bool pxa_host_install_package_file_for_identity(const char *,const uint8_t[32],const char *);
+/* Epoch 0 uses the Host default placement, retaining an existing app volume. */
+int32_t pxa_host_install_package_file_on_volume(const char *,uint64_t mount_epoch);
+int32_t pxa_host_move_package_volume(const char *identity,uint64_t target_epoch,bool resume);
+/* Queue native system placement UI; independent of any Guest lifetime. */
+bool pxa_host_request_move_package(const char *identity);
+bool pxa_host_request_move_resources(const char *identity);
+/* Host-only synchronous progress on the operation thread. phase 0 polls;
+ * phase 1 means both copying receipts are durable. Keep callbacks bounded;
+ * do not re-enter package or volume operations. */
+typedef void (*pxa_host_transfer_progress_fn)(void *,uint8_t phase);
+int32_t pxa_host_move_package_volume_with_progress(const char *,uint64_t,bool,
+    pxa_host_transfer_progress_fn,void *);
+/* Trusted developer import of a completed /PXA/cache/store/.store-token.pxa;
+ * validates publisher bytes before assigning the installed caller's cache
+ * ownership. Subsequent installation still requires native confirmation. */
+int32_t pxa_host_import_cached_package_file(const char *source,const char *owner,
+    char *token,size_t capacity);
+
 /* PXADB's reserved receiving directories are invisible until publication. */
 bool pxa_host_publish_package_transfer(const char *app_id);
 void pxa_host_discard_package_transfers(void);
+/* PXA_STATUS_WOULD_BLOCK asks the transport to retry later, without waiting
+ * for unrelated code/resource installation or boot recovery. */
+int32_t pxa_host_try_discard_package_transfers(void);
 size_t pxa_host_package_count(void);
 size_t pxa_host_list_packages(pxa_host_package_info_t *packages,
                               size_t capacity);
@@ -265,6 +293,9 @@ bool pxa_host_post_key(pxa_host_key_t key);
 bool pxa_host_set_color_scheme(pxa_host_color_scheme_t color_scheme);
 bool pxa_host_set_ui_palette(const uint32_t rgba[10]);
 bool pxa_host_set_ui_palette_extended(const uint32_t rgba[32]);
+/* Native controls use the shell's already density-adapted theme metrics.
+ * A zero radius is valid for square-corner themes. */
+bool pxa_host_set_ui_metrics(uint16_t base_spacing_px, uint16_t base_radius_px);
 /* Thread-safe locale snapshot used for startup configuration and subsequent
  * configuration events. locale is a canonical BCP 47 tag. */
 bool pxa_host_set_locale(const char *locale, uint8_t text_direction);

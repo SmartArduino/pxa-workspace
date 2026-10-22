@@ -9,6 +9,8 @@
 
 static unsigned opens, syncs;
 static mode_t stat_mode;
+void *heap_caps_malloc(size_t size, unsigned caps) { (void)caps; return malloc(size); }
+void heap_caps_free(void *memory) { free(memory); }
 int test_open(const char *path, int flags, ...) {
     assert(!strcmp(path, "/dev/null") && flags == O_RDWR);
     if (++opens == 1) {errno = EMFILE; return -1;}

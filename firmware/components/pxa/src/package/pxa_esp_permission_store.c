@@ -798,6 +798,19 @@ static int valid_arguments(pxa_bytes_t identity, pxa_bytes_t name,
            scope.size <= UINT32_MAX;
 }
 
+pxa_status_t pxa_esp_permission_store_peek(
+    void *context,pxa_bytes_t identity,pxa_bytes_t name,
+    pxa_bytes_t scope,pxa_permission_decision_t *decision) {
+    (void)context;
+    if(!decision || !valid_arguments(identity,name,scope))return PXA_STATUS_INVALID_ARGUMENT;
+    *decision=PXA_PERMISSION_DENY;
+    pthread_mutex_lock(&g_permission_store_mutex);
+    pxa_status_t status=policy_load(identity,name,scope,decision);
+    if(status==PXA_STATUS_NOT_FOUND)status=legacy_nvs_load(identity,name,scope,decision);
+    pthread_mutex_unlock(&g_permission_store_mutex);
+    return status;
+}
+
 pxa_status_t pxa_esp_permission_store_load(
     void *context, pxa_bytes_t app_identity, pxa_bytes_t name,
     pxa_bytes_t scope, pxa_permission_decision_t *decision) {

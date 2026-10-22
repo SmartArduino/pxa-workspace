@@ -1,0 +1,25 @@
+{
+  "format": "pxa-package-source-0.1",
+  "id": "pxa-legacy-adoption-test",
+  "version": "1.0.0",
+  "release_sequence": 1,
+  "name": "Legacy adoption probe",
+  "description": "Device acceptance fixture for legacy saves, KV, media and permission adoption",
+  "min_sdk": [2, 1],
+  "build": {
+    "system": "cmake",
+    "native_stack_checks": true,
+    "linear_memory": {"maximum_bytes": 131072, "pinned": false}
+  },
+  "permissions": [
+    {"name": "audio.playback", "scope": "media", "required": false},
+    {"name": "network.http", "scope": "", "required": false}
+  ],
+  "components": [{
+    "id": "main",
+    "kind": "ui",
+    "wasi": {"version": "preview1", "libc": "wasi-libc", "features": []},
+    "services": ["log", "storage", "permission",
+      {"name": "fs", "min_version": [0, 3], "features": ["app-media-root", "scoped-roots"]}]
+  }]
+}

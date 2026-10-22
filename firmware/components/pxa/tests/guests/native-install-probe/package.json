@@ -1,0 +1,20 @@
+{
+  "format": "pxa-package-source-0.2",
+  "id": "pxa-native-install-test",
+  "version": "1.1.0",
+  "release_sequence": 3,
+  "name": "Native Files test",
+  "description": "Device acceptance fixture for signed resources and private data",
+  "min_sdk": [2, 1],
+  "build": {
+    "system": "cmake",
+    "native_stack_checks": true,
+    "linear_memory": {"maximum_bytes": 131072, "pinned": false}
+  },
+  "components": [{
+    "id": "main",
+    "kind": "ui",
+    "wasi": {"version": "preview1", "libc": "wasi-libc", "features": []},
+    "services": ["log", {"name": "fs", "min_version": [0, 3], "features": ["app-media-root", "scoped-roots"]}]
+  }]
+}

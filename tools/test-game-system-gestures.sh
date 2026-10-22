@@ -64,4 +64,15 @@ overlay_link[overlay_link.index('-o')+1] = str(temporary/'overlay')
 subprocess.run(overlay_link, cwd=build, check=True)
 subprocess.run([str(temporary/'overlay')],
     env={**os.environ, 'SDL_VIDEODRIVER':'dummy', 'SDL_AUDIODRIVER':'dummy'}, check=True)
+# Native install/move dialogs use this same real renderer and async timer loop.
+dialog_arguments = overlay_arguments + ['-I'+str(root/'firmware/components/pxa/src/runtime')]
+subprocess.run(['cc', *dialog_arguments, '-c',
+    str(root/'firmware/components/pxa_integration/tests/install_dialog_test.c'),
+    '-o', str(temporary/'dialog.o')], check=True)
+dialog_link = [str(temporary/'dialog.o') if arg == str(temporary/'overlay.o') else arg
+               for arg in overlay_link]
+dialog_link[dialog_link.index('-o')+1] = str(temporary/'dialog')
+subprocess.run(dialog_link, cwd=build, check=True)
+subprocess.run([str(temporary/'dialog')],
+    env={**os.environ, 'SDL_VIDEODRIVER':'dummy', 'SDL_AUDIODRIVER':'dummy'}, check=True)
 PY

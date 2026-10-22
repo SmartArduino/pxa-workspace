@@ -147,11 +147,16 @@ static void publish_plane(uint8_t *memory, int32_t x, int32_t y, uint16_t width,
 }
 
 void pxa_esp_system_overlay_bind(void) {
-  if (g_bound)
-    return;
-  g_bound = true;
-  pxa_esp_surface_set_system_alpha_provider(provide_plane, NULL);
-  pxa_esp_system_overlay_refresh();
+  /* Host initialization overlaps the board's boot-screen timer. Refresh
+   * performs LVGL layout and event dispatch, including before any overlay is
+   * visible, so it must share the timer's recursive LVGL mutex. */
+  lv_lock();
+  if (!g_bound) {
+    g_bound = true;
+    pxa_esp_surface_set_system_alpha_provider(provide_plane, NULL);
+    pxa_esp_system_overlay_refresh();
+  }
+  lv_unlock();
 }
 
 void pxa_esp_system_overlay_refresh(void) {

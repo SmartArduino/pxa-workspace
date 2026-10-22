@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 
 #include "pxa_esp_host.h"
+#include "pxa_esp_store_cache.h"
 #include "pxa_esp_ime.h"
 #include "pxa_esp_package_icon.h"
 #include "pxa_esp_package_store.h"
@@ -109,6 +110,7 @@ static void package_store_synced(void *context) {
     (void)context;
     notify_catalog_changed();
 }
+void pxa_host_notify_catalog_changed(void) { notify_catalog_changed(); }
 
 bool pxa_host_initialize(void) {
     bool publish_insets;
@@ -172,12 +174,44 @@ bool pxa_host_install_package_file(const char *source_path) {
     if (success) notify_catalog_changed();
     return success;
 }
+bool pxa_host_request_install_package_file(const char *source_path) {
+    return g_host_ready && pxa_esp_host_request_install_package_file(source_path);
+}
 
 bool pxa_host_install_package_file_for_identity(const char *source_path,const uint8_t root[32],const char *app_id) {
     if(!g_host_ready || !source_path || !root || !app_id)return false;
     bool success=pxa_esp_package_store_install_file_for_identity(source_path,root,app_id);
     if(success)notify_catalog_changed();
     return success;
+}
+int32_t pxa_host_install_package_file_on_volume(const char *source,uint64_t epoch) {
+    if(!g_host_ready)return PXA_STATUS_UNAVAILABLE;
+    pxa_status_t status=pxa_esp_package_store_install_file_on_volume(source,epoch,NULL,NULL);
+    if(status==PXA_STATUS_OK)notify_catalog_changed();
+    return status;
+}
+int32_t pxa_host_move_package_volume(const char *identity,uint64_t epoch,bool resume) {
+    return pxa_host_move_package_volume_with_progress(identity,epoch,resume,NULL,NULL);
+}
+bool pxa_host_request_move_package(const char *identity) {
+    return g_host_ready && pxa_esp_host_request_move_package(identity);
+}
+bool pxa_host_request_move_resources(const char *identity) {
+    return g_host_ready && pxa_esp_host_request_move_resources(identity);
+}
+int32_t pxa_host_move_package_volume_with_progress(const char *identity,uint64_t epoch,bool resume,
+    pxa_host_transfer_progress_fn progress,void *context) {
+    if(!g_host_ready)return PXA_STATUS_UNAVAILABLE;
+    pxa_status_t status=pxa_esp_package_store_move_volume_with_progress(identity,epoch,resume?1:0,progress,context);
+    notify_catalog_changed();return status;
+}
+int32_t pxa_host_import_cached_package_file(const char *source,const char *owner,char *token,size_t capacity) {
+    uint8_t publisher[32];char identity[PXA_HOST_PACKAGE_ID_MAX],app[65];
+    if(!g_host_ready)return PXA_STATUS_UNAVAILABLE;
+    pxa_status_t status=pxa_esp_package_store_resolve_identity(owner,publisher,identity,sizeof(identity),app,sizeof(app));
+    if(status!=PXA_STATUS_OK)return status;
+    if(!pxa_esp_package_store_is_enabled(identity))return PXA_STATUS_DENIED;
+    return pxa_esp_store_cache_adopt(source,identity,token,capacity);
 }
 
 bool pxa_host_publish_package_transfer(const char *app_id) {
@@ -189,6 +223,9 @@ bool pxa_host_publish_package_transfer(const char *app_id) {
 
 void pxa_host_discard_package_transfers(void) {
     if (g_host_ready) pxa_esp_package_store_discard_transfers();
+}
+int32_t pxa_host_try_discard_package_transfers(void) {
+    return g_host_ready?pxa_esp_package_store_try_discard_transfers():PXA_STATUS_OK;
 }
 
 size_t pxa_host_package_count(void) {
@@ -453,6 +490,10 @@ bool pxa_host_set_ui_palette(const uint32_t rgba[10]) {
 
 bool pxa_host_set_ui_palette_extended(const uint32_t rgba[32]) {
     return g_host_ready && pxa_esp_host_set_ui_palette_extended(rgba);
+}
+
+bool pxa_host_set_ui_metrics(uint16_t base_spacing_px, uint16_t base_radius_px) {
+    return g_host_ready && pxa_esp_host_set_ui_metrics(base_spacing_px, base_radius_px);
 }
 
 bool pxa_host_set_locale(const char *locale, uint8_t text_direction) {

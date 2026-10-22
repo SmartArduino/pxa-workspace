@@ -322,3 +322,25 @@ pxa_status_t pxa_app_locators_set_flags(pxa_app_locators_t *r, const uint8_t roo
         }
     return PXA_STATUS_NOT_FOUND;
 }
+
+pxa_status_t pxa_app_locators_forget(pxa_app_locators_t *r,const uint8_t root[32],const char *app_id) {
+    if(!r || !root || !app_id)return PXA_STATUS_INVALID_ARGUMENT;
+    if(!r->ready)return PXA_STATUS_UNAVAILABLE;
+    for(size_t i=0;i<r->app_count;++i) {
+        if(memcmp(root,r->apps[i].root,32) || strcmp(app_id,r->apps[i].app_id))continue;
+        if(r->apps[i].flags&(PXA_LOCATOR_PACKAGE_MOVING|PXA_LOCATOR_DATA_MOVING))return PXA_STATUS_BUSY;
+        if(!r->commit || r->generation==UINT64_MAX)return PXA_STATUS_RESOURCE_LIMIT;
+        pxa_locator_app_t removed=r->apps[i];size_t remaining=r->app_count-i-1;
+        memmove(r->apps+i,r->apps+i+1,remaining*sizeof(*r->apps));
+        pxa_status_t status=r->commit(r->context,r->generation+1,r->publishers,r->publisher_count,r->apps,r->app_count-1);
+        if(status!=PXA_STATUS_OK) {
+            /* Retaining the retired mapping is conservative even after an
+             * uncertain deletion. Unlike allocation, this cannot give an
+             * existing namespace to another publisher/application. */
+            memmove(r->apps+i+1,r->apps+i,remaining*sizeof(*r->apps));r->apps[i]=removed;
+            return status;
+        }
+        --r->app_count;memset(r->apps+r->app_count,0,sizeof(*r->apps));++r->generation;return PXA_STATUS_OK;
+    }
+    return PXA_STATUS_NOT_FOUND;
+}

@@ -12,24 +12,41 @@ set(PXA_SRCS
     "src/services/pxa_esp_assets.c"
     "src/services/pxa_esp_resource_memory.c"
     "src/services/pxa_esp_system_font.c"
+    "src/services/pxa_esp_font_source.c"
     "src/services/pxa_esp_net.c"
     "src/services/pxa_esp_services.c"
     "src/services/pxa_esp_fs_roots.c"
+    "src/services/pxa_esp_volumes.c"
+    "src/services/pxa_esp_image_blockdev.c"
+    "src/services/pxa_esp_app_storage.c"
+    "src/services/pxa_esp_private_copy.c"
+    "src/services/pxa_esp_private_authority.c"
     "src/services/pxa_esp_surface.c"
     "src/package/pxa_development_trust.c"
     "src/package/pxa_package_disabled_policy.c"
     "src/package/pxa_esp_package_icon.c"
     "src/package/pxa_esp_package_policy.c"
     "src/package/pxa_esp_package_store.c"
+    "src/package/pxa_esp_transfer_receipt.c"
+    "src/package/pxa_esp_app_transfer.c"
+    "src/package/pxa_esp_legacy_adoption.c"
+    "src/package/pxa_esp_resource_transfer.c"
+    "src/package/pxa_esp_package_trust.c"
+    "src/package/pxa_esp_installations.c"
+    "src/package/pxa_esp_install_approval.c"
     "src/package/pxa_publisher_profile.c"
     "src/package/pxa_publisher_binding.c"
     "src/package/pxa_app_locators.c"
     "src/package/pxa_locator_migration.c"
     "src/package/pxa_esp_store_download.c"
+    "src/package/pxa_esp_store_cache.c"
     "src/package/pxa_esp_permission_store.c"
+    "src/package/pxa_esp_record_seal.c"
+    "src/package/pxa_esp_security.c"
     "src/ui/pxa_esp_ui_assets.c"
     "src/ui/pxa_esp_system_overlay.c"
     "src/ui/pxa_esp_directory_picker.c"
+    "src/ui/pxa_esp_install_dialog.c"
     "src/ui/pxa_esp_store_result.c")
 
 # Native products can supply the existing audio sinks without linking the
@@ -81,6 +98,10 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_scheduler_store.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_storage.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_installer.c"
+    "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_install_record.c"
+    "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_app_store.c"
+    "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_app_home.c"
+    "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_volume.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_ime.c"
     "${PXA_C_CORE_ROOT}/adapters/wamr/pxa_wamr_engine.c"
     "${PXA_C_CORE_ROOT}/adapters/wamr/pxa_wamr_file_reader.c"
@@ -94,7 +115,9 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/image/vendor/pngle.c"
     "${PXA_C_CORE_ROOT}/adapters/image/vendor/miniz.c")
 set(PXA_PRIV_REQUIRES
+    bootloader_support
     espressif__cjson
+    espressif__freetype
     mbedtls
     espressif__esp_audio_codec
     esp_http_client
@@ -102,6 +125,8 @@ set(PXA_PRIV_REQUIRES
     joltwallet__littlefs
     nvs_flash
     esp_psram
+    fatfs
+    esp_blockdev
     log
     pthread
     freertos)
@@ -140,6 +165,9 @@ idf_component_register(
     PRIV_REQUIRES ${PXA_PRIV_REQUIRES}
     LDFRAGMENTS ${PXA_LINKER_FRAGMENTS}
 )
+if(CONFIG_PXA_ENABLED AND CONFIG_LV_USE_FREETYPE)
+    target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=FT_Stream_Open")
+endif()
 # Device benchmarks select O3 for the S31 span kernel and Watcher's native
 # game renderer. Keep this local to the rasterizer and performance builds,
 # without changing Guest/debug policy or unmeasured boards.

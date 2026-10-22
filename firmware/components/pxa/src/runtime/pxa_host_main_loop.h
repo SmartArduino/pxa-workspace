@@ -25,6 +25,9 @@ static inline int pxa_host_main_loop_command(const pxa_esp_host_command_t *cmd,
     case PXA_ESP_HOST_CMD_SYSTEM_COMPLETE:
     case PXA_ESP_HOST_CMD_SYSTEM_EVENT:
     case PXA_ESP_HOST_CMD_MOVE_DATA:
+    case PXA_ESP_HOST_CMD_MOVE_PACKAGE:
+    case PXA_ESP_HOST_CMD_MOVE_RESOURCES:
+    case PXA_ESP_HOST_CMD_INSTALL_FILE:
         return PXA_HOST_LOOP_PROCESS;
     case PXA_ESP_HOST_CMD_PERMISSION_SET:
         return strcmp(cmd->payload.permission_set.identity, identity) == 0

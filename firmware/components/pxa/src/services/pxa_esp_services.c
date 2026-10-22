@@ -260,7 +260,10 @@ static pxa_status_t initialize_permission(
     size_t workspace_size;
     status = collect_declarations(services, host, result);
     if (status != PXA_STATUS_OK) return status;
-    pxa_esp_permission_store_bind(&store);
+    if(host->app_storage) {
+        status=pxa_esp_app_storage_permissions(host->app_storage,&store);
+        if(status!=PXA_STATUS_OK)return fail(result,"bind-app-permissions",status,PXA_ESP_SERVICES_ISSUE_NONE);
+    } else pxa_esp_permission_store_bind(&store);
     memset(&config, 0, sizeof(config));
     config.struct_size = sizeof(config);
     config.app_identity = (pxa_bytes_t){(const uint8_t *)host->identity,
@@ -345,6 +348,14 @@ static int prepare_resolved_private_root(char *root,size_t capacity,const pxa_es
     }
     return 1;
 }
+static pxa_status_t private_root_for_services(char *root,size_t capacity,const pxa_esp_services_config_t *host) {
+    if(!host->app_storage)return prepare_resolved_private_root(root,capacity,host)?PXA_STATUS_OK:PXA_STATUS_IO_ERROR;
+    const char *resolved=NULL;
+    pxa_status_t status=pxa_esp_app_storage_root(host->app_storage,&resolved);
+    if(status!=PXA_STATUS_OK)return status;
+    if(!resolved || strlen(resolved)>=capacity)return PXA_STATUS_LIMIT_EXCEEDED;
+    strcpy(root,resolved);return PXA_STATUS_OK;
+}
 
 static pxa_status_t initialize_fs(
     pxa_esp_services_t *services, const pxa_esp_services_config_t *host,
@@ -356,8 +367,9 @@ static pxa_status_t initialize_fs(
     size_t workspace_size;
     memset(&config, 0, sizeof(config));
     config.struct_size = sizeof(config);
-    if (!prepare_resolved_private_root(root, sizeof(root), host)) {
-        return fail(result, "create-private-fs-root", PXA_STATUS_INTERNAL,
+    status=private_root_for_services(root,sizeof(root),host);
+    if (status!=PXA_STATUS_OK) {
+        return fail(result, "create-private-fs-root", status,
                     PXA_ESP_SERVICES_ISSUE_NONE);
     }
     config.root_path = root;
@@ -395,9 +407,12 @@ static pxa_status_t initialize_fs(
     }
     if(user_directories || fixed_media) {
         pxa_fs_roots_backend_t *roots=NULL;
-        status=pxa_esp_fs_roots_create(host->allocator_context,host->allocate,
-            host->identity,host->identity,host->media_relative,user_directories,host->assets_notify_context,
-            host->assets_notify,&services->fs_roots,&roots);
+        const pxa_esp_fs_roots_config_t roots_config={
+            .allocator_context=host->allocator_context,.allocate=host->allocate,
+            .identity=host->identity,.name=host->identity,.media_relative=host->media_relative,
+            .media_mount_epoch=host->media_mount_epoch,.app_storage=host->app_storage,
+            .user_directories=user_directories,.notify_context=host->assets_notify_context,.notify=host->assets_notify};
+        status=pxa_esp_fs_roots_create(&roots_config,&services->fs_roots,&roots);
         if(status!=PXA_STATUS_OK && status!=PXA_STATUS_UNAVAILABLE)
             return fail(result,"initialize-app-directories",status,PXA_ESP_SERVICES_ISSUE_NONE);
         service_config.roots=roots;
@@ -475,8 +490,9 @@ static pxa_status_t initialize_storage(
     size_t workspace_size;
     memset(&config, 0, sizeof(config));
     config.struct_size = sizeof(config);
-    if (!prepare_resolved_private_root(root, sizeof(root), host)) {
-        return fail(result, "create-private-storage-root", PXA_STATUS_INTERNAL,
+    status=private_root_for_services(root,sizeof(root),host);
+    if (status!=PXA_STATUS_OK) {
+        return fail(result, "create-private-storage-root", status,
                     PXA_ESP_SERVICES_ISSUE_NONE);
     }
     size_t root_size = strlen(root);

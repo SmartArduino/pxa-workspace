@@ -3,6 +3,13 @@
 #include <stdbool.h>
 #include <string.h>
 #include <strings.h>
+/* Internal native storage keeps its existing tooling boundary. Public media
+ * and explicitly unlocked system resources use the same layout on any volume. */
+static inline bool pxa_esp_storage_debug_primary_writable(const char *child,bool system_unlocked) {
+    if(!child)return false;
+    if(!strncmp(child,"PXA/media",9) && (!child[9] || child[9]=='/'))return true;
+    return system_unlocked && !strncmp(child,"PXA/system/",11) && child[11];
+}
 static inline bool pxa_esp_storage_debug_child_writable(const char *child,bool system_unlocked) {
     if(!child || !*child || child[strlen(child)-1]=='/') return false;
     for(const char *part=child; *part;) {

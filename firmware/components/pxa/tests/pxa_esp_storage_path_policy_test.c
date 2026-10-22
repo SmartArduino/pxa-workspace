@@ -12,6 +12,14 @@ int main(void) {
     const char *system[]={"PXA/system/fonts/font.ttf", "PxA/SyStEm/packages/test/manifest.pxm",
         "pxa/SYSTEM/中文.bin"};
     for(unsigned unlocked=0;unlocked<2;++unlocked) {
+        assert(!pxa_esp_storage_debug_primary_writable(NULL,unlocked));
+        assert(pxa_esp_storage_debug_primary_writable("PXA/media",unlocked));
+        assert(pxa_esp_storage_debug_primary_writable("PXA/media/author/game/a.gbc",unlocked));
+        const char *private_paths[]={"PXA", "PXA/apps/author/game/data", "pxa-state/data/app",
+            "PXA/volume.0.pxv", "PXA/medialog/a", "PXA/system", "PXA/system/"};
+        for(unsigned i=0;i<sizeof(private_paths)/sizeof(private_paths[0]);++i)
+            assert(!pxa_esp_storage_debug_primary_writable(private_paths[i],unlocked));
+        assert(pxa_esp_storage_debug_primary_writable("PXA/system/fonts/a.ttf",unlocked)==(bool)unlocked);
         assert(!pxa_esp_storage_debug_child_writable(NULL,unlocked));
         for(unsigned i=0;i<sizeof(denied)/sizeof(denied[0]);++i)
             assert(!pxa_esp_storage_debug_child_writable(denied[i],unlocked));

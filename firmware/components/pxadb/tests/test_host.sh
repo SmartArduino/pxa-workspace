@@ -5,6 +5,8 @@ component_dir="$tests_dir/.."
 project_dir="$(cd "$tests_dir/../../../.." && pwd)"
 build_dir="$(mktemp -d "${TMPDIR:-/tmp}/pxadb-jpeg-test.XXXXXX")"
 trap 'rm -rf -- "$build_dir"' EXIT
+python3 "$tests_dir/test_package_cleanup.py"
+python3 "$tests_dir/test_fs_remove.py"
 "${CXX:-c++}" -std=c++17 -O3 -Wall -Wextra -Werror -pthread \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   -DCONFIG_PXADB_JPEG_PSRAM_WORKSPACE=1 \

@@ -2,6 +2,7 @@
 #include "pxa_esp_system_overlay.h"
 #include "pxa/pxa_esp_storage.h"
 #include "pxa_esp_host.h"
+#include "pxa_esp_dialog_style.h"
 #include "pxa/ui.h"
 #include "lvgl.h"
 #include <stdio.h>
@@ -24,6 +25,10 @@ static lv_color_t color(uint8_t index) { return lv_color_hex(pxa_esp_host_ui_col
 static const lv_font_t *body_font(void) {
     const lv_font_t *font=pxa_esp_host_ui_body_font();
     return font?font:pxa_esp_ui_shell_text_font();
+}
+static const lv_font_t *caption_font(void) {
+    const lv_font_t *font=pxa_esp_host_ui_caption_font();
+    return font?font:body_font();
 }
 static void render(picker_t *p);
 static void close_picker(void) {
@@ -77,11 +82,22 @@ static void next_page(lv_event_t *e) {
 static lv_obj_t *button(lv_obj_t *parent,const char *text,lv_event_cb_t callback,void *data) {
     lv_obj_t *b=lv_button_create(parent),*label=lv_label_create(b);
     lv_obj_add_flag(b,LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_height(b,32); lv_obj_set_style_pad_all(b,5,0);
-    lv_obj_set_style_bg_color(b,color(2),0);
-    lv_obj_set_style_text_color(b,color(3),0);
-    lv_label_set_text(label,text); lv_obj_center(label);
-    lv_obj_add_event_cb(b,callback,LV_EVENT_CLICKED,data); return b;
+    lv_obj_set_height(b,pxa_esp_dialog_px(36));pxa_esp_dialog_style_button(b,false);
+    lv_obj_set_width(label,LV_PCT(100));lv_label_set_long_mode(label,LV_LABEL_LONG_DOT);
+    const lv_font_t *action_font=pxa_esp_host_ui_label_font();
+    lv_obj_set_height(label,(action_font?action_font:body_font())->line_height);
+    lv_obj_set_style_text_align(label,LV_TEXT_ALIGN_CENTER,0);lv_label_set_text(label,text);lv_obj_center(label);
+    lv_obj_add_event_cb(b,callback,LV_EVENT_CLICKED,data);
+    lv_obj_add_event_cb(b,key,LV_EVENT_KEY,NULL);return b;
+}
+static void folder_row(lv_obj_t *parent,const char *text,lv_event_cb_t callback,void *data) {
+    lv_obj_t *row=button(parent,text,callback,data);
+    pxa_esp_dialog_style_list_item(row);lv_obj_set_width(row,LV_PCT(100));
+    lv_obj_t *label=lv_obj_get_child(row,0);
+    lv_obj_set_style_text_font(row,body_font(),0);
+    lv_obj_set_height(label,body_font()->line_height);
+    lv_obj_set_style_text_align(label,LV_TEXT_ALIGN_LEFT,0);
+    lv_obj_align(label,LV_ALIGN_LEFT_MID,0,0);
 }
 static void render(picker_t *p) {
     uint8_t more=0;
@@ -93,8 +109,7 @@ static void render(picker_t *p) {
         for(size_t i=0;i<p->volume_count;++i) {
             pxa_volume_info_t *v=&p->volumes[i];
             if(v->ambiguous || v->state!=PXA_VOLUME_READY) continue;
-            lv_obj_t *b=button(p->list,v->name,open_volume,(void *)(uintptr_t)i);
-            lv_obj_set_width(b,LV_PCT(100));
+            folder_row(p->list,v->name,open_volume,(void *)(uintptr_t)i);
         }
     } else {
         lv_label_set_text_fmt(p->path_label,"/%s",p->relative);
@@ -103,16 +118,17 @@ static void render(picker_t *p) {
             p->folders,FOLDER_PAGE,&p->folder_count,&more);
         if(status!=PXA_STATUS_OK) {
             lv_obj_t *label=lv_label_create(p->list);
-            lv_label_set_text_fmt(label,"Directory unavailable (%ld)",(long)status);
+            lv_obj_set_width(label,LV_PCT(100));lv_label_set_long_mode(label,LV_LABEL_LONG_WRAP);
+            lv_obj_set_style_text_font(label,caption_font(),0);
+            lv_obj_set_style_text_color(label,color(PXA_UI_THEME_DANGER),0);
+            lv_label_set_text(label,pxa_esp_host_locale_is_chinese()?"目录不可用，请返回重新选择":"Folder unavailable. Go back and choose again.");
             lv_obj_add_state(p->use,LV_STATE_DISABLED);
         } else {
             for(size_t i=0;i<p->folder_count;++i) {
-                lv_obj_t *b=button(p->list,p->folders[i].name,open_folder,(void *)(uintptr_t)i);
-                lv_obj_set_width(b,LV_PCT(100));
+                folder_row(p->list,p->folders[i].name,open_folder,(void *)(uintptr_t)i);
             }
             if(more) {
-                lv_obj_t *b=button(p->list,pxa_esp_host_locale_is_chinese()?"下一页":"Next page",next_page,NULL);
-                lv_obj_set_width(b,LV_PCT(100));
+                folder_row(p->list,pxa_esp_host_locale_is_chinese()?"下一页":"Next page",next_page,NULL);
             }
         }
     }
@@ -124,47 +140,52 @@ static void show(void *context) {
     picker_t *p=calloc(1,sizeof(*p));
     if(!p) { (void)pxa_esp_storage_choose_directory(prompt->prompt_id,0,""); free(prompt); return; }
     p->prompt=*prompt; free(prompt); g_picker=p;
-    p->mask=lv_obj_create(lv_layer_top()); lv_obj_remove_style_all(p->mask);
-    lv_obj_set_size(p->mask,LV_PCT(100),LV_PCT(100));
-    lv_obj_set_style_bg_color(p->mask,lv_color_black(),0);
-    lv_obj_set_style_bg_opa(p->mask,LV_OPA_60,0);
-    lv_obj_add_event_cb(p->mask,key,LV_EVENT_KEY,NULL);
+    p->mask=lv_obj_create(lv_layer_top());pxa_esp_dialog_style_mask(p->mask);
     lv_obj_t *box=lv_obj_create(p->mask);
-    lv_obj_set_size(box,LV_PCT(94),LV_PCT(96)); lv_obj_center(box);
+    lv_obj_set_size(box,pxa_esp_dialog_limit(lv_display_get_horizontal_resolution(lv_display_get_default())-pxa_esp_dialog_px(24),1,pxa_esp_dialog_px(400)),
+        pxa_esp_dialog_limit(lv_display_get_vertical_resolution(lv_display_get_default())-pxa_esp_dialog_px(24),1,pxa_esp_dialog_px(360)));
+    lv_obj_center(box);pxa_esp_dialog_style_panel(box);
     lv_obj_set_flex_flow(box,LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_all(box,7,0); lv_obj_set_style_pad_row(box,3,0);
     lv_obj_set_style_text_font(box,body_font(),0);
-    lv_obj_set_style_bg_color(box,color(PXA_UI_THEME_SURFACE_CONTAINER_HIGH),0);
-    lv_obj_set_style_text_color(box,color(4),0);
-    lv_obj_set_style_border_color(box,color(PXA_UI_THEME_OUTLINE_VARIANT),0);
-    lv_obj_set_style_radius(box,12,0);
     lv_obj_add_flag(box,LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_t *title=lv_label_create(box);
     lv_obj_set_width(title,LV_PCT(100)); lv_label_set_long_mode(title,LV_LABEL_LONG_DOT);
-    lv_obj_set_height(title,body_font()->line_height);
+    const lv_font_t *heading=pxa_esp_host_ui_title_font();if(!heading)heading=body_font();
+    lv_obj_set_style_text_font(title,heading,0);lv_obj_set_height(title,heading->line_height);
     lv_label_set_text_fmt(title,"%s · %s",p->prompt.app_name,
         pxa_esp_host_locale_is_chinese()?"只读":"Read only");
     lv_obj_t *purpose=lv_label_create(box);
     lv_obj_set_width(purpose,LV_PCT(100)); lv_label_set_long_mode(purpose,LV_LABEL_LONG_DOT);
     lv_label_set_text(purpose,p->prompt.purpose);
-    lv_obj_set_height(purpose,body_font()->line_height);
+    lv_obj_set_style_text_font(purpose,caption_font(),0);
+    lv_obj_set_style_text_color(purpose,color(PXA_UI_THEME_MUTED),0);
+    lv_obj_set_height(purpose,caption_font()->line_height);
     p->path_label=lv_label_create(box); lv_obj_set_width(p->path_label,LV_PCT(100));
     lv_label_set_long_mode(p->path_label,LV_LABEL_LONG_DOT);
-    lv_obj_set_height(p->path_label,body_font()->line_height);
+    lv_obj_set_style_text_font(p->path_label,caption_font(),0);
+    lv_obj_set_style_text_color(p->path_label,color(PXA_UI_THEME_MUTED),0);
+    lv_obj_set_height(p->path_label,caption_font()->line_height);
     p->list=lv_obj_create(box); lv_obj_set_width(p->list,LV_PCT(100));
     lv_obj_set_flex_grow(p->list,1); lv_obj_set_flex_flow(p->list,LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_all(p->list,3,0); lv_obj_set_style_pad_row(p->list,3,0);
+    lv_obj_set_style_pad_all(p->list,pxa_esp_dialog_spacing(1),0);
+    lv_obj_set_style_pad_row(p->list,pxa_esp_dialog_spacing(1),0);
     lv_obj_set_style_bg_color(p->list,color(PXA_UI_THEME_SURFACE_CONTAINER),0);
     lv_obj_set_style_border_width(p->list,0,0);
+    lv_obj_set_style_radius(p->list,pxa_esp_dialog_radius(2),0);
+    lv_obj_set_scroll_dir(p->list,LV_DIR_VER);pxa_esp_dialog_style_scrollbar(p->list);
     lv_obj_add_flag(p->list,LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_t *footer=lv_obj_create(box); lv_obj_remove_style_all(footer);
     lv_obj_add_flag(footer,LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_width(footer,LV_PCT(100)); lv_obj_set_height(footer,34);
+    lv_obj_set_width(footer,LV_PCT(100));lv_obj_set_height(footer,pxa_esp_dialog_px(36));
     lv_obj_set_flex_flow(footer,LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(footer,6,0);
+    lv_obj_set_style_pad_column(footer,pxa_esp_dialog_spacing(2),0);
     const bool chinese=pxa_esp_host_locale_is_chinese();
     button(footer,chinese?"取消":"Cancel",cancel,NULL); button(footer,chinese?"返回":"Back",back,NULL);
-    p->use=button(footer,chinese?"使用此目录":"Use folder",select_folder,NULL);
+    p->use=button(footer,chinese?"选择":"Select",select_folder,NULL);
+    pxa_esp_dialog_style_button(p->use,true);
+    for(unsigned i=0;i<3;++i) {
+        lv_obj_t *action=lv_obj_get_child(footer,i);lv_obj_set_width(action,0);lv_obj_set_flex_grow(action,1);
+    }
     pxa_esp_system_overlay_add(p->mask); render(p);
 }
 static void dismiss(void *context) {

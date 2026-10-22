@@ -36,6 +36,9 @@ typedef enum {
     PXA_ESP_HOST_CMD_SHUTDOWN,
     PXA_ESP_HOST_CMD_IME_INPUT,
     PXA_ESP_HOST_CMD_MOVE_DATA,
+    PXA_ESP_HOST_CMD_MOVE_PACKAGE,
+    PXA_ESP_HOST_CMD_INSTALL_FILE,
+    PXA_ESP_HOST_CMD_MOVE_RESOURCES,
 } pxa_esp_host_command_type_t;
 
 typedef struct {
@@ -109,6 +112,7 @@ typedef struct {
 typedef struct {
     uint32_t prompt_id;
     uint8_t granted;
+    uint8_t install_choice; /* zero: suggested; otherwise (app index | media index << 3) + 1 */
 } pxa_host_permission_decision_command_t;
 
 typedef struct {
@@ -142,6 +146,7 @@ typedef union {
     pxa_host_shutdown_command_t shutdown;
     pxa_host_store_install_command_t store_install;
     void *move_data;
+    void *install_file;
 } pxa_esp_host_command_payload_t;
 
 typedef struct {

@@ -12,6 +12,8 @@
 extern "C" {
 #endif
 
+struct pxa_esp_app_storage;
+
 #define PXA_ESP_PACKAGE_APP_ID_BYTES 65u
 /* 64 lowercase publisher-root hex bytes, ':', 64-byte App ID, NUL. */
 #define PXA_ESP_PACKAGE_ID_BYTES 130u
@@ -56,6 +58,10 @@ typedef struct {
     bool has_staged_release_sequence;
     bool downgrade_warning;
     bool signer_rollback_warning;
+    bool movable;
+    bool resources_movable;
+    bool legacy_storage;
+    bool archived;
 } pxa_esp_package_record_t;
 
 typedef bool (*pxa_esp_package_record_visitor_fn)(
@@ -95,9 +101,9 @@ typedef bool (*pxa_esp_package_permission_visitor_fn)(
     const pxa_esp_package_permission_info_t *permission, void *user_data);
 typedef void (*pxa_esp_package_store_sync_fn)(void *user_data);
 
-/* ESP32 signed package store: installs, lists and manages verified packages
- * on the LittleFS VFS. Canonical identity is (publisher root, App ID).
- * Replaces the legacy C++ package-store implementation on the C stack. */
+/* ESP32 catalog of authenticated volume-local application homes, with an
+ * optional adapter for retained legacy Flash installations. Canonical
+ * identity is (publisher root, App ID); native mount paths are not identities. */
 
 bool pxa_esp_package_store_initialize(void);
 /* Called after a built-in synchronization has released repository locks. */
@@ -115,8 +121,33 @@ bool pxa_esp_package_store_install(const char *identity);
  * remains in place; it is not staged in or removed from the private Inbox. */
 bool pxa_esp_package_store_install_file(const char *source_path);
 bool pxa_esp_package_store_install_file_for_identity(const char *,const uint8_t[32],const char *);
+/* Host placement selected/confirmed before this call. Source may be on any
+ * registered volume. Epoch 0 selects a fitting default volume for new apps;
+ * an existing volume-local install retains its volume. Explicitly relocating
+ * an existing installation requires migration. */
+pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *,uint64_t mount_epoch,
+    const uint8_t expected_root[32],const char *expected_app_id);
+/* Native settings/developer entry after placement confirmation. Whole-app
+ * transfer retains immutable resource placement and rejects a running home.
+ * resume=1 continues a target-local authenticated interrupted transfer. */
+pxa_status_t pxa_esp_package_store_move_volume(const char *identity,uint64_t target_epoch,uint8_t resume);
+/* Runtime bootstrap before processing application launches. Reuses that
+ * existing internal stack, scans only local transfer markers and resumes
+ * previously authorized handoffs. Offline/corrupt endpoints stay pending. */
+pxa_status_t pxa_esp_package_store_recover_transfers(size_t *completed,size_t *pending);
+/* Activation owner, after stopping the previous app. NULL session denotes a
+ * legacy installation; new homes return a single shared FS/KV/policy owner.
+ * Close after all services/assets using this installation have stopped. */
+pxa_status_t pxa_esp_package_store_open_storage(const char *,struct pxa_esp_app_storage **,
+    uint64_t *media_mount_epoch,char *media_relative,size_t,
+    pxa_posix_installer_result_t *verification);
 bool pxa_esp_package_store_publish_transfer(const char *app_id);
 void pxa_esp_package_store_discard_transfers(void);
+typedef void (*pxa_esp_transfer_progress_fn)(void *,uint8_t phase);
+pxa_status_t pxa_esp_package_store_move_volume_with_progress(const char *,uint64_t,uint8_t,
+    pxa_esp_transfer_progress_fn,void *);
+/* Pollable legacy transport cleanup; never waits for an install/move owner. */
+pxa_status_t pxa_esp_package_store_try_discard_transfers(void);
 bool pxa_esp_package_store_preview_file(const char *source_path,
                                         pxa_esp_package_preview_t *preview);
 /* Development deployment bypasses Inbox duplicate filtering but still runs
@@ -187,6 +218,9 @@ bool pxa_esp_package_store_set_permission(const char *identity,
                                           size_t permission_index,
                                           bool granted);
 bool pxa_esp_package_store_refresh_permission_summary(const char *identity);
+/* Runtime owner may borrow its live session to update the display cache;
+ * avoids mounting a second private filesystem for the same installation. */
+bool pxa_esp_package_store_refresh_permission_summary_with_storage(const char *,struct pxa_esp_app_storage *);
 
 /* Single runtime owner. begin leases the transaction mutex until step finishes
  * or close cancels it, so source files cannot change between verification and

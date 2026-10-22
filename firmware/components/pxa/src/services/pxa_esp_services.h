@@ -27,6 +27,7 @@
 
 #include "pxa_esp_net.h"
 #include "pxa_esp_fs_roots.h"
+#include "pxa_esp_app_storage.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -119,7 +120,11 @@ typedef struct {
     const char *identity;
     const char *package_root;
     const char *private_root; /* trusted resolved path, activation only */
-    const char *media_relative; /* trusted PXA/media/<locator>, activation only */
+    /* Borrowed activation session, shared by FS/KV and all app components.
+     * Takes precedence over legacy paths. Close after services_destroy(). */
+    pxa_esp_app_storage_t *app_storage;
+    const char *media_relative; /* trusted fixed media or immutable signed generation, activation only */
+    uint64_t media_mount_epoch;
     void *assets_notify_context;
     void (*assets_notify)(void *context);
     void *allocator_context;

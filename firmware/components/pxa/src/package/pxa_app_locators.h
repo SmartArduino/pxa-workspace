@@ -57,4 +57,10 @@ pxa_status_t pxa_app_locators_encode(uint64_t, const pxa_locator_publisher_t *, 
 pxa_status_t pxa_app_locators_decode(pxa_app_locators_t *, const uint8_t *, size_t);
 pxa_status_t pxa_app_locators_set_flags(pxa_app_locators_t *, const uint8_t root[32],
                                         const char *app_id, uint16_t flags);
+/* Best-effort collection only after the signed executable has left the old
+ * namespace and a volume-local record owns the installation. Failed writes
+ * retain the old conservative mapping/cache, so unrelated legacy apps stay
+ * usable even when NVS cannot accept a cleanup commit. No name is newly
+ * assigned by this operation; publisher ownership bindings are retained. */
+pxa_status_t pxa_app_locators_forget(pxa_app_locators_t *,const uint8_t root[32],const char *app_id);
 #endif

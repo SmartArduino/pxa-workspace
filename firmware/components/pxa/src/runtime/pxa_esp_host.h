@@ -19,6 +19,12 @@ extern "C" {
  * Replaces the legacy C++ runtime host. */
 
 bool pxa_esp_host_initialize(void);
+bool pxa_esp_host_respond_install(uint32_t prompt_id,bool approved,uint8_t choice);
+bool pxa_esp_host_request_move_package(const char *identity);
+bool pxa_esp_host_request_move_resources(const char *identity);
+bool pxa_esp_host_request_install_package_file(const char *source_path);
+/* Facade notification after a native runtime-owned catalog mutation. */
+void pxa_host_notify_catalog_changed(void);
 bool pxa_esp_host_start_runtime(void);
 void pxa_esp_host_sync_builtins(void);
 bool pxa_esp_host_refresh_inbox(void);
@@ -43,6 +49,8 @@ bool pxa_esp_host_post_key(uint16_t key);
 bool pxa_esp_host_set_color_scheme(pxa_host_color_scheme_t color_scheme);
 bool pxa_esp_host_set_ui_palette(const uint32_t rgba[10]);
 bool pxa_esp_host_set_ui_palette_extended(const uint32_t rgba[32]);
+bool pxa_esp_host_set_ui_metrics(uint16_t base_spacing_px, uint16_t base_radius_px);
+void pxa_esp_host_ui_metrics(uint16_t *base_spacing_px, uint16_t *base_radius_px);
 bool pxa_esp_host_set_locale(const char *locale, uint8_t text_direction);
 bool pxa_esp_host_locale_is_chinese(void);
 bool pxa_esp_host_set_window_insets(const pxa_window_insets_t *safe_insets,
@@ -103,6 +111,10 @@ void pxa_esp_host_set_audio_asset_sink(
 void pxa_esp_host_set_audio_music_sink(const pxa_host_audio_music_sink_t *);
 void pxa_esp_host_audio_notify(void);
 const lv_font_t *pxa_esp_host_ui_body_font(void);
+const lv_font_t *pxa_esp_host_ui_label_font(void);
+/* Borrowed epoch-bound name, including for lazily created sized/IME fonts. */
+const char *pxa_esp_host_ui_font_path(void);
+const lv_font_t *pxa_esp_host_ui_caption_font(void);
 const lv_font_t *pxa_esp_host_ui_title_font(void);
 uint32_t pxa_esp_host_ui_color(uint8_t index);
 

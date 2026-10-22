@@ -60,6 +60,7 @@
 #include "pxa/wire.h"
 #include "pxa_esp_package_store.h"
 #include "pxa_esp_store_download.h"
+#include "pxa_esp_store_cache.h"
 #include "pxa_esp_permission_store.h"
 #include "pxa_esp_services.h"
 #include "pxa_esp_resource_memory.h"
@@ -80,6 +81,7 @@
 #include "pxa_esp_store_policy.h"
 #include "pxa_package_identity_match.h"
 #include "pxa/pxa_esp_system_font.h"
+#include "pxa/pxa_esp_font_source.h"
 
 #define PXA_ESP_HOST_TAG "PxaHost"
 #define PXA_ESP_HOST_MAX_APP_ID PXA_HOST_COMMAND_MAX_IDENTITY_BYTES
@@ -191,6 +193,7 @@ typedef struct {
     void *plan_workspace;
 
     pxa_esp_services_t services;
+    pxa_esp_app_storage_t *app_storage;
     void *manifest_workspace_keep;
     uint8_t *encoded_keep;
     pxa_package_manifest_t *active_manifest;
@@ -205,7 +208,6 @@ typedef struct {
     pxa_component_t *active_components;
     size_t active_component_count;
     size_t active_component_capacity;
-    uint32_t next_permission_prompt_id;
     pxa_esp_host_permission_prompt_t permission_prompt;
 
     pxa_component_t *active_jobs;
@@ -217,6 +219,7 @@ typedef struct {
 } pxa_esp_host_activation_t;
 
 typedef struct {
+    uint32_t next_permission_prompt_id;
     uint8_t initialized;
     uint8_t runtime_started;
     uint8_t runtime_starting;
@@ -240,6 +243,7 @@ typedef struct {
     void *ui_adapter_workspace;
     pxa_ui_backend_t ui_backend;
     lv_font_t *ui_body_font;
+    pxa_esp_font_source_t *ui_font_source;
     lv_font_t *ui_title_font;
     lv_font_t *ui_caption_font;
     lv_font_t *ui_label_font;
@@ -247,6 +251,8 @@ typedef struct {
     lv_font_t *ui_display_font;
     pxa_lvgl_ui_theme_t ui_theme;
     uint32_t ui_theme_generation;
+    uint16_t ui_spacing_px;
+    uint16_t ui_radius_px;
     uint32_t pending_ui_palette[PXA_UI_THEME_ROLE_COUNT];
     uint8_t ui_palette_pending;
 
@@ -287,6 +293,7 @@ typedef struct {
     pxa_host_controller_state_t controller_state;
     pxa_esp_host_public_state_t public_state;
     pxa_esp_host_activation_t activation;
+    pxa_esp_app_storage_t *retired_storage;
 } pxa_esp_host_t;
 
 static pxa_esp_host_t g_host;
@@ -319,9 +326,9 @@ static void show_store_result(bool is_uninstall, const char *name,
         pxa_esp_surface_runtime_modal_leave();
         memset(&g_store_result, 0, sizeof(g_store_result));
     }
-    result.prompt_id = ++g_host.activation.next_permission_prompt_id;
+    result.prompt_id = ++g_host.next_permission_prompt_id;
     if (result.prompt_id == 0)
-        result.prompt_id = ++g_host.activation.next_permission_prompt_id;
+        result.prompt_id = ++g_host.next_permission_prompt_id;
     result.is_uninstall = is_uninstall ? 1u : 0u;
     copy_utf8_c_string(result.app_name, sizeof(result.app_name), name);
     g_store_result.prompt_id = result.prompt_id;
@@ -334,83 +341,8 @@ static void show_store_result(bool is_uninstall, const char *name,
         memset(&g_store_result, 0, sizeof(g_store_result));
     }
 }
-typedef struct {
-    char filename[20];
-    char app_id[65];
-    char owner[PXA_ESP_PACKAGE_ID_BYTES];
-} pxa_esp_store_download_entry_t;
-#define PXA_ESP_STORE_DOWNLOAD_SLOTS 8u
-/* Download bookkeeping is task-only and never used by cache-disabled code. */
+/* Discovery cache only; durable download descriptors live on their own volume. */
 EXT_RAM_BSS_ATTR static pxa_esp_store_download_entry_t g_store_downloads[PXA_ESP_STORE_DOWNLOAD_SLOTS];
-
-static bool store_download_filename_valid(const char *name) {
-    if (name == NULL || strlen(name) != 19u ||
-        strncmp(name, ".store-", 7u) != 0 || strcmp(name + 15u, ".pxa") != 0)
-        return false;
-    for (size_t index = 7u; index < 15u; ++index)
-        if (!((name[index] >= '0' && name[index] <= '9') ||
-              (name[index] >= 'a' && name[index] <= 'f'))) return false;
-    return true;
-}
-
-static bool store_registry_save(void) {
-    const char *path = CONFIG_PXA_MOUNT_POINT "/" CONFIG_PXA_STATE_ROOT "/.store-index";
-    const char *temporary = CONFIG_PXA_MOUNT_POINT "/" CONFIG_PXA_STATE_ROOT "/.store-index.tmp";
-    FILE *file = fopen(temporary, "wb");
-    bool saved;
-    if (file == NULL) return false;
-    saved = fwrite("PXADL1", 1u, 6u, file) == 6u &&
-            fwrite(g_store_downloads, sizeof(g_store_downloads), 1u, file) == 1u &&
-            fflush(file) == 0 && fsync(fileno(file)) == 0;
-    if (fclose(file) != 0) saved = false;
-    if (saved) saved = rename(temporary, path) == 0;
-    if (!saved) (void)unlink(temporary);
-    return saved;
-}
-
-static void store_registry_load(void) {
-    const char *path = CONFIG_PXA_MOUNT_POINT "/" CONFIG_PXA_STATE_ROOT "/.store-index";
-    (void)unlink(CONFIG_PXA_MOUNT_POINT "/" CONFIG_PXA_STATE_ROOT "/.store-index.tmp");
-    FILE *file = fopen(path, "rb");
-    char magic[6];
-    memset(g_store_downloads, 0, sizeof(g_store_downloads));
-    if (file == NULL) return;
-    if (fread(magic, 1u, sizeof(magic), file) != sizeof(magic) ||
-        memcmp(magic, "PXADL1", sizeof(magic)) != 0 ||
-        fread(g_store_downloads, sizeof(g_store_downloads), 1u, file) != 1u ||
-        fgetc(file) != EOF) {
-        memset(g_store_downloads, 0, sizeof(g_store_downloads));
-    }
-    (void)fclose(file);
-    for (size_t index = 0; index < PXA_ESP_STORE_DOWNLOAD_SLOTS; ++index) {
-        pxa_esp_store_download_entry_t *entry = &g_store_downloads[index];
-        char filename[20];
-        char full_path[160];
-        struct stat metadata;
-        if (entry->filename[0] == '\0') continue;
-        if (memchr(entry->filename, '\0', sizeof(entry->filename)) == NULL ||
-            memchr(entry->app_id, '\0', sizeof(entry->app_id)) == NULL ||
-            memchr(entry->owner, '\0', sizeof(entry->owner)) == NULL ||
-            !store_download_filename_valid(entry->filename) ||
-            entry->app_id[0] == '\0' || entry->owner[0] == '\0') {
-            memset(entry, 0, sizeof(*entry));
-            continue;
-        }
-        memcpy(filename, entry->filename, sizeof(filename));
-        if (snprintf(full_path, sizeof(full_path), "%s/%s/%s",
-                     CONFIG_PXA_MOUNT_POINT, CONFIG_PXA_STATE_ROOT,
-                     filename) >= (int)sizeof(full_path) ||
-            stat(full_path, &metadata) != 0 || !S_ISREG(metadata.st_mode))
-            memset(entry, 0, sizeof(*entry));
-    }
-}
-
-static int store_registry_keep(const char *filename, void *context) {
-    (void)context;
-    for (size_t index = 0; index < PXA_ESP_STORE_DOWNLOAD_SLOTS; ++index)
-        if (strcmp(g_store_downloads[index].filename, filename) == 0) return 1;
-    return 0;
-}
 static pxa_host_runtime_event_fn g_runtime_event_callback;
 static void *g_runtime_event_context;
 static portMUX_TYPE g_runtime_event_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -425,6 +357,14 @@ const lv_font_t *pxa_esp_host_ui_body_font(void) {
     return g_host.ui_body_font;
 }
 
+const lv_font_t *pxa_esp_host_ui_label_font(void) {
+    return g_host.ui_label_font;
+}
+
+const lv_font_t *pxa_esp_host_ui_caption_font(void) {
+    return g_host.ui_caption_font;
+}
+
 const lv_font_t *pxa_esp_host_ui_title_font(void) {
     return g_host.ui_title_font;
 }
@@ -434,6 +374,9 @@ uint32_t pxa_esp_host_ui_color(uint8_t index) {
            g_host.ui_theme.rgba[index] : 0u;
 }
 
+const char *pxa_esp_host_ui_font_path(void) {
+    return pxa_esp_font_source_path(g_host.ui_font_source);
+}
 static lv_font_t *load_ui_font(uint16_t size,
                                 const lv_font_t *symbol_fallback) {
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
@@ -443,15 +386,18 @@ static lv_font_t *load_ui_font(uint16_t size,
     lv_lock();
     lv_display_t *display = lv_display_get_default();
     uint32_t dpi = display != NULL ? lv_display_get_dpi(display) : 160u;
-    lv_unlock();
     uint32_t pixels = ((uint32_t)size * (dpi != 0 ? dpi : 160u) + 80u) / 160u;
     if (pixels < 1u) pixels = 1u;
     if (pixels > 256u) pixels = 256u;
-    lv_font_t *font = lv_freetype_font_create(
-        pxa_esp_system_font_path(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
-        pixels, LV_FREETYPE_FONT_STYLE_NORMAL);
+    const char *path=pxa_esp_host_ui_font_path();
+    lv_font_t *font = path?lv_freetype_font_create(
+        path, LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
+        pixels, LV_FREETYPE_FONT_STYLE_NORMAL):NULL;
+    /* FreeType faces and LVGL's font caches are shared with the already
+     * running boot screen. Keep creation and publication in the same lock. */
+    if (font != NULL) font->fallback = symbol_fallback;
+    lv_unlock();
     if (font != NULL) {
-        font->fallback = symbol_fallback;
         ESP_LOGI(PXA_ESP_HOST_TAG, "UI font: %u sp -> %u px (dpi=%u, line=%u)",
                  (unsigned)size, (unsigned)pixels, (unsigned)dpi,
                  (unsigned)font->line_height);
@@ -469,6 +415,7 @@ static lv_font_t *load_ui_font(uint16_t size,
 
 static void release_ui_fonts(void) {
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+    lv_lock();
     if (g_host.ui_display_font != NULL)
         lv_freetype_font_delete(g_host.ui_display_font);
     if (g_host.ui_headline_font != NULL)
@@ -488,6 +435,10 @@ static void release_ui_fonts(void) {
     g_host.ui_body_font = NULL;
     g_host.ui_label_font = NULL;
     g_host.ui_caption_font = NULL;
+    (void)pxa_esp_font_source_release(&g_host.ui_font_source);
+#if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+    lv_unlock();
+#endif
 }
 
 typedef struct {
@@ -899,7 +850,8 @@ static void publish_active_state(void) {
                          state.main_instance_id, PXA_STOP_NORMAL);
 }
 
-static void publish_main_stopped(void) {
+/* The observer snapshot must not become part of a retained launch frame. */
+static __attribute__((noinline)) void publish_main_stopped(void) {
     char identity[PXA_ESP_HOST_MAX_APP_ID];
     uint64_t instance_id;
     snprintf(identity, sizeof(identity), "%s",
@@ -1084,6 +1036,19 @@ static pxa_status_t host_store_install_control(
                                       store_installer_authorized_visit,
                                       &authorized);
     if (!authorized) return PXA_STATUS_DENIED;
+    if (message->opcode == PXA_STORE_CAPABILITIES_REQUEST) {
+        uint8_t capabilities[16];
+        if (message->payload.size != 0) return PXA_STATUS_INVALID_ARGUMENT;
+        pxa_write_u16(capabilities, PXA_STORE_INSTALL_SERVICE_MAJOR);
+        pxa_write_u16(capabilities + 2, PXA_STORE_INSTALL_SERVICE_MINOR);
+        pxa_write_u32(capabilities + 4, PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT);
+        pxa_write_u64(capabilities + 8, PXA_STORE_DOWNLOAD_MAX_BYTES);
+        return store_complete_now(runtime, component, message, capabilities, sizeof(capabilities));
+    }
+    if(!g_store_install && (message->opcode==PXA_STORE_DOWNLOAD_LIST_REQUEST ||
+        message->opcode==PXA_STORE_DELETE_REQUEST || message->opcode==PXA_STORE_INSTALL_FILE_REQUEST ||
+        message->opcode==PXA_STORE_DOWNLOAD_REQUEST))
+        pxa_esp_store_cache_load(g_store_downloads,PXA_ESP_STORE_DOWNLOAD_SLOTS);
     if(message->opcode==PXA_STORE_REGISTER_NAMESPACE_REQUEST) {
         status=pxa_esp_package_store_register_namespace(message->payload.data,message->payload.size);
         if(status!=PXA_STATUS_OK)return status;
@@ -1123,16 +1088,12 @@ static pxa_status_t host_store_install_control(
     }
     if (message->opcode == PXA_STORE_DELETE_REQUEST) {
         pxa_esp_store_download_entry_t *entry;
-        char path[160];
         if (g_store_install != NULL) return PXA_STATUS_BUSY;
         entry = store_download_find(message->payload.data, message->payload.size);
         if (entry == NULL) return PXA_STATUS_NOT_FOUND;
-        if (snprintf(path, sizeof(path), "%s/%s/%s", CONFIG_PXA_MOUNT_POINT,
-                     CONFIG_PXA_STATE_ROOT, entry->filename) >= (int)sizeof(path))
-            return PXA_STATUS_INVALID_ARGUMENT;
-        if (unlink(path) != 0) return PXA_STATUS_IO_ERROR;
-        memset(entry, 0, sizeof(*entry));
-        (void)store_registry_save();
+        status=pxa_esp_store_cache_remove(entry);
+        if(status!=PXA_STATUS_OK)return status;
+        memset(entry,0,sizeof(*entry));
         return store_complete_now(runtime, component, message, NULL, 0);
     }
     if (message->opcode == PXA_STORE_LAUNCH_REQUEST || message->opcode == PXA_STORE_LAUNCH_IDENTITY_REQUEST) {
@@ -1174,9 +1135,9 @@ static pxa_status_t host_store_install_control(
             return PXA_STATUS_DENIED;
         status = store_begin_request(runtime, component, message, 0);
         if (status != PXA_STATUS_OK) return status;
-        prompt.prompt_id = ++g_host.activation.next_permission_prompt_id;
+        prompt.prompt_id = ++g_host.next_permission_prompt_id;
         if (prompt.prompt_id == 0)
-            prompt.prompt_id = ++g_host.activation.next_permission_prompt_id;
+            prompt.prompt_id = ++g_host.next_permission_prompt_id;
         prompt.is_uninstall = 1u;
         copy_utf8_c_string(prompt.app_name, sizeof(prompt.app_name), target.name);
         const bool chinese = g_host.locale[0] == 'z' && g_host.locale[1] == 'h';
@@ -1212,10 +1173,14 @@ static pxa_status_t host_store_install_control(
             return PXA_STATUS_BUSY;
         entry = store_download_find(message->payload.data, message->payload.size);
         if (entry == NULL) return PXA_STATUS_DENIED;
-        job = calloc(1, sizeof(*job));
+        job = heap_caps_calloc(1, sizeof(*job),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
         if (job == NULL) return PXA_STATUS_RESOURCE_LIMIT;
-        snprintf(job->filename, sizeof(job->filename), "%s", entry->filename);
-        snprintf(job->app_id, sizeof(job->app_id), "%s", entry->app_id);
+        snprintf(job->filename,sizeof(job->filename),"%s",entry->filename);
+        snprintf(job->app_id,sizeof(job->app_id),"%s",entry->app_id);
+        job->size=entry->size;job->cache_epoch=entry->epoch;job->has_expected_root=1;
+        memcpy(job->digest,entry->digest,32);memcpy(job->expected_root,entry->publisher,32);
+        status=pxa_esp_store_cache_path(entry->epoch,entry->filename,job->path,sizeof(job->path));
+        if(status!=PXA_STATUS_OK) {free(job);return status;}
         status = store_begin_request(runtime, component, message, 0);
         if (status != PXA_STATUS_OK) { free(job); return status; }
         job->component = component;
@@ -1245,7 +1210,7 @@ static pxa_status_t host_store_install_control(
         return PXA_STATUS_BUSY;
     if (message->opcode == PXA_STORE_DOWNLOAD_REQUEST && store_download_free() == NULL)
         return PXA_STATUS_RESOURCE_LIMIT;
-    job = calloc(1, sizeof(*job));
+    job = heap_caps_calloc(1, sizeof(*job),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     if (job == NULL) return PXA_STATUS_RESOURCE_LIMIT;
     if (!(message->opcode==PXA_STORE_INSTALL_IDENTITY_REQUEST
         ? pxa_esp_store_job_decode_identity(job,message->payload.data,message->payload.size)
@@ -1471,8 +1436,8 @@ static pxa_status_t request_runtime_permission_prompt(
          (g_store_install != NULL && g_store_install->prompt_id != 0))) {
         return PXA_STATUS_BUSY;
     }
-    prompt_id = ++g_host.activation.next_permission_prompt_id;
-    if (prompt_id == 0) prompt_id = ++g_host.activation.next_permission_prompt_id;
+    prompt_id = ++g_host.next_permission_prompt_id;
+    if (prompt_id == 0) prompt_id = ++g_host.next_permission_prompt_id;
     memset(&prompt, 0, sizeof(prompt));
     prompt.prompt_id = prompt_id;
     copy_utf8_c_string(
@@ -1523,6 +1488,16 @@ bool pxa_esp_host_respond_permission(uint32_t prompt_id, bool granted) {
     ESP_LOGW(PXA_ESP_HOST_TAG, "Permission decision queue full: prompt=%u",
              (unsigned)prompt_id);
     return false;
+}
+
+bool pxa_esp_host_respond_install(uint32_t prompt_id,bool approved,uint8_t choice) {
+    if(choice>=PXA_ESP_INSTALL_CHOICES*PXA_ESP_INSTALL_CHOICES)return false;
+    pxa_esp_host_command_t command={0};
+    command.type=(uint8_t)PXA_ESP_HOST_CMD_PERMISSION_DECISION;
+    command.payload.permission_decision.prompt_id=prompt_id;
+    command.payload.permission_decision.granted=approved;
+    command.payload.permission_decision.install_choice=choice+1;
+    return post_command(&command);
 }
 
 bool pxa_esp_host_respond_store_result(uint32_t prompt_id, bool open) {
@@ -2405,6 +2380,10 @@ static pxa_status_t host_window_apply(
 static pxa_status_t host_window_toast(void *context, const char *text,
                                       uint32_t duration_ms) {
     (void)context;
+    /* Guest notices cannot cover a native authorization decision. The App
+     * retains its error state and can present it after the dialog closes. */
+    if (g_host.activation.permission_prompt.prompt_id || g_store_uninstall.prompt_id ||
+        (g_store_install && g_store_install->prompt_id)) return PXA_STATUS_BUSY;
     pxa_esp_ui_shell_post_toast(text, duration_ms);
     return PXA_STATUS_OK;
 }
@@ -2808,6 +2787,99 @@ static void move_data_complete(pxa_move_data_job_t *job) {
     xSemaphoreGive(job->complete);move_data_release(job);
 }
 
+typedef struct pxa_native_file pxa_native_file_t;
+EXT_RAM_BSS_ATTR static pxa_native_file_t *g_native_file;
+
+typedef struct {
+    pxa_esp_move_approval_t approval;
+    uint32_t prompt_id;
+} pxa_native_move_t;
+EXT_RAM_BSS_ATTR static pxa_native_move_t *g_native_move;
+static void native_move_cancel(void) {
+    pxa_native_move_t *move=g_native_move;if(!move)return;
+    g_native_move=NULL;
+    pxa_esp_ui_shell_dismiss_install_prompt(move->prompt_id);
+    pxa_esp_surface_runtime_modal_leave();free(move);
+}
+static __attribute__((noinline)) void native_move_prepare_kind(const char *identity,bool resources_only) {
+    if(g_host.cooperative_active)return;
+    const bool zh=pxa_esp_host_locale_is_chinese();
+    /* This command can arrive while a native game cooperates. Reject before
+     * allocating/inspecting anything, leaving its already tight stack alone. */
+    if(g_native_move || g_native_file || g_store_install || g_store_result.prompt_id || g_store_uninstall.prompt_id || g_host.activation.active_identity[0] ||
+       g_host.graceful_stop_active || g_host.deferred_launch_identity[0] || pxa_esp_ime_active()) {
+        ESP_LOGW(PXA_ESP_HOST_TAG,"Placement busy: move=%u file=%u store=%u result=%u uninstall=%u active=%u stopping=%u deferred=%u ime=%u",
+            !!g_native_move,!!g_native_file,!!g_store_install,!!g_store_result.prompt_id,!!g_store_uninstall.prompt_id,
+            !!g_host.activation.active_identity[0],!!g_host.graceful_stop_active,!!g_host.deferred_launch_identity[0],pxa_esp_ime_active());
+        pxa_esp_ui_shell_post_toast(zh?"请先关闭正在运行的应用":"Close the running app first",2500);return;
+    }
+    pxa_native_move_t *move=heap_caps_calloc(1,sizeof(*move),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!move) {pxa_esp_ui_shell_post_toast(zh?"内存不足":"Not enough memory",2500);return;}
+    pxa_status_t status=resources_only?pxa_esp_package_store_prepare_move_resources(identity,&move->approval):
+        pxa_esp_package_store_prepare_move(identity,&move->approval);
+    if(status!=PXA_STATUS_OK) {
+        ESP_LOGW(PXA_ESP_HOST_TAG,"Placement preview failed: resources=%u status=%ld",resources_only,(long)status);
+        free(move);pxa_esp_ui_shell_post_toast(status==PXA_STATUS_UNSUPPORTED?
+            (zh?"此应用尚不支持移动":"This app cannot be moved yet"):
+            (zh?"没有可用的目标存储，或应用状态已变化":"No available destination, or app state changed"),3000);return;
+    }
+    pxa_esp_ui_install_prompt_t *prompt=heap_caps_calloc(1,sizeof(*prompt),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!prompt) {free(move);pxa_esp_ui_shell_post_toast(zh?"内存不足":"Not enough memory",2500);return;}
+    move->prompt_id=++g_host.next_permission_prompt_id;
+    if(!move->prompt_id)move->prompt_id=++g_host.next_permission_prompt_id;
+    prompt->prompt_id=move->prompt_id;prompt->move=1;prompt->resources_only=resources_only;
+    prompt->legacy_upgrade=move->approval.legacy_upgrade;
+    prompt->count=(uint8_t)move->approval.count;
+    copy_utf8_c_string(prompt->app_name,sizeof(prompt->app_name),move->approval.name);
+    copy_utf8_c_string(prompt->current_volume,sizeof(prompt->current_volume),move->approval.current_volume);
+    copy_utf8_c_string(prompt->retained_media_volume,sizeof(prompt->retained_media_volume),move->approval.media_volume);
+    for(size_t i=0;i<move->approval.count;++i) {
+        copy_utf8_c_string(prompt->volumes[i].name,sizeof(prompt->volumes[i].name),move->approval.choices[i].volume.name);
+        prompt->volumes[i].free_bytes=move->approval.choices[i].volume.free_bytes;
+        prompt->volumes[i].required_bytes=move->approval.choices[i].estimate.volumes[0].bytes;
+        if(resources_only) {
+            prompt->volumes[i].required_bytes=0;
+            for(uint8_t n=0;n<move->approval.choices[i].estimate.volume_count;++n)
+                if(move->approval.choices[i].estimate.volumes[n].mount_epoch==move->approval.choices[i].volume.mount_epoch)
+                    prompt->volumes[i].required_bytes=move->approval.choices[i].estimate.volumes[n].bytes;
+        }
+    }
+    pxa_host_package_metadata_t *metadata=heap_caps_calloc(1,sizeof(*metadata),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(metadata) {
+        if(pxa_esp_host_resolve_package_metadata(identity,g_host.locale,metadata) && metadata->name[0])
+            copy_utf8_c_string(prompt->app_name,sizeof(prompt->app_name),metadata->name);
+        free(metadata);
+    }
+    copy_utf8_c_string(move->approval.name,sizeof(move->approval.name),prompt->app_name);
+    g_native_move=move;pxa_esp_surface_runtime_modal_enter();
+    ESP_LOGI(PXA_ESP_HOST_TAG,"Placement ready: resources=%u choices=%u prompt=%lu",resources_only,
+        (unsigned)prompt->count,(unsigned long)prompt->prompt_id);
+    if(!pxa_esp_ui_shell_post_install_prompt(prompt))native_move_cancel();
+    free(prompt);
+}
+static void native_move_prepare(const char *identity) {native_move_prepare_kind(identity,false);}
+static void native_resources_prepare(const char *identity) {native_move_prepare_kind(identity,true);}
+static void native_move_decide(bool approved,uint8_t encoded_choice) {
+    pxa_native_move_t *move=g_native_move;if(!move)return;
+    const size_t choice=encoded_choice?(size_t)(encoded_choice-1):0;
+    if(!approved || choice>=move->approval.count || g_host.activation.active_identity[0] || pxa_esp_ime_active()) {
+        native_move_cancel();return;
+    }
+    /* The progress notice replaces the selection dialog on the UI thread.
+     * Separate async dismissal can run after it and close the new busy UI. */
+    pxa_status_t status=PXA_STATUS_RESOURCE_LIMIT;
+    if(pxa_esp_ui_shell_post_move_progress_kind(move->prompt_id,move->approval.name,move->approval.resources_only))
+        status=pxa_esp_package_store_commit_move(&move->approval,choice,NULL,NULL);
+    pxa_esp_surface_runtime_modal_leave();g_native_move=NULL;
+    pxa_esp_ui_shell_post_move_result(move->prompt_id,status);
+    free(move);
+    /* Public facade refreshes both the launcher bridge and app manager after
+     * all catalog/volume locks have been released. */
+    pxa_host_notify_catalog_changed();
+}
+
+#include "pxa_host_file_install.inc"
+
 static pxa_status_t host_cooperate(void *context, pxa_component_t component,
                                    uint64_t deadline_us);
 static pxa_status_t reset_runtime(uint16_t max_components) {
@@ -2855,6 +2927,7 @@ static pxa_status_t reset_runtime(uint16_t max_components) {
     operations.service_id = PXA_STORE_INSTALL_SERVICE_ID;
     operations.major = PXA_STORE_INSTALL_SERVICE_MAJOR;
     operations.minor = PXA_STORE_INSTALL_SERVICE_MINOR;
+    operations.features = PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT;
     operations.control = host_store_install_control;
     status = pxa_service_register(g_host.activation.runtime, &operations);
     if (status != PXA_STATUS_OK) goto failed;
@@ -2952,7 +3025,7 @@ static void stop_active(pxa_stop_reason_t reason) {
         g_store_install->instance_id == g_host.activation.active_instance_id)
         __atomic_store_n(&g_store_install->cancelled, 1u, __ATOMIC_RELEASE);
     if (g_store_install != NULL && g_store_install->prompt_id != 0) {
-        pxa_esp_ui_shell_dismiss_permission_prompt(g_store_install->prompt_id);
+        pxa_esp_ui_shell_dismiss_install_prompt(g_store_install->prompt_id);
         pxa_esp_surface_runtime_modal_leave();
         g_store_install->prompt_id = 0;
         g_store_install->approved = 0;
@@ -3046,6 +3119,16 @@ static void stop_active(pxa_stop_reason_t reason) {
      * off. Keep its allocator generation, but do not wait for display resume. */
     (void)pxa_esp_resource_memory_end();
     pxa_esp_net_reset_requests();
+    if(g_host.activation.app_storage) {
+        pxa_status_t closed=pxa_esp_app_storage_close(&g_host.activation.app_storage);
+        if(g_host.activation.app_storage) {
+            /* A failed unmount must keep the block-device owner alive. New
+             * activation retries this retirement before opening any session. */
+            g_host.retired_storage=g_host.activation.app_storage;
+            g_host.activation.app_storage=NULL;
+            ESP_LOGW(PXA_ESP_HOST_TAG,"Private storage retirement deferred: %ld",(long)closed);
+        }
+    }
     free(g_host.engine_workspace);
     g_host.engine_workspace = NULL;
     free(g_host.runtime_workspace);
@@ -3075,6 +3158,13 @@ static int start_verified(const char *identity) {
     pxa_status_t status = PXA_STATUS_INTERNAL;
     const char *failed_stage;
     int toast_posted = 0;
+    pxa_esp_app_storage_t *app_storage=NULL;
+    uint64_t media_mount_epoch=0;
+    char private_root[PXA_ESP_PACKAGE_ROOT_BYTES],media_relative[256];
+    if(g_host.retired_storage) {
+        (void)pxa_esp_app_storage_close(&g_host.retired_storage);
+        if(g_host.retired_storage)return 0;
+    }
     if (!pxa_esp_package_store_is_enabled(identity)) {
         ESP_LOGW(PXA_ESP_HOST_TAG, "Launch denied for disabled Package %s",
                  identity);
@@ -3114,9 +3204,19 @@ static int start_verified(const char *identity) {
         return 0;
     }
     stop_active(PXA_STOP_REPLACED);
-    status=pxa_esp_package_store_migrate_storage(identity,root,sizeof(root));
+    if(g_host.retired_storage) {free(manifest_workspace);free(encoded);return 0;}
+    pxa_posix_installer_result_t verification={
+        .struct_size=sizeof(verification),.manifest_workspace=manifest_workspace,
+        .manifest_workspace_size=manifest_workspace_size,.encoded=encoded,
+        .encoded_capacity=encoded_size,.manifest=&manifest,.root=root,.root_capacity=sizeof(root)};
+    status=pxa_esp_package_store_open_storage(identity,&app_storage,&media_mount_epoch,
+        media_relative,sizeof(media_relative),&verification);
+    if(status==PXA_STATUS_OK && !app_storage)
+        status=pxa_esp_package_store_migrate_storage(identity,root,sizeof(root));
     if(status!=PXA_STATUS_OK) {
-        ESP_LOGE(PXA_ESP_HOST_TAG,"Storage migration failed for %s: %ld",identity,(long)status);
+        ESP_LOGE(PXA_ESP_HOST_TAG,"Storage activation failed for %s: %ld",identity,(long)status);
+        (void)pxa_esp_app_storage_close(&app_storage);
+        if(app_storage)g_host.retired_storage=app_storage;
         free(manifest_workspace);free(encoded);return 0;
     }
     host_log_heap_usage("launch-begin");
@@ -3127,6 +3227,8 @@ static int start_verified(const char *identity) {
                  identity);
         free(manifest_workspace);
         free(encoded);
+        (void)pxa_esp_app_storage_close(&app_storage);
+        if(app_storage)g_host.retired_storage=app_storage;
         return 0;
     }
     /* Manifest views reference encoded + manifest_workspace; keep both
@@ -3134,6 +3236,7 @@ static int start_verified(const char *identity) {
     g_host.activation.manifest_workspace_keep = manifest_workspace;
     g_host.activation.encoded_keep = encoded;
     g_host.activation.active_manifest = manifest;
+    g_host.activation.app_storage=app_storage;
     g_host.activation.active_components = activation_alloc(
         (size_t)manifest->component_count *
         sizeof(g_host.activation.active_components[0]));
@@ -3186,10 +3289,13 @@ static int start_verified(const char *identity) {
     services_config.manifest = manifest;
     services_config.identity = identity;
     services_config.package_root = g_host.activation.active_package_root;
-    char private_root[PXA_ESP_PACKAGE_ROOT_BYTES],media_relative[140];
-    status=pxa_esp_package_store_storage_paths(identity,private_root,sizeof(private_root),media_relative,sizeof(media_relative));
-    if(status!=PXA_STATUS_OK)PXA_ESP_START_FAIL("resolve-app-storage",status);
-    services_config.private_root=private_root;
+    if(app_storage)services_config.app_storage=app_storage;
+    else {
+        status=pxa_esp_package_store_storage_paths(identity,private_root,sizeof(private_root),media_relative,sizeof(media_relative));
+        if(status!=PXA_STATUS_OK)PXA_ESP_START_FAIL("resolve-app-storage",status);
+        services_config.private_root=private_root;
+    }
+    services_config.media_mount_epoch=media_mount_epoch;
     services_config.media_relative=media_relative;
     services_config.assets_notify = on_assets_completion_ready;
     services_config.allocator_context =
@@ -3256,6 +3362,8 @@ static int start_verified(const char *identity) {
                                           : services_result.stage,
             status);
     }
+    if(g_host.activation.app_storage)
+        (void)pxa_esp_package_store_refresh_permission_summary_with_storage(identity,g_host.activation.app_storage);
     if (g_host.activation.services.ui != NULL) {
         pxa_ui_theme_snapshot_t theme = {0};
         static const uint16_t sizes[PXA_UI_THEME_FONT_COUNT] = {
@@ -3883,6 +3991,7 @@ static void stop_active_after_back(void) {
 
 static void begin_graceful_stop(pxa_stop_reason_t reason,
                                 uint8_t after_back, uint32_t timeout_ms) {
+    native_move_cancel();native_file_cancel();
     if (g_host.graceful_stop_active) {
         if (reason == PXA_STOP_SHUTDOWN) {
             g_host.graceful_stop_reason = PXA_STOP_SHUTDOWN;
@@ -3987,13 +4096,13 @@ static void apply_active_permission(uint16_t permission_index, bool granted) {
         ESP_LOGW(PXA_ESP_HOST_TAG,
                  "Active permission update failed: index=%u status=%d",
                  (unsigned)permission_index, (int)status);
-        (void)pxa_esp_package_store_refresh_permission_summary(
-            g_host.activation.active_identity);
+        (void)pxa_esp_package_store_refresh_permission_summary_with_storage(
+            g_host.activation.active_identity,g_host.activation.app_storage);
         pxa_esp_ui_shell_refresh_apps();
         return;
     }
-    (void)pxa_esp_package_store_refresh_permission_summary(
-        g_host.activation.active_identity);
+    (void)pxa_esp_package_store_refresh_permission_summary_with_storage(
+        g_host.activation.active_identity,g_host.activation.app_storage);
     pxa_esp_ui_shell_refresh_apps();
     for (index = 0; index < count && index < sizeof(affected) / sizeof(affected[0]);
          ++index) {
@@ -4002,9 +4111,15 @@ static void apply_active_permission(uint16_t permission_index, bool granted) {
 }
 
 static void complete_runtime_permission_prompt(uint32_t prompt_id,
-                                                bool granted) {
+                                                bool granted,uint8_t install_choice) {
     pxa_esp_host_permission_prompt_t pending;
     pxa_status_t status;
+    if(g_native_file && g_native_file->prompt_id==prompt_id) {
+        native_file_decide(granted,install_choice);return;
+    }
+    if(g_native_move && g_native_move->prompt_id==prompt_id) {
+        native_move_decide(granted,install_choice);return;
+    }
     if (g_store_result.prompt_id == prompt_id) {
         char identity[PXA_ESP_PACKAGE_ID_BYTES];
         snprintf(identity, sizeof(identity), "%s", g_store_result.identity);
@@ -4020,9 +4135,17 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
         return;
     }
     if (g_store_install != NULL && g_store_install->prompt_id == prompt_id) {
-        pxa_esp_ui_shell_dismiss_permission_prompt(prompt_id);
+        pxa_esp_ui_shell_dismiss_install_prompt(prompt_id);
         pxa_esp_surface_runtime_modal_leave();
         g_store_install->prompt_id = 0;
+        if(install_choice) {
+            const size_t app=(install_choice-1)&7u,media=(install_choice-1)>>3;
+            if(app>=g_store_install->placement.count ||
+                (g_store_install->placement.requires_resources?
+                    media>=g_store_install->placement.media_count || !(g_store_install->placement.media_fit[app]&(1u<<media)):
+                    media!=0))granted=false;
+            else {g_store_install->placement.selected=app;g_store_install->placement.media_selected=media;}
+        }
         g_store_install->approved = granted &&
             g_host.activation.runtime != NULL &&
             g_store_install->instance_id == g_host.activation.active_instance_id &&
@@ -4075,8 +4198,8 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
         g_host.activation.services.permission, pending.component, pending.request_token,
         granted ? PXA_PERMISSION_ALLOW : PXA_PERMISSION_DENY);
     if (status == PXA_STATUS_OK) {
-        (void)pxa_esp_package_store_refresh_permission_summary(
-            g_host.activation.active_identity);
+        (void)pxa_esp_package_store_refresh_permission_summary_with_storage(
+            g_host.activation.active_identity,g_host.activation.app_storage);
         if (drain_events(pending.component)) {
             ESP_LOGI(PXA_ESP_HOST_TAG,
                      "Runtime permission %s: prompt=%u",
@@ -4090,9 +4213,10 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
     pxa_esp_surface_runtime_modal_leave();
 }
 
-static void handle_store_install_event(pxa_esp_store_job_t *job,
+/* Keep infrequent approval/completion locals out of run(), whose frame can
+ * remain underneath a native Guest loop for its entire session. */
+static __attribute__((noinline)) void handle_store_install_event(pxa_esp_store_job_t *job,
                                         uint8_t phase, uint64_t downloaded_bytes) {
-    pxa_esp_ui_permission_prompt_t prompt = {0};
     if (job == NULL || job != g_store_install) return;
     if (phase == 4u) {
         uint8_t payload[24];
@@ -4102,7 +4226,7 @@ static void handle_store_install_event(pxa_esp_store_job_t *job,
                                    job->request_token)) return;
         pxa_write_u64(payload, job->request_token);
         pxa_write_u64(payload + 8, downloaded_bytes);
-        pxa_write_u64(payload + 16, job->size);
+        pxa_write_u64(payload + 16, job->total_bytes?job->total_bytes:job->size);
         (void)pxa_event_post_message(
             g_host.activation.runtime, job->component,
             PXA_STORE_INSTALL_SERVICE_ID, PXA_STORE_DOWNLOAD_PROGRESS, 0,
@@ -4111,80 +4235,54 @@ static void handle_store_install_event(pxa_esp_store_job_t *job,
                 PXA_STORE_DOWNLOAD_PROGRESS);
         return;
     }
-    if (phase == 3u) {
-        pxa_esp_store_download_entry_t *entry = store_download_free();
-        bool saved = false;
-        if (g_host.activation.runtime != NULL &&
-            job->instance_id == g_host.activation.active_instance_id &&
-            entry != NULL && store_download_filename_valid(job->filename)) {
-            memcpy(entry->filename, job->filename, sizeof(entry->filename));
-            snprintf(entry->app_id, sizeof(entry->app_id), "%s", job->app_id);
-            snprintf(entry->owner, sizeof(entry->owner), "%s",
-                     g_host.activation.active_identity);
-            saved = store_registry_save();
+    if(phase==3u) {
+        pxa_esp_store_download_entry_t *entry=store_download_free();
+        bool saved=false;
+        if(entry && g_host.activation.runtime && job->instance_id==g_host.activation.active_instance_id &&
+            pxa_esp_store_cache_name_valid(job->filename)) {
+            memset(entry,0,sizeof(*entry));
+            memcpy(entry->filename,job->filename,sizeof(entry->filename));
+            snprintf(entry->app_id,sizeof(entry->app_id),"%s",job->app_id);
+            snprintf(entry->owner,sizeof(entry->owner),"%s",g_host.activation.active_identity);
+            entry->epoch=job->cache_epoch;entry->size=job->size;
+            memcpy(entry->digest,job->digest,32);memcpy(entry->publisher,job->preview.publisher_root,32);
+            saved=pxa_esp_store_cache_save(entry)==PXA_STATUS_OK;
         }
-        if (!saved) {
-            if (entry != NULL) {
-                memset(entry, 0, sizeof(*entry));
-                (void)store_registry_save();
+        if(!saved) {
+            if(entry) {
+                if(entry->filename[0])(void)pxa_esp_store_cache_remove(entry);
+                memset(entry,0,sizeof(*entry));
             }
-            char path[160];
-            if (snprintf(path, sizeof(path), "%s/%s/%s", CONFIG_PXA_MOUNT_POINT,
-                         CONFIG_PXA_STATE_ROOT, job->filename) < (int)sizeof(path))
-                (void)unlink(path);
-            job->status = PXA_STATUS_IO_ERROR;
+            job->keep_file=0;job->status=PXA_STATUS_IO_ERROR;
         }
-        return;
+        xTaskNotifyGive(job->worker);return;
     }
-    if (phase == 1u) {
-        if (g_host.activation.runtime == NULL ||
-            job->instance_id != g_host.activation.active_instance_id ||
-            !pxa_request_is_active(g_host.activation.runtime, job->component,
-                                   job->request_token) ||
-            g_host.activation.permission_prompt.prompt_id != 0) {
-            job->approved = 0;
-            xTaskNotifyGive(job->worker);
-            return;
+    if(phase==1u) {
+        if(!g_host.activation.runtime || job->instance_id!=g_host.activation.active_instance_id ||
+            !pxa_request_is_active(g_host.activation.runtime,job->component,job->request_token) ||
+            g_host.activation.permission_prompt.prompt_id) {
+            job->approved=0;xTaskNotifyGive(job->worker);return;
         }
-        prompt.prompt_id = ++g_host.activation.next_permission_prompt_id;
-        if (prompt.prompt_id == 0)
-            prompt.prompt_id = ++g_host.activation.next_permission_prompt_id;
-        prompt.is_install = 1u;
-        copy_utf8_c_string(prompt.app_name, sizeof(prompt.app_name),
-                           job->preview.name);
-        const bool chinese = g_host.locale[0] == 'z' && g_host.locale[1] == 'h';
-        snprintf(prompt.permission_name, sizeof(prompt.permission_name),
-                 chinese ? "安装应用 %.36s (%.20s)？" :
-                           "Install app %.36s (%.20s)?",
-                 job->app_id, job->preview.version);
-        const char *requester = strrchr(g_host.activation.active_identity, ':');
-        requester = requester == NULL ? g_host.activation.active_identity
-                                      : requester + 1;
-        snprintf(prompt.scope, sizeof(prompt.scope),
-                 chinese ? "请求方 %.24s；发布者 %.16s…；%u 项权限" :
-                           "Requester %.24s; publisher %.16s...; %u permissions",
-                 requester, job->preview.id, (unsigned)job->preview.permission_count);
-        job->prompt_id = prompt.prompt_id;
-        pxa_esp_surface_runtime_modal_enter();
-        if (!pxa_esp_ui_shell_post_permission_prompt(&prompt)) {
-            job->prompt_id = 0;
-            pxa_esp_surface_runtime_modal_leave();
-            job->approved = 0;
-            xTaskNotifyGive(job->worker);
+        pxa_esp_ui_install_prompt_t *placement=heap_caps_calloc(1,sizeof(*placement),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+        if(!placement) {job->approved=0;xTaskNotifyGive(job->worker);return;}
+        placement->prompt_id=++g_host.next_permission_prompt_id;
+        if(!placement->prompt_id)placement->prompt_id=++g_host.next_permission_prompt_id;
+        install_prompt_fill(placement,&job->preview,&job->placement,0);
+        placement->download_only=job->separate==1;
+        job->prompt_id=placement->prompt_id;pxa_esp_surface_runtime_modal_enter();
+        if(!pxa_esp_ui_shell_post_install_prompt(placement)) {
+            job->prompt_id=0;pxa_esp_surface_runtime_modal_leave();job->approved=0;xTaskNotifyGive(job->worker);
         }
-        return;
+        free(placement);return;
     }
-    if (job->prompt_id != 0) {
-        pxa_esp_ui_shell_dismiss_permission_prompt(job->prompt_id);
-        pxa_esp_surface_runtime_modal_leave();
+    if(job->prompt_id) {
+        pxa_esp_ui_shell_dismiss_install_prompt(job->prompt_id);pxa_esp_surface_runtime_modal_leave();
     }
     g_store_install = NULL;
-    if (job->separate == 2u && !job->keep_file) {
-        for (size_t index = 0; index < PXA_ESP_STORE_DOWNLOAD_SLOTS; ++index) {
-            if (strcmp(g_store_downloads[index].filename, job->filename) == 0)
-                memset(&g_store_downloads[index], 0, sizeof(g_store_downloads[index]));
+    if(job->separate==2 && !job->keep_file) {
+        for(size_t i=0;i<PXA_ESP_STORE_DOWNLOAD_SLOTS;++i)if(!strcmp(g_store_downloads[i].filename,job->filename)) {
+            (void)pxa_esp_store_cache_remove(&g_store_downloads[i]);memset(&g_store_downloads[i],0,sizeof(g_store_downloads[i]));
         }
-        (void)store_registry_save();
     }
     if (g_host.activation.runtime != NULL &&
         job->instance_id == g_host.activation.active_instance_id &&
@@ -4372,41 +4470,36 @@ static void sync_ui_lifecycle(void) {
         PXA_HOST_SYSTEM_LIFECYCLE_EVENT, 0,
         (pxa_bytes_t){&payload, sizeof(payload)}, 1, 0);
     if (status == PXA_STATUS_OK) {
-        char launch_identity[PXA_ESP_HOST_MAX_APP_ID];
-        if (effective)
-            snprintf(launch_identity, sizeof(launch_identity), "%s",
-                     g_host.activation.active_identity);
         g_host.lifecycle_delivered = effective;
         g_host.controller_state.valid = 0;
         /* A main-loop event callback can retain this call until the app exits.
          * Remove launch chrome before dispatch, so it cannot cover the running
          * app and intercept all pointer input for that entire lifetime. */
-        if (effective) pxa_esp_ui_shell_dismiss_app_launch(launch_identity);
+        /* The UI shell copies the identity before returning. No snapshot
+         * needs to stay on this stack across drain_active_events(). */
+        if (effective) pxa_esp_ui_shell_dismiss_app_launch(g_host.activation.active_identity);
         drain_active_events();
     }
 }
 
-static void advance_graceful_stop(void) {
+/* Snapshot storage is needed only for the readiness query, never across
+ * Guest event dispatch or the next application's retained native loop. */
+static __attribute__((noinline)) int graceful_stop_ready(void) {
     pxa_component_snapshot_t snapshot;
+    if(g_host.activation.active_component==PXA_COMPONENT_INVALID || !g_host.activation.runtime)return 1;
+    return g_host.lifecycle_delivered==PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND &&
+        pxa_component_snapshot(g_host.activation.runtime,g_host.activation.active_component,&snapshot)==PXA_STATUS_OK &&
+        snapshot.pending_requests==0 && snapshot.queued_events==0;
+}
+static __attribute__((noinline)) void advance_graceful_stop(void) {
     char next_identity[PXA_ESP_HOST_MAX_APP_ID];
     pxa_stop_reason_t reason;
     uint8_t after_back;
-    int ready = 0;
     if (!g_host.graceful_stop_active) return;
     if (g_host.activation.active_component != PXA_COMPONENT_INVALID)
         drain_active_events();
     if (g_host.cooperative_exit_pending) return;
-    if (g_host.activation.active_component == PXA_COMPONENT_INVALID ||
-        g_host.activation.runtime == NULL) {
-        ready = 1;
-    } else if (g_host.lifecycle_delivered ==
-                   PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND &&
-               pxa_component_snapshot(g_host.activation.runtime,
-                                      g_host.activation.active_component,
-                                      &snapshot) == PXA_STATUS_OK &&
-               snapshot.pending_requests == 0 && snapshot.queued_events == 0) {
-        ready = 1;
-    }
+    const int ready=graceful_stop_ready();
     if (!ready && host_now_us(NULL) < g_host.shutdown_deadline_us) return;
     reason = g_host.graceful_stop_reason;
     after_back = g_host.graceful_stop_after_back;
@@ -4432,8 +4525,9 @@ static void advance_graceful_stop(void) {
 }
 
 /* Native system editors use the same engine on demand, without a foreground
- * App, UI service workspace, frame/depth buffers or background worker task. */
-static void maintain_native_ime_runtime(void) {
+ * App, UI service workspace, frame/depth buffers or background worker task.
+ * Keep their profile construction out of the retained App loop's frame. */
+static __attribute__((noinline)) void maintain_native_ime_runtime(void) {
     if (g_host.activation.runtime == NULL && pxa_esp_ime_needs_runtime()) {
         pxa_status_t status=reset_runtime(1);
         if (status==PXA_STATUS_OK) status=initialize_engine(1);
@@ -4458,6 +4552,14 @@ static void maintain_native_ime_runtime(void) {
 /* Execute native work while retaining the current WAMR call stack. No command
  * that can replace/destroy a runtime is removed from the queue here. The same
  * task resumes its outer owner loop after cancellation and performs teardown. */
+static __attribute__((noinline)) int apply_pending_display_state(void) {
+    pxa_ui_color_scheme_t color;pxa_window_insets_t safe,bars;
+    uint32_t palette[PXA_UI_THEME_ROLE_COUNT];int handled=0;
+    if(take_pending_color_scheme(&color)) {apply_color_scheme(color);handled=1;}
+    if(take_pending_ui_palette(palette)) {apply_ui_palette(palette);handled=1;}
+    if(take_pending_window_insets(&safe,&bars)) {apply_window_insets(&safe,&bars);handled=1;}
+    return handled;
+}
 static pxa_status_t host_cooperate(void *context, pxa_component_t component,
                                    uint64_t deadline_us) {
     pxa_esp_host_command_t command;
@@ -4472,12 +4574,7 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
     }
     g_host.cooperative_active = 1;
     sync_ui_lifecycle();
-    pxa_ui_color_scheme_t color;
-    pxa_window_insets_t safe, bars;
-    uint32_t palette[PXA_UI_THEME_ROLE_COUNT];
-    if (take_pending_color_scheme(&color)) apply_color_scheme(color);
-    if (take_pending_ui_palette(palette)) apply_ui_palette(palette);
-    if (take_pending_window_insets(&safe, &bars)) apply_window_insets(&safe, &bars);
+    (void)apply_pending_display_state();
     if (g_host.activation.services.surface)
         (void)pxa_surface_service_flush_releases(g_host.activation.services.surface);
     if (g_host.activation.services.assets) {
@@ -4516,6 +4613,9 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
             continue;
         }
         switch (command.type) {
+        case PXA_ESP_HOST_CMD_INSTALL_FILE: native_file_prepare(command.payload.install_file);break;
+        case PXA_ESP_HOST_CMD_MOVE_PACKAGE: native_move_prepare(command.payload.identity.identity);break;
+        case PXA_ESP_HOST_CMD_MOVE_RESOURCES: native_resources_prepare(command.payload.identity.identity);break;
         case PXA_ESP_HOST_CMD_MOVE_DATA: move_data_complete(command.payload.move_data); break;
         case PXA_ESP_HOST_CMD_POINTER: break; /* Prepared before removal. */
         case PXA_ESP_HOST_CMD_UI_EVENT:
@@ -4542,7 +4642,7 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
             update_window_snapshot(component, NULL); update_ui_resource_pressure(); break;
         case PXA_ESP_HOST_CMD_PERMISSION_DECISION:
             complete_runtime_permission_prompt(command.payload.permission_decision.prompt_id,
-                command.payload.permission_decision.granted != 0); break;
+                command.payload.permission_decision.granted != 0,command.payload.permission_decision.install_choice); break;
         case PXA_ESP_HOST_CMD_PERMISSION_SET:
             apply_active_permission(command.payload.permission_set.permission_index,
                 command.payload.permission_set.granted != 0); break;
@@ -4587,9 +4687,6 @@ static void run(void) {
             continue;
         }
         int handled = 0;
-        pxa_ui_color_scheme_t color_scheme;
-        pxa_window_insets_t pending_safe_insets;
-        pxa_window_insets_t pending_system_bar_insets;
         sync_ui_lifecycle();
         if (g_host.cooperative_exit_pending) continue;
         advance_graceful_stop();
@@ -4598,21 +4695,7 @@ static void run(void) {
         pxa_esp_ime_pump();
         pxa_esp_ime_drain();
         if (pxa_esp_ime_loading()) handled=1;
-        if (take_pending_color_scheme(&color_scheme)) {
-            apply_color_scheme(color_scheme);
-            handled = 1;
-        }
-        uint32_t rgba[PXA_UI_THEME_ROLE_COUNT];
-        if (take_pending_ui_palette(rgba)) {
-            apply_ui_palette(rgba);
-            handled = 1;
-        }
-        if (take_pending_window_insets(&pending_safe_insets,
-                                       &pending_system_bar_insets)) {
-            apply_window_insets(&pending_safe_insets,
-                                &pending_system_bar_insets);
-            handled = 1;
-        }
+        if(apply_pending_display_state())handled=1;
         if (g_host.activation.services.surface != NULL) {
             int32_t released = pxa_surface_service_flush_releases(
                 g_host.activation.services.surface);
@@ -4661,6 +4744,15 @@ static void run(void) {
                 (pxa_esp_host_command_type_t)command.type);
             portEXIT_CRITICAL(&g_process_state_lock);
             switch (command.type) {
+            case PXA_ESP_HOST_CMD_INSTALL_FILE:
+                native_file_prepare(command.payload.install_file);
+                break;
+            case PXA_ESP_HOST_CMD_MOVE_PACKAGE:
+                native_move_prepare(command.payload.identity.identity);
+                break;
+            case PXA_ESP_HOST_CMD_MOVE_RESOURCES:
+                native_resources_prepare(command.payload.identity.identity);
+                break;
             case PXA_ESP_HOST_CMD_MOVE_DATA:
                 move_data_complete(command.payload.move_data);
                 break;
@@ -4669,6 +4761,7 @@ static void run(void) {
                 pxa_esp_ime_pump(); pxa_esp_ime_drain();
                 break;
             case PXA_ESP_HOST_CMD_START:
+                native_move_cancel();native_file_cancel();
                 ESP_LOGI(PXA_ESP_HOST_TAG, "Processing launch request: %s",
                          command.payload.identity.identity);
                 if (g_host.graceful_stop_active &&
@@ -4781,7 +4874,7 @@ static void run(void) {
             case PXA_ESP_HOST_CMD_PERMISSION_DECISION:
                 complete_runtime_permission_prompt(
                     command.payload.permission_decision.prompt_id,
-                    command.payload.permission_decision.granted != 0);
+                    command.payload.permission_decision.granted != 0,command.payload.permission_decision.install_choice);
                 break;
             case PXA_ESP_HOST_CMD_PERMISSION_SET:
                 if (g_host.activation.active_identity[0] != '\0' &&
@@ -4850,6 +4943,13 @@ static void *thread_main(void *arg) {
      * Reuse the runtime task's stack during bootstrap instead of allocating a
      * second 10 KiB task after SRAM has already become fragmented. Launch
      * requests may queue concurrently and are processed once this returns. */
+    {
+        size_t recovered=0,pending=0;
+        pxa_status_t status=pxa_esp_package_store_recover_transfers(&recovered,&pending);
+        if(status!=PXA_STATUS_OK || recovered || pending)
+            ESP_LOGI(PXA_ESP_HOST_TAG,"Transfer bootstrap: recovered=%u pending=%u status=%ld stack_free=%uB",
+                (unsigned)recovered,(unsigned)pending,(long)status,(unsigned)uxTaskGetStackHighWaterMark(NULL));
+    }
     pxa_esp_package_store_sync_builtins();
     ESP_LOGI(PXA_ESP_HOST_TAG,
              "Built-in Package bootstrap stack: min_free=%u bytes",
@@ -5176,10 +5276,12 @@ bool pxa_esp_host_initialize(void) {
         ESP_LOGE(PXA_ESP_HOST_TAG, "Package store initialization failed");
         return false;
     }
+#if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+    (void)pxa_esp_font_source_acquire(pxa_esp_system_font_path(),&g_host.ui_font_source);
+#endif
     pxa_esp_ime_initialize(allocate_instance_id,post_command,wake_runtime_thread);
-    store_registry_load();
-    pxa_esp_store_cleanup_interrupted(store_registry_keep, NULL);
-    (void)store_registry_save();
+    pxa_esp_store_cache_cleanup();
+    pxa_esp_store_cache_load(g_store_downloads,PXA_ESP_STORE_DOWNLOAD_SLOTS);
 
     /* Retained LVGL UI backend. */
     memset(&ui_config, 0, sizeof(ui_config));
@@ -5225,7 +5327,7 @@ bool pxa_esp_host_initialize(void) {
     ui_config.acquire_image = acquire_ui_image;
     ui_config.release_asset = pxa_esp_ui_asset_release;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
-    ui_config.sized_text_font_path = pxa_esp_system_font_path();
+    ui_config.sized_text_font_path = pxa_esp_host_ui_font_path();
 #endif
     ui_config.event_callback = on_ui_event;
     ui_config.text_input_focus = pxa_esp_ime_editor_focus;
@@ -5320,6 +5422,32 @@ failed:
 
 bool pxa_esp_host_start_runtime(void) {
     return start_runtime_services() != 0;
+}
+bool pxa_esp_host_request_install_package_file(const char *source) {
+    if(!g_host.initialized || !source || !source[0] || strlen(source)>=sizeof(((pxa_esp_file_install_t *)0)->source))return false;
+    pxa_esp_host_public_state_t state;public_state_snapshot(&state);if(state.package_active)return false;
+    pxa_native_file_t *job=heap_caps_calloc(1,sizeof(*job),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!job)return false;
+    strcpy(job->file.source,source);
+    pxa_esp_host_command_t command={.type=PXA_ESP_HOST_CMD_INSTALL_FILE};command.payload.install_file=job;
+    if(post_command(&command))return true;
+    native_file_dispose(job);return false;
+}
+bool pxa_esp_host_request_move_package(const char *identity) {
+    if(!g_host.initialized || !identity || !identity[0] || strlen(identity)>=PXA_HOST_COMMAND_MAX_IDENTITY_BYTES)return false;
+    pxa_esp_host_public_state_t state;public_state_snapshot(&state);
+    if(state.package_active)return false;
+    pxa_esp_host_command_t command={.type=PXA_ESP_HOST_CMD_MOVE_PACKAGE};
+    snprintf(command.payload.identity.identity,sizeof(command.payload.identity.identity),"%s",identity);
+    return post_command(&command)!=0;
+}
+bool pxa_esp_host_request_move_resources(const char *identity) {
+    if(!g_host.initialized || !identity || !identity[0] || strlen(identity)>=PXA_HOST_COMMAND_MAX_IDENTITY_BYTES)return false;
+    pxa_esp_host_public_state_t state;public_state_snapshot(&state);
+    if(state.package_active)return false;
+    pxa_esp_host_command_t command={.type=PXA_ESP_HOST_CMD_MOVE_RESOURCES};
+    snprintf(command.payload.identity.identity,sizeof(command.payload.identity.identity),"%s",identity);
+    return post_command(&command)!=0;
 }
 
 void pxa_esp_host_sync_builtins(void) {
@@ -5728,6 +5856,22 @@ bool pxa_esp_host_set_ui_palette_extended(
     return true;
 }
 
+bool pxa_esp_host_set_ui_metrics(uint16_t base_spacing_px, uint16_t base_radius_px) {
+    if (!g_host.initialized || !base_spacing_px) return false;
+    portENTER_CRITICAL(&g_process_state_lock);
+    g_host.ui_spacing_px = base_spacing_px;
+    g_host.ui_radius_px = base_radius_px;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    return true;
+}
+
+void pxa_esp_host_ui_metrics(uint16_t *base_spacing_px, uint16_t *base_radius_px) {
+    portENTER_CRITICAL(&g_process_state_lock);
+    *base_spacing_px = g_host.ui_spacing_px;
+    *base_radius_px = g_host.ui_radius_px;
+    portEXIT_CRITICAL(&g_process_state_lock);
+}
+
 bool pxa_esp_host_set_locale(const char *locale, uint8_t text_direction) {
     size_t size;
     if (!g_host.initialized || locale == NULL || text_direction > 1u) {
@@ -5814,6 +5958,10 @@ static bool project_host_package(const pxa_esp_package_record_t *record,
     package->staged = record->staged;
     package->enabled = record->enabled;
     package->has_private_data = record->has_private_data;
+    package->movable = record->movable;
+    package->resources_movable = record->resources_movable;
+    package->legacy_storage = record->legacy_storage;
+    package->archived = record->archived;
     package->permission_count = record->permission_count;
     package->granted_permission_count = record->granted_permission_count;
     return projection->count < projection->capacity;

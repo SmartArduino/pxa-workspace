@@ -10,6 +10,7 @@
 
 #include "pxa_esp_host.h"
 #include "pxa_esp_dialog_layout.h"
+#include "pxa_esp_dialog_style.h"
 #include "pxa_esp_system_overlay.h"
 #include "pxa/ui.h"
 
@@ -72,35 +73,22 @@ static void show_result(void *context) {
     lv_obj_t *body;
     lv_obj_t *confirm;
     lv_obj_t *label;
-    lv_color_t primary;
     close_result();
     g_result_prompt_id = result->prompt_id;
     g_result_dialog = lv_obj_create(lv_layer_top());
-    lv_obj_remove_style_all(g_result_dialog);
-    lv_obj_set_size(g_result_dialog, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(g_result_dialog, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(g_result_dialog, LV_OPA_60, 0);
-    lv_obj_add_flag(g_result_dialog, LV_OBJ_FLAG_CLICKABLE);
+    pxa_esp_dialog_style_mask(g_result_dialog);
 
     panel = lv_obj_create(g_result_dialog);
+    pxa_esp_dialog_style_panel(panel);
     lv_obj_set_size(panel, layout.width, layout.height);
     lv_obj_center(panel);
-    lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(panel, layout.radius, 0);
     lv_obj_set_style_pad_all(panel, layout.padding, 0);
-    lv_obj_set_style_bg_color(panel,
-        theme_color(PXA_UI_THEME_SURFACE_CONTAINER_HIGH), 0);
-    lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(panel,
-        theme_color(PXA_UI_THEME_OUTLINE_VARIANT), 0);
-    lv_obj_set_style_border_width(panel, 1, 0);
-    primary = theme_color(2);
 
     title = lv_label_create(panel);
     lv_label_set_text(title, heading);
     lv_obj_set_width(title, LV_PCT(100));
     lv_obj_set_style_text_font(title, title_font(), 0);
-    lv_obj_set_style_text_color(title, theme_color(4), 0);
+    lv_obj_set_style_text_color(title, theme_color(PXA_UI_THEME_TEXT), 0);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
 
     content = lv_obj_create(panel);
@@ -110,6 +98,7 @@ static void show_result(void *context) {
     lv_obj_add_flag(content, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(content, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
+    pxa_esp_dialog_style_scrollbar(content);
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(content, pxa_esp_dialog_scale(
         lv_display_get_dpi(lv_display_get_default()), 6), 0);
@@ -122,7 +111,7 @@ static void show_result(void *context) {
     lv_label_set_text(name, result->app_name);
     lv_obj_set_height(name, LV_SIZE_CONTENT);
     lv_obj_set_style_text_font(name, body_font(), 0);
-    lv_obj_set_style_text_color(name, theme_color(4), 0);
+    lv_obj_set_style_text_color(name, theme_color(PXA_UI_THEME_TEXT), 0);
 
     body = lv_label_create(content);
     lv_obj_set_width(body, LV_PCT(100));
@@ -130,35 +119,29 @@ static void show_result(void *context) {
     lv_obj_set_height(body, LV_SIZE_CONTENT);
     lv_label_set_text(body, message);
     lv_obj_set_style_text_font(body, body_font(), 0);
-    lv_obj_set_style_text_color(body, theme_color(5), 0);
+    lv_obj_set_style_text_color(body, theme_color(PXA_UI_THEME_MUTED), 0);
 
     confirm = lv_button_create(panel);
+    pxa_esp_dialog_style_button(confirm,result->is_uninstall);
     lv_obj_set_size(confirm, layout.button_width, layout.button_height);
     lv_obj_set_style_pad_all(confirm, 0, 0);
     lv_obj_align(confirm, LV_ALIGN_BOTTOM_RIGHT,
                  result->is_uninstall ? 0 : -layout.button_width - layout.button_gap, 0);
-    lv_obj_set_style_bg_opa(confirm, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(confirm, primary, 0);
-    lv_obj_set_style_border_width(confirm, 1, 0);
     lv_obj_add_event_cb(confirm, result_response, LV_EVENT_CLICKED, NULL);
     label = lv_label_create(confirm);
     lv_label_set_text(label, chinese ? "确认" : "Confirm");
-    lv_obj_set_style_text_color(label, primary, 0);
-    lv_obj_set_style_text_font(label, body_font(), 0);
     lv_obj_center(label);
 
     if (!result->is_uninstall) {
         lv_obj_t *open = lv_button_create(panel);
+        pxa_esp_dialog_style_button(open,true);
         lv_obj_set_size(open, layout.button_width, layout.button_height);
-    lv_obj_set_style_pad_all(open, 0, 0);
+        lv_obj_set_style_pad_all(open, 0, 0);
         lv_obj_align(open, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-        lv_obj_set_style_bg_color(open, primary, 0);
         lv_obj_add_event_cb(open, result_response, LV_EVENT_CLICKED,
                             (void *)(uintptr_t)1);
         label = lv_label_create(open);
         lv_label_set_text(label, chinese ? "打开" : "Open");
-        lv_obj_set_style_text_color(label, theme_color(3), 0);
-        lv_obj_set_style_text_font(label, body_font(), 0);
         lv_obj_center(label);
     }
     pxa_esp_system_overlay_add(g_result_dialog);

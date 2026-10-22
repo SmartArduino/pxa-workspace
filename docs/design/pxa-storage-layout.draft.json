@@ -1,222 +1,95 @@
 {
-  "schema": "pxa-storage-layout-proposal-1",
-  "status": "proposal-not-implemented",
+  "schema": "pxa-storage-layout-draft-2",
+  "status": "implemented-home-and-resource-layout-with-native-transfer",
   "normative": false,
-  "date": "2026-10-18",
   "design": "../pxa-storage-layout.zh-CN.md",
-  "layout_version": 1,
   "root": "/PXA",
+  "path_scope": "Relative to a selected physical volume; native mount paths never enter Guest ABI",
   "user_flow": {
     "installation_directory_picker": false,
     "launch_directory_picker": false,
-    "system_font_directory_picker": false,
-    "default_volume": "Use explicit board/system policy; the single SD system profile needs no storage choice",
-    "optional_storage_setting": "Select a volume only; managed directories remain fixed",
-    "unavailable_or_full": "Request media insertion, cleanup or another qualified volume; never request an arbitrary directory"
-  },
-  "path_scope": "Paths are relative to a selected volume root, not Guest paths or native mount points",
-  "telemetry": {
-    "live_frame_and_memory_sampling": "Bounded memory snapshots; no filesystem traversal",
-    "capacity_scans": "Background cached snapshots with sample time; never triggered by each frame or Guest callback",
-    "install_admission": "Revalidate through reservation authority; stale display capacity is not allocation authority"
-  },
-  "fixed_directories": {
-    "system": "/PXA/system",
-    "packages": "/PXA/app",
-    "application_data": "/PXA/data",
-    "shared_media": "/PXA/media",
-    "maintenance": "/PXA/.pxa-control"
+    "volume_selection": "Native Host confirmation; updates retain their existing volume"
   },
   "templates": {
-    "control_store": "/PXA/system/control.lfs",
-    "system_resources": "/PXA/system/resources/{resource_id}",
-    "package_release": "/PXA/app/{app_key}/{store_id}/{release_id}",
-    "private_data": "/PXA/data/{app_key}/{store_id}/{data_id}/private.lfs",
-    "disposable_data": "/PXA/data/{app_key}/{store_id}/{data_id}/disposable.lfs",
-    "store_metadata_copy": "/PXA/.pxa-control/stores/{store_id}",
-    "staging": "/PXA/.pxa-control/staging/{operation_id}",
-    "app_media": "/PXA/media/{app_key}"
+    "volume_identity": "/PXA/volume.{0,1}.pxv",
+    "application_home": "/PXA/apps/{publisher_root_hex}/{app_id}",
+    "install_record": "{home}/install.{0,1}.pxi",
+    "package": "{home}/package",
+    "private_data": "{home}/data/{data_generation_hex16}",
+    "legacy_data_generation_zero": "{home}/private",
+    "private_image": "{private_data}/private.lfs",
+    "offline_container": "/PXA/cache/store/.store-{token_hex8}.pxa",
+    "offline_descriptor": "{offline_container}.meta",
+    "manual_media": "/PXA/media/{publisher_root_hex}/{app_id}",
+    "system_fonts": "/PXA/system/fonts",
+    "managed_media": "/PXA/media/{publisher_root_hex}/{app_id}/{resource_manifest_sha256}/package",
+    "transfer_receipt": "{home}/.transfer.{0,1}.pxm",
+    "source_transfer": "/PXA/apps/.transfers/{transfer_id_hex32}",
+    "retired_source": "{source_transfer}/source"
   },
-  "identifiers": {
-    "app_key": {
-      "algorithm": "SHA-256",
-      "input": "ASCII PXA-APPKEY-1 || lineage_root_key_id:bytes[32] || app_id_length:u16-le || app_id:bytes[app_id_length]",
-      "encoding": "64 lowercase hexadecimal characters",
-      "authority": "Always compare the full installed lineage-root and app-id; display name is not identity"
-    },
-    "system_id": "Nonzero random bytes[16]; identity of the selected system instance, stored in its control store",
-    "store_id": "Nonzero random bytes[16], bound to SystemId and VolumeId; lowercase hexadecimal directory component",
-    "release_id": "Nonzero random bytes[16]; immutable package generation; never reused",
-    "data_id": "Nonzero random bytes[16]; persistent data instance; independent of release_id",
-    "resource_id": "Nonzero random bytes[16]; immutable system-resource generation",
-    "operation_id": "Nonzero random bytes[16]; control-store-scoped operation identity",
-    "collision_rule": "Refuse or regenerate on conflict; never adopt or overwrite by matching directory name alone"
+  "authority": {
+    "installation": "Device-authenticated mirrored local records plus full publisher/code verification",
+    "cache": "Volume-bound authenticated completion descriptor, never execution authority",
+    "primary_flash_app_registry_required": false,
+    "platform_device_secret": "ESP implementation retains one fixed device secret in NVS; legacy app adapter is separate",
+    "resources": "Exact publisher-signed resource manifest, all logical file digests and application record media-volume binding"
   },
-  "system_profiles": [
-    {
-      "name": "internal-system",
-      "control_location": "Qualified internal system volume",
-      "application_targets": "Any qualified internal or removable volume",
-      "flash_filesystem_required": true
-    },
-    {
-      "name": "removable-system",
-      "control_location": "Selected qualified SD or other supported removable system volume",
-      "application_targets": "Same system volume or another qualified volume",
-      "flash_filesystem_required": false,
-      "pxa_nvs_dependency": false,
-      "normal_boot_without_system_volume": false,
-      "recovery_boot_without_system_volume": true
-    }
+  "admission": {
+    "capacity_overview": "Cached, no per-frame filesystem traversal",
+    "install": "Refresh, geometry-aware peak accounting, reserve selected mount, exact manifest approval and previous record CAS",
+    "offline_download": "Cache footprint only; installation admission evaluated separately"
+  },
+  "supported_host_topologies": [
+    "one mounted flash filesystem",
+    "multiple registered partitions on one flash",
+    "filesystems on multiple flash devices",
+    "flash plus SD",
+    "no primary file partition with board-provided external volume"
   ],
-  "system_root": {
-    "binding": [
-      "volume_id",
-      "mount_epoch",
-      "system_id",
-      "control_backend"
-    ],
-    "authority": "Selected SystemRoot control store is authoritative; placement is not discovered by package-directory scans",
-    "one_system_per_system_volume": true,
-    "selection": "Explicit board device/partition policy or recovery-UI choice; ambiguity never resolved by label, scan order or timestamp",
-    "without_internal_persistent_anchor": "Cannot authenticate previous system-card identity or remember a dynamic boot choice; make no such guarantee",
-    "missing_corrupt_or_read_only": "Use firmware recovery; never format automatically or create replacement private state",
-    "removal": "Stop all dependent instances; invalidate work and font access; drain safely or reset under watchdog; select another system only after restart in the first profile",
-    "migration": "Explicit maintenance copy with all writers stopped; boot-medium selection is separate and not claimed atomic across two removable cards"
-  },
-  "firmware_recovery": {
-    "required": true,
-    "external_fonts_required": false,
-    "flash_file_partition_required": false,
-    "compiled_resources": [
-      "minimal font",
-      "input and display",
-      "storage status and recovery controls"
-    ],
-    "normal_ui_start_order": [
-      "board and block devices",
-      "select system volume",
-      "mount control store",
-      "recover transactions",
-      "resolve registered system resources",
-      "load fonts and desktop",
-      "allow Guest launch"
-    ]
-  },
-  "placement": {
-    "default_for_new_location_selection": "whole-app",
-    "policies": [
-      "whole-app",
-      "package-only",
-      "legacy-fixed"
-    ],
-    "whole_app_same_target": [
-      "code",
-      "package-assets",
-      "private-files",
-      "storage-kv",
-      "cache",
-      "temporary",
-      "app-media"
-    ],
-    "system_control_may_be_elsewhere": true,
-    "shared_media_independent": "Other explicitly granted shared directories; automatic app-media follows whole-app placement",
-    "one_snapshot_for_fs_kv_and_assets": true,
-    "silent_fallback": false,
-    "update": "New release_id retains data_id; data rollback is not implied by code rollback",
-    "move": "Quiesce private writers; verify copied package, durable data and fixed app-media; atomically commit all targets in the control store; retain old copies until leases drain; old user-media copies require ownership-aware or explicit cleanup",
-    "uninstall": "Remove managed package/data/cache by default, optional explicit keep-data; never delete granted or shared media",
-    "offline_gc_binding": [
-      "system_id",
-      "store_id",
-      "volume_id",
-      "app_key",
-      "release_id or data_id"
-    ]
-  },
-  "fat_image_backend": {
-    "implementation_status": "not-implemented-or-qualified",
-    "filesystem": "LittleFS2 via bounded block callbacks over preallocated FAT files",
-    "private_roots": {
-      "files": "private.lfs:/files",
-      "kv": "private.lfs:/kv"
-    },
-    "disposable_roots": {
-      "cache": "disposable.lfs:/cache",
-      "temporary": "disposable.lfs:/temporary"
-    },
-    "guest_fs_cannot_open_kv": true,
-    "encryption_implied": false,
-    "load_whole_image_into_ram": false,
-    "candidate_tuning": {
-      "block_bytes": 4096,
-      "read_bytes": 512,
-      "program_bytes": 512,
-      "cache_bytes": 512,
-      "lookahead_bytes": 128
-    },
-    "budget": "1152 bytes of base LittleFS cache per active image and 512 per open file, plus structs, queues, fd, outer FAT buffers, I/O workspaces and stacks; measured total required",
-    "allocation": "Lazy, explicitly reserved, physically allocated and flushed before use; no sparse-file assumption",
-    "candidate_initial_and_growth_bytes": 262144,
-    "grow": [
-      "quiesce data roots",
-      "reserve and allocate backing-file tail in erase state",
-      "sync outer allocation and length",
-      "call lfs_fs_grow",
-      "sync and remount to verify superblock",
-      "record result"
-    ],
-    "mount_block_count": 0,
-    "bounds": "Validated backing length always bounds block callbacks; superblock larger than backing file is an error; unused tail may be recoverable reservation",
-    "grow_failure": "Discard failed in-memory capacity and remount before further access",
-    "online_shrink": false,
-    "durability_limit": "Inner LittleFS recovery does not guarantee intact outer FAT metadata, controller persistence or undamaged media"
-  },
-  "protected_volume_relative_roots": [
-    "/PXA/system",
-    "/PXA/app",
-    "/PXA/data",
-    "/PXA/.pxa-control"
+  "pending": [
+    "archived application transfer",
+    "legacy whole-app and implicit manual-media migration",
+    "unbound resource-generation relocation",
+    "resource bundle offline cache",
+    "system-font mount lifetime and hotplug recovery",
+    "unreferenced resource garbage collection"
   ],
-  "protection": {
-    "apply_to": [
-      "Guest scoped resolution",
-      "trusted directory picker",
-      "Files",
-      "PXADB ordinary fs operations"
+  "transfer": {
+    "entry": "Native Host only; idle unarchived volume-local application, explicit target volume",
+    "confirmation": "Settings app detail; no-write/no-reservation preview, exact source record and mount instance rechecked on commit; system-owned progress UI on the existing runtime task",
+    "identity": "Preserve InstallID, data generation, code and resource digests; install generation N -> N+1",
+    "receipt": "PXMT canonical state inside device-authenticated PXMS dual slots; bind physical volume, endpoint role and publisher/App locator",
+    "phases": [
+      "COPYING",
+      "READY",
+      "SURRENDERED",
+      "COMMITTED"
     ],
-    "comparison": "Volume-root anchored, component-aware, using native case and alias equivalence; reject unsafe aliases if canonical resolution unavailable",
-    "shared_media_grant_allowed": true,
-    "host_maintenance_access": "Dedicated management authority and bounded upload leases only",
-    "protect_before_first_managed_install": true
+    "visibility": "Quarantine target while any transfer slot or pending slot exists, including damaged receipts",
+    "private_data": "Bounded PSRAM walker, no symlinks, full destination SHA reread; authenticate and reseal permissions/directory grants",
+    "handoff": "Durable source-home retirement and target-local surrender proof precede target record commit",
+    "retry": "Rebuild uncommitted private snapshot from idle source; after surrender require prepared private state and never format it",
+    "offline": "Source missing before proof stays pending; authenticated proof permits finishing an already prepared target",
+    "slot_replace": "Retain an authenticated durable peer; no-replace filesystems retire only the replaceable slot before publishing its synced temporary",
+    "resources": "Retain original immutable resource-volume binding",
+    "central_registry": false,
+    "startup": "Discover target-local receipts on registered ready volumes and resume before queued launches; keep offline or invalid transfers quarantined; reuse runtime task stack"
   },
-  "qualification_gates": [
-    "Boot, font loading, app launch and persistent save on a board with no Flash file partition",
-    "No-card, corrupt-card, unknown-layout and removed-system-volume recovery without external fonts",
-    "Old private FS naming, replace, quota and KV isolation preserved",
-    "Fault injection across allocation, growth, package preparation, control commit, move, resource switch and GC",
-    "No partial code/data placement commit; no empty internal fallback saves",
-    "Protected directory and FAT alias isolation through all ordinary file entry points",
-    "Bounded measured RAM, cold boot, read/write tail latency, actual presentation FPS and audio underruns"
-  ],
-  "integrity_policy": "Existing install-time verification only; no new runtime full-content hash scans",
-  "current_firmware": "Internal pxa-state and font root remain in use; fixed app-media and optional granted read-only SD access are implemented; whole-app backend and removable-system bootstrap are not",
-  "default_resource_access": {
-    "sdk": "fs.app_media()",
-    "opcode": 9,
-    "root_kind": 5,
-    "feature": "app-media-root",
-    "feature_bit": 6,
-    "permission": 0,
-    "grant_id": "zero bytes[16]",
-    "directory_picker_required": false,
-    "scope": "verified app identity and explicit Host storage placement",
-    "initial_rights": [
-      "read",
-      "enumerate"
+  "resource_transfer": {
+    "entry": "Native Settings confirmation for an idle volume-local app with publisher-signed resources",
+    "commit": "Prepare or fully verify the identical target generation, then compare the complete approved app record and mirror its new resource binding",
+    "preserved": "App volume, code, InstallID, data generation and permissions; increment installation generation only",
+    "source": "Retain immutable original until ownership-aware garbage collection is available",
+    "central_registry": false
+  },
+  "store": {
+    "service_version": "0.8",
+    "features": [
+      "resource-install",
+      "volume-placement"
     ],
-    "current_gamekit_policy": "Board explicitly selects registered SD mount; no fallback to enumeration order",
-    "future_policy": "PlacementSnapshot supplies selected app media volume",
-    "arbitrary_import": "Optional trusted picker only when user explicitly imports another directory"
+    "metadata": "Verify both signed metadata before confirmation and transfers",
+    "admission": "Atomic selected-volume reservation, shared-volume phased peak accounting",
+    "resource_cache_supported": false
   }
 }

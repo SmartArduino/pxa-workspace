@@ -1,7 +1,15 @@
-# Cross-board defaults intentionally stay empty. Each board provides its own
-# target, flash, memory, partition and peripheral overlay under firmware/boards/<id>/.
+# Cross-board service policy. Hardware defaults live in firmware/boards/<id>/.
+
+# PXA private storage requires persistent directories. SPIFFS compatibility
+# automatically removes empty parents after unlink/rename and breaks that API.
+CONFIG_LITTLEFS_SPIFFS_COMPAT=n
 
 # System input method: pinyin with the nine key layout on narrow panels.
 CONFIG_LV_USE_IME_PINYIN=y
 CONFIG_LV_IME_PINYIN_USE_K9_MODE=y
 CONFIG_LV_IME_PINYIN_USE_DEFAULT_DICT=y
+
+# Public volumes plus active and preparing private filesystems must coexist.
+# These are pointer-table capacities; filesystem buffers allocate on demand.
+CONFIG_VFS_MAX_COUNT=20
+CONFIG_LITTLEFS_MAX_PARTITIONS=10

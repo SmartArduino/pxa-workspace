@@ -272,17 +272,95 @@ TCP token 认证不加密流量。仅 UI 的桌面模拟器仍没有 PXADB 端�
 基于同一客户端的桌面 GUI 位于 `tools/pxadb-gui.sh`，支持实时预览、远程操纵、
 文件传输和 Package 管理，详见 [PXADB GUI](../pxadb-gui/README.md)。
 
-On internal Flash, protected system directories can be created only after explicit `fs unlock`; this includes missing `system/pxa` and `system/fonts` parents for initial factory provisioning. Upload/replacement/removal still use the stricter policy. Finish provisioning with `fs lock`. Ordinary SD card directories are writable through PXADB without unlocking: uploads, deletion, directory creation and same-card file moves are allowed. `sdcard/PXA/system` is read-only by default; `fs unlock` temporarily allows mutations below it, and `fs lock` or expiry restores read-only access. The system root, its parent `sdcard/PXA` and the card mount point stay in place. Other card directories, such as `sdcard/PXA/media`, need no unlock. A normally installed store cannot obtain installer authority merely by using the `pxa-store` ID; the product must provision the trusted factory package.
-
+On internal Flash, protected system directories can be created only after explicit `fs unlock`; this includes missing `system/pxa` and `system/fonts` parents for initial factory provisioning. Upload/replacement/removal still use the stricter policy. Finish provisioning with `fs lock`. Ordinary SD card directories are writable through PXADB without unlocking: uploads, deletion, directory creation and same-card file moves are allowed. `sdcard/PXA/system` is read-only by default; `fs unlock` temporarily allows mutations below it, and `fs lock` or expiry restores read-only access. The system root, its parent `sdcard/PXA` and the card mount point stay in place. Other card directories, such as `sdcard/PXA/media`, need no unlock. Store Installer is available to the active, installed and enabled application; its App ID grants no extra authority. The Host verifies store signatures and package bindings, controls placement and requests native user confirmation before installation.
 
 ### Package storage migration
+
+`VOLUMES` returns the registered storage volumes, refreshed capacity and the
+current `epoch` of each mount. Use `PACKAGE install-volume <epoch> <base64-path>`
+to install a signed container on a selected volume; the source path is relative
+to the PXADB root. Epoch `0` uses the Host default placement: retain an existing
+application volume, otherwise prefer a fitting nonremovable volume before SD.
+Mount epochs change after reboot/remount and must be queried
+again. Code, private data and authenticated install records stay on that volume.
+The same command accepts a signed Manifest 0.8 resource container. It prepares
+the immutable `PXA/media/<publisher>/<app>/<manifest-sha256>/package` generation
+without adding an executable application or private image. Install the
+referencing application after its resources are ready; the Host verifies the
+exact signed generation and records its actual volume. Resource installation
+does not adopt or remove legacy manually imported media directories.
+Replacing a legacy installation or moving it to another volume requires an
+explicit migration rather than creating a second private namespace.
+
+`PACKAGE move <qualified-identity>` queues the same native confirmation as
+Settings. For a legacy application this explicitly upgrades its storage layout
+on the current native volume, retaining the actual media volume and renaming
+manual media into its fixed publisher/App directory. Code, private files, KV
+and permissions are preserved; the app must be idle. After the upgrade, the
+normal placement command can move it to another volume. A queued response is
+not approval or a completed migration, and cancellation does not change storage.
+
+`PACKAGE move-volume <target-epoch> <qualified-identity>` moves an idle,
+application using the volume-local layout, including an archived one. Code, private files,
+KV, InstallID and authenticated permissions move together; immutable media
+keeps its existing volume. An archive moves its retained private state and
+sealed records without requiring or restoring executable code; its archive flag
+remains set until a verified reinstallation. `PACKAGES` reports `archived=1`
+for these retained homes. Legacy installations require their own conversion
+and return unsupported here. Both participating volumes must be available
+when starting a move.
+`PACKAGE move-resources <qualified-identity>` queues the same native resource
+placement confirmation as Settings. Acceptance means queued, not committed.
+Only idle volume-local apps with a signed resource binding support this flow.
+After copying/validating the exact generation, the Host changes and mirrors
+only the app's local resource binding; code, private data and permissions stay
+put. Original resource copies remain until ownership-aware garbage collection
+is available, so relocation does not yet guarantee space reclamation.
+The command can emit nonterminal `PROGRESS` frames using its request sequence.
+`transfer_phase=copying` means both endpoints' copying receipts are durable;
+it does not mean the target installation is committed. Cooperative polls keep
+bounded log batches flowing while the move runs, without a separate task.
+
+At startup the runtime discovers and resumes transfers on ready volumes before
+processing queued launches. To retry explicitly after an interrupted operation,
+use `PACKAGE resume-volume <target-epoch> <qualified-identity>`.
+The Host authenticates the target-local transfer receipt and resumes the
+handoff. The target stays quarantined until commit; never delete its receipts
+or manually restore a retired source. A durable surrender proof allows a
+prepared target to finish with its source offline. Earlier interruption waits
+for the source. These native developer commands are not Guest installer
+capabilities or a substitute for a placement confirmation UI.
+Connection cleanup defers while the package owner is busy, so HELLO and logcat
+remain available during startup recovery. A write or PACKAGE command can return
+`package_cleanup_pending`; retry it after the old session has been cleaned up.
+
+`PERMISSIONS <qualified-identity>` lists the declared permission indices, scopes
+and decisions. `PERMISSIONS <qualified-identity> <index> allow|deny` applies a
+native Host decision using the installation's own private storage. An active
+application processes changes on its runtime owner; read the list again after
+that command has been processed. Archiving retains these decisions and saves;
+reinstalling the same installation reuses them. Clearing data starts a new
+private generation, including fresh permission decisions.
+
+`PACKAGE cache-import <owner-identity> <base64-path>` registers a fully
+transferred offline container in the installed owner's Store downloads. The
+source must already be a canonical `/PXA/cache/store/.store-<8-hex>.pxa` file on
+a registered volume. The Host verifies its publisher, hashes the complete
+container and writes a volume-local authenticated completion descriptor. It
+preserves the container and returns its 19-byte cache token; opening Downloads
+rediscovers it. This developer operation assigns cache ownership, and subsequent
+installation still requires the native placement confirmation and full installer
+verification. Startup cleanup removes unfinished cache files, so import a
+completed transfer before rebooting. No primary-Flash cache registry is used.
 
 `PACKAGE paths <publisher-root>:<app-id>` is a read-only Host lookup. `PATH`
 frames carry `private<TAB>path` and, when the selected registered media volume is
 ready, `media<TAB>path`. Paths are relative to the normal PXADB storage root;
 `OK media=unavailable` never grants permission to create a Flash substitute.
 The binding may be a publisher/app directory or a retained legacy identity being
-migrated. Guest FS roots remain controlled by the Host.
+migrated. This raw-path interface supports retained legacy installations;
+volume-local private filesystems require a leased session and are not exposed
+as a fabricated Flash path. Guest FS roots remain controlled by the Host.
 
 `PACKAGE move-data <qualified-source> <qualified-target>` moves the source's
 private `data/` into the target identity. The target must be installed and verified;

@@ -9,6 +9,11 @@ build_dir=$(mktemp -d "${TMPDIR:-/tmp}/pxa-esp-host-tests.XXXXXX")
 trap 'rm -rf -- "$build_dir"' EXIT
 
 python3 "$project_dir/firmware/components/pxa_integration/tests/test_startup.py"
+python3 "$project_dir/firmware/components/pxa_integration/tests/test_storage_startup.py"
+python3 "$tests_dir/test_native_move_ui.py"
+python3 "$tests_dir/test_native_file_ui.py"
+python3 "$tests_dir/test_legacy_catalog.py"
+python3 "$tests_dir/test_graceful_stop.py"
 
 cc_flags=(-std=c99 -Wall -Wextra -Wpedantic -Werror)
 cxx_flags=(-std=c++17 -Wall -Wextra -Werror)
@@ -88,6 +93,10 @@ build_and_run store_policy \
   "$tests_dir/pxa_esp_store_policy_test.c"
 build_and_run storage_path_policy \
     "$tests_dir/pxa_esp_storage_path_policy_test.c"
+build_and_run legacy_permissions -DESP_PLATFORM=1 \
+  "-DCONFIG_PXA_MOUNT_POINT=\"$build_dir/legacy-permissions\"" \
+  '-DCONFIG_PXA_STATE_ROOT="pxa-state"' \
+  "${adapter_includes[@]}" "$tests_dir/pxa_esp_legacy_permission_test.c" -lmbedcrypto -pthread
 build_and_run media_path \
     "$tests_dir/pxa_esp_media_path_test.c"
 build_and_run install_space \
@@ -96,7 +105,12 @@ build_and_run install_space \
   "$tests_dir/pxa_install_space_test.c"
 build_and_run store_download -DESP_PLATFORM=1 \
   "-DCONFIG_PXA_MOUNT_POINT=\"$build_dir/store-download\"" \
-  "${adapter_includes[@]}" "$tests_dir/pxa_esp_store_download_test.c" -lmbedcrypto
+  "${adapter_includes[@]}" "$tests_dir/pxa_esp_store_download_test.c" \
+  "$pxa_system_dir/libpxa/src/package/container.c" "$pxa_system_dir/libpxa/src/core/wire.c" -lmbedcrypto
+build_and_run store_cache -DESP_PLATFORM=1 \
+  "${adapter_includes[@]}" "$tests_dir/pxa_esp_store_cache_test.c" \
+  "$component_dir/src/package/pxa_esp_store_cache.c" \
+  "$pxa_system_dir/libpxa/src/core/wire.c" -lcrypto -lmbedcrypto
 build_and_run surface_transform \
   -I"$component_dir/include" \
   "$tests_dir/pxa_surface_transform_test.c"
@@ -106,11 +120,109 @@ build_and_run disabled_policy \
   "$component_dir/src/package/pxa_package_disabled_policy.c"
 build_and_run wasi_stdio -DESP_PLATFORM=1 \
   "${adapter_includes[@]}" "$tests_dir/pxa_esp_wasi_stdio_test.c"
+build_and_run early_security "${adapter_includes[@]}" "$tests_dir/pxa_esp_security_test.c"
+build_and_run directory_handles -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
+  "${adapter_includes[@]}" -pthread "$tests_dir/pxa_esp_directory_test.c"
+build_and_run native_fs_scan -DESP_PLATFORM=1 -DPXA_POSIX_NATIVE_DIR_SCAN=1 \
+  -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 "${adapter_includes[@]}" -pthread \
+  "$tests_dir/pxa_esp_fs_scan_test.c" "$pxa_system_dir/libpxa/adapters/tests/fs_tree_test.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_fs.c" \
+  "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" -Wl,--wrap=readdir
+PXA_TEST_UNKNOWN_DIRENT=1 "$build_dir/native_fs_scan"
+littlefs_dir="$project_dir/firmware/managed_components/joltwallet__littlefs/src/littlefs"
+build_and_run private_image -DLFS_NO_DEBUG -DLFS_NO_WARN -DLFS_NO_ERROR \
+  "${adapter_includes[@]}" -I"$littlefs_dir" -pthread \
+  "$tests_dir/pxa_esp_image_blockdev_test.c" "$component_dir/src/services/pxa_esp_image_blockdev.c" \
+  "$littlefs_dir/lfs.c" "$littlefs_dir/lfs_util.c"
 
 libpxa_build="$build_dir/libpxa"
 cmake -S "$pxa_system_dir/libpxa" -B "$libpxa_build" \
   -DPXA_BUILD_TESTS=OFF -DPXA_BUILD_ADAPTERS=OFF "${libpxa_options[@]}" >/dev/null
 cmake --build "$libpxa_build" -j2 >/dev/null
+python3 "$tests_dir/test_font_source.py" --libpxa "$libpxa_build/libpxa.a"
+build_and_run install_approval "${adapter_includes[@]}" \
+  "$tests_dir/pxa_esp_install_approval_test.c" "$component_dir/src/package/pxa_esp_install_approval.c" \
+  "$libpxa_build/libpxa.a" -lm
+build_and_run private_copy "${adapter_includes[@]}" \
+  "$tests_dir/pxa_esp_private_copy_test.c" "$component_dir/src/services/pxa_esp_private_copy.c" \
+  "$pxa_system_dir/libpxa/adapters/openssl/pxa_openssl.c" "$libpxa_build/libpxa.a" -lcrypto -lm
+build_and_run transfer_receipt "${adapter_includes[@]}" -I"$pxa_system_dir/libpxa/adapters/tests" \
+  "$tests_dir/pxa_esp_transfer_receipt_test.c" "$libpxa_build/libpxa.a" -lcrypto -lm
+build_and_run record_seal "${adapter_includes[@]}" -pthread \
+  "$tests_dir/pxa_esp_record_seal_test.c" "$libpxa_build/libpxa.a" -lmbedcrypto -lm
+build_and_run package_trust -DESP_PLATFORM=1 -DCONFIG_PXA_TRUST_BUNDLED_DEVELOPMENT_KEY=1 \
+  "${adapter_includes[@]}" -pthread "$tests_dir/pxa_esp_package_trust_test.c" \
+  "$libpxa_build/libpxa.a" -lm
+build_and_run volumes -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
+  -ffunction-sections -fdata-sections -Wl,--gc-sections \
+  "${adapter_includes[@]}" -pthread "$tests_dir/pxa_esp_volumes_test.c" \
+  "$component_dir/src/services/pxa_esp_volumes.c" \
+  "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_volume.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_app_store.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_install_record.c" \
+  "$libpxa_build/libpxa.a" -lmbedcrypto -lm
+build_and_run fs_roots -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
+  "-DCONFIG_PXA_MOUNT_POINT=\"$build_dir/scoped\"" '-DCONFIG_PXA_STATE_ROOT="state"' \
+  "${adapter_includes[@]}" -pthread "$tests_dir/pxa_esp_fs_roots_test.c" \
+  "$component_dir/src/services/pxa_esp_volumes.c" \
+  "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_volume.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_scoped_fs.c" \
+  "$libpxa_build/libpxa.a" -lcrypto -lmbedcrypto -lm
+build_and_run app_storage -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
+  -DLFS_NO_DEBUG -DLFS_NO_WARN -DLFS_NO_ERROR \
+  "${adapter_includes[@]}" -I"$littlefs_dir" -I"$pxa_system_dir/libpxa/adapters/tests" -pthread \
+  "$tests_dir/pxa_esp_app_storage_test.c" "$component_dir/src/services/pxa_esp_app_storage.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_app_home.c" \
+  "$component_dir/src/services/pxa_esp_image_blockdev.c" "$component_dir/src/services/pxa_esp_volumes.c" \
+  "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_volume.c" \
+  "$littlefs_dir/lfs.c" "$littlefs_dir/lfs_util.c" "$libpxa_build/libpxa.a" -lcrypto -lmbedcrypto -lm
+cc "${cc_flags[@]}" -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
+  '-DCONFIG_PXA_STORAGE_PARTITION_LABEL="forbidden-primary"' \
+  "${adapter_includes[@]}" -I"$pxa_system_dir/libpxa/adapters/tests" -pthread \
+  "$tests_dir/pxa_esp_installations_test.c" "$component_dir/src/package/pxa_esp_installations.c" \
+  "$component_dir/src/package/pxa_esp_resource_transfer.c" \
+  "$component_dir/src/services/pxa_esp_volumes.c" \
+  "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_volume.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_installer.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_fs.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_app_store.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_app_home.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_install_record.c" \
+  "$pxa_system_dir/libpxa/adapters/openssl/pxa_openssl.c" \
+  "$libpxa_build/libpxa.a" -llz4 -lcrypto -lmbedcrypto -lm -o "$build_dir/installations"
+python3 "$tests_dir/test_installations.py" "$build_dir/installations" "$pxa_system_dir"
+
+for migration in app_transfer legacy_adoption; do
+adoption_sources=()
+if [[ $migration == legacy_adoption ]]; then
+  adoption_sources+=("$component_dir/src/package/pxa_esp_legacy_adoption.c"
+    "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_storage.c")
+fi
+cc "${cc_flags[@]}" -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
+  '-DCONFIG_PXA_STORAGE_PARTITION_LABEL="forbidden-primary"' \
+  "${adapter_includes[@]}" -I"$pxa_system_dir/libpxa/adapters/tests" -pthread \
+  "$tests_dir/pxa_esp_${migration}_test.c" "${adoption_sources[@]}" "$component_dir/src/package/pxa_esp_installations.c" \
+  "$component_dir/src/services/pxa_esp_volumes.c" \
+  "$component_dir/src/services/pxa_esp_app_storage.c" \
+  "$component_dir/src/services/pxa_esp_image_blockdev.c" \
+  "$component_dir/src/services/pxa_esp_private_copy.c" \
+  "$component_dir/src/services/pxa_esp_private_authority.c" \
+  "$component_dir/src/package/pxa_esp_transfer_receipt.c" \
+  "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_volume.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_installer.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_fs.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_app_store.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_app_home.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_install_record.c" \
+  "$pxa_system_dir/libpxa/adapters/openssl/pxa_openssl.c" \
+  "$libpxa_build/libpxa.a" -llz4 -lcrypto -lmbedcrypto -lm -o "$build_dir/$migration"
+python3 "$tests_dir/test_installations.py" "$build_dir/$migration" "$pxa_system_dir"
+done
 
 cc "${cc_flags[@]}" "${adapter_includes[@]}" -pthread \
   "$tests_dir/pxa_esp_assets_backend_test.c" "$libpxa_build/libpxa.a" \

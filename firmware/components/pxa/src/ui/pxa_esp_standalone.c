@@ -12,6 +12,7 @@
 
 #include "pxa_esp_host.h"
 #include "pxa_esp_dialog_layout.h"
+#include "pxa_esp_dialog_style.h"
 #include "pxa_esp_system_overlay.h"
 #include "pxa_esp_package_icon.h"
 #include "pxa_esp_package_store.h"
@@ -181,36 +182,26 @@ static void dismiss_launch(void *context) {
 
 static lv_obj_t *create_dialog(const char *title, const char *body,
                                const char *left_text, lv_event_cb_t left_cb,
-                               const char *right_text, lv_event_cb_t right_cb) {
+                               const char *right_text, lv_event_cb_t right_cb,
+                               pxa_lvgl_action_t right_action) {
     pxa_esp_dialog_layout_t layout = pxa_esp_dialog_measure(
         lv_display_get_horizontal_resolution(lv_display_get_default()),
         lv_display_get_vertical_resolution(lv_display_get_default()),
         title, body, NULL, system_title_font(), system_body_font(), 3, 0,
         lv_display_get_dpi(lv_display_get_default()));
     lv_obj_t *mask = lv_obj_create(lv_layer_top());
-    lv_obj_remove_style_all(mask);
-    lv_obj_set_size(mask, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(mask, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(mask, LV_OPA_60, 0);
-    lv_obj_add_flag(mask, LV_OBJ_FLAG_CLICKABLE);
+    pxa_esp_dialog_style_mask(mask);
 
     lv_obj_t *panel = lv_obj_create(mask);
+    pxa_esp_dialog_style_panel(panel);
     lv_obj_set_size(panel, layout.width, layout.height);
     lv_obj_center(panel);
-    lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(panel, layout.radius, 0);
-    lv_obj_set_style_bg_color(panel,
-        system_color(PXA_UI_THEME_SURFACE_CONTAINER_HIGH), 0);
-    lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(panel,
-        system_color(PXA_UI_THEME_OUTLINE_VARIANT), 0);
-    lv_obj_set_style_border_width(panel, 1, 0);
     lv_obj_set_style_pad_all(panel, layout.padding, 0);
 
     lv_obj_t *title_label = lv_label_create(panel);
     lv_label_set_text(title_label, title);
     lv_obj_set_width(title_label, LV_PCT(100));
-    lv_obj_set_style_text_color(title_label, system_color(4), 0);
+    lv_obj_set_style_text_color(title_label, system_color(PXA_UI_THEME_TEXT), 0);
     lv_obj_set_style_text_font(title_label, system_title_font(), 0);
 
     lv_obj_t *content = lv_obj_create(panel);
@@ -220,13 +211,14 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
     lv_obj_add_flag(content, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(content, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
+    pxa_esp_dialog_style_scrollbar(content);
 
     lv_obj_t *body_label = lv_label_create(content);
     lv_label_set_text(body_label, body);
     lv_label_set_long_mode(body_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(body_label, LV_PCT(100));
     lv_obj_set_height(body_label, LV_SIZE_CONTENT);
-    lv_obj_set_style_text_color(body_label, system_color(5), 0);
+    lv_obj_set_style_text_color(body_label, system_color(PXA_UI_THEME_MUTED), 0);
     lv_obj_set_style_text_font(body_label, system_body_font(), 0);
     lv_obj_set_style_text_line_space(body_label, pxa_esp_dialog_scale(
         lv_display_get_dpi(lv_display_get_default()), 3), 0);
@@ -234,31 +226,25 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
                         NULL);
 
     lv_obj_t *left = lv_button_create(panel);
+    pxa_esp_dialog_style_button(left,false);
     lv_obj_set_size(left, layout.button_width, layout.button_height);
     lv_obj_set_style_pad_all(left, 0, 0);
     lv_obj_align(left, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_bg_opa(left, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(left, system_color(2), 0);
-    lv_obj_set_style_border_width(left, 1, 0);
     lv_obj_add_event_cb(left, left_cb, LV_EVENT_CLICKED,
                         (void *)(uintptr_t)0);
     lv_obj_t *left_label = lv_label_create(left);
     lv_label_set_text(left_label, left_text);
-    lv_obj_set_style_text_font(left_label, system_body_font(), 0);
-    lv_obj_set_style_text_color(left_label, system_color(2), 0);
     lv_obj_center(left_label);
 
     lv_obj_t *right = lv_button_create(panel);
+    pxa_esp_dialog_style_action(right,right_action);
     lv_obj_set_size(right, layout.button_width, layout.button_height);
     lv_obj_set_style_pad_all(right, 0, 0);
     lv_obj_align(right, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(right, system_color(2), 0);
     lv_obj_add_event_cb(right, right_cb, LV_EVENT_CLICKED,
                         (void *)(uintptr_t)1);
     lv_obj_t *right_label = lv_label_create(right);
     lv_label_set_text(right_label, right_text);
-    lv_obj_set_style_text_font(right_label, system_body_font(), 0);
-    lv_obj_set_style_text_color(right_label, system_color(3), 0);
     lv_obj_center(right_label);
     pxa_esp_system_overlay_add(mask);
     return mask;
@@ -294,7 +280,8 @@ static void show_permission(void *context) {
                                         copy->prompt.is_install ?
                                             (chinese ? "安装" : "Install") :
                                             (chinese ? "允许" : "Allow"),
-                                        permission_response);
+                                        permission_response, copy->prompt.is_uninstall ?
+                                            PXA_LVGL_ACTION_DANGER : PXA_LVGL_ACTION_PRIMARY);
     free(copy);
 }
 
@@ -326,7 +313,7 @@ static void show_unresponsive(void *context) {
     g_unresponsive_dialog = create_dialog(chinese ? "应用无响应" : "App not responding",
                                           body, chinese ? "停止" : "Stop",
                                           unresponsive_response, chinese ? "等待" : "Wait",
-                                          unresponsive_response);
+                                          unresponsive_response, PXA_LVGL_ACTION_PRIMARY);
     free(copy);
 }
 
@@ -356,11 +343,15 @@ static void show_toast(void *context) {
     lv_label_set_long_mode(g_toast, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(g_toast, LV_PCT(82));
     lv_obj_align(g_toast, LV_ALIGN_BOTTOM_MID, 0, -38);
-    lv_obj_set_style_bg_color(g_toast, lv_color_hex(0x303134), 0);
+    lv_obj_set_style_bg_color(g_toast, system_color(PXA_UI_THEME_SURFACE), 0);
     lv_obj_set_style_bg_opa(g_toast, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(g_toast, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_pad_all(g_toast, 9, 0);
-    lv_obj_set_style_radius(g_toast, 4, 0);
+    lv_obj_set_style_text_color(g_toast, system_color(PXA_UI_THEME_TEXT), 0);
+    lv_obj_set_style_border_color(g_toast, system_color(PXA_UI_THEME_BORDER), 0);
+    lv_obj_set_style_border_width(g_toast, 1, 0);
+    lv_obj_set_style_pad_hor(g_toast, pxa_esp_dialog_spacing(3), 0);
+    lv_obj_set_style_pad_ver(g_toast, pxa_esp_dialog_px(9), 0);
+    lv_obj_set_style_radius(g_toast, pxa_esp_dialog_radius(3), 0);
+    lv_obj_set_style_text_align(g_toast, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(g_toast, system_body_font(), 0);
     g_toast_timer = lv_timer_create(toast_timeout, copy->duration_ms, NULL);
     pxa_esp_system_overlay_add(g_toast);

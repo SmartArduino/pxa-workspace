@@ -13,6 +13,17 @@ static const char *test_state_root;
 #define CONFIG_PXA_MOUNT_POINT "/tmp"
 #define CONFIG_PXA_STATE_ROOT test_state_root
 #include "../src/services/pxa_esp_services.c"
+static const char *session_root;
+static pxa_status_t session_status=PXA_STATUS_OK;
+static unsigned session_calls;
+pxa_status_t pxa_esp_app_storage_permissions(pxa_esp_app_storage_t *session,pxa_permission_store_t *store) {
+    (void)session;(void)store;assert(!"fixture does not initialize session permissions");return PXA_STATUS_UNSUPPORTED;
+}
+pxa_status_t pxa_esp_app_storage_root(pxa_esp_app_storage_t *session,const char **out) {
+    assert(session && session_root);++session_calls;*out=NULL;
+    if(session_status==PXA_STATUS_OK)*out=session_root;
+    return session_status;
+}
 
 const pxa_image_backend_t *pxa_esp_rom_image_backend(void) {
     assert(!"unexpected decoder backend request");return NULL;
@@ -107,14 +118,9 @@ pxa_status_t pxa_esp_game_render_execute_spans(void *context,
     return PXA_STATUS_UNSUPPORTED;
 }
 
-pxa_status_t pxa_esp_fs_roots_create(void *context,
-    void *(*allocate)(void *, size_t), const char *identity, const char *name,
-    const char *media_relative,
-    uint8_t user_directories, void *notify_context, void (*notify)(void *),
+pxa_status_t pxa_esp_fs_roots_create(const pxa_esp_fs_roots_config_t *config,
     pxa_esp_fs_roots_t **output, pxa_fs_roots_backend_t **backend) {
-    (void)context; (void)allocate; (void)identity; (void)name;
-    (void)media_relative;
-    (void)user_directories; (void)notify_context; (void)notify;
+    (void)config;
     *output = NULL; *backend = NULL;
     assert(!"storage fixture declares no scoped directories");
     return PXA_STATUS_UNSUPPORTED;
@@ -315,6 +321,24 @@ int main(void) {
         host.private_root="/tmp/unowned-root";
         assert(!prepare_resolved_private_root(resolved,sizeof(resolved),&host));
         host.private_root=NULL;
+    }
+    /* An activation-owned session can live outside the legacy Flash root.
+     * Both FS and KV resolve through it, and removal/OOM is never replaced
+     * by a freshly created directory on another volume. */
+    {
+        char selected[256],resolved[256];
+        snprintf(selected,sizeof(selected),"%s/private-session",root);assert(!mkdir(selected,0700));
+        session_root=selected;host.app_storage=(pxa_esp_app_storage_t *)&host;
+        host.private_root="/unowned/legacy/path";
+        assert(private_root_for_services(resolved,sizeof(resolved),&host)==PXA_STATUS_OK && !strcmp(resolved,selected));
+        assert(initialize_storage(&services,&host,&result)==PXA_STATUS_OK);
+        assert(initialize_fs(&services,&host,&result)==PXA_STATUS_OK);
+        assert(lazy_storage_set(&services,key,value)==PXA_STATUS_OK && session_calls==3);
+        pxa_esp_services_destroy(&services);release_workspaces();
+        session_status=PXA_STATUS_UNAVAILABLE;
+        assert(initialize_storage(&services,&host,&result)==PXA_STATUS_UNAVAILABLE);
+        assert(initialize_fs(&services,&host,&result)==PXA_STATUS_UNAVAILABLE);
+        host.app_storage=NULL;host.private_root=NULL;
     }
     pxa_runtime_deinit(runtime); free(workspace);
     assert(pxa_posix_fs_remove_tree(root) == PXA_STATUS_OK);

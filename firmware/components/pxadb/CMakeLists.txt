@@ -31,6 +31,10 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_REQUIRES ${PXADB_PRIV_REQUIRES})
 
+# Native debug filesystem maintenance reuses the SDK's bounded Host walker.
+target_include_directories(${COMPONENT_LIB} PRIVATE
+    "${PXSYS_ROOT}/libpxa/adapters/include")
+
 if(CONFIG_PXADB_ENABLED AND CONFIG_PXADB_TRANSPORT_UART)
     target_link_libraries(${COMPONENT_LIB} INTERFACE
         "-Wl,--wrap=uart_driver_install")

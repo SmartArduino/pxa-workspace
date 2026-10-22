@@ -9,6 +9,7 @@
 #include "pxa_board_api.h"
 #include "pxa_integration.h"
 #include <pxa/pxa_esp_system_font.h>
+#include <pxa/pxa_esp_security.h>
 #include "sdkconfig.h"
 
 namespace {
@@ -19,13 +20,16 @@ extern "C" void app_main(void) {
     setenv("TZ", "CST-8", 1);
     tzset();
 
-    esp_err_t result = nvs_flash_init();
-    if (result == ESP_ERR_NVS_NO_FREE_PAGES ||
-        result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        result = nvs_flash_init();
+    const esp_err_t result = nvs_flash_init();
+    if(result!=ESP_OK) {
+        // NVS also owns the fixed device authentication key. Erasing it here
+        // would invalidate every volume's signed control records and grants.
+        ESP_LOGE(kTag,"NVS initialization failed: %s; contents preserved",esp_err_to_name(result));
+        return;
     }
-    ESP_ERROR_CHECK(result);
+    const auto security=pxa_esp_security_initialize_early();
+    if(security!=PXA_STATUS_OK)
+        ESP_LOGW(kTag,"Device record authentication unavailable: %ld",long(security));
 
     if (!pxa_board_register_selected()) {
         ESP_LOGE(kTag, "Unable to register selected board port");

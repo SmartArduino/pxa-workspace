@@ -57,6 +57,7 @@ extern "C" unsigned pxadb_uart_rx_buffer_capacity(void);
 #include "pxa/pxa_host.h"
 #include "pxa/pxa_esp_surface.h"
 #include "pxa/pxa_esp_storage.h"
+#include "pxa/posix/pxa_posix_fs.h"
 #include "pxa/version.h"
 #include "pxa/wire.h"
 #endif
@@ -310,6 +311,8 @@ size_t s_log_history_start = 0;
 size_t s_log_history_count = 0;
 LogScratch s_log_scratch[kLogScratchCount];
 FileUpload s_file_upload;
+std::atomic<bool> s_package_cleanup_pending{false};
+int64_t s_next_package_cleanup_us=0;
 
 const char* DeviceSerial() {
     static char serial[18] = {};
@@ -431,11 +434,41 @@ void AbortFileUpload() {
     s_file_upload = {};
 }
 
+void TryDiscardPackageTransfers() {
+#if CONFIG_PXA_ENABLED
+    if (!s_package_cleanup_pending.load()) return;
+    const int64_t now=esp_timer_get_time();
+    if (now<s_next_package_cleanup_us) return;
+    if (pxa_host_try_discard_package_transfers()==PXA_STATUS_OK)
+        s_package_cleanup_pending.store(false);
+    else
+        s_next_package_cleanup_us=now+1000000;
+#endif
+}
+
+bool PackageTransfersReady(const char* command) {
+    if (!s_package_cleanup_pending.load()) return true;
+    /* Drain the old session before accepting a new transport namespace.
+     * Otherwise deferred cleanup could erase newly uploaded receiving files. */
+    if (strcmp(command,"PACKAGE") && strcmp(command,"FSPUT") &&
+        strcmp(command,"FSDATA") && strcmp(command,"FSDATA2") &&
+        strcmp(command,"FSMKDIR") && strcmp(command,"FSMOVE") &&
+        strcmp(command,"FSCOPY") && strcmp(command,"FSRM") && strcmp(command,"FSRMTREE"))
+        return true;
+    s_next_package_cleanup_us=0;
+    TryDiscardPackageTransfers();
+    return !s_package_cleanup_pending.load();
+}
+
 void AbortTransfers() {
     AbortFileUpload();
     (void)unlink(kFsUploadTemporary);
 #if CONFIG_PXA_ENABLED
-    pxa_host_discard_package_transfers();
+    /* HELLO and startup must stay responsive while runtime bootstrap owns
+     * the package transaction lock. No transfer receipt is touched here. */
+    s_package_cleanup_pending.store(true);
+    s_next_package_cleanup_us=0;
+    TryDiscardPackageTransfers();
 #endif
 }
 
@@ -984,7 +1017,7 @@ void MakeFsDirectory(unsigned long sequence, const char* encoded_path) {
 /* Same external volume, regular files only, no overwrite. Native FAT rename
  * avoids copying large game archives through the serial link or RAM. */
 void MoveExternalFile(unsigned long sequence, const char* encoded_source,
-                      const char* encoded_destination) {
+                      const char* encoded_destination,bool copy=false) {
 #if CONFIG_PXA_ENABLED
     char source_relative[kFsPathLength] = {}, destination_relative[kFsPathLength] = {};
     char source[kFsAbsolutePathLength] = {}, destination[kFsAbsolutePathLength] = {};
@@ -1004,14 +1037,53 @@ void MoveExternalFile(unsigned long sequence, const char* encoded_source,
     if (stat(source, &metadata) != 0 || !S_ISREG(metadata.st_mode)) {
         SendFrame(sequence, "ERR", "source_not_regular_file"); return;
     }
+    const uint64_t source_bytes=uint64_t(metadata.st_size);
     if (stat(destination, &metadata) == 0) {
         SendFrame(sequence, "ERR", "destination_exists"); return;
     }
     if (errno != ENOENT) { SendFrame(sequence, "ERR", "destination_stat_failed"); return; }
+    if(copy) {
+        if(s_file_upload.file!=nullptr) {SendFrame(sequence,"ERR","file_upload_active");return;}
+        if(!strcmp(source,destination_volume) || !strcmp(destination,destination_volume)) {
+            SendFrame(sequence,"ERR","reserved_transfer_path");return;
+        }
+        FILE* input=fopen(source,"rb");
+        if(input==nullptr) {SendFrame(sequence,"ERR","source_open_failed");return;}
+        const size_t buffer_size=64*1024;
+        auto* buffer=static_cast<uint8_t*>(heap_caps_malloc(buffer_size,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+        if(buffer==nullptr) {fclose(input);SendFrame(sequence,"ERR","copy_buffer_unavailable");return;}
+        /* Use the selected external volume's existing Host transfer slot.
+         * The source stays in place; a failed copy never publishes a target. */
+        (void)unlink(destination_volume);
+        FILE* output=fopen(destination_volume,"wb");
+        bool success=output!=nullptr;uint64_t copied=0;
+        while(success) {
+            const size_t bytes=fread(buffer,1,buffer_size,input);
+            if(bytes==0) {success=!ferror(input);break;}
+            copied+=bytes;
+            if(copied>source_bytes) {success=false;break;}
+            if(fwrite(buffer,1,bytes,output)!=bytes)success=false;
+            vTaskDelay(1);
+        }
+        if(fclose(input)!=0)success=false;
+        heap_caps_free(buffer);
+        if(output!=nullptr) {
+            if(fflush(output)!=0 || fsync(fileno(output))!=0)success=false;
+            if(fclose(output)!=0)success=false;
+        }
+        struct stat unchanged={};
+        if(copied!=source_bytes || stat(source,&unchanged)!=0 || !S_ISREG(unchanged.st_mode) ||
+            uint64_t(unchanged.st_size)!=copied)success=false;
+        if(success && stat(destination,&unchanged)==0)success=false;
+        if(success && errno!=ENOENT)success=false;
+        if(success && rename(destination_volume,destination)!=0)success=false;
+        if(!success)(void)unlink(destination_volume);
+        SendFrame(sequence,success?"OK":"ERR",success?"":"copy_failed");return;
+    }
     const bool moved = rename(source, destination) == 0;
     SendFrame(sequence, moved ? "OK" : "ERR", moved ? "" : "move_failed");
 #else
-    (void)encoded_source; (void)encoded_destination;
+    (void)encoded_source; (void)encoded_destination;(void)copy;
     SendFrame(sequence, "ERR", "unsupported");
 #endif
 }
@@ -1049,6 +1121,13 @@ void RemoveFsPath(unsigned long sequence, const char* encoded_path) {
 /* Removes a staged directory in one transaction. Removing a tree entry by
  * entry would run the inbox refresh (and its signature scan) once per file. */
 bool RemoveTreeAt(const char* path) {
+#if CONFIG_PXA_ENABLED
+    /* Transport paths bound the requested root, not every installer-created
+     * descendant. Signed owners may have longer internal names. Reuse the
+     * SDK's bounded traversal instead of growing the UART task's C stack. */
+    const pxa_status_t status = pxa_posix_fs_remove_tree(path);
+    return status == PXA_STATUS_OK || status == PXA_STATUS_NOT_FOUND;
+#else
     struct stat metadata = {};
     if (stat(path, &metadata) != 0) return errno == ENOENT;
     if (!S_ISDIR(metadata.st_mode)) return unlink(path) == 0;
@@ -1084,6 +1163,7 @@ bool RemoveTreeAt(const char* path) {
     }
     closedir(directory);
     return rmdir(path) == 0 || errno == ENOENT;
+#endif
 }
 
 void RemoveFsTree(unsigned long sequence, const char* encoded_path) {
@@ -1292,12 +1372,12 @@ void SendInfo(unsigned long sequence) {
              PXA_FIRMWARE_BOARD, PXA_VERSION_STRING,
              static_cast<unsigned>(PXA_CORE_VERSION_MAJOR),
              static_cast<unsigned>(PXA_CORE_VERSION_MINOR));
-    size_t storage_total=0,storage_used=0;
-    if(esp_littlefs_info(CONFIG_PXA_STORAGE_PARTITION_LABEL,&storage_total,&storage_used)==ESP_OK){
+    pxa_volume_info_t storage={};
+    if(pxa_esp_storage_resolve_volume(CONFIG_PXA_MOUNT_POINT,&storage)==PXA_STATUS_OK &&
+        (storage.space_known&3)==3 && storage.free_bytes<=storage.total_bytes){
         const size_t used=strlen(payload);
-        snprintf(payload+used,sizeof(payload)-used,";storage_total=%u;storage_used=%u;storage_free=%u",
-                 static_cast<unsigned>(storage_total),static_cast<unsigned>(storage_used),
-                 static_cast<unsigned>(storage_total>=storage_used?storage_total-storage_used:0));
+        snprintf(payload+used,sizeof(payload)-used,";storage_total=%" PRIu64 ";storage_used=%" PRIu64 ";storage_free=%" PRIu64,
+                 storage.total_bytes,storage.total_bytes-storage.free_bytes,storage.free_bytes);
     }
 #endif
 #if CONFIG_PXADB_TEST_CONTROL
@@ -1932,10 +2012,10 @@ void SendPackages(unsigned long sequence) {
     for (size_t index = 0; index < count; ++index) {
         const pxa_host_package_info_t& app = apps[index];
         char payload[kMaxFramePayload] = {};
-        snprintf(payload, sizeof(payload), "%s\t%s\t%s\tbuiltin=%u;installed=%u;staged=%u;enabled=%u;active=%u",
+        snprintf(payload, sizeof(payload), "%s\t%s\t%s\tbuiltin=%u;installed=%u;staged=%u;enabled=%u;active=%u;archived=%u",
                  app.id, app.name, app.version, static_cast<unsigned>(app.built_in),
                  static_cast<unsigned>(app.installed), static_cast<unsigned>(app.staged),
-                 static_cast<unsigned>(app.enabled), static_cast<unsigned>(app.active));
+                 static_cast<unsigned>(app.enabled), static_cast<unsigned>(app.active),static_cast<unsigned>(app.archived));
         if (!SendFrame(sequence, "PKG", payload)) {
             sent = false;
             break;
@@ -1953,6 +2033,9 @@ bool IsQualifiedIdentity(const char* identity) {
     for(unsigned i=0;i<64;++i)if(!((identity[i]>='0'&&identity[i]<='9')||(identity[i]>='a'&&identity[i]<='f')))return false;
     return true;
 }
+bool IsPackageQuery(const char* identity) {
+    return IsSafeIdentity(identity) || IsQualifiedIdentity(identity);
+}
 void HandlePackagePaths(unsigned long sequence,const char* identity) {
 #if CONFIG_PXA_ENABLED
     if(!IsQualifiedIdentity(identity)){SendFrame(sequence,"ERR","qualified_identity_required");return;}
@@ -1967,11 +2050,84 @@ void HandlePackagePaths(unsigned long sequence,const char* identity) {
     if(pxa_esp_storage_media_mount(mount,sizeof(mount))!=PXA_STATUS_OK) {
         SendFrame(sequence,"OK","media=unavailable");return;
     }
-    int n=snprintf(payload,sizeof(payload),"media\t%s/%s",mount,media);
+    int n=snprintf(payload,sizeof(payload),"media\t%s%s%s",mount,*mount?"/":"",media);
     if(n<0 || size_t(n)>=sizeof(payload)){SendFrame(sequence,"ERR","storage_path_too_long");return;}
     if(SendFrame(sequence,"PATH",payload))SendFrame(sequence,"OK","media=ready");
 #else
     (void)identity;SendFrame(sequence,"ERR","pxa_disabled");
+#endif
+}
+void HandleVolumes(unsigned long sequence) {
+#if CONFIG_PXA_ENABLED
+    pxa_volume_info_t* volumes=static_cast<pxa_volume_info_t*>(heap_caps_calloc(
+        PXA_ESP_STORAGE_MAX_VOLUMES,sizeof(pxa_volume_info_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+    if(volumes==nullptr) {SendFrame(sequence,"ERR","volume_snapshot_unavailable");return;}
+    const size_t count=pxa_esp_storage_volumes(volumes,PXA_ESP_STORAGE_MAX_VOLUMES);
+    for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
+        char path[PXA_ESP_STORAGE_PATH_BYTES]={},payload[512]={};
+        auto& volume=volumes[i];
+        (void)pxa_esp_storage_refresh_volume(volume.mount_epoch);
+        (void)pxa_esp_storage_volume(volume.mount_epoch,&volume);
+        (void)pxa_esp_storage_volume_path(volume.mount_epoch,path,sizeof(path));
+        snprintf(payload,sizeof(payload),"epoch=%" PRIu64 ";capabilities=%" PRIu64
+            ";free=%" PRIu64 ";known=%u;ambiguous=%u;path=%s;name=%s",
+            volume.mount_epoch,volume.capabilities,volume.free_bytes,
+            unsigned(volume.space_known),unsigned(volume.ambiguous),path,volume.name);
+        if(!SendFrame(sequence,"DATA",payload)) {heap_caps_free(volumes);return;}
+    }
+    heap_caps_free(volumes);SendFrame(sequence,"OK","");
+#else
+    SendFrame(sequence,"ERR","pxa_disabled");
+#endif
+}
+void HandlePackageInstallVolume(unsigned long sequence,const char* epoch_text,const char* source_text) {
+#if CONFIG_PXA_ENABLED
+    char relative[kFsPathLength]={},source[kFsAbsolutePathLength]={},*end=nullptr;
+    errno=0;const unsigned long long epoch=epoch_text?strtoull(epoch_text,&end,10):0;
+    if(errno || end==epoch_text || *end || epoch_text[0]=='-' ||
+        !DecodeFsPath(source_text,relative,sizeof(relative),source,sizeof(source))) {
+        SendFrame(sequence,"ERR","invalid_install_placement");return;
+    }
+    const int32_t status=pxa_host_install_package_file_on_volume(source,uint64_t(epoch));
+    char payload[64]={};snprintf(payload,sizeof(payload),"install_status=%" PRId32,status);
+    SendFrame(sequence,status==0?"OK":"ERR",payload);
+#else
+    (void)epoch_text;(void)source_text;SendFrame(sequence,"ERR","pxa_disabled");
+#endif
+}
+void HandlePackageCacheImport(unsigned long sequence,const char* owner,const char* encoded) {
+#if CONFIG_PXA_ENABLED
+    char relative[kFsPathLength]={},source[kFsAbsolutePathLength]={},token[20]={};
+    if(!IsQualifiedIdentity(owner) || !DecodeFsPath(encoded,relative,sizeof(relative),source,sizeof(source))) {
+        SendFrame(sequence,"ERR","invalid_cache_import");return;
+    }
+    const int32_t status=pxa_host_import_cached_package_file(source,owner,token,sizeof(token));
+    char payload[96]={};snprintf(payload,sizeof(payload),"cache_status=%" PRId32 ";token=%s",status,token);
+    SendFrame(sequence,status==0?"OK":"ERR",payload);
+#else
+    (void)owner;(void)encoded;SendFrame(sequence,"ERR","pxa_disabled");
+#endif
+}
+void SendPendingLogs();
+void HandlePackageMoveVolume(unsigned long sequence,const char *epoch_text,const char *identity,bool resume) {
+#if CONFIG_PXA_ENABLED
+    char *end=nullptr;errno=0;
+    unsigned long long epoch=epoch_text?strtoull(epoch_text,&end,10):0;
+    if(!epoch_text || errno || end==epoch_text || *end || epoch_text[0]=='-' || !epoch || !IsQualifiedIdentity(identity)) {
+        SendFrame(sequence,"ERR","invalid_move_placement");return;
+    }
+    struct Progress { unsigned long sequence;int64_t next_log_us; } progress{sequence,0};
+    const int32_t status=pxa_host_move_package_volume_with_progress(identity,uint64_t(epoch),resume,
+        [](void* context,uint8_t phase) {
+            auto* state=static_cast<Progress*>(context);
+            if(phase==1)SendFrame(state->sequence,"PROGRESS","transfer_phase=copying");
+            const int64_t now=esp_timer_get_time();
+            if(phase || now>=state->next_log_us) {SendPendingLogs();state->next_log_us=now+100000;}
+        },&progress);
+    char payload[64]={};snprintf(payload,sizeof(payload),"move_status=%" PRId32,status);
+    SendFrame(sequence,status==0?"OK":"ERR",payload);
+#else
+    (void)epoch_text;(void)identity;(void)resume;SendFrame(sequence,"ERR","pxa_disabled");
 #endif
 }
 void HandlePackageMoveData(unsigned long sequence,const char* from,const char* to) {
@@ -1987,9 +2143,42 @@ void HandlePackageMoveData(unsigned long sequence,const char* from,const char* t
 #endif
 }
 
+void HandlePermissions(unsigned long sequence,char* const* arguments,size_t count) {
+#if CONFIG_PXA_ENABLED
+    if((count!=1 && count!=3) || !IsPackageQuery(arguments[0])) {
+        SendFrame(sequence,"ERR","invalid_permission_command");return;
+    }
+    if(count==3) {
+        char* end=nullptr;errno=0;
+        const unsigned long index=strtoul(arguments[1],&end,10);
+        if(errno || end==arguments[1] || *end || arguments[1][0]=='-' || index>=64 ||
+            (strcmp(arguments[2],"allow") && strcmp(arguments[2],"deny"))) {
+            SendFrame(sequence,"ERR","invalid_permission_decision");return;
+        }
+        const bool success=pxa_host_set_app_permission(arguments[0],size_t(index),!strcmp(arguments[2],"allow"));
+        SendFrame(sequence,success?"OK":"ERR",success?"":"permission_update_failed");return;
+    }
+    const size_t capacity=pxa_host_list_app_permissions(arguments[0],nullptr,0);
+    if(capacity>64) {SendFrame(sequence,"ERR","permission_limit");return;}
+    auto* permissions=capacity?static_cast<pxa_host_app_permission_t*>(heap_caps_calloc(
+        capacity,sizeof(pxa_host_app_permission_t),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)):nullptr;
+    if(capacity && !permissions) {SendFrame(sequence,"ERR","permission_snapshot_unavailable");return;}
+    const size_t listed=capacity?pxa_host_list_app_permissions(arguments[0],permissions,capacity):0;
+    for(size_t i=0;i<listed;++i) {
+        char payload[2*PXA_HOST_PERMISSION_TEXT_MAX+80];
+        snprintf(payload,sizeof(payload),"%u\t%s\t%s\trequired=%u;granted=%u",unsigned(i),
+            permissions[i].name,permissions[i].scope,unsigned(permissions[i].required),unsigned(permissions[i].granted));
+        if(!SendFrame(sequence,"PERMISSION",payload)) {heap_caps_free(permissions);return;}
+    }
+    heap_caps_free(permissions);SendFrame(sequence,"OK","");
+#else
+    (void)arguments;(void)count;SendFrame(sequence,"ERR","pxa_disabled");
+#endif
+}
+
 void HandlePackageAction(unsigned long sequence, const char* action, const char* identity) {
 #if CONFIG_PXA_ENABLED
-    if (!IsSafeIdentity(identity)) {
+    if (!IsPackageQuery(identity)) {
         SendFrame(sequence, "ERR", "invalid_identity");
         return;
     }
@@ -2025,7 +2214,7 @@ void HandlePackageAction(unsigned long sequence, const char* action, const char*
 
 void HandlePackageRun(unsigned long sequence, const char* identity) {
 #if CONFIG_PXA_ENABLED
-    if (!IsSafeIdentity(identity)) {
+    if (!IsPackageQuery(identity)) {
         SendFrame(sequence, "ERR", "invalid_identity");
         return;
     }
@@ -2044,7 +2233,7 @@ void HandlePackageRun(unsigned long sequence, const char* identity) {
 
 void HandlePackageStop(unsigned long sequence, const char* identity) {
 #if CONFIG_PXA_ENABLED
-    if (!IsSafeIdentity(identity)) {
+    if (!IsPackageQuery(identity)) {
         SendFrame(sequence, "ERR", "invalid_identity");
         return;
     }
@@ -2063,7 +2252,7 @@ void HandlePackageStop(unsigned long sequence, const char* identity) {
 
 void HandlePackageDeploy(unsigned long sequence, const char* identity) {
 #if CONFIG_PXA_ENABLED
-    if (!IsSafeIdentity(identity)) {
+    if (!IsPackageQuery(identity)) {
         SendFrame(sequence, "ERR", "invalid_identity");
         return;
     }
@@ -2144,6 +2333,11 @@ void HandleCommand(char* line) {
     s_last_control_activity_us.store(
         static_cast<uint64_t>(esp_timer_get_time()), std::memory_order_relaxed);
 
+    if (!PackageTransfersReady(command)) {
+        SendFrame(sequence,"ERR","package_cleanup_pending");
+        return;
+    }
+
     if (strcmp(command, "HELLO") == 0) {
         AbortTransfers();
         SendHello(sequence);
@@ -2162,6 +2356,8 @@ void HandleCommand(char* line) {
         SendFrame(sequence, "OK", "pong");
     } else if (strcmp(command, "INFO") == 0) {
         SendInfo(sequence);
+    } else if (strcmp(command,"VOLUMES")==0) {
+        HandleVolumes(sequence);
     } else if (strcmp(command, "MEMORY") == 0) {
         if (argument_count == 0) {
             SendMemory(sequence);
@@ -2227,6 +2423,8 @@ void HandleCommand(char* line) {
         SendPackages(sequence);
         ESP_LOGI(kTag, "Package list finished: stack_free=%uB",
                  static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+    } else if(strcmp(command,"PERMISSIONS")==0) {
+        HandlePermissions(sequence,arguments,argument_count);
     } else if (strcmp(command, "INPUT") == 0) {
         HandleInput(sequence, arguments, argument_count);
 #if CONFIG_PXADB_TEST_CONTROL
@@ -2280,6 +2478,8 @@ void HandleCommand(char* line) {
         MakeFsDirectory(sequence, argument);
     } else if (strcmp(command, "FSMOVE") == 0 && argument != nullptr && second_argument != nullptr) {
         MoveExternalFile(sequence, argument, second_argument);
+    } else if (strcmp(command,"FSCOPY")==0 && argument!=nullptr && second_argument!=nullptr) {
+        MoveExternalFile(sequence,argument,second_argument,true);
     } else if (strcmp(command, "FSRM") == 0 && argument != nullptr) {
         RemoveFsPath(sequence, argument);
     } else if (strcmp(command, "FSRMTREE") == 0 && argument != nullptr) {
@@ -2288,6 +2488,32 @@ void HandleCommand(char* line) {
         HandleFsUnlock(sequence, argument);
     } else if (strcmp(command, "FSLOCK") == 0) {
         HandleFsLock(sequence);
+    } else if (strcmp(command,"PACKAGE")==0 && argument!=nullptr &&
+               strcmp(argument,"install-volume")==0 && second_argument!=nullptr && third_argument!=nullptr) {
+        HandlePackageInstallVolume(sequence,second_argument,third_argument);
+    } else if (strcmp(command,"PACKAGE")==0 && argument!=nullptr &&
+               strcmp(argument,"cache-import")==0 && second_argument!=nullptr && third_argument!=nullptr) {
+        HandlePackageCacheImport(sequence,second_argument,third_argument);
+    } else if (strcmp(command,"PACKAGE")==0 && argument!=nullptr &&
+               strcmp(argument,"move")==0 && second_argument!=nullptr) {
+#if CONFIG_PXA_ENABLED
+        const bool accepted=IsQualifiedIdentity(second_argument) && pxa_host_request_move_package(second_argument);
+        SendFrame(sequence,accepted?"OK":"ERR",accepted?"queued":"app_move_unavailable");
+#else
+        SendFrame(sequence,"ERR","pxa_disabled");
+#endif
+    } else if (strcmp(command,"PACKAGE")==0 && argument!=nullptr &&
+               strcmp(argument,"move-resources")==0 && second_argument!=nullptr) {
+#if CONFIG_PXA_ENABLED
+        const bool accepted=IsQualifiedIdentity(second_argument) && pxa_host_request_move_resources(second_argument);
+        SendFrame(sequence,accepted?"OK":"ERR",accepted?"queued":"resource_move_unavailable");
+#else
+        SendFrame(sequence,"ERR","pxa_disabled");
+#endif
+    } else if (strcmp(command,"PACKAGE")==0 && argument!=nullptr &&
+               (strcmp(argument,"move-volume")==0 || strcmp(argument,"resume-volume")==0) &&
+               second_argument!=nullptr && third_argument!=nullptr) {
+        HandlePackageMoveVolume(sequence,second_argument,third_argument,strcmp(argument,"resume-volume")==0);
     } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
                strcmp(argument, "paths") == 0 && second_argument != nullptr) {
         HandlePackagePaths(sequence,second_argument);
@@ -2532,6 +2758,7 @@ void PxadbTask(void*) {
         const int received = TransportRead(input, sizeof(input), kTransportReadPollMs);
         if (received <= 0) {
             SendPendingLogs();
+            TryDiscardPackageTransfers();
             const uint64_t now_us = static_cast<uint64_t>(esp_timer_get_time());
             const uint64_t last_us = s_last_control_activity_us.load(
                 std::memory_order_relaxed);

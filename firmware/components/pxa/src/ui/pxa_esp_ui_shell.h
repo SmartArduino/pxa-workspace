@@ -30,6 +30,33 @@ int pxa_esp_ui_shell_post_directory_prompt(const pxa_esp_ui_directory_prompt_t *
 void pxa_esp_ui_shell_dismiss_directory_prompt(uint32_t prompt_id);
 
 typedef struct {
+    uint64_t required_bytes,free_bytes;
+    char name[64];
+} pxa_esp_ui_install_volume_t;
+typedef struct {
+    uint32_t prompt_id;
+    char app_name[64],version[32],publisher[17];
+    uint8_t count,selected,download_only,permission_count;
+    pxa_esp_ui_install_volume_t volumes[8];
+    uint8_t media_count,media_selected;
+    uint8_t media_fit[8],same_media[8],media_reuse[8];
+    pxa_esp_ui_install_volume_t media_volumes[8];
+    uint64_t combined_bytes[8][8];
+    uint8_t move;
+    uint8_t legacy_upgrade;
+    uint8_t resources_only;
+    char current_volume[64],retained_media_volume[64];
+} pxa_esp_ui_install_prompt_t;
+int pxa_esp_ui_shell_post_install_prompt(const pxa_esp_ui_install_prompt_t *);
+void pxa_esp_ui_shell_dismiss_install_prompt(uint32_t prompt_id);
+int pxa_esp_ui_shell_post_move_progress(uint32_t prompt_id,const char *app_name);
+int pxa_esp_ui_shell_post_move_progress_kind(uint32_t,const char *,uint8_t resources_only);
+void pxa_esp_ui_shell_post_move_result(uint32_t prompt_id,int32_t status);
+int pxa_esp_ui_shell_post_file_install_progress(uint32_t,const char *,uint8_t resources_only);
+int pxa_esp_ui_shell_post_file_prepare_progress(uint32_t,const char *file_name);
+void pxa_esp_ui_shell_post_file_install_result(uint32_t,int32_t);
+
+typedef struct {
     uint32_t prompt_id;
     char app_name[PXA_ESP_UI_SHELL_APP_NAME_BYTES];
 } pxa_esp_ui_unresponsive_prompt_t;

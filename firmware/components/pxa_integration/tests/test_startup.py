@@ -31,6 +31,7 @@ FIXTURE = r'''
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 #define CONFIG_LV_USE_FREETYPE 1
 #define CONFIG_PXADB_AUTOSTART 0
@@ -38,7 +39,10 @@ FIXTURE = r'''
 #define PXA_ESP_HOST_TAG "host-test"
 #define LV_FREETYPE_FONT_RENDER_MODE_BITMAP 0
 #define LV_FREETYPE_FONT_STYLE_NORMAL 0
+#define CONFIG_PXA_MOUNT_POINT "/pxa"
+constexpr int PXA_STATUS_OK=0;
 const char* pxa_esp_system_font_path() { return PXA_ESP_HOST_CJK_FONT_PATH; }
+const char* pxa_esp_host_ui_font_path() { return PXA_ESP_HOST_CJK_FONT_PATH; }
 const char* kTag = "startup-test";
 uint32_t esp_log_timestamp() { return 0; }
 template <typename... Args> void IgnoreLog(Args&&...) {}
@@ -49,7 +53,18 @@ struct lv_font_t { const lv_font_t* fallback; unsigned line_height; };
 struct lv_display_t { unsigned dpi = 130; } panel;
 unsigned requested_dpi, last_pixels, host_calls, shell_calls, profile_reads;
 unsigned initialize_calls, mounted_calls, lock_depth;
+unsigned media_queries, media_selections;
 bool display_available, host_success, initialized, mounted;
+bool media_selected, media_select_success=true;
+int pxa_esp_storage_media_mount(char*, std::size_t size) {
+    assert(initialized && size>=5); ++media_queries;
+    return media_selected?PXA_STATUS_OK:-1;
+}
+int pxa_esp_storage_select_app_media(const char* mount) {
+    assert(initialized && !std::strcmp(mount,CONFIG_PXA_MOUNT_POINT));
+    ++media_selections;
+    return media_select_success?PXA_STATUS_OK:-1;
+}
 bool clock_ready, clock_success=true;
 bool pxa_system_clock_initialize() { assert(initialized); clock_ready=clock_success; return clock_success; }
 std::vector<unsigned> font_pixels;
@@ -58,7 +73,16 @@ unsigned lv_display_get_dpi(lv_display_t* d) { assert(lock_depth); return d->dpi
 void lv_display_set_dpi(lv_display_t* d, unsigned dpi) { assert(lock_depth); d->dpi=dpi; }
 void lv_lock() { ++lock_depth; }
 void lv_unlock() { assert(lock_depth); --lock_depth; }
+bool g_bound;
+unsigned overlay_bindings, overlay_refreshes;
+void provide_plane() {}
+void pxa_esp_surface_set_system_alpha_provider(void (*callback)(),void*) {
+    assert(lock_depth && callback==provide_plane); ++overlay_bindings;
+}
+void pxa_esp_system_overlay_refresh() { assert(lock_depth); ++overlay_refreshes; }
+// OVERLAY_BIND
 lv_font_t* lv_freetype_font_create(const char*, int, unsigned size, int) {
+    assert(lock_depth); // font caches are shared with the running boot screen
     static lv_font_t font{};
     last_pixels=size; font_pixels.push_back(size); font.line_height=size+3; return &font;
 }
@@ -119,15 +143,23 @@ bool pxa_host_start_runtime() { assert(shell_calls==1); return true; }
 extern "C" void pxa_integration_stop() { g_system=nullptr; }
 // STARTUP
 int main() {
+    pxa_esp_system_overlay_bind();
+    pxa_esp_system_overlay_bind();
+    assert(overlay_bindings==1 && overlay_refreshes==1 && lock_depth==0);
     for(unsigned dpi : {305u,0u,80u,130u,160u,216u,480u}) {
         for(bool early : {false,true}) {
+          for(unsigned media_case : {0u,1u,2u}) {
             requested_dpi=dpi; panel.dpi=130; g_system=nullptr;
             host_calls=shell_calls=profile_reads=initialize_calls=mounted_calls=lock_depth=0;
+            media_queries=media_selections=0;
+            media_selected=media_case==0; media_select_success=media_case==1;
             display_available=host_success=true; initialized=mounted=clock_ready=false; font_pixels.clear();
             board={nullptr,early,initialize,display,profile,nullptr,nullptr,nullptr,nullptr,nullptr};
             pxa_product_profile_t product{sizeof(pxa_product_profile_t),true};
             assert(pxa_integration_start(&product));
             assert(initialize_calls==1 && mounted_calls==1 && font_pixels.size()==6 && lock_depth==0);
+            assert(media_queries==1 && media_selections==(media_selected?0u:1u));
+          }
         }
     }
     g_system=nullptr; display_available=false; host_calls=shell_calls=0;
@@ -155,6 +187,8 @@ def main():
     args = parser.parse_args()
     host = directory.parents[1]/'pxa/src/runtime/pxa_esp_host.c'
     source = FIXTURE.replace('// FONT_LOADER', function(host.read_text(), 'static lv_font_t *load_ui_font('))
+    overlay = directory.parents[1]/'pxa/src/ui/pxa_esp_system_overlay.c'
+    source = source.replace('// OVERLAY_BIND', function(overlay.read_text(), 'void pxa_esp_system_overlay_bind('))
     source = source.replace('// STARTUP', function(args.integration_source.read_text(), 'extern "C" bool pxa_integration_start('))
     with tempfile.TemporaryDirectory(prefix='pxa-startup-') as temp:
         unit = Path(temp)/'startup.cpp'

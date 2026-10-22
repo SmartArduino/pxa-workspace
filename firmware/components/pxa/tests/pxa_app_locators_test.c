@@ -93,6 +93,17 @@ int main(void) {
            flags==3 && !strcmp(path,original));
     assert(pxa_app_locators_set_flags(&registry,root,"pxa-nes",4)==PXA_STATUS_INVALID_ARGUMENT);
     assert(pxa_app_locators_reserve(&registry,1,root,"lucinhu",root,"retired-media",root,4)==PXA_STATUS_INVALID_ARGUMENT);
+    size_t previous_count=registry.app_count;uint64_t previous_generation=registry.generation;
+    fail=1;
+    assert(pxa_app_locators_forget(&registry,third,"pxa-lara")==PXA_STATUS_IO_ERROR);
+    assert(registry.ready && registry.app_count==previous_count && registry.generation==previous_generation);
+    assert(!pxa_app_locators_find(&registry,third,"pxa-lara",NULL,path,sizeof(path)) && !strcmp(path,"author/pxa-lara"));
+    assert(!pxa_app_locators_find(&registry,root,"pxa-nes",NULL,path,sizeof(path)) && !strcmp(path,original));
+    fail=0;
+    assert(!pxa_app_locators_forget(&registry,third,"pxa-lara") && registry.app_count==previous_count-1 && registry.generation==previous_generation+1);
+    assert(pxa_app_locators_find(&registry,third,"pxa-lara",NULL,path,sizeof(path))==PXA_STATUS_NOT_FOUND);
+    assert(pxa_app_locators_find(&saved,third,"pxa-lara",NULL,path,sizeof(path))==PXA_STATUS_NOT_FOUND);
+    assert(pxa_app_locators_forget(&registry,third,"pxa-lara")==PXA_STATUS_NOT_FOUND);
     saved.apps[1] = saved.apps[0];
     assert(pxa_app_locators_load(&registry, saved.generation, saved.publishers,
                                  saved.publisher_count, saved.apps,
