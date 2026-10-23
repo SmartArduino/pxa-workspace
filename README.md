@@ -19,10 +19,14 @@ pxa init hello
 pxa run hello
 ```
 
-默认 C++26、O3，项目通过 `pxa.lock` 固定 SDK 与工具链版本。当前发行包要求 Linux x86_64、glibc 2.39+。应用包需要 Core 2.0 及其声明的服务能力。
+默认 C++26、O3，项目通过 `pxa.lock` 固定 SDK 与工具链版本。当前发行包要求 Linux x86_64、glibc 2.39+。应用包需要 Core 2.1 及其声明的服务能力。
 [中文入门教程](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [发布说明](https://github.com/SmartArduino/pxa-system/releases/tag/v0.5.0) · [发布说明与升级](docs/release-0.5.0.zh-CN.md)
 
-可选的 [PXA AI 套件](https://pxa.doit.am/docs/ai-development/) 提供开发、调试、真机验收与发布 skills，以及项目内 agent 配置和自动验证脚本。配合现有 DevKit 使用，不增加设备运行开销。
+[PXA Agent Kit](https://pxa.doit.am/docs/ai-development/) 支持一句话准备环境、开发与调试、真机安装、官方固件升级及商城提交。把下面这句话交给 Codex、Claude Code、DSH 等编程助手：
+
+> 请读取 https://pxa.doit.am/ai.md，在当前目录为我配置 PXA 开发环境，运行模拟器检查环境，然后等待我的应用需求。
+
+工具自动校验发行签名并安装 DevKit，只配置项目内的技能与 MCP，不增加设备运行开销。首次系统安装、浏览器登录和必要的 BOOT/RESET 仍需用户操作。
 
 Windows/macOS 可使用 [跨平台工具](tools/portable/README.md)：容器负责构建和无界面模拟器，宿主机 PXADB 直接连接 USB 串口；无需 USB 转发。
 
