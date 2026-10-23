@@ -218,6 +218,31 @@ void ComposeRgb565(const pxa_esp_surface_frame_t& frame, uint8_t* pixels) {
         geometry.origin_y + geometry.height, KORVO_DISPLAY_HEIGHT);
     if (left >= right || top >= bottom) return;
 
+    if (geometry.scale > 1 && frame.opaque_ui_region_count == 0) {
+        /* Expand once into internal task-stack memory, then burst-copy each
+         * repeated row to PSRAM. This avoids tiny PSRAM stores per pixel and
+         * re-reading/re-expanding the same Guest row for every output row. */
+        alignas(16) uint16_t expanded[KORVO_DISPLAY_WIDTH];
+        int32_t previous_source_y = -1;
+        for (int32_t y = top; y < bottom; ++y) {
+            const int32_t source_y =
+                (y - geometry.origin_y) / geometry.scale;
+            if (source_y != previous_source_y) {
+                const auto* source = reinterpret_cast<const uint16_t*>(
+                    frame.pixels + static_cast<size_t>(source_y) *
+                                       frame.stride_bytes);
+                CopyScaledSpan(source, expanded, left, right,
+                               geometry.origin_x, geometry.scale);
+                previous_source_y = source_y;
+            }
+            auto* destination = reinterpret_cast<uint16_t*>(pixels) +
+                static_cast<size_t>(y) * KORVO_DISPLAY_WIDTH;
+            std::memcpy(destination + left, expanded + left,
+                        static_cast<size_t>(right - left) * sizeof(uint16_t));
+        }
+        return;
+    }
+
     for (int32_t y = top; y < bottom; ++y) {
         const int32_t source_y =
             (y - geometry.origin_y) / geometry.scale;
@@ -272,6 +297,12 @@ bool TryPpaScaleToBuffer(const pxa_esp_surface_frame_t& frame,
         return false;
     const SurfaceGeometry geometry = ResolveGeometry(
         frame.width, frame.height, frame.x, frame.y);
+    /* PPA SRM interpolates while enlarging. Preserve exact Guest framebuffer
+     * pixels (and their palette) with CopyScaledSpan's integer nearest path.
+     * Keep PPA available for native raster scenes and unscaled copies. */
+    if ((frame.flags & PXA_SURFACE_FLAG_GUEST_MAPPED) != 0 &&
+        geometry.scale != 1)
+        return false;
     if (geometry.origin_x < 0 || geometry.origin_y < 0 ||
         geometry.origin_x + geometry.width > KORVO_DISPLAY_WIDTH ||
         geometry.origin_y + geometry.height > KORVO_DISPLAY_HEIGHT)
@@ -644,6 +675,7 @@ bool CompletePendingDirectSubmission(
         g_direct_pending_raster_ready_tick_us, completed_us);
     pxa_esp_surface_note_game_frame_presented(
         g_direct_pending_frame_id, completed_us);
+    pxa_esp_surface_note_display_frame_presented(completed_us);
     return true;
 }
 

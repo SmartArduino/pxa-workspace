@@ -25,6 +25,7 @@ static bool with_resources,reuse_resources,bad_resources,resource_commit_fail;
 static unsigned resource_commits,retained[4];
 static bool resource_request;
 static unsigned metadata_requests;
+static unsigned started_progress;
 static pxa_esp_store_job_t *waiting_job;
 void *heap_caps_malloc(size_t n,unsigned caps) {assert(caps&MALLOC_CAP_SPIRAM);return malloc(n);}
 void heap_caps_free(void *p) {free(p);}
@@ -119,6 +120,11 @@ static void notified(pxa_esp_store_job_t *job,uint8_t phase) {
     if(phase==1) {assert(!job->approved);++confirmations;waiting_job=job;job->approved=approve;job->placement.selected=1;}
     if(phase==2)++completions;
     if(phase==3) {assert(job->keep_file);waiting_job=job;}
+    if(phase==4 && job->downloaded_bytes==0) {
+        assert(job->approved && job->placement.plan.reserved && !http_live);
+        assert(job->total_bytes==body_size+((with_resources && !reuse_resources)?resource_size:0));
+        ++started_progress;
+    }
 }
 #include "../src/package/pxa_esp_store_download.c"
 static pxa_esp_store_job_t job(unsigned separate) {
@@ -147,10 +153,11 @@ int main(void) {
     value=job(0);pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_OK && !exists(&value) && installs==1);
     value=job(0);stale_record=true;pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_BAD_STATE && !exists(&value));stale_record=false;
     value=job(1);pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_OK && exists(&value));
-    unsigned before=transfers;value.separate=2;approve=false;pxa_esp_store_worker(&value);
+    unsigned before=transfers,started_before=started_progress;value.separate=2;approve=false;pxa_esp_store_worker(&value);
     assert(value.status==PXA_STATUS_DENIED && exists(&value) && transfers==before);approve=true;
     stale_record=true;pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_BAD_STATE && exists(&value));stale_record=false;
     pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_OK && !exists(&value) && transfers==before);
+    assert(started_progress==started_before); /* Cached install retries have no network transfer. */
     value=job(0);old_server=true;pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_OK && !exists(&value) && metadata_requests>transfers);old_server=false;
     char third[384];snprintf(third,sizeof(third),"%s/third",CONFIG_PXA_MOUNT_POINT);assert(!mkdir(third,0700));
     resource_body=calloc(1,resource_size);assert(resource_body);memcpy(resource_body,body,metadata_size);
@@ -172,6 +179,7 @@ int main(void) {
     with_resources=false;free(resource_body);
     assert(!retained[2] && !retained[3]);
     assert(reservations==releases && completions==deletes);
+    assert(started_progress>0); /* Approval publishes zero-byte progress before network I/O. */
     uint8_t payload[512]={0};value=job(0);size_t a=strlen(value.app_id),t=strlen(value.ticket);payload[0]=(uint8_t)a;
     pxa_write_u16(payload+1,(uint16_t)t);pxa_write_u64(payload+3,body_size);memcpy(payload+43,value.app_id,a);memcpy(payload+43+a,value.ticket,t);
     assert(pxa_esp_store_job_decode(&value,payload,43+a+t)); /* More than old 4 MiB cap. */

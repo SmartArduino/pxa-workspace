@@ -74,7 +74,7 @@ private:
     void RecordPresentTime(uint32_t flush_us, uint32_t vsync_us,
                            bool vsync_ready);
     void RecordFrame(void);
-    bool WaitForPendingFrame(void);
+    bool WaitForPendingFrame(uint32_t timeout_ms = 100);
     void AlignAfterDirectScanout(void* next_buffer, void* displayed_buffer);
     static void StatusTimer(void* context);
     static void StatusOnLvgl(void* context);

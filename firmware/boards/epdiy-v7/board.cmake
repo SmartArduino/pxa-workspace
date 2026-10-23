@@ -1,0 +1,2 @@
+set(PXA_BOARD_TARGET "esp32s3")
+set(PXA_BOARD_COMPONENT "epdiy-v7")

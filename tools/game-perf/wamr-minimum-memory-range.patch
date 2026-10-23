@@ -1,0 +1,53 @@
+--- a/core/iwasm/compilation/aot_llvm.c
++++ b/core/iwasm/compilation/aot_llvm.c
+@@ -1185,6 +1185,26 @@
+     return true;
+ }
+ 
++/* This lower bound comes from the loader's final memory descriptor, after
++ * optional shrinking/coalescing. Host heap insertion can only enlarge it.
++ * Do not bake the declared maximum into a run-time bounds check. */
++static void
++set_memory_bound_minimum(const AOTCompContext *comp_ctx, LLVMValueRef load,
++                         uint64 minimum)
++{
++    if (minimum == 0)
++        return; /* No useful range constraint; avoid a full-set metadata node. */
++    LLVMContextRef context = LLVMGetModuleContext(comp_ctx->module);
++    LLVMTypeRef type = LLVMTypeOf(load);
++    LLVMMetadataRef range[] = {
++        LLVMValueAsMetadata(LLVMConstInt(type, minimum, false)),
++        LLVMValueAsMetadata(LLVMConstInt(type, 0, false))
++    };
++    LLVMSetMetadata(load, LLVMGetMDKindIDInContext(context, "range", 5),
++                    LLVMMetadataAsValue(context,
++                        LLVMMDNodeInContext2(context, range, 2)));
++}
++
+ static bool
+ create_memory_info(const AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+                    LLVMTypeRef int8_ptr_type, uint32 func_index)
+@@ -1524,6 +1544,23 @@
+                   "bound_check_16bytes"))) {
+             aot_set_last_error("llvm build load failed");
+             return false;
++        }
++    }
++
++    if (fixed_local_memory) {
++        uint64 minimum_bytes = (uint64)module->memories[0].num_bytes_per_page
++                               * module->memories[0].init_page_count;
++        if (minimum_bytes >= 16) {
++            set_memory_bound_minimum(comp_ctx, func_ctx->mem_info[0].mem_bound_check_1byte,
++                                     minimum_bytes - 1);
++            set_memory_bound_minimum(comp_ctx, func_ctx->mem_info[0].mem_bound_check_2bytes,
++                                     minimum_bytes - 2);
++            set_memory_bound_minimum(comp_ctx, func_ctx->mem_info[0].mem_bound_check_4bytes,
++                                     minimum_bytes - 4);
++            set_memory_bound_minimum(comp_ctx, func_ctx->mem_info[0].mem_bound_check_8bytes,
++                                     minimum_bytes - 8);
++            set_memory_bound_minimum(comp_ctx, func_ctx->mem_info[0].mem_bound_check_16bytes,
++                                     minimum_bytes - 16);
+         }
+     }
+ 

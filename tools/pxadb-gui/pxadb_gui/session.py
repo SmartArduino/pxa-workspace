@@ -108,7 +108,10 @@ def screenshot_request(device_info: str) -> str:
     JPEG frames are a fraction of the RGB565 burst, so the preview reaches the
     capture rate limit instead of the USB transfer time.
     """
-    if "screenshot-jpeg" in pxadb.device_capabilities(device_info):
+    capabilities = pxadb.device_capabilities(device_info)
+    if "screenshot-gray4-rle" in capabilities:
+        return "SCREENSHOT GRAY4 AFTER_PRESENT"
+    if "screenshot-jpeg" in capabilities:
         return "SCREENSHOT JPEG"
     return "SCREENSHOT"
 

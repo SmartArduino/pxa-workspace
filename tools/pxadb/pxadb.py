@@ -253,6 +253,21 @@ def print_raw_serial_line(raw: bytes) -> None:
         print(f"[serial] {text}", file=sys.stderr, flush=True)
 
 
+def _hold_usb_awake(port: str, *, tty_root: pathlib.Path = pathlib.Path("/sys/class/tty"),
+                    usb_root: pathlib.Path = pathlib.Path("/dev/bus/usb")) -> int | None:
+    """Best-effort Linux runtime PM guard; no power-policy or interface writes."""
+    try:
+        device = (tty_root / pathlib.Path(port).resolve().name / "device").resolve(strict=True)
+        usb = next((parent for parent in (device, *device.parents)
+                    if (parent / "busnum").is_file() and (parent / "devnum").is_file()), None)
+        if usb is not None:
+            bus, address = int((usb / "busnum").read_text()), int((usb / "devnum").read_text())
+            return os.open(usb_root / f"{bus:03}" / f"{address:03}", os.O_RDONLY | os.O_CLOEXEC)
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 class PxaDbClient:
     # Optional sinks that replace the default stdout/stderr printing. The
     # desktop GUI installs callbacks so device output lands in its log pane.
@@ -260,6 +275,7 @@ class PxaDbClient:
     raw_callback: Callable[[bytes], None] | None = None
 
     def __init__(self, port: str, timeout: float = 2.0) -> None:
+        self._usb_awake_fd: int | None = None
         self.binary_transport: BinarySocketTransport | None = None
         self.tcp_token = ""
         if port.startswith(("unix:", "tcp:")):
@@ -278,17 +294,22 @@ class PxaDbClient:
             baudrate = int(os.environ.get("PXADB_BAUD", "115200"))
         except ValueError:
             raise PxaDbError("PXADB_BAUD must be an integer baud rate")
-        self.serial = SerialLineReader(serial.Serial(
-            port,
-            baudrate=baudrate,
-            timeout=0.2,
-            # Most PXADB commands fit in one small OS write. In pyserial's finite
-            # timeout mode, CDC ACM waits for the endpoint to become writable
-            # again even after that complete write, which stalls when firmware
-            # has no PXADB reader. Non-blocking mode returns the actual count.
-            write_timeout=0,
-            exclusive=True,
-        ))
+        self._usb_awake_fd = _hold_usb_awake(port)
+        try:
+            self.serial = SerialLineReader(serial.Serial(
+                port,
+                baudrate=baudrate,
+                timeout=0.2,
+                # Most PXADB commands fit in one small OS write. In pyserial's finite
+                # timeout mode, CDC ACM waits for the endpoint to become writable
+                # again even after that complete write, which stalls when firmware
+                # has no PXADB reader. Non-blocking mode returns the actual count.
+                write_timeout=0,
+                exclusive=True,
+            ))
+        except BaseException:
+            self._release_usb_awake()
+            raise
         self.upload_profile = serial_upload_profile(port)
         self.timeout = timeout
         self.sequence = 0
@@ -324,6 +345,13 @@ class PxaDbClient:
             self.serial.close()
         except Exception:
             pass
+        self._release_usb_awake()
+
+    def _release_usb_awake(self) -> None:
+        descriptor = getattr(self, "_usb_awake_fd", None)
+        self._usb_awake_fd = None
+        if descriptor is not None:
+            os.close(descriptor)
 
     def __enter__(self) -> "PxaDbClient":
         return self
@@ -419,7 +447,9 @@ class PxaDbClient:
         # ESP32-S31 CDC can leave the final deploy response pending after flash
         # writes until the next OUT packet. Keep the connection active while
         # waiting, preserving the original request's sequence and result.
-        keepalive = (command.startswith("PACKAGE deploy ")
+        install_command = command.startswith(("PACKAGE deploy ", "PACKAGE install-volume ",
+                                              "PACKAGE move-volume ", "PACKAGE resume-volume "))
+        keepalive = ((install_command or command.startswith("FSCOPY "))
                      and getattr(self, "upload_profile", "unknown") == "usb")
         next_ping = time.monotonic() + 1.0
         ping_sequences: set[int] = set()
@@ -450,7 +480,7 @@ class PxaDbClient:
             if frame.kind in terminal_kinds:
                 return frames + [frame]
             frames.append(frame)
-        if command.startswith("PACKAGE deploy "):
+        if install_command:
             raise PxaDbError(
                 "device did not return the installation result; the package "
                 "may already be installed; check 'pxadb packages' and device logs"
@@ -1814,9 +1844,43 @@ def rgb565le_to_png(data: bytes, width: int, height: int, stride: int) -> bytes:
             png_chunk(b"IEND", b""))
 
 
+def gray4_rle_to_gray8(capture: Screenshot) -> bytes:
+    """Decode bounded (run, packed gray4 byte) pairs; even x is the low nibble."""
+    try:
+        width = int(capture.metadata["width"])
+        height = int(capture.metadata["height"])
+        stride = int(capture.metadata["stride"])
+    except (KeyError, ValueError) as error:
+        raise PxaDbError("incomplete gray4 screenshot metadata") from error
+    expected = stride * height
+    if (width <= 0 or height <= 0 or stride < (width + 1) // 2 or
+            expected > 32 * 1024 * 1024 or len(capture.data) % 2):
+        raise PxaDbError("invalid gray4 screenshot dimensions or runs")
+    packed = bytearray()
+    for offset in range(0, len(capture.data), 2):
+        count, value = capture.data[offset:offset + 2]
+        if not count or len(packed) + count > expected:
+            raise PxaDbError("invalid gray4 screenshot run length")
+        packed.extend(bytes((value,)) * count)
+    if len(packed) != expected:
+        raise PxaDbError("incomplete gray4 screenshot pixels")
+    table = [bytes(((value & 15) * 17, (value >> 4) * 17)) for value in range(256)]
+    return b"".join(b"".join(table[value] for value in
+                             packed[y * stride:y * stride + (width + 1) // 2])[:width]
+                    for y in range(height))
+
+
 def write_screenshot(capture: Screenshot, destination: pathlib.Path,
                      raw: bool = False) -> None:
     pixel_format = capture.metadata.get("format", "jpeg")
+    if pixel_format == "gray4-rle" and not raw:
+        pixels = gray4_rle_to_gray8(capture)
+        width, height = int(capture.metadata["width"]), int(capture.metadata["height"])
+        rows = b"".join(b"\0" + pixels[y * width:(y + 1) * width] for y in range(height))
+        header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+        destination.write_bytes(b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", header) +
+                                png_chunk(b"IDAT", zlib.compress(rows, 6)) + png_chunk(b"IEND", b""))
+        return
     if pixel_format == "rgb565le" and not raw:
         try:
             width = int(capture.metadata["width"])
@@ -1839,6 +1903,8 @@ def command_screenshot(arguments: argparse.Namespace) -> int:
     request = "SCREENSHOT"
     if arguments.jpeg:
         request += " JPEG"
+    elif getattr(arguments, "gray4", False):
+        request += " GRAY4"
     if arguments.after_present:
         request += " AFTER_PRESENT"
     attempts = 3
@@ -2032,9 +2098,14 @@ def build_parser() -> argparse.ArgumentParser:
         "output", nargs="?",
         help="output path (default screenshot.png, or .jpg with --jpeg)",
     )
-    screenshot.add_argument(
+    screenshot_format = screenshot.add_mutually_exclusive_group()
+    screenshot_format.add_argument(
         "--jpeg", action="store_true",
         help="request a device-encoded JPEG instead of RGB565",
+    )
+    screenshot_format.add_argument(
+        "--gray4", action="store_true",
+        help="request lossless gray4 RLE on supported e-paper boards",
     )
     screenshot.add_argument(
         "--after-present", action="store_true",
@@ -2042,7 +2113,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     screenshot.add_argument(
         "--raw", action="store_true",
-        help="write logical little-endian RGB565 instead of PNG",
+        help="write wire-format pixel bytes instead of PNG",
     )
     screenshot.set_defaults(handler=command_screenshot)
 

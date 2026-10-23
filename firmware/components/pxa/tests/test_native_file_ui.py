@@ -14,6 +14,7 @@ FIXTURE=r'''
 #include <cstring>
 #include "pxa_esp_install_approval.h"
 #include "pxa_esp_ui_shell.h"
+#include "pxa/pxa_esp_storage.h"
 #include "pxa/pxa_host.h"
 #define MALLOC_CAP_SPIRAM 1
 #define MALLOC_CAP_8BIT 2
@@ -23,6 +24,7 @@ void *g_native_move,*g_store_install;
 struct {uint32_t prompt_id;} g_store_result{},g_store_uninstall{};
 typedef struct pxa_native_file pxa_native_file_t;
 static pxa_native_file_t *g_native_file;
+bool refreshed_pair_fits=true;
 bool ime_active,resource_mode,post_ok=true,progress_ok=true,prepare_progress_ok=true,allocation_ok=true;
 unsigned prepared,committed,closed,refs,reserved,modal,toasts,notified,dismissed;
 size_t last_app,last_media;
@@ -48,7 +50,13 @@ int pxa_esp_ui_shell_post_file_install_progress(uint32_t id,const char *name,uin
 }
 void pxa_esp_ui_shell_post_file_install_result(uint32_t id,int32_t status) {assert(!modal && id==posted.prompt_id);last_result=status;}
 void pxa_host_notify_catalog_changed() {assert(!modal);++notified;}
+pxa_status_t pxa_esp_storage_volume(uint64_t epoch,pxa_volume_info_t *volume) {
+    memset(volume,0,sizeof(*volume));volume->mount_epoch=epoch;volume->state=PXA_VOLUME_READY;
+    volume->space_known=PXA_VOLUME_FREE_KNOWN;volume->free_bytes=3000;volume->reserved_bytes=250;
+    return PXA_STATUS_OK;
+}
 pxa_status_t pxa_esp_package_store_evaluate_install(const pxa_esp_install_approval_t*,size_t app,size_t media,pxa_install_plan_t *plan) {
+    if(!refreshed_pair_fits)return PXA_STATUS_QUOTA_EXCEEDED;
     plan->volumes[0].bytes=900+app+media;return PXA_STATUS_OK;
 }
 pxa_status_t pxa_esp_file_install_prepare(pxa_esp_file_install_t *file) {
@@ -81,6 +89,8 @@ int main() {
     g_host.shutdown_complete=true;native_file_prepare(job());assert(!prepared);g_host.shutdown_complete=false;
     prepare_progress_ok=false;native_file_prepare(job());assert(!prepared && !g_native_file && !modal);prepare_progress_ok=true;
     native_file_prepare(job());assert(g_native_file && refs==1 && modal==1 && posted.selected==1 && posted.media_count==2);
+    assert(posted.volumes[0].free_known && posted.volumes[0].free_bytes==2750);
+    assert(posted.media_volumes[0].free_known && posted.media_volumes[0].free_bytes==2750);
     auto first=posted.prompt_id;native_file_decide(false,0);assert(!g_native_file && !refs && !modal && !committed);
     native_file_prepare(job());assert(posted.prompt_id>first);native_file_decide(true,0);
     assert(committed==1 && last_app==1 && last_media==0 && !refs && !reserved && !modal && !g_native_file);
@@ -97,6 +107,9 @@ int main() {
     commit_status=PXA_STATUS_BAD_STATE;native_file_prepare(job());native_file_decide(true,0);
     assert(!refs && !reserved && committed==3 && last_result==PXA_STATUS_BAD_STATE && !modal);
     native_file_prepare(job());native_file_decide(true,255);assert(!refs && !reserved && last_result==PXA_STATUS_INVALID_ARGUMENT);
+    refreshed_pair_fits=false;native_file_prepare(job());
+    assert(g_native_file && !posted.media_fit[0] && !posted.media_fit[1]);
+    native_file_decide(false,0);assert(!refs && !reserved && !modal);
     assert(closed>=prepared && toasts && notified && dismissed);
     puts("Native Files owner: cancel, app/media selection, resources-only, stale activation, shutdown/cooperate rejection, allocation/post failures, reservation/source cleanup passed");
 }

@@ -3,6 +3,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import pathlib
 import struct
 import sys
@@ -14,6 +15,82 @@ import zlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import pxadb
+
+
+class UsbRuntimeGuardTest(unittest.TestCase):
+    def test_usb_parent_is_held_read_only_and_missing_devices_are_optional(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            physical = root / "bridge"
+            interface = physical / "interface"
+            interface.mkdir(parents=True)
+            (physical / "busnum").write_text("1")
+            (physical / "devnum").write_text("82")
+            tty = root / "tty" / "ttyUSB1"
+            tty.mkdir(parents=True)
+            (tty / "device").symlink_to(interface)
+            node = root / "usb" / "001" / "082"
+            node.parent.mkdir(parents=True)
+            node.write_bytes(b"usb")
+            fd = pxadb._hold_usb_awake("/dev/ttyUSB1", tty_root=tty.parent, usb_root=root / "usb")
+            self.assertIsNotNone(fd)
+            try:
+                self.assertEqual(os.read(fd, 3), b"usb")
+                with self.assertRaises(OSError): os.write(fd, b"x")
+            finally:
+                os.close(fd)
+            self.assertIsNone(pxadb._hold_usb_awake("/dev/missing", tty_root=tty.parent))
+
+    def test_failed_serial_open_releases_the_usb_descriptor(self):
+        with tempfile.TemporaryFile() as file:
+            fd = os.dup(file.fileno())
+            with mock.patch.object(pxadb, "_hold_usb_awake", return_value=fd), \
+                    mock.patch.object(pxadb.serial, "Serial", side_effect=OSError("busy")):
+                with self.assertRaises(OSError): pxadb.PxaDbClient("/dev/ttyUSB1")
+            with self.assertRaises(OSError): os.fstat(fd)
+
+    def test_client_close_releases_guard_once(self):
+        with tempfile.TemporaryFile() as file:
+            fd = os.dup(file.fileno())
+            client = fake_client([])
+            client._usb_awake_fd = fd
+            client.close()
+            client.close()
+            with self.assertRaises(OSError): os.fstat(fd)
+
+
+class Gray4CaptureTest(unittest.TestCase):
+    def test_low_nibble_first_odd_width_padding_and_png(self):
+        capture = pxadb.Screenshot(bytes((1, 0x10, 1, 0x32, 1, 0x54, 1, 0x76)),
+                                   {"format": "gray4-rle", "width": "3", "height": "2", "stride": "2"})
+        self.assertEqual(pxadb.gray4_rle_to_gray8(capture), bytes((0, 17, 34, 68, 85, 102)))
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "gray.png"
+            pxadb.write_screenshot(capture, path)
+            png = path.read_bytes()
+        self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(png[24:26], bytes((8, 0)))  # 8-bit grayscale PNG
+        at = 8
+        body = b""
+        while at < len(png):
+            length = struct.unpack(">I", png[at:at+4])[0]
+            if png[at+4:at+8] == b"IDAT": body += png[at+8:at+8+length]
+            at += 12 + length
+        self.assertEqual(zlib.decompress(body), bytes((0, 0, 17, 34, 0, 68, 85, 102)))
+
+    def test_long_runs_cross_rows(self):
+        capture = pxadb.Screenshot(bytes((255, 0xff, 1, 0xff)),
+                                   {"width": "32", "height": "16", "stride": "16"})
+        self.assertEqual(pxadb.gray4_rle_to_gray8(capture), b"\xff" * 512)
+
+    def test_rejects_invalid_and_oversized_runs(self):
+        for data in (b"\x01", b"\x00\xff", b"\x03\xff", b"\x01\xff", b""):
+            with self.subTest(data=data), self.assertRaises(pxadb.PxaDbError):
+                pxadb.gray4_rle_to_gray8(pxadb.Screenshot(data, {"width": "4", "height": "1", "stride": "2"}))
+        with self.assertRaises(pxadb.PxaDbError):
+            pxadb.gray4_rle_to_gray8(pxadb.Screenshot(b"", {"width": "4", "height": "1", "stride": "1"}))
+        with self.assertRaises(pxadb.PxaDbError):
+            pxadb.gray4_rle_to_gray8(pxadb.Screenshot(b"", {"width": "4", "height": "1", "stride": "99999999"}))
 
 
 def encoded_frame(sequence: int, kind: str, payload: str) -> bytes:
@@ -139,6 +216,22 @@ class SerialLineReaderTest(unittest.TestCase):
 
 
 class PxaDbLogStreamingTest(unittest.TestCase):
+    def test_usb_volume_install_and_copy_keep_the_original_result(self) -> None:
+        for command in ("PACKAGE install-volume 17 c2RjYXJkL2dhbWUucHhh", "FSCOPY c291cmNl dGFyZ2V0"):
+            with self.subTest(command=command):
+                client=fake_client([]);client.upload_profile="usb";client.timeout=20
+                def write(value):
+                    client.serial.writes.append(value)
+                    if value.endswith(b" PING\n"):
+                        client.serial.lines += [encoded_frame(2,"OK","pong"),encoded_frame(1,"OK","completed")]
+                    return len(value)
+                client.serial.write=write
+                with mock.patch.object(pxadb.time,"monotonic",side_effect=range(50)):
+                    frames=client.request(command)
+                self.assertEqual(frames[-1].payload,"completed")
+                self.assertEqual(len(client.serial.writes),2)
+                self.assertEqual(client.pending_frames,[])
+
     def test_usb_deploy_pings_without_confusing_results(self) -> None:
         client=fake_client([])
         client.upload_profile="usb"
@@ -949,10 +1042,12 @@ class PxaDbLogStreamingTest(unittest.TestCase):
                                return_value="/dev/ttyACM0"), \
                 mock.patch.object(pxadb, "open_client", return_value=client), \
                 mock.patch.object(pxadb, "screenshot_capture",
-                                  return_value=pxadb.Screenshot(b"", {})):
+                                  return_value=pxadb.Screenshot(b"", {})), \
+                mock.patch.object(pxadb, "write_screenshot") as write:
             pxadb.command_screenshot(arguments)
         client.__enter__().request.assert_called_once_with(
             "SCREENSHOT JPEG AFTER_PRESENT", timeout=600.0)
+        self.assertEqual(write.call_args.args[1], pathlib.Path("frame.jpg"))
 
     def test_screenshot_retryable_only_covers_integrity_failures(self) -> None:
         self.assertTrue(pxadb.screenshot_retryable(pxadb.PxaDbError(

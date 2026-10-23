@@ -1,0 +1,2 @@
+# Hardware reference PDFs must be preserved byte-for-byte.
+*.pdf binary

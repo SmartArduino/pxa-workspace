@@ -17,6 +17,7 @@ python3 -m pip install -e tools/pxadb-gui
 pxadb-gui --simulator pai-touch
 pxadb-gui --port /dev/ttyACM0
 pxadb-gui --port /dev/ttyUSB0 --baud 2000000
+pxadb-gui --port /dev/ttyUSB1 --baud 921600  # EPDiy V7
 pxadb-gui --connect 192.168.1.20:9222 --token local/simulator/pai-touch/pxadb2.token
 ```
 
@@ -74,6 +75,14 @@ rate-limits captures (default one per 250 ms), so JPEG preview reaches about
 to 100). The GUI never queues more than one preview request, so a connected
 device is never flooded.
 
+E-paper firmware advertising `screenshot-gray4-rle` uses a lossless 4-bit
+grayscale preview ahead of JPEG. This keeps the panel's full logical resolution
+without the large RGB565/JPEG staging allocations. The connection baud must
+match the firmware; EPDiy V7 defaults to 921600. Enable **Live preview** or press
+**Screenshot** before clicking on the preview.
+On Linux the serial client holds its USB device open read-only while connected
+to prevent runtime autosuspend from repeatedly disconnecting USB-UART bridges.
+
 PXADB owns the serial port exclusively: close the GUI before running `pxadb`
 or `tools/dev.sh device` against the same port, and vice versa.
 
@@ -98,6 +107,7 @@ python3 -m pip install -e tools/pxadb-gui
 pxadb-gui --simulator pai-touch
 pxadb-gui --port /dev/ttyACM0
 pxadb-gui --port /dev/ttyUSB0 --baud 2000000
+pxadb-gui --port /dev/ttyUSB1 --baud 921600  # EPDiy V7
 pxadb-gui --connect 192.168.1.20:9222 --token local/simulator/pai-touch/pxadb2.token
 ```
 
@@ -146,6 +156,13 @@ RGB565。固件默认还有 250ms 的截图限频，因此把
 
 PXADB 独占串口：GUI 打开设备时，`pxadb` 命令与 `tools/dev.sh device` 会因端口被占用
 而失败；反之亦然，请先关闭其中一方。
+
+EPDiy V7 的运行波特率为 921600。连接后勾选 **Live preview**，或点
+**Screenshot** 获取画面，再在画面上点击和拖动。支持 `screenshot-gray4-rle` 的
+墨水屏固件会优先使用无损 4 位灰度预览，保留完整逻辑分辨率，避免大型 RGB565
+和 JPEG 临时缓冲。
+Linux 上串口客户端会在连接期间只读保持对应 USB 设备打开，避免 USB-UART 桥
+因 runtime autosuspend 反复断开；断开连接时即释放，不修改系统电源策略。
 
 ## 测试
 

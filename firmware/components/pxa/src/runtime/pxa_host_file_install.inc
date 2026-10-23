@@ -1,3 +1,5 @@
+#include "pxa_esp_install_capacity.h"
+#include "pxa/pxa_esp_storage.h"
 /* System-owned Files jobs. Included after native move state so both flows
  * share the existing runtime owner, prompt sequence and modal lifetime. */
 struct pxa_native_file {
@@ -22,26 +24,36 @@ static void install_prompt_fill(pxa_esp_ui_install_prompt_t *prompt,const pxa_es
     prompt->permission_count=preview->permission_count;prompt->resources_only=resources_only;
     prompt->media_count=resources_only?0:(uint8_t)approval->media_count;
     prompt->media_selected=(uint8_t)approval->media_selected;
-    memcpy(prompt->media_fit,approval->media_fit,sizeof(prompt->media_fit));
+    memset(prompt->media_fit,0,sizeof(prompt->media_fit));
     memset(prompt->same_media,UINT8_MAX,sizeof(prompt->same_media));
     for(size_t i=0;i<approval->count;++i) {
         const pxa_esp_install_choice_t *choice=&approval->choices[i];
         copy_utf8_c_string(prompt->volumes[i].name,sizeof(prompt->volumes[i].name),choice->volume.name);
-        prompt->volumes[i].free_bytes=choice->volume.free_bytes;
         prompt->volumes[i].required_bytes=choice->estimate.volumes[0].bytes;
         for(size_t j=0;j<prompt->media_count;++j) {
             if(choice->volume.mount_epoch==approval->media_choices[j].volume.mount_epoch)prompt->same_media[i]=(uint8_t)j;
             pxa_install_plan_t estimate;
-            if(pxa_esp_package_store_evaluate_install(approval,i,j,&estimate)==PXA_STATUS_OK)
+            if(pxa_esp_package_store_evaluate_install(approval,i,j,&estimate)==PXA_STATUS_OK) {
                 prompt->combined_bytes[i][j]=estimate.volumes[0].bytes;
+                prompt->media_fit[i]|=(uint8_t)(1u<<j);
+            }
         }
     }
     for(size_t i=0;i<prompt->media_count;++i) {
         const pxa_esp_install_choice_t *choice=&approval->media_choices[i];
         copy_utf8_c_string(prompt->media_volumes[i].name,sizeof(prompt->media_volumes[i].name),choice->volume.name);
-        prompt->media_volumes[i].free_bytes=choice->volume.free_bytes;
+        pxa_volume_info_t current;
+        pxa_esp_install_volume_capacity(&prompt->media_volumes[i],
+            pxa_esp_storage_volume(choice->volume.mount_epoch,&current)==PXA_STATUS_OK?&current:NULL);
         prompt->media_volumes[i].required_bytes=choice->reuse?0:choice->estimate.volumes[0].bytes;
         prompt->media_reuse[i]=choice->reuse;
+    }
+    /* Pair evaluation refreshes filesystem capacity. Read the final snapshot,
+     * rather than the older per-choice value from before resource preflight. */
+    for(size_t i=0;i<approval->count;++i) {
+        pxa_volume_info_t current;
+        pxa_esp_install_volume_capacity(&prompt->volumes[i],
+            pxa_esp_storage_volume(approval->choices[i].volume.mount_epoch,&current)==PXA_STATUS_OK?&current:NULL);
     }
 }
 static __attribute__((noinline)) void native_file_prepare(pxa_native_file_t *job) {

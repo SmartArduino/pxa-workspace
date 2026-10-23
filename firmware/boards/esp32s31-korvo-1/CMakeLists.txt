@@ -5,6 +5,7 @@ idf_component_register(
         "src/esp32s31_korvo_1_hardware.cc"
         "src/esp32s31_korvo_1_pxa_surface.cc"
         "src/esp32s31_korvo_1_audio.cc"
+        "src/korvo_lvgl_accel.c"
     INCLUDE_DIRS "include"
     PRIV_REQUIRES
         78__esp-wifi-connect
@@ -33,6 +34,27 @@ idf_component_register(
         pxa_system_standard)
 
 option(PXA_KORVO_TOUCH_TRACE "Log physical touch reports and edges for device verification" OFF)
+option(PXA_KORVO_LVGL_PIE "Use exact Core1 PIE ARGB8888 to RGB565 block blending" OFF)
+option(PXA_KORVO_LVGL_DIAGNOSTICS "Log LVGL accelerator hits and CPU runtime counters" OFF)
+option(PXA_KORVO_LVGL_SELF_TEST "Compare the PIE renderer against native LVGL on startup" OFF)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    PXA_KORVO_LVGL_PIE=$<BOOL:${PXA_KORVO_LVGL_PIE}>
+    PXA_KORVO_LVGL_DIAGNOSTICS=$<BOOL:${PXA_KORVO_LVGL_DIAGNOSTICS}>
+    PXA_KORVO_LVGL_SELF_TEST=$<BOOL:${PXA_KORVO_LVGL_SELF_TEST}>)
+set_source_files_properties("src/korvo_lvgl_accel.c" PROPERTIES COMPILE_OPTIONS "-O3")
+if(PXA_KORVO_LVGL_PIE OR PXA_KORVO_LVGL_DIAGNOSTICS)
+    target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=lv_draw_sw_blend_image_to_rgb565")
+endif()
+if(PXA_KORVO_LVGL_PIE)
+    target_sources(${COMPONENT_LIB} PRIVATE "src/korvo_lvgl_pie.S")
+    target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=xTaskCreatePinnedToCore")
+endif()
+if(PXA_KORVO_LVGL_SELF_TEST)
+    if(NOT PXA_KORVO_LVGL_PIE)
+        message(FATAL_ERROR "PXA_KORVO_LVGL_SELF_TEST requires PXA_KORVO_LVGL_PIE")
+    endif()
+    target_sources(${COMPONENT_LIB} PRIVATE "src/korvo_lvgl_accel_test.c")
+endif()
 if(PXA_KORVO_TOUCH_TRACE)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_KORVO_TOUCH_TRACE=1)
 endif()

@@ -302,20 +302,27 @@ private:
             changed = lv_group_get_obj_by_index(group_, i) != candidates_[i];
         auto* previous = lv_group_get_focused(group_);
         if (changed) {
+            const bool retain_focus = previous && Contains(previous);
             if (pressed_) { Cancel(); blocked_ = true; }
             // The group automatically removes deleted objects, so every old
             // member dereferenced here is still alive.
             for (uint32_t i = 0; i < lv_group_get_obj_count(group_); ++i)
                 FocusStyle(lv_group_get_obj_by_index(group_, i), false);
             lv_group_remove_all_objs(group_);
+            // Preserve the viewport by avoiding first-member autofocus and
+            // native scroll-on-focus when the previous target survives.
+            if (retain_focus) lv_group_focus_freeze(group_, true);
             for (size_t i = 0; i < count_; ++i) {
                 FocusStyle(candidates_[i], true);
                 lv_group_add_obj(group_, candidates_[i]);
             }
-            if (previous && Contains(previous)) lv_group_focus_obj(previous);
-            else if (count_) lv_group_focus_obj(candidates_[0]);
-            if (auto* object = lv_group_get_focused(group_))
-                lv_obj_scroll_to_view_recursive(object, LV_ANIM_OFF);
+            if (retain_focus) {
+                lv_group_focus_freeze(group_, false);
+                const bool scroll_on_focus = lv_obj_is_scroll_on_focus(previous);
+                lv_obj_set_scroll_on_focus(previous, false);
+                lv_group_focus_obj(previous);
+                lv_obj_set_scroll_on_focus(previous, scroll_on_focus);
+            } else if (count_) Focus(candidates_[0]);
         }
         scope_ = requested_scope;
         enabled_ = enabled;

@@ -126,6 +126,16 @@ pxadb screenshot --jpeg capture.jpg --port /dev/ttyACM0
 pxadb screenshot --jpeg capture.jpg --after-present --port /dev/ttyACM0
 ```
 
+E-paper boards advertising `screenshot-gray4-rle` accept `--gray4` for a
+lossless full-resolution 16-level grayscale PNG. Wire bytes are `(run, value)`
+pairs: run is 1–255 copies of a packed byte, whose low nibble is the first
+pixel. `stride` counts packed bytes per row; runs may cross rows. The normal
+offset, size and SHA-256 checks cover the compressed bytes before decoding.
+
+```sh
+pxadb screenshot --gray4 --after-present capture.png --port /dev/ttyUSB1 --baud 921600
+```
+
 For the product simulator, start its local service and select a profile instead
 of a serial port:
 
@@ -237,6 +247,13 @@ Package 事务提交。传入 `--yes` 可进行非交互式替换。只有一个
 pxadb screenshot capture.png --port /dev/ttyACM0
 pxadb screenshot --jpeg capture.jpg --port /dev/ttyACM0
 pxadb screenshot --jpeg capture.jpg --after-present --port /dev/ttyACM0
+```
+
+声明 `screenshot-gray4-rle` 的墨水屏固件支持 `--gray4`，输出完整分辨率、16 级灰度
+的无损 PNG。该格式直接读取已显示灰度帧，避免大型 RGB565/JPEG 临时分配。
+
+```sh
+pxadb screenshot --gray4 --after-present capture.png --port /dev/ttyUSB1 --baud 921600
 ```
 
 产品模拟器可启动本地服务，并用 Profile 代替串口：

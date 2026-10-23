@@ -1,0 +1,157 @@
+diff --git a/core/iwasm/compilation/aot_emit_memory.c b/core/iwasm/compilation/aot_emit_memory.c
+index 420096c..05aa2cb 100644
+--- a/core/iwasm/compilation/aot_emit_memory.c
++++ b/core/iwasm/compilation/aot_emit_memory.c
+@@ -628,6 +628,7 @@ aot_check_memory_overflow(AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+             aot_set_last_error("llvm build load failed.");
+             goto fail;
+         }
++        aot_set_memory_base_alignment(mem_base_addr, comp_ctx->module);
+     }
+ 
+     aot_value_top =
+@@ -1521,6 +1522,7 @@ check_bulk_memory_overflow(AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+             aot_set_last_error("llvm build load failed.");
+             goto fail;
+         }
++        aot_set_memory_base_alignment(mem_base_addr, comp_ctx->module);
+     }
+ 
+     /*
+diff --git a/core/iwasm/compilation/aot_llvm.c b/core/iwasm/compilation/aot_llvm.c
+index 8eaa9d8..8474997 100644
+--- a/core/iwasm/compilation/aot_llvm.c
++++ b/core/iwasm/compilation/aot_llvm.c
+@@ -1352,6 +1352,8 @@ create_memory_info(const AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+             aot_set_last_error("llvm build load failed");
+             return false;
+         }
++        aot_set_memory_base_alignment(func_ctx->mem_info[0].mem_base_addr,
++                                      comp_ctx->module);
+         if (!(func_ctx->mem_info[0].mem_cur_page_count_addr =
+                   LLVMBuildLoad2(comp_ctx->builder, I32_TYPE,
+                                  func_ctx->mem_info[0].mem_cur_page_count_addr,
+@@ -1376,6 +1378,8 @@ create_memory_info(const AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+             aot_set_last_error("llvm build load failed");
+             return false;
+         }
++        aot_set_memory_base_alignment(func_ctx->mem_info[0].mem_base_addr,
++                                      comp_ctx->module);
+     }
+ #endif
+ 
+@@ -4267,3 +4271,18 @@ aot_set_cond_br_weights(AOTCompContext *comp_ctx, LLVMValueRef cond_br,
+ 
+     return true;
+ }
++
++/* The constant-offset memory path already relies on this runtime invariant.
++ * Describe the loaded base pointer, not the alignment of arbitrary Wasm
++ * accesses. LLVM can then prove alignment after local SSA/loop optimization;
++ * unknown offsets and every bounds/overflow check retain their semantics. */
++void
++aot_set_memory_base_alignment(LLVMValueRef pointer, LLVMModuleRef module)
++{
++    LLVMContextRef context = LLVMGetModuleContext(module);
++    LLVMMetadataRef value = LLVMValueAsMetadata(
++        LLVMConstInt(LLVMInt64TypeInContext(context), 8, false));
++    LLVMMetadataRef node = LLVMMDNodeInContext2(context, &value, 1);
++    LLVMSetMetadata(pointer, LLVMGetMDKindIDInContext(context, "align", 5),
++                    LLVMMetadataAsValue(context, node));
++}
+diff --git a/core/iwasm/compilation/aot_llvm.h b/core/iwasm/compilation/aot_llvm.h
+index 5bd75a3..f338f28 100644
+--- a/core/iwasm/compilation/aot_llvm.h
++++ b/core/iwasm/compilation/aot_llvm.h
+@@ -53,6 +53,8 @@
+ extern "C" {
+ #endif
+ 
++void aot_set_memory_base_alignment(LLVMValueRef pointer, LLVMModuleRef module);
++
+ #if LLVM_VERSION_MAJOR < 14
+ #define LLVMBuildLoad2(builder, type, value, name) \
+     LLVMBuildLoad(builder, value, name)
+diff --git a/core/iwasm/compilation/aot_llvm_extra.cpp b/core/iwasm/compilation/aot_llvm_extra.cpp
+index 3a3dc29..e001437 100644
+--- a/core/iwasm/compilation/aot_llvm_extra.cpp
++++ b/core/iwasm/compilation/aot_llvm_extra.cpp
+@@ -29,6 +29,7 @@
+ #include <llvm/ExecutionEngine/Orc/LLJIT.h>
+ #include <llvm/IR/DerivedTypes.h>
+ #include <llvm/IR/Module.h>
++#include <llvm/IR/IRBuilder.h>
+ #include <llvm/IR/Instructions.h>
+ #include <llvm/IR/IntrinsicInst.h>
+ #include <llvm/IR/PassManager.h>
+@@ -79,6 +80,62 @@ LLVM_C_EXTERN_C_BEGIN
+ bool
+ aot_check_simd_compatibility(const char *arch_c_str, const char *cpu_c_str);
+ 
++
++/* Experiment: retain the bytewise fallback, but use one native word operation
++ * when a dynamic pointer is aligned. Run after IR optimization so merging the
++ * two loads cannot erase the checked fast path. Existing bounds checks have
++ * already executed before this access, including at the end of memory. */
++static void addCheckedWordAccesses(Module &M)
++{
++    auto Arch = Triple(M.getTargetTriple()).getArch();
++    if (Arch != Triple::riscv32 && Arch != Triple::x86_64)
++        return;
++    SmallVector<Instruction *, 256> work;
++    for (Function &F : M)
++        for (BasicBlock &BB : F)
++            for (Instruction &I : BB) {
++                if (auto *L = dyn_cast<LoadInst>(&I)) {
++                    if (!L->isAtomic() && !L->isVolatile()
++                        && L->getType()->isIntegerTy(32) && L->getAlign() < Align(4))
++                        work.push_back(L);
++                } else if (auto *S = dyn_cast<StoreInst>(&I)) {
++                    if (!S->isAtomic() && !S->isVolatile()
++                        && S->getValueOperand()->getType()->isIntegerTy(32)
++                        && S->getAlign() < Align(4))
++                        work.push_back(S);
++                }
++            }
++    for (Instruction *I : work) {
++        auto *L = dyn_cast<LoadInst>(I);
++        auto *S = dyn_cast<StoreInst>(I);
++        Value *P = L ? L->getPointerOperand() : S->getPointerOperand();
++        BasicBlock *Head = I->getParent();
++        Function *F = Head->getParent();
++        BasicBlock *Join = Head->splitBasicBlock(I->getIterator(), "word.join");
++        Head->getTerminator()->eraseFromParent();
++        BasicBlock *Fast = BasicBlock::Create(M.getContext(), "word.aligned", F, Join);
++        BasicBlock *Slow = BasicBlock::Create(M.getContext(), "word.unaligned", F, Join);
++        IRBuilder<> B(Head);
++        Value *Address = B.CreatePtrToInt(P, B.getInt32Ty());
++        B.CreateCondBr(B.CreateICmpEQ(B.CreateAnd(Address, B.getInt32(3)), B.getInt32(0)), Fast, Slow);
++        B.SetInsertPoint(Fast);
++        LoadInst *Loaded = nullptr;
++        if (L) Loaded = B.CreateAlignedLoad(L->getType(), P, Align(4));
++        else B.CreateAlignedStore(S->getValueOperand(), P, Align(4));
++        B.CreateBr(Join);
++        I->removeFromParent();
++        I->insertInto(Slow, Slow->end());
++        B.SetInsertPoint(Slow);
++        B.CreateBr(Join);
++        if (L) {
++            PHINode *Phi = PHINode::Create(L->getType(), 2, "word.result", &Join->front());
++            L->replaceAllUsesWith(Phi);
++            Phi->addIncoming(Loaded, Fast);
++            Phi->addIncoming(L, Slow);
++        }
++    }
++}
++
+ void
+ aot_apply_llvm_new_pass_manager(AOTCompContext *comp_ctx, LLVMModuleRef module);
+ 
+@@ -403,6 +460,7 @@ aot_apply_llvm_new_pass_manager(AOTCompContext *comp_ctx, LLVMModuleRef module)
+     }
+ 
+     MPM.run(*M, MAM);
++    addCheckedWordAccesses(*M);
+ }
+ 
+ char *

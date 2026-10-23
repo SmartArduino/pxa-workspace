@@ -11,17 +11,32 @@ bounded by the same 8-byte linear-memory-base alignment already assumed by the
 compiler's constant-address path. Unknown or unaligned offsets retain alignment 1.
 Wasm alignment hints are not treated as guarantees.
 
+Two alternative alignment patches are available against the same clean pinned
+checkout (apply one):
+
+- `wamr-base-alignment.patch` describes the runtime's aligned linear-memory base
+  with LLVM pointer-load metadata. Unlike the early known-bits query, this lets
+  later SSA and loop optimization prove alignment of loop-carried addresses.
+- `wamr-checked-word-access.patch` includes that metadata and adds a checked
+  fast path for remaining unaligned i32 loads/stores on RV32 and x86-64.
+  An address test selects a word access or the original bytewise fallback;
+  bounds checks remain before either path. This is an experiment: the added
+  branches and code size can hurt performance. x86-64 is enabled to exercise
+  the transformed code in the host regression runner, not as a speed claim.
+
 Build an isolated compiler from the project root, using the already built pinned
 LLVM dependencies:
 
 ```sh
-git -C deps/pxa-system/wamr worktree add --detach "$PWD/local/wamr-known-alignment" 6a54186abc1c10c37c28e443107107c97af8f25f
-git -C local/wamr-known-alignment apply --check "$PWD/tools/game-perf/wamr-known-alignment.patch"
-git -C local/wamr-known-alignment apply "$PWD/tools/game-perf/wamr-known-alignment.patch"
-cmake -S local/wamr-known-alignment/wamr-compiler -B local/wamrc-known-alignment -G Ninja \
+task_out="$PWD/local/artifacts/game-perf/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$task_out"
+git -C deps/pxa-system/wamr worktree add --detach "$task_out/wamr" 6a54186abc1c10c37c28e443107107c97af8f25f
+git -C "$task_out/wamr" apply --check "$PWD/tools/game-perf/wamr-base-alignment.patch"
+git -C "$task_out/wamr" apply "$PWD/tools/game-perf/wamr-base-alignment.patch"
+cmake -S "$task_out/wamr/wamr-compiler" -B "$task_out/wamrc" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DWAMR_BUILD_TARGET=X86_64 -DWAMR_BUILD_WITH_CUSTOM_LLVM=1 \
   -DLLVM_DIR="$PWD/deps/pxa-system/.pxa/llvm-344b928e67bfc1d07cb150609c55548e86a9bf19/build/lib/cmake/llvm"
-cmake --build local/wamrc-known-alignment --parallel 4
+cmake --build "$task_out/wamrc" --parallel 4
 ```
 
 `check_alignment.py --help` lists required local tool paths. Supply the candidate
@@ -29,8 +44,84 @@ compiler, pinned baseline compiler, WASI SDK, a host WAMR `libiwasm.a`, RV32
 objdump and an output directory. It verifies shortened aligned RV32 reads/writes,
 preserved byte access for unaligned addresses, and retained bounds branches. An
 x86 AOT executable checks every byte alignment, the last valid word, out-of-bounds
-loads/stores and address overflow. Reports include compiler and Wasm hashes.
+loads/stores, address overflow, loop boundaries, and successful/failed memory
+growth followed by access. Use `--require-loop-alignment` for the base metadata
+variant, and also `--require-checked-word-access` for the checked fast path.
+Reports include compiler and Wasm hashes.
 These checks do not establish a device FPS improvement.
+
+`wamr-fixed-memory.patch` is an additional opt-in patch on top of base alignment.
+It caches runtime memory metadata across calls only for a private wasm32 memory
+with explicit, nonzero, equal initial and maximum page counts. Imported, shared,
+memory64 and growable memories retain the existing behavior. It does not replace
+runtime bounds with the declared size: host-managed heap insertion may enlarge
+the actual allocation, including the fixed one-page special case.
+
+Build this profile reproducibly without editing the SDK's WAMR checkout:
+
+```sh
+task_out="$PWD/local/artifacts/game-perf/$(date +%Y%m%d-%H%M%S)"
+compiler=$(python3 tools/game-perf/build_compiler.py --output "$task_out" --jobs 3)
+PXA_APP_SOURCE_ROOT="$PWD/local/pxa-apps" WAMRC="$compiler" \
+  bash tools/pxa/package_app.sh snes-emulator "$task_out/package" doit-gamekit-1
+```
+
+The builder creates an isolated worktree and uses the SDK's pinned LLVM
+bootstrap. Its cache key includes the source pins, patch contents, build recipe
+and toolchain overrides. It verifies the prepared source and compiler hash on
+reuse, and refuses changed or unrecorded worktrees instead of overwriting them.
+`--profile minimum-range` adds the further experimental range patch described
+below; it is not the default. These profiles do not change the SDK's default compiler.
+
+`--profile size-experiment` adds `wamr-size-optimization.patch` to fixed memory.
+Its compiler accepts `--opt-level=s` (LLVM Os) and `--opt-level=z` (LLVM Oz).
+RV32 keeps the `optsize` function attribute for both: `minsize` introduces
+64-bit shift helper calls that the current Host does not export. Other targets
+also use `minsize` for Oz. The machine optimizer
+uses level 2 for those modes. Numeric levels keep their original behavior.
+Machine outlining is disabled for the size modes because WAMR's native stack
+accounting does not describe the compiler-generated helper functions.
+`--size-level` remains the target code model; it does not select Os or Oz.
+This profile tests whether smaller generated code helps instruction-cache
+pressure. Retain bounds checks, run the memory and Wasm/AOT regressions with
+the selected mode, and compare identical Wasm inputs on the target device;
+smaller code alone does not establish a performance improvement.
+Both memory regression scripts accept `--candidate-opt-level s` or `z`; their
+baseline compiler remains at its original optimization level.
+`check_size_codegen.py` checks RV32 wide shifts for unsupported helper imports
+and verifies AOT generation, including native stack accounting. Use its
+`--wamrc`, `--wasi-sdk`, and `--output` arguments with the candidate compiler
+and a local artifact directory.
+
+`check_fixed_memory.py --help` lists tool paths. Use a standalone host runtime
+`libiwasm.a`, not the compiler's `libvmlib.a`, which needs compiler linkage.
+The runner tests fixed and growable memories, host heaps, zero/successful/failed
+growth, imported callbacks that modify or grow memory, unaligned accesses and
+out-of-bounds traps. The optional `--baseline-wamrc` compares optimized RV32 IR:
+base reloads decrease and bounds loads move outside the call-containing loop.
+Run the alignment regression as well; compiler tests alone do not qualify this
+patch for SDK defaults or establish device FPS.
+
+`wasi_runner.c` runs headless WASI regression programs with a standalone WAMR
+`libiwasm.a` built with libc-WASI. Link with the runtime's `wasm_export.h`,
+`-pthread -lm -ldl`, then call `runner module.aot host-rom-directory program
+/roms/game.sfc ...`. Only that directory is preopened, at `/roms`; use trusted
+test programs that read their fixtures and do not write game data. Build the
+module with fixed memory limits matching the application, and compile x86 AOT
+with explicit `--bounds-checks=1` when checking software memory guards. Compare
+frame counts, PCM/video checksums and per-instruction fingerprints against the
+native reference. These checks exercise Wasm/AOT transformations and are not
+device timing or LCD measurements.
+
+The further `wamr-minimum-memory-range.patch` applies after fixed memory. It
+describes the lower bound of each runtime bounds value with LLVM range metadata,
+using the loader's final byte-per-page and initial-page values. This allows
+proven-safe masked accesses to omit checks; unknown addresses retain them.
+It deliberately avoids assuming the original declared size after loader shrinking
+or the original maximum after host heap insertion. Use
+`check_fixed_memory.py --require-bounded-access --baseline-wamrc ...` to check
+the transformed RV32 accesses as well as the runtime cases, including a shrunk
+module whose masked accesses must still trap. This remains an opt-in experiment.
 
 For a game comparison, pass the isolated compiler through `WAMRC` when invoking
 `tools/app.sh`. Record the final AOT hash, original Wasm code-section hash, scene,

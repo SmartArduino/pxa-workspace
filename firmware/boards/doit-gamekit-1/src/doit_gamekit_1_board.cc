@@ -993,6 +993,15 @@ void Gamekit::ReportController(uint32_t report, uint32_t now) {
 
 bool Gamekit::ConfigureDiagnostics() {
     pxadb::TestControlAdapter adapter;
+    adapter.physical_input_state = [](void* context, pxadb::TestControlInputState* state) {
+        if (!state) return false;
+        auto* self = static_cast<Gamekit*>(context);
+        state->physical_buttons = 0;
+        for (size_t i = 0; i < kButtonPins.size(); ++i)
+            if (!gpio_get_level(gpio_num_t(kButtonPins[i]))) state->physical_buttons |= 1u << i;
+        state->physical_active = self->physical_active_.load();
+        return true;
+    };
     adapter.context = this;
     adapter.width = kWidth; adapter.height = kHeight;
     adapter.max_pointers = kDebugPointers;

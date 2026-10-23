@@ -65,6 +65,7 @@
 #include "pxa_esp_services.h"
 #include "pxa_esp_resource_memory.h"
 #include "pxa_esp_ui_shell.h"
+#include "pxa_esp_install_capacity.h"
 #include "pxa_esp_audio.h"
 #include "pxa/pxa_esp_surface.h"
 #include "pxa_esp_net.h"
@@ -2835,7 +2836,7 @@ static __attribute__((noinline)) void native_move_prepare_kind(const char *ident
     copy_utf8_c_string(prompt->retained_media_volume,sizeof(prompt->retained_media_volume),move->approval.media_volume);
     for(size_t i=0;i<move->approval.count;++i) {
         copy_utf8_c_string(prompt->volumes[i].name,sizeof(prompt->volumes[i].name),move->approval.choices[i].volume.name);
-        prompt->volumes[i].free_bytes=move->approval.choices[i].volume.free_bytes;
+        pxa_esp_install_volume_capacity(&prompt->volumes[i],&move->approval.choices[i].volume);
         prompt->volumes[i].required_bytes=move->approval.choices[i].estimate.volumes[0].bytes;
         if(resources_only) {
             prompt->volumes[i].required_bytes=0;

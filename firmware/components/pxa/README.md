@@ -48,6 +48,14 @@ Each App's queued Work is persisted in that App's private data root under the
 reserved Storage key `work.v1`, and is reloaded on its next launch in the same
 monotonic boot epoch.
 
+Installation confirmation displays the planner's additional peak space requirement
+and the selected volume's available space after existing reservations. Sizes use
+explicit binary units with two decimal places; close rounding ties fall back to
+exact byte counts, and unknown capacity stays unknown. Resources sharing the
+application volume use the combined peak once; reusable resources do not add
+another full resource allocation. Capacity is checked again when the selected
+plan is reserved.
+
 Package sources are always fully authenticated before direct factory use,
 installation or update: the publisher signature and every manifest-inventoried
 file digest are checked. By default, ESP treats a successfully committed

@@ -32,6 +32,7 @@ void pxa_esp_ui_shell_dismiss_directory_prompt(uint32_t prompt_id);
 typedef struct {
     uint64_t required_bytes,free_bytes;
     char name[64];
+    uint8_t free_known;
 } pxa_esp_ui_install_volume_t;
 typedef struct {
     uint32_t prompt_id;

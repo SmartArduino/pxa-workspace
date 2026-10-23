@@ -142,6 +142,70 @@ int main() {
     assert(navigation.focused() == row3);
     assert(lv_obj_get_scroll_y(list) > 0);
 
+    // Recollecting controls must preserve a manually restored viewport when
+    // the focused target survives, including native widgets that scroll on focus.
+    for (const bool plain : {false, true}) {
+        lv_obj_clean(screen);
+        auto* viewport = lv_obj_create(screen);
+        Plain(viewport);
+        lv_obj_set_scrollable(viewport, true);
+        lv_obj_set_size(viewport, 250, 150);
+        (void)MakeButton(viewport, 10, 10, plain);
+        auto* surviving = MakeButton(viewport, 10, 220, plain);
+        (void)MakeButton(viewport, 10, 400, plain);
+        Update(navigation, 0, nullptr, true, 60);
+        SelectControl(navigation, surviving);
+        auto* group = lv_indev_get_group(navigation.keypad());
+        assert(lv_group_get_obj_count(group) == 3);
+        (void)MakeButton(viewport, 100, 320, plain);
+        lv_obj_update_layout(viewport);
+        lv_obj_scroll_to_y(viewport, 40, LV_ANIM_OFF);
+        Update(navigation, 0, nullptr, true, 60);
+        assert(lv_group_get_obj_count(group) == 4);
+        assert(navigation.focused() == surviving);
+        assert(lv_obj_get_scroll_y(viewport) == 40);
+        tick += 500;
+        lv_tick_inc(500);
+        lv_timer_handler(); // Also catch animated scroll from transient focus.
+        assert(lv_obj_get_scroll_y(viewport) == 40);
+
+        // A rebuilt settings page first resolves a new object, adds it to the
+        // existing keypad group, focuses it, then restores the exact offset.
+        lv_obj_clean(viewport);
+        assert(lv_group_get_obj_count(group) == 0);
+        auto* fallback = MakeButton(viewport, 10, 10, plain);
+        auto* restored = MakeButton(viewport, 10, 220, plain);
+        (void)MakeButton(viewport, 10, 400, plain);
+        lv_obj_update_layout(viewport);
+        lv_group_add_obj(group, restored);
+        lv_group_focus_obj(restored);
+        lv_obj_scroll_to_y(viewport, 40, LV_ANIM_OFF);
+        Update(navigation, 0, nullptr, true, 60);
+        assert(lv_group_get_obj_count(group) == 3);
+        assert(lv_group_get_obj_by_index(group, 0) == fallback);
+        assert(navigation.focused() == restored);
+        assert(lv_obj_get_scroll_y(viewport) == 40);
+        tick += 500;
+        lv_tick_inc(500);
+        lv_timer_handler();
+        assert(lv_obj_get_scroll_y(viewport) == 40);
+
+        // A previous target absent from collection still reveals the first row.
+        lv_obj_add_state(restored, LV_STATE_DISABLED);
+        assert(navigation.focused() == restored);
+        lv_obj_scroll_to_y(viewport, 250, LV_ANIM_OFF);
+        assert(lv_obj_get_scroll_y(viewport) == 250);
+        Update(navigation, 0, nullptr, true, 60);
+        assert(lv_group_get_obj_count(group) == 2);
+        assert(navigation.focused() == fallback);
+        assert(lv_obj_get_scroll_y(viewport) < 250);
+        lv_area_t viewport_area, fallback_area;
+        lv_obj_get_coords(viewport, &viewport_area);
+        lv_obj_get_coords(fallback, &fallback_area);
+        assert(fallback_area.y1 >= viewport_area.y1 &&
+               fallback_area.y2 <= viewport_area.y2);
+    }
+
     // Native controls retain their semantics; L/R can leave them.
     lv_obj_clean(screen);
     auto* slider = lv_slider_create(screen);

@@ -1330,6 +1330,13 @@ void SendHello(unsigned long sequence) {
 #endif
     const char* kPowerCapabilities =
         PowerControlAvailable() ? ",poweroff" : "";
+    const char* kGrayCapability =
+#if CONFIG_PXADB_TEST_CONTROL
+        TestControlAvailable() && s_test_control.capture_gray4_rle != nullptr
+            ? ",screenshot-gray4-rle" : "";
+#else
+        "";
+#endif
     const char* kPerfCapabilities =
 #if CONFIG_PXA_ENABLED && CONFIG_PXADB_TEST_CONTROL
         ",perf-raster,heap-local,ime";
@@ -1344,8 +1351,8 @@ void SendHello(unsigned long sequence) {
         "";
 #endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=%s;serial=%s;version=%s%s",
-             kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability,
+             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=%s;serial=%s;version=%s%s",
+             kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability, kGrayCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
              CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version,
              transport_info);
@@ -1690,13 +1697,18 @@ void SendInputCapabilities(unsigned long sequence) {
         SendFrame(sequence, "ERR", "input_unavailable");
         return;
     }
-    char payload[192] = {};
+    char payload[256] = {};
+    TestControlInputState state;
+    const bool physical_known = s_test_control.physical_input_state &&
+        s_test_control.physical_input_state(s_test_control.context, &state);
     snprintf(payload, sizeof(payload),
-             "protocol=1;width=%d;height=%d;max_pointers=%u;keys=back,home,volume-up,volume-down;coordinates=logical;controller_mask=%u",
+             "protocol=1;width=%d;height=%d;max_pointers=%u;keys=back,home,volume-up,volume-down;coordinates=logical;controller_mask=%u;physical_state=%s;physical_buttons=%lu;physical_active=%u",
              static_cast<int>(s_test_control.width),
              static_cast<int>(s_test_control.height),
              static_cast<unsigned>(s_test_control.max_pointers),
-             s_test_control.inject_controller ? 4095u : 0u);
+             s_test_control.inject_controller ? 4095u : 0u,
+             physical_known ? "available" : "unavailable",
+             static_cast<unsigned long>(state.physical_buttons), unsigned(state.physical_active));
     SendFrame(sequence, "OK", payload);
 }
 
@@ -1926,7 +1938,7 @@ void SendJpegSelfTest(unsigned long sequence) {
     heap_caps_free(encoded);
 }
 
-void SendScreenshot(unsigned long sequence, bool after_present, bool jpeg) {
+void SendScreenshot(unsigned long sequence, bool after_present, bool jpeg, bool gray4) {
     const uint64_t requested_us = static_cast<uint64_t>(esp_timer_get_time());
     if (s_last_capture_us != 0 &&
         requested_us - s_last_capture_us <
@@ -1937,6 +1949,29 @@ void SendScreenshot(unsigned long sequence, bool after_present, bool jpeg) {
     s_last_capture_us = requested_us;
     if (!TestControlAvailable()) {
         SendFrame(sequence, "ERR", "screenshot_unavailable");
+        return;
+    }
+    if (gray4) {
+        if (s_test_control.capture_gray4_rle == nullptr) {
+            SendFrame(sequence, "ERR", "screenshot_gray4_unavailable");
+            return;
+        }
+        const size_t stride = (size_t(s_test_control.width) + 1) / 2;
+        const size_t capacity = stride * s_test_control.height * 2;
+        auto* bytes = static_cast<uint8_t*>(heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        size_t count = 0;
+        TestControlCaptureInfo info;
+        const bool ready = bytes && s_test_control.capture_gray4_rle(
+            s_test_control.context, bytes, capacity, &count, after_present, &info);
+        if (!ready || !count || count > capacity || info.width != s_test_control.width ||
+            info.height != s_test_control.height || info.stride_bytes != stride) {
+            if (bytes) heap_caps_free(bytes);
+            SendFrame(sequence, "ERR", "screenshot_failed");
+            return;
+        }
+        if (!SendCaptureFrames(sequence, bytes, count, "gray4-rle", info, stride))
+            ESP_LOGE(kTag, "PXADB gray4 screenshot transmit failed");
+        heap_caps_free(bytes);
         return;
     }
     const size_t pixel_count = static_cast<size_t>(s_test_control.width) *
@@ -1986,7 +2021,7 @@ void HandleInput(unsigned long sequence, char* const*, size_t) {
     SendFrame(sequence, "ERR", "test_control_disabled");
 }
 
-void SendScreenshot(unsigned long sequence, bool, bool) {
+void SendScreenshot(unsigned long sequence, bool, bool, bool) {
     SendFrame(sequence, "ERR", "test_control_disabled");
 }
 #endif
@@ -2433,12 +2468,15 @@ void HandleCommand(char* line) {
 #endif
     } else if (strcmp(command, "SCREENSHOT") == 0) {
         bool jpeg = false;
+        bool gray4 = false;
         bool after_present = false;
         bool valid = true;
         for (size_t index = 0; index < argument_count; ++index) {
             const char* value = arguments[index];
-            if (strcmp(value, "JPEG") == 0 && !jpeg) {
+            if (strcmp(value, "JPEG") == 0 && !jpeg && !gray4) {
                 jpeg = true;
+            } else if (strcmp(value, "GRAY4") == 0 && !gray4 && !jpeg) {
+                gray4 = true;
             } else if (strcmp(value, "AFTER_PRESENT") == 0 && !after_present) {
                 after_present = true;
             } else if (index == 0 && value[0] >= '0' && value[0] <= '9') {
@@ -2452,7 +2490,7 @@ void HandleCommand(char* line) {
         if (!valid) {
             SendFrame(sequence, "ERR", "invalid_screenshot_mode");
         } else {
-            SendScreenshot(sequence, after_present, jpeg);
+            SendScreenshot(sequence, after_present, jpeg, gray4);
         }
     } else if (strcmp(command, "FSLIST") == 0 && argument != nullptr) {
         SendFsList(sequence, argument);
@@ -2912,12 +2950,19 @@ esp_err_t ConfigureTestControl(const TestControlAdapter* adapter) {
     if (adapter->struct_size >= offsetof(TestControlAdapter, presentation_fps_x10)
                                + sizeof(adapter->presentation_fps_x10))
         s_test_control.presentation_fps_x10 = adapter->presentation_fps_x10;
-    if (adapter->struct_size >= sizeof(TestControlAdapter)) {
+    if (adapter->struct_size >= offsetof(TestControlAdapter, cancel_controller)
+                               + sizeof(adapter->cancel_controller)) {
         if (!!adapter->inject_controller != !!adapter->cancel_controller)
             return ESP_ERR_INVALID_ARG;
         s_test_control.inject_controller = adapter->inject_controller;
         s_test_control.cancel_controller = adapter->cancel_controller;
     }
+    if (adapter->struct_size >= offsetof(TestControlAdapter, capture_gray4_rle)
+                               + sizeof(adapter->capture_gray4_rle))
+        s_test_control.capture_gray4_rle = adapter->capture_gray4_rle;
+    if (adapter->struct_size >= offsetof(TestControlAdapter, physical_input_state)
+                               + sizeof(adapter->physical_input_state))
+        s_test_control.physical_input_state = adapter->physical_input_state;
     return ESP_OK;
 #else
     (void)adapter;

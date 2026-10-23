@@ -37,14 +37,19 @@ def symbols(text):
 
 
 def audit(elf_symbols, map_text, archive_symbols):
+    if "Discarded input sections" not in map_text:
+        raise ValueError("unrecognized linker map: missing archive selection boundary")
+    selected_text = map_text.split("Discarded input sections", 1)[0]
+    # Display-only boards do not select any audio decoder or its allocator
+    # adapter. If even one audited archive is selected, require the full audit.
+    if not any(re.search(r"^\S*" + re.escape(archive) + r"\([^)]+\)",
+                         selected_text, re.M) for archive in archive_symbols):
+        return {}
     defined = {s[7]: s for s in symbols(elf_symbols) if s[6] != "UND"}
     for hook in HOOKS:
         entry = defined.get(hook)
         if not entry or entry[3:5] != ["FUNC", "GLOBAL"]:
             raise ValueError(f"missing strong budget hook: {hook}")
-    if "Discarded input sections" not in map_text:
-        raise ValueError("unrecognized linker map: missing archive selection boundary")
-    selected_text = map_text.split("Discarded input sections", 1)[0]
     if not re.search(r"^\S*libpxa\.a\(pxa_codec_memory\.cc\.obj\)", selected_text, re.M):
         raise ValueError("budget adapter object was not selected")
     report = {}
@@ -108,7 +113,10 @@ def main():
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"codec memory audit failed: {error}\n")
     args.report.write_text(json.dumps({"archive_sha256": expected_archives, "selected_imports": report}, indent=2) + "\n")
-    print(f"Codec memory audit passed: {len(report)} selected objects, four strong budget hooks")
+    if report:
+        print(f"Codec memory audit passed: {len(report)} selected objects, four strong budget hooks")
+    else:
+        print("Codec memory audit passed: no audio codec objects selected")
 
 
 if __name__ == "__main__":

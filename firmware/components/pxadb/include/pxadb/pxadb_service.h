@@ -25,6 +25,10 @@ struct TestControlCaptureInfo {
 
 using TestControlTakeoverCallback = void (*)(void* callback_context);
 using PowerOffCallback = bool (*)(void* context);
+struct TestControlInputState {
+    uint32_t physical_buttons = 0;
+    uint8_t physical_active = 0;
+};
 
 // Product adapter for logical input injection and final visible-frame capture.
 // Configure it before Start()/StartAutostart(); the service copies this table.
@@ -53,6 +57,14 @@ struct TestControlAdapter {
     bool (*inject_controller)(void* context, uint8_t controller, bool connected,
                               uint32_t buttons) = nullptr;
     void (*cancel_controller)(void* context) = nullptr;
+    // Optional lossless e-paper capture, avoiding a full RGB565 staging frame.
+    // Output is (uint8 run 1..255, uint8 packed gray4), low nibble first.
+    bool (*capture_gray4_rle)(void* context, uint8_t* bytes, size_t capacity,
+                              size_t* byte_count, bool after_present,
+                              TestControlCaptureInfo* info) = nullptr;
+    // Optional read-only diagnostic. It never releases or overrides physical
+    // input; physical_buttons uses the board's own switch bit assignment.
+    bool (*physical_input_state)(void* context, TestControlInputState* output) = nullptr;
 };
 
 esp_err_t ConfigureTestControl(const TestControlAdapter* adapter);

@@ -6,8 +6,9 @@ usage() {
 Usage: tools/firmware.sh <board> <idf.py action> [action arguments...]
 
 Each board uses build/firmware/<board>/ and is configured with PXA_BOARD.
-`--port`/`-p` and `--baud`/`-b` may appear after the action and are forwarded
-as idf.py global options. Set IDF_PY to use another idf.py executable.
+`--port`/`-p`, `--baud`/`-b` and `-D` CMake definitions may appear after the
+action and are forwarded as idf.py global options. Set IDF_PY to use another
+idf.py executable.
 
 Examples:
   tools/firmware.sh pai-touch build
@@ -41,6 +42,15 @@ action_args=()
 flash_port="${ESPPORT:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -D)
+      [[ $# -ge 2 ]] || { echo "Missing value for -D" >&2; exit 2; }
+      global_args+=("$1" "$2")
+      shift 2
+      ;;
+    -D*)
+      global_args+=("$1")
+      shift
+      ;;
     --port|-p|--baud|-b)
       [[ $# -ge 2 ]] || {
         echo "Missing value for $1" >&2

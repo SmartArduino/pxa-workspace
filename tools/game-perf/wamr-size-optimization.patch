@@ -1,0 +1,109 @@
+--- a/wamr-compiler/main.c
++++ b/wamr-compiler/main.c
+@@ -130,7 +130,7 @@
+     printf("                            Use +feature to enable a feature, or -feature to disable it\n");
+     printf("                            For example, --cpu-features=+feature1,-feature2\n");
+     printf("                            Use --cpu-features=+help to list all the features supported\n");
+-    printf("  --opt-level=n             Set the optimization level (0 to 3, default is 3)\n");
++    printf("  --opt-level=n             Set optimization (0 to 3, s for size, z for minimum size; default 3)\n");
+     printf("  --size-level=n            Set the code size level (0 to 3, default is 3)\n");
+     printf("                              0 - Large code model\n");
+     printf("                              1 - Medium code model\n");
+@@ -479,9 +479,15 @@
+         else if (!strncmp(argv[0], "--opt-level=", 12)) {
+             if (argv[0][12] == '\0')
+                 PRINT_HELP_AND_EXIT();
+-            option.opt_level = (uint32)atoi(argv[0] + 12);
+-            if (option.opt_level > 3)
+-                option.opt_level = 3;
++            if (!strcmp(argv[0] + 12, "s"))
++                option.opt_level = 4;
++            else if (!strcmp(argv[0] + 12, "z"))
++                option.opt_level = 5;
++            else {
++                option.opt_level = (uint32)atoi(argv[0] + 12);
++                if (option.opt_level > 3)
++                    option.opt_level = 3;
++            }
+         }
+         else if (!strncmp(argv[0], "--size-level=", 13)) {
+             if (argv[0][13] == '\0')
+--- a/core/iwasm/compilation/aot_llvm.c
++++ b/core/iwasm/compilation/aot_llvm.c
+@@ -2873,7 +2873,9 @@
+             features = NULL;
+         }
+ 
+-        opt_level = option->opt_level;
++        /* Os/Oz choose an IR pipeline, while LLVM's machine optimizer
++         * still expects a CodeGenOptLevel in the range 0..3. */
++        opt_level = option->opt_level >= 4 ? 2 : option->opt_level;
+         size_level = option->size_level;
+ 
+         /* verify external llc compiler */
+@@ -3261,7 +3263,10 @@
+         os_printf("  target cpu:    %s\n", cpu);
+         os_printf("  target triple: %s\n", triple_norm);
+         os_printf("  cpu features:  %s\n", features);
+-        os_printf("  opt level:     %d\n", opt_level);
++        if (option->opt_level >= 4)
++            os_printf("  opt level:     O%s\n", option->opt_level == 4 ? "s" : "z");
++        else
++            os_printf("  opt level:     %d\n", opt_level);
+         os_printf("  size level:    %d\n", size_level);
+         switch (option->output_format) {
+             case AOT_LLVMIR_UNOPT_FILE:
+--- a/core/iwasm/compilation/aot_llvm_extra.cpp
++++ b/core/iwasm/compilation/aot_llvm_extra.cpp
+@@ -283,6 +283,12 @@
+         case 2:
+             OL = PassBuilder::OptimizationLevel::O2;
+             break;
++        case 4:
++            OL = PassBuilder::OptimizationLevel::Os;
++            break;
++        case 5:
++            OL = PassBuilder::OptimizationLevel::Oz;
++            break;
+         case 3:
+         default:
+             OL = PassBuilder::OptimizationLevel::O3;
+@@ -301,12 +307,38 @@
+         case 2:
+             OL = OptimizationLevel::O2;
+             break;
++        case 4:
++            OL = OptimizationLevel::Os;
++            break;
++        case 5:
++            OL = OptimizationLevel::Oz;
++            break;
+         case 3:
+         default:
+             OL = OptimizationLevel::O3;
+             break;
+     }
+ #endif /* end of LLVM_VERSION_MAJOR */
++
++    /* Size attributes guide target-specific instruction selection;
++     * the memory validation passes are unchanged. */
++    if (comp_ctx->opt_level >= 4) {
++        const Triple targetTriple(
++            reinterpret_cast<Module *>(module)->getTargetTriple());
++        for (Function &F : *reinterpret_cast<Module *>(module)) {
++            if (!F.isDeclaration()) {
++                // AOT stack accounting has no entries for outlined helpers.
++                F.addFnAttr("nooutline");
++                F.addFnAttr(Attribute::OptimizeForSize);
++                // RV32 minsize emits wide-shift libcalls which the current
++                // runtime does not export. Retain inline shifts and the Oz
++                // IR pipeline without requiring a new Host symbol ABI.
++                if (comp_ctx->opt_level == 5
++                    && targetTriple.getArch() != Triple::riscv32)
++                    F.addFnAttr(Attribute::MinSize);
++            }
++        }
++    }
+ 
+     bool disable_llvm_lto = comp_ctx->disable_llvm_lto;
+ #if WASM_ENABLE_SPEC_TEST != 0

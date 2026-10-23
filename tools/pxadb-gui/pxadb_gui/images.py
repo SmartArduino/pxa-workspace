@@ -14,6 +14,10 @@ from .library import pxadb
 
 def capture_to_image(capture: pxadb.Screenshot) -> QImage:
     pixel_format = capture.metadata.get("format", "jpeg")
+    if pixel_format == "gray4-rle":
+        width, height = int(capture.metadata["width"]), int(capture.metadata["height"])
+        pixels = pxadb.gray4_rle_to_gray8(capture)
+        return QImage(pixels, width, height, width, QImage.Format.Format_Grayscale8).copy()
     if pixel_format == "rgb565le":
         width = int(capture.metadata["width"])
         height = int(capture.metadata["height"])

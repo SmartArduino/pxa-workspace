@@ -293,6 +293,10 @@ void pxa_esp_store_worker(void *context) {
             job->total_bytes+=job->placement.resource_container_bytes;
     }
     if(job->separate!=2) {
+        /* Approval and placement are final: publish the actual transfer
+         * budget before connecting, so the Guest stops waiting for approval
+         * even on a slow TLS connection or before the first 5% notification. */
+        job->downloaded_bytes=0;job->notify(job,4u);
         job->status=download_file(job,url,job->cache_epoch,job->size,job->digest,0,
             job->path,sizeof(job->path),job->filename,sizeof(job->filename));
         if(job->status!=PXA_STATUS_OK)goto done;

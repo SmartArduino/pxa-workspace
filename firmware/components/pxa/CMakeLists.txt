@@ -191,6 +191,10 @@ pxsys_apply_wamr_metadata(${COMPONENT_LIB})
 if(PXA_AUDIO_LATENCY_TRACE)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_AUDIO_LATENCY_TRACE=1)
 endif()
+if(PXA_PRIORITY_TILE_TRACE)
+    set_property(SOURCE "src/services/pxa_esp_surface.c"
+        APPEND PROPERTY COMPILE_DEFINITIONS PXA_PRIORITY_TILE_TRACE=1)
+endif()
 
 if(CONFIG_IDF_TARGET_ESP32S3 OR CONFIG_IDF_TARGET_ESP32S31)
     include("${PXSYS_ROOT}/platforms/esp-idf/cmake/pxsys_wamr.cmake")

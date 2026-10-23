@@ -2,6 +2,7 @@
 #include "pxa_esp_system_overlay.h"
 #include "pxa_esp_host.h"
 #include "pxa_esp_dialog_style.h"
+#include "pxa_esp_install_capacity.h"
 #include "pxa/ui.h"
 #include "esp_heap_caps.h"
 #include "lvgl.h"
@@ -45,31 +46,30 @@ static void update_details(void) {
     install_dialog_t *dialog=g_dialog;if(!dialog)return;
     const pxa_esp_ui_install_volume_t *v=&dialog->prompt.volumes[dialog->prompt.selected];
     const bool zh=pxa_esp_host_locale_is_chinese();
-    bool fits=true;
+    char app_space[112],media_space[112];
+    pxa_esp_install_capacity_text(app_space,sizeof(app_space),v->required_bytes,v->free_bytes,v->free_known,zh);
+    bool fits=v->free_known && v->required_bytes<=v->free_bytes;
     if(dialog->prompt.media_count) {
         const uint8_t selected=dialog->prompt.media_selected;
         const pxa_esp_ui_install_volume_t *media=&dialog->prompt.media_volumes[selected];
-        fits=(dialog->prompt.media_fit[dialog->prompt.selected]&(1u<<selected))!=0;
+        fits=fits && (dialog->prompt.media_fit[dialog->prompt.selected]&(1u<<selected))!=0;
+        if(dialog->prompt.same_media[dialog->prompt.selected]==selected)
+            fits=fits && dialog->prompt.combined_bytes[dialog->prompt.selected][selected]<=v->free_bytes;
+        else if(!dialog->prompt.media_reuse[selected])
+            fits=fits && media->free_known && media->required_bytes<=media->free_bytes;
         if(!fits)lv_label_set_text(dialog->details,zh?"所选位置空间不足或不可用":"Selected storage is full or unavailable");
         else if(dialog->prompt.same_media[dialog->prompt.selected]==selected) {
             uint64_t total=dialog->prompt.combined_bytes[dialog->prompt.selected][selected];
-            lv_label_set_text_fmt(dialog->details,zh?"需 %llu / 可用 %llu MiB%s":"Need %llu / Free %llu MiB%s",
-                (unsigned long long)((total+1048575)/1048576),(unsigned long long)(v->free_bytes/1048576),
+            pxa_esp_install_capacity_text(app_space,sizeof(app_space),total,v->free_bytes,v->free_known,zh);
+            lv_label_set_text_fmt(dialog->details,"%s%s",app_space,
                 dialog->prompt.media_reuse[selected]?(zh?" · 复用资源":" · reuse"):"");
         } else if(dialog->prompt.media_reuse[selected])lv_label_set_text_fmt(dialog->details,
-            zh?"应用 %llu / 可用 %llu MiB\n资源：复用现有文件":"App %llu / free %llu MiB\nResources: reuse existing files",
-            (unsigned long long)((v->required_bytes+1048575)/1048576),(unsigned long long)(v->free_bytes/1048576));
-        else lv_label_set_text_fmt(dialog->details,
-            zh?"应用 %llu / 可用 %llu MiB\n资源 %llu / 可用 %llu MiB%s":"App %llu / free %llu MiB\nMedia %llu / free %llu MiB%s",
-            (unsigned long long)((v->required_bytes+1048575)/1048576),(unsigned long long)(v->free_bytes/1048576),
-            (unsigned long long)((media->required_bytes+1048575)/1048576),(unsigned long long)(media->free_bytes/1048576),
-            dialog->prompt.media_reuse[selected]?(zh?" · 复用":" · reuse"):"");
-    } else if(dialog->prompt.move)lv_label_set_text_fmt(dialog->details,
-        zh?"需 %llu.%02llu / 可用 %llu.%02llu MiB":"Need %llu.%02llu / Free %llu.%02llu MiB",
-        (unsigned long long)(v->required_bytes/1048576),(unsigned long long)((v->required_bytes%1048576)*100/1048576),
-        (unsigned long long)(v->free_bytes/1048576),(unsigned long long)((v->free_bytes%1048576)*100/1048576));
-    else lv_label_set_text_fmt(dialog->details,zh?"需要 %llu MiB / 可用 %llu MiB":"Need %llu MiB / Free %llu MiB",
-        (unsigned long long)((v->required_bytes+1048575)/1048576),(unsigned long long)(v->free_bytes/1048576));
+            zh?"应用：%s\n资源：复用现有文件":"App: %s\nResources: reuse existing files",app_space);
+        else {
+            pxa_esp_install_capacity_text(media_space,sizeof(media_space),media->required_bytes,media->free_bytes,media->free_known,zh);
+            lv_label_set_text_fmt(dialog->details,zh?"应用：%s\n资源：%s":"App: %s\nResources: %s",app_space,media_space);
+        }
+    } else lv_label_set_text(dialog->details,app_space);
     if(dialog->install) {
         if(fits)lv_obj_remove_state(dialog->install,LV_STATE_DISABLED);
         else lv_obj_add_state(dialog->install,LV_STATE_DISABLED);

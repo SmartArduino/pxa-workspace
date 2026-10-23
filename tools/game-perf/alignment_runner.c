@@ -61,6 +61,12 @@ int main(int argc, char **argv) {
             assert(call("load_offset", a - 4, 0, 1, 1) == expected);
     }
     for (unsigned i = 0; i < 4; i++) {
+        call("store_stride", 65536 + i, 8, 2, 1);
+        assert(call("load_stride", 65536 + i, 8, 2, 1) == 28u * 257u + 24u);
+        for (unsigned j = 0; j < 8; j++)
+            assert(call("load_any", 65536 + j * 4, 0, 1, 1) == j * 257u + 3u);
+    }
+    for (unsigned i = 0; i < 4; i++) {
         call("store_any", 65536 + i, 0xa1b2c3d4u + i, 2, 1);
         assert(call("load_any", 65536 + i, 0, 1, 1) == 0xa1b2c3d4u + i);
     }
@@ -74,6 +80,20 @@ int main(int argc, char **argv) {
     call("load_aligned", 131072, 0, 1, 0);
     call("store_aligned", 131072, 42, 2, 0);
     call("load_any", UINT32_MAX, 0, 1, 0);
+    call("store_stride", 131068, 1, 2, 1);
+    assert(call("load_stride", 131068, 1, 2, 1) == 3);
+    call("load_stride", 131068, 2, 2, 0);
+    call("store_stride", 131068, 2, 2, 0);
+    assert(call("load_stride", UINT32_MAX, 0, 2, 1) == 0);
+    call("store_stride", UINT32_MAX, 0, 2, 1);
+    /* Access after memory.grow must reload both the base and the limit. */
+    assert(call("grow_then_load", 131072, 1, 2, 1) == 0);
+    call("store_any", 196604, 0x87654321u, 2, 1);
+    assert(call("load_any", 196604, 0, 1, 1) == 0x87654321u);
+    assert(call("grow_then_load", 196604, 1, 2, 1) == 0x87654321u);
+    call("load_any", 196605, 0, 1, 0);
+    call("store_any", 196605, 42, 2, 0);
+    call("grow_then_load", 196608, 1, 2, 0);
     wasm_runtime_destroy_exec_env(env);
     wasm_runtime_deinstantiate(instance);
     wasm_runtime_unload(m);

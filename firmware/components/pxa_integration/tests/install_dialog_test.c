@@ -10,14 +10,14 @@ static lv_obj_t *trusted_overlay;
 static unsigned decisions,toasts;
 static bool accepted;
 static uint32_t decision_id;
-static bool light_palette;
+static bool light_palette,chinese_locale;
 static uint16_t theme_spacing,theme_radius;
 void pxa_esp_host_ui_metrics(uint16_t *spacing,uint16_t *radius) {
     *spacing=theme_spacing;*radius=theme_radius;
 }
 void *heap_caps_malloc(size_t bytes,unsigned caps) {(void)caps;return malloc(bytes);}
 void *heap_caps_calloc(size_t count,size_t bytes,unsigned caps) {(void)caps;return calloc(count,bytes);}
-bool pxa_esp_host_locale_is_chinese(void) {return false;}
+bool pxa_esp_host_locale_is_chinese(void) {return chinese_locale;}
 uint32_t pxa_esp_host_ui_color(uint8_t index) {
     return (light_palette?0xb0c0d0ffu:0x102030ffu)+(uint32_t)index*0x01010100u;
 }
@@ -49,6 +49,19 @@ static lv_obj_t *label_with_text(lv_obj_t *parent,const char *text) {
     return NULL;
 }
 int main(void) {
+    pxa_esp_ui_install_volume_t capacity={0};
+    pxa_volume_info_t volume={.state=PXA_VOLUME_READY,.space_known=PXA_VOLUME_FREE_KNOWN,
+        .free_bytes=2000,.reserved_bytes=250};
+    pxa_esp_install_volume_capacity(&capacity,&volume);
+    assert(capacity.free_known && capacity.free_bytes==1750);
+    volume.reserved_bytes=2001;pxa_esp_install_volume_capacity(&capacity,&volume);
+    assert(capacity.free_known && capacity.free_bytes==0);
+    volume.space_known=0;pxa_esp_install_volume_capacity(&capacity,&volume);
+    assert(!capacity.free_known && !capacity.free_bytes);
+    pxa_esp_install_volume_capacity(&capacity,NULL);assert(!capacity.free_known);
+    char extreme[112];
+    pxa_esp_install_capacity_text(extreme,sizeof(extreme),UINT64_MAX,UINT64_MAX,true,false);
+    assert(!strcmp(extreme,"Need 16777216.00 TiB / Free 16777216.00 TiB"));
     lv_init();lv_display_t *display=lv_display_create(320,240);
     static uint8_t pixels[320*16*2];lv_display_set_color_format(display,LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(display,pixels,NULL,sizeof(pixels),LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -56,9 +69,10 @@ int main(void) {
     const unsigned baseline=timer_count();
     pxa_esp_ui_install_prompt_t prompt={.prompt_id=41,.count=1,.move=1};
     strcpy(prompt.app_name,"Quake");strcpy(prompt.current_volume,"SD");strcpy(prompt.retained_media_volume,"SD");
-    strcpy(prompt.volumes[0].name,"Flash");prompt.volumes[0].required_bytes=3000000;prompt.volumes[0].free_bytes=4000000;
+    strcpy(prompt.volumes[0].name,"Flash");prompt.volumes[0].required_bytes=3000000;prompt.volumes[0].free_bytes=4000000;prompt.volumes[0].free_known=1;
     assert(pxa_esp_ui_shell_post_install_prompt(&prompt));strcpy(prompt.app_name,"Changed after post");pump(1);
     assert(g_dialog && trusted_overlay && !g_dialog->busy && !strcmp(g_dialog->prompt.app_name,"Quake"));
+    assert(!strcmp(lv_label_get_text(g_dialog->details),"Need 2.86 MiB / Free 3.81 MiB"));
     assert(lv_obj_get_style_border_width(g_dialog->panel,0)==1 && lv_obj_get_style_shadow_width(g_dialog->panel,0)==0);
     assert(lv_obj_get_style_radius(g_dialog->panel,0)==pxa_esp_dialog_px(4)*3);
     assert(!lv_obj_has_state(g_dialog->choice,LV_STATE_DISABLED) && !lv_obj_is_clickable(g_dialog->choice));
@@ -158,6 +172,7 @@ int main(void) {
     theme_spacing=5;theme_radius=0;
     prompt.prompt_id=79;prompt.count=1;prompt.move=0;prompt.media_count=1;
     strcpy(prompt.media_volumes[0].name,"SD card");prompt.media_fit[0]=0;
+    prompt.same_media[0]=UINT8_MAX;prompt.media_reuse[0]=1;
     assert(pxa_esp_ui_shell_post_install_prompt(&prompt));pump(1);
     assert(lv_obj_get_style_radius(g_dialog->panel,0)==0);
     assert(lv_obj_get_style_pad_left(g_dialog->panel,0)==15);
@@ -207,6 +222,30 @@ int main(void) {
     assert(lv_color_eq(lv_obj_get_style_text_color(media_caption,0),color(PXA_UI_THEME_MUTED)));
     assert(!lv_obj_is_clickable(g_dialog->choice) && !lv_obj_has_state(g_dialog->choice,LV_STATE_DISABLED));
     pxa_esp_ui_shell_dismiss_install_prompt(82);pump(1);
+    assert(!g_dialog && !trusted_overlay && timer_count()==baseline);
+    /* Capacity labels share exact binary units for installs and moves.
+     * Same-volume resources use the planner's peak, never two full peaks. */
+    prompt=(pxa_esp_ui_install_prompt_t){.prompt_id=83,.count=1,.media_count=1};
+    strcpy(prompt.app_name,"Game");strcpy(prompt.volumes[0].name,"Flash");
+    strcpy(prompt.media_volumes[0].name,"SD");
+    prompt.volumes[0].required_bytes=900000;prompt.volumes[0].free_bytes=1245184;prompt.volumes[0].free_known=1;
+    prompt.media_volumes[0].required_bytes=23680;prompt.media_volumes[0].free_bytes=10000000;prompt.media_volumes[0].free_known=1;
+    prompt.media_fit[0]=1;prompt.same_media[0]=0;prompt.combined_bytes[0][0]=1100000;
+    assert(pxa_esp_ui_shell_post_install_prompt(&prompt));pump(1);
+    assert(!strcmp(lv_label_get_text(g_dialog->details),"Need 1.05 MiB / Free 1.19 MiB"));
+    assert(!lv_obj_has_state(g_dialog->install,LV_STATE_DISABLED));
+    g_dialog->prompt.same_media[0]=UINT8_MAX;update_details();
+    assert(!strcmp(lv_label_get_text(g_dialog->details),"App: Need 878.91 KiB / Free 1.19 MiB\nResources: Need 23.13 KiB / Free 9.54 MiB"));
+    g_dialog->prompt.media_reuse[0]=1;update_details();
+    assert(strstr(lv_label_get_text(g_dialog->details),"Resources: reuse existing files"));
+    chinese_locale=true;g_dialog->prompt.media_count=0;update_details();
+    assert(!strcmp(lv_label_get_text(g_dialog->details),"需 878.91 KiB / 可用 1.19 MiB"));
+    g_dialog->prompt.volumes[0].required_bytes=1048577;g_dialog->prompt.volumes[0].free_bytes=1048576;update_details();
+    assert(!strcmp(lv_label_get_text(g_dialog->details),"需 1048577 B / 可用 1048576 B"));
+    assert(lv_obj_has_state(g_dialog->install,LV_STATE_DISABLED));
+    g_dialog->prompt.volumes[0].free_known=0;update_details();
+    assert(strstr(lv_label_get_text(g_dialog->details),"可用 未知"));
+    pxa_esp_ui_shell_dismiss_install_prompt(83);pump(1);
     assert(!g_dialog && !trusted_overlay && timer_count()==baseline);
     lv_deinit();
     puts("Native installer LVGL: copied prompts, cancel, trusted busy overlay, bounded 8 Hz progress, stale IDs and timer cleanup passed");

@@ -19,6 +19,7 @@ FIXTURE = r'''
 #include <vector>
 #include "pxa_esp_install_approval.h"
 #include "pxa_esp_ui_shell.h"
+#include "pxa_esp_install_capacity.h"
 #include "pxa/pxa_host.h"
 #define EXT_RAM_BSS_ATTR
 #define ESP_LOGW(...) ((void)0)

@@ -53,6 +53,19 @@ class BoardDependencySwitch(unittest.TestCase):
         self.assertEqual(self.calls(), ['monitor'])
         self.assertFalse((self.root / '.pxa/firmware-components-board').exists())
 
+    def test_cmake_definitions_are_global_for_configure_and_build(self):
+        result = subprocess.run(
+            ['bash', str(self.root / 'tools/firmware.sh'), 'a', 'build',
+             '-DPXA_KORVO_LVGL_PIE=ON', '-D', 'PXA_KORVO_LVGL_DIAGNOSTICS=ON'],
+            env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = [json.loads(line) for line in self.log.read_text().splitlines()]
+        self.assertEqual([command[-1] for command in commands], ['reconfigure', 'build'])
+        for command in commands:
+            self.assertIn('-DPXA_KORVO_LVGL_PIE=ON', command[:-1])
+            index = command.index('-D')
+            self.assertEqual(command[index + 1], 'PXA_KORVO_LVGL_DIAGNOSTICS=ON')
+
 
 if __name__ == '__main__':
     unittest.main()

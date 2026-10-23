@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.22)
+get_filename_component(PXA_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+set(PXSYS_ROOT "${PXA_ROOT}/deps/pxa-system")
+set(EXTRA_COMPONENT_DIRS "${PXSYS_ROOT}/wamr")
+include("${PXSYS_ROOT}/platforms/esp-idf/cmake/pxsys_wamr.cmake")
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(native_aot_bench)
+pxsys_configure_wamr_esp_idf(__idf_wamr)

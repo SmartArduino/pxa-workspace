@@ -3,6 +3,7 @@
 #include "esp32s31_korvo_1_config.h"
 #include "esp32s31_korvo_1_adc_calibration.h"
 #include "esp32s31_korvo_1_pxa_surface.h"
+#include "korvo_lvgl_accel.h"
 #include <pxa_board_common/display_completion.h>
 
 #include <algorithm>
@@ -386,10 +387,22 @@ bool Esp32S31Korvo1Hardware::InitializeDisplay() {
     /* Give LVGL enough candidate tiles to keep both software draw units busy
      * when the full-width settings view is invalidated. */
     lv_display_set_tile_cnt(display_, 4);
+    korvo_lvgl_accel_init();
     lv_display_set_user_data(display_, this);
     lv_display_set_flush_cb(display_, FlushDisplay);
     lv_display_set_sync_cb(display_, SyncDisplay);
     lv_display_add_event_cb(display_, OnDisplayEvent, LV_EVENT_ALL, this);
+#if PXA_KORVO_LVGL_DIAGNOSTICS
+    /* Collect the last flip even when a static page produces no next flush.
+     * LVGL owns this callback; direct Surface presentation keeps its semaphore.
+     * This records the ISR timestamp, not the later polling time. */
+    if (lv_timer_create([](lv_timer_t* timer) {
+            auto* hardware = static_cast<Esp32S31Korvo1Hardware*>(
+                lv_timer_get_user_data(timer));
+            if (!korvo_pxa_surface::DirectScanoutActive())
+                (void)hardware->WaitForPendingFrame(0);
+        }, 10, this) == nullptr) return false;
+#endif
     if (!korvo_pxa_surface::Install(display_, panel_, frame_done_sem_,
                                     &frame_done_us_low_,
                                     OnDirectScanoutTransition, this)) {
@@ -466,6 +479,7 @@ void Esp32S31Korvo1Hardware::RecordFrame() {
              perf_vsync_timeouts_);
     perf_report_started_us_ = now_us;
     perf_frames_ = 0;
+    korvo_lvgl_accel_log();
     perf_flushes_ = 0;
     perf_render_count_ = 0;
     perf_draw_count_ = 0;
@@ -716,10 +730,10 @@ void Esp32S31Korvo1Hardware::OnDisplayEvent(lv_event_t* event) {
     }
 }
 
-bool Esp32S31Korvo1Hardware::WaitForPendingFrame() {
+bool Esp32S31Korvo1Hardware::WaitForPendingFrame(uint32_t timeout_ms) {
     if (!frame_switch_pending_) return true;
     if (frame_done_sem_ == nullptr ||
-        xSemaphoreTake(frame_done_sem_, pdMS_TO_TICKS(100)) != pdTRUE)
+        xSemaphoreTake(frame_done_sem_, pdMS_TO_TICKS(timeout_ms)) != pdTRUE)
         return false;
     const uint64_t observed_us = static_cast<uint64_t>(esp_timer_get_time());
     const uint32_t completed_low =
@@ -728,6 +742,9 @@ bool Esp32S31Korvo1Hardware::WaitForPendingFrame() {
      * 32-bit microsecond wrap without a non-lock-free 64-bit ISR atomic. */
     const uint64_t completed_us =
         pxa_board_common::DisplayCompletionTimestamp(observed_us, completed_low);
+#if PXA_KORVO_LVGL_DIAGNOSTICS
+    pxa_esp_surface_note_display_frame_presented(completed_us);
+#endif
     pxa_esp_surface_note_display_latency(
         pending_composed_frame_id_, pending_composed_input_timestamp_us_,
         pending_composed_raster_ready_tick_us_, completed_us);

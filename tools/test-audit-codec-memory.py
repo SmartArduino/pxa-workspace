@@ -25,6 +25,22 @@ class AuditTest(unittest.TestCase):
     def test_selected_only(self):
         self.assertEqual(len(audit.audit(self.elf, self.map, self.archives)), 2)
 
+    def test_display_only_board(self):
+        # LOAD entries and discarded members do not mean a decoder was linked.
+        no_audio = ("esp-idf/board/libboard.a(display.cc.obj)\n"
+                    "Discarded input sections\n/lib/libesp_audio_codec.a(decoder.obj)\n"
+                    "LOAD /lib/libesp_audio_codec.a\n")
+        self.assertEqual(audit.audit("", no_audio, self.archives), {})
+
+    def test_no_audio_still_requires_known_map_format(self):
+        with self.assertRaisesRegex(ValueError, "unrecognized linker map"):
+            audit.audit("", "", self.archives)
+
+    def test_partial_codec_selection_still_requires_hooks(self):
+        name = next(iter(self.archives))
+        with self.assertRaisesRegex(ValueError, "missing strong"):
+            audit.audit("", f"/lib/{name}(decoder.obj)\nDiscarded input sections\n", self.archives)
+
     def test_weak_fallback(self):
         with self.assertRaisesRegex(ValueError, "missing strong"):
             audit.audit(self.elf.replace("FUNC GLOBAL", "FUNC WEAK", 1), self.map, self.archives)

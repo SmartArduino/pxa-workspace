@@ -1,0 +1,47 @@
+menu "EPDiy V7 40-pin"
+choice PXA_EPDIY_ORIENTATION
+    prompt "Screen orientation"
+    default PXA_EPDIY_PORTRAIT
+config PXA_EPDIY_PORTRAIT
+    bool "Portrait (684 x 1216, clockwise)"
+config PXA_EPDIY_LANDSCAPE
+    bool "Landscape (1216 x 684)"
+endchoice
+config PXA_EPDIY_VCOM_MV
+    int "Panel VCOM magnitude (mV; use the value on the panel label)"
+    range 0 5110
+    default 1200
+config PXA_EPDIY_REFRESH_MS
+    int "Minimum interval between physical refreshes (ms)"
+    range 100 10000
+    default 350
+config PXA_EPDIY_CLEAN_EVERY
+    int "Full clear after this many partial updates"
+    range 1 1000
+    default 20
+config PXA_EPDIY_GC16_PERCENT
+    int "Use GC16 when changed pixels reach this screen percentage"
+    range 1 100
+    default 40
+config PXA_EPDIY_FAST_MONO
+    bool "Use DU for transitions between pure black and pure white"
+    default y
+config PXA_EPDIY_DITHER
+    bool "Ordered 4-bit grayscale dithering (photos)"
+    default n
+config PXA_EPDIY_DENSITY_DPI
+    int "Logical display density (DPI)"
+    range 72 600
+    default 300
+config PXA_EPDIY_FRONTLIGHT
+    bool "Warm/cool frontlight on GPIO3/GPIO46 (reference wiring)"
+    default n
+config PXA_EPDIY_FRONTLIGHT_WARM_PERCENT
+    int "Warm channel percentage of total brightness"
+    depends on PXA_EPDIY_FRONTLIGHT
+    range 0 100
+    default 50
+config PXA_EPDIY_WIFI
+    bool "Wi-Fi provisioning and networking"
+    default y
+endmenu

@@ -11,6 +11,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "pxadb"))
 
 import pxadb
+from pxadb_gui import __main__ as entrypoint
 
 from pxadb_gui.geometry import device_point, fitted_rect
 from pxadb_gui.images import capture_to_image
@@ -37,6 +38,21 @@ def tearDownModule() -> None:
         for widget in application.topLevelWidgets():
             widget.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+class EntryPointTest(unittest.TestCase):
+    def test_baud_option_reaches_the_serial_client_and_toolbar(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=False), \
+                mock.patch.object(entrypoint, "QApplication") as application, \
+                mock.patch.object(entrypoint, "DeviceSession") as session, \
+                mock.patch.object(entrypoint, "MainWindow") as window:
+            application.return_value.exec.return_value = 0
+            self.assertEqual(entrypoint.main([
+                "--port", "/dev/ttyUSB1", "--baud", "921600"]), 0)
+            self.assertEqual(os.environ["PXADB_BAUD"], "921600")
+            choice = window.call_args.args[2]
+            self.assertEqual(choice.target, "/dev/ttyUSB1")
+            session.return_value.start.assert_called_once()
 
 
 class GeometryTest(unittest.TestCase):
@@ -221,6 +237,17 @@ class ScreenViewTest(unittest.TestCase):
 
 
 class ScreenshotRequestTest(unittest.TestCase):
+    def test_epaper_prefers_lossless_small_capture(self) -> None:
+        self.assertEqual(screenshot_request("capabilities=screenshot-jpeg,screenshot-gray4-rle"),
+                         "SCREENSHOT GRAY4 AFTER_PRESENT")
+
+    def test_gray4_preview_has_full_resolution_and_gray_levels(self) -> None:
+        capture = pxadb.Screenshot(bytes((1, 0xf0, 1, 0x78)),
+                                   {"format": "gray4-rle", "width": "3", "height": "1", "stride": "2"})
+        image = capture_to_image(capture)
+        self.assertEqual((image.width(), image.height()), (3, 1))
+        self.assertEqual([image.pixelColor(x, 0).red() for x in range(3)], [0, 255, 136])
+
     def test_prefers_jpeg_when_the_firmware_advertises_it(self) -> None:
         self.assertEqual(
             screenshot_request(
