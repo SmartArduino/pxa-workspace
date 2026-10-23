@@ -3438,6 +3438,8 @@ static int start_verified(const char *identity) {
                     PXA_WASI_FEATURE_CLOCKS | PXA_WASI_FEATURE_RANDOM;
             }
 #endif
+            if (service_capabilities[index].service == PXA_STORE_INSTALL_SERVICE_ID)
+                service_capabilities[index].features = PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT;
             if (service_capabilities[index].service == PXA_CLOCK_SERVICE_ID)
                 service_capabilities[index].features = PXA_CLOCK_FEATURE_TIMING;
             if (service_capabilities[index].service == PXA_ASSETS_SERVICE_ID)
