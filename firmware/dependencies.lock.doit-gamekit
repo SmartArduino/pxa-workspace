@@ -1,19 +1,9 @@
 dependencies:
   78/esp-wifi-connect:
-    component_hash: 2774077ebdc43a871ad134b9048aaeb59b10d4599e839be2b5a634f5b2a023e9
-    dependencies:
-    - matches:
-      - if: idf_version >=6.0
-      name: espressif/cjson
-      registry_url: https://components.espressif.com
-      require: private
-      version: ^1.7.19
-    - name: idf
-      require: private
-      version: '>=5.3'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: components/78__esp-wifi-connect
+      type: local
     version: 3.1.5
   espressif/cjson:
     component_hash: e788323270d90738662d66fffa910bfe1fba019bba087f01557e70c40485b469
@@ -22,7 +12,7 @@ dependencies:
       require: private
       version: '>=5.0'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.7.19~2
   espressif/esp_audio_codec:
@@ -113,7 +103,7 @@ dependencies:
       type: service
     version: 2.14.3~1
   espressif/libpng:
-    component_hash: d094357a329f78668629d7c9656064b2b0123196eb6d25ca77db3782e0752480
+    component_hash: 9a576d8fbd0ddb29330e1f4c4fe82470b3e0e7eca71ea3bc4dce168d0b1088e3
     dependencies:
     - name: idf
       require: private
@@ -125,7 +115,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 1.6.58~2
+    version: 1.6.59
   espressif/zlib:
     component_hash: 9083cada65f1c9d298ef92266232d071c6f2f335164e2799554b3eae73aedc55
     dependencies:
@@ -183,6 +173,7 @@ dependencies:
     version: 9.6.0~1
 direct_dependencies:
 - 78/esp-wifi-connect
+- espressif/cjson
 - espressif/esp_audio_codec
 - espressif/esp_lv_decoder
 - espressif/esp_lvgl_port
@@ -191,6 +182,6 @@ direct_dependencies:
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: e50c284c22582a2339eae0e28a5e4620c78c7208eed33c33661f98b4a6f27cb3
+manifest_hash: 37ce6d70e7e3ea0277a7e60c48c6d29e8790db4605a1d74e010c9af5cf64b694
 target: esp32s31
 version: 3.0.0

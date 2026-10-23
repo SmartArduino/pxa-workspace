@@ -1,19 +1,9 @@
 dependencies:
   78/esp-wifi-connect:
-    component_hash: 2774077ebdc43a871ad134b9048aaeb59b10d4599e839be2b5a634f5b2a023e9
-    dependencies:
-    - matches:
-      - if: idf_version >=6.0
-      name: espressif/cjson
-      registry_url: https://components.espressif.com
-      require: private
-      version: ^1.7.19
-    - name: idf
-      require: private
-      version: '>=5.3'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: components/78__esp-wifi-connect
+      type: local
     version: 3.1.5
   78/esp_lcd_touch_cst92xx:
     component_hash: 0f15c208ad1af61dd87e732898efb8bdddd777119cfdb7fd8e363d5be14eda30
@@ -30,7 +20,7 @@ dependencies:
       type: service
     version: 0.1.0
   espressif/button:
-    component_hash: a1f34e8ed2e61ffef1a230fd9477005c2db335c7e1f6a239f43e5f119dcbe1b0
+    component_hash: 7cb7e2944b5828f409af0c92f7fcc0e2d405de09c3325b7ee4a0eba5fb28dfdc
     dependencies:
     - name: espressif/cmake_utilities
       registry_url: https://components.espressif.com
@@ -42,7 +32,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 4.2.1
+    version: 4.2.2
   espressif/cjson:
     component_hash: e788323270d90738662d66fffa910bfe1fba019bba087f01557e70c40485b469
     dependencies:
@@ -50,7 +40,7 @@ dependencies:
       require: private
       version: '>=5.0'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.7.19~2
   espressif/cmake_utilities:
@@ -293,7 +283,7 @@ dependencies:
       type: service
     version: 1.1.0
   espressif/libpng:
-    component_hash: b8c715f76b79a127d9b1b632e09acc23e7b29d2194af890a837adc2be5a2804b
+    component_hash: 9a576d8fbd0ddb29330e1f4c4fe82470b3e0e7eca71ea3bc4dce168d0b1088e3
     dependencies:
     - name: idf
       require: private
@@ -305,7 +295,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 1.6.58~1
+    version: 1.6.59
   espressif/tinyusb:
     component_hash: 16c8d774dab1f484d3e0c0f61105624d2424bbae864efd19818baf7b451b41e7
     dependencies:
@@ -381,6 +371,7 @@ direct_dependencies:
 - 78/esp-wifi-connect
 - 78/esp_lcd_touch_cst92xx
 - espressif/button
+- espressif/cjson
 - espressif/esp_audio_codec
 - espressif/esp_codec_dev
 - espressif/esp_lcd_co5300
@@ -394,6 +385,6 @@ direct_dependencies:
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: 8ec9c7a143d26f72ca1e06337cb7af306e280cf1aa6e14c031d7f9612ddb5474
+manifest_hash: e2a7245af93dd7b5db3986eb7f012b58b0b5ff2f7f47dd18bb074c359541feb6
 target: esp32s31
 version: 3.0.0

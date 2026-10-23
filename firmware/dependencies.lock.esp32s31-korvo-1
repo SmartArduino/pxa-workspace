@@ -1,19 +1,9 @@
 dependencies:
   78/esp-wifi-connect:
-    component_hash: 2774077ebdc43a871ad134b9048aaeb59b10d4599e839be2b5a634f5b2a023e9
-    dependencies:
-    - matches:
-      - if: idf_version >=6.0
-      name: espressif/cjson
-      registry_url: https://components.espressif.com
-      require: private
-      version: ^1.7.19
-    - name: idf
-      require: private
-      version: '>=5.3'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: components/78__esp-wifi-connect
+      type: local
     version: 3.1.5
   espressif/button:
     component_hash: a1f34e8ed2e61ffef1a230fd9477005c2db335c7e1f6a239f43e5f119dcbe1b0
@@ -36,7 +26,7 @@ dependencies:
       require: private
       version: '>=5.0'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.7.19~2
   espressif/cmake_utilities:
@@ -171,7 +161,7 @@ dependencies:
       type: service
     version: 2.14.3~1
   espressif/libpng:
-    component_hash: d094357a329f78668629d7c9656064b2b0123196eb6d25ca77db3782e0752480
+    component_hash: 9a576d8fbd0ddb29330e1f4c4fe82470b3e0e7eca71ea3bc4dce168d0b1088e3
     dependencies:
     - name: idf
       require: private
@@ -183,7 +173,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 1.6.58~2
+    version: 1.6.59
   espressif/zlib:
     component_hash: 9083cada65f1c9d298ef92266232d071c6f2f335164e2799554b3eae73aedc55
     dependencies:
@@ -242,6 +232,7 @@ dependencies:
 direct_dependencies:
 - 78/esp-wifi-connect
 - espressif/button
+- espressif/cjson
 - espressif/esp_audio_codec
 - espressif/esp_codec_dev
 - espressif/esp_lcd_touch
@@ -253,6 +244,6 @@ direct_dependencies:
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: ceca623ca56a81bbd6a138caf3d0f73bc369f6252ae0b08153a178f11158669a
+manifest_hash: adf014e85ffdafe3db24c871f01d27b07c4e880487ccc798bd1c12189ab6729f
 target: esp32s31
 version: 3.0.0
