@@ -1,19 +1,9 @@
 dependencies:
   78/esp-wifi-connect:
-    component_hash: 2774077ebdc43a871ad134b9048aaeb59b10d4599e839be2b5a634f5b2a023e9
-    dependencies:
-    - matches:
-      - if: idf_version >=6.0
-      name: espressif/cjson
-      registry_url: https://components.espressif.com
-      require: private
-      version: ^1.7.19
-    - name: idf
-      require: private
-      version: '>=5.3'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: components/78__esp-wifi-connect
+      type: local
     version: 3.1.5
   espressif/adc_battery_estimation:
     component_hash: 878dd59e1bb60de314d5ecb52dce7e59a83598a41bf48cdbdec60e08e2bb907d
@@ -50,7 +40,7 @@ dependencies:
       require: private
       version: '>=5.0'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.7.19~2
   espressif/cmake_utilities:
@@ -175,6 +165,7 @@ direct_dependencies:
 - 78/esp-wifi-connect
 - espressif/adc_battery_estimation
 - espressif/button
+- espressif/cjson
 - espressif/esp_audio_codec
 - espressif/esp_lcd_touch
 - espressif/esp_lvgl_port
@@ -183,6 +174,6 @@ direct_dependencies:
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: 92d3a62b7c12d68b2221c2d81f66590178752bd0be2812a469fcd847375b0503
+manifest_hash: f9c4bdce82730da8908cbed1908f7320b1c1a8fc54e5a903277312d1e1488ecb
 target: esp32s3
 version: 3.0.0
