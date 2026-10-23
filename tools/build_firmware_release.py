@@ -143,10 +143,21 @@ def build_board(args, name: str, version: str) -> dict:
     before = 'no-reset' if chip == 'esp32s31' else 'default-reset'
     stub_option = '--no-stub ' if not flash['extra_esptool_args'].get('stub', True) else ''
     for language in ('zh-CN', 'en'):
+        migration = ''
+        if name == 'esp-mosaico' and storage['offset'] == 0x510000:
+            migration = (
+                '**旧版 Mosaico 升级：本版应用分区为 5 MiB，数据分区位于 0x510000。'
+                '不能向旧版 4 MiB 布局直接刷写 app 文件，否则会覆盖旧数据。'
+                '先备份应用私有数据、存档及设置，再使用完整镜像迁移并恢复数据。**\n\n'
+                if language == 'zh-CN' else
+                '**Mosaico migration: this layout has a 5 MiB application partition and storage at 0x510000. '
+                'Do not write this app image onto the old 4 MiB layout: it would overwrite existing data. '
+                'Back up private app data, saves and settings before provisioning and restoring the new layout.**\n\n')
         text = (f'# PXA {version} / {name}\n\n'
                 + ('合并固件用于首次安装，会重写存储分区并清除已有应用、存档和设置。包含系统字体与商城，勿用于保留数据的升级。\n\n'
                    if language == 'zh-CN' else
                    'Merged firmware is for initial provisioning. It replaces application/data partitions and removes existing apps, saves and settings. Includes the system font and Store.\n\n')
+                + migration
                 + f'```sh\npython -m esptool --chip {chip} --port {port} --baud 2000000 '
                   f'--before {before} {stub_option}write-flash 0x0 {merged.name}\n```\n\n'
                 + ('保留数据的升级：仅烧录 app 文件到以下地址，先确认当前分区表与 flash-map.json 相同。ESP32-S31 使用 BOOT/RESET 手动进入下载模式；串口号码仅为示例。\n\n'
