@@ -160,6 +160,21 @@ public:
         return true;
     }
 
+    // Resolve the input scope before deciding whether the guest owns the pad.
+    // A compositor flag cannot represent dialogs over a Canvas, a stopped
+    // Surface, or an app that has not submitted its first frame yet.
+    lv_obj_t* ResolveScope(lv_obj_t* fallback = nullptr) const {
+        if (!display_) return fallback;
+        for (auto* layer : {lv_display_get_layer_sys(display_),
+                            lv_display_get_layer_top(display_)}) {
+            lv_obj_update_layout(layer);
+            if (auto* modal = FindModal(layer)) {
+                if (!fallback || IsAbove(modal, fallback)) return modal;
+            }
+        }
+        return fallback;
+    }
+
     lv_obj_t* focused() const { return group_ ? lv_group_get_focused(group_) : nullptr; }
     lv_indev_t* keypad() const { return keypad_; }
 
@@ -282,12 +297,7 @@ private:
 
     void Refresh(lv_obj_t* scope, bool enabled, uint32_t now) {
         auto* requested_scope = scope;
-        if (enabled && !scope) {
-            lv_obj_update_layout(lv_display_get_layer_sys(display_));
-            lv_obj_update_layout(lv_display_get_layer_top(display_));
-            scope = FindModal(lv_display_get_layer_sys(display_));
-            if (!scope) scope = FindModal(lv_display_get_layer_top(display_));
-        }
+        if (enabled) scope = ResolveScope(scope);
         count_ = 0;
         if (enabled) {
             if (scope) { lv_obj_update_layout(scope); Collect(scope, scope); }
@@ -329,6 +339,25 @@ private:
         scope_ = requested_scope;
         enabled_ = enabled;
         refreshed_ = now;
+    }
+
+    bool IsAbove(lv_obj_t* first, lv_obj_t* second) const {
+        auto* a = first;
+        auto* b = second;
+        unsigned a_depth = 0, b_depth = 0;
+        for (auto* p = a; lv_obj_get_parent(p); p = lv_obj_get_parent(p)) ++a_depth;
+        for (auto* p = b; lv_obj_get_parent(p); p = lv_obj_get_parent(p)) ++b_depth;
+        while (a_depth > b_depth) { a = lv_obj_get_parent(a); --a_depth; }
+        while (b_depth > a_depth) { b = lv_obj_get_parent(b); --b_depth; }
+        if (a == b) return first != a; // Keep a more specific descendant scope.
+        while (lv_obj_get_parent(a) != lv_obj_get_parent(b)) {
+            a = lv_obj_get_parent(a);
+            b = lv_obj_get_parent(b);
+        }
+        if (lv_obj_get_parent(a)) return lv_obj_get_index(a) > lv_obj_get_index(b);
+        if (a == lv_display_get_layer_sys(display_)) return true;
+        return a == lv_display_get_layer_top(display_) &&
+               b != lv_display_get_layer_sys(display_);
     }
 
     lv_obj_t* FindModal(lv_obj_t* object) const {

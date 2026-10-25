@@ -104,6 +104,25 @@ int main() {
     board.remote_controller_.Clear();
     board.ReportController(0, 135);
 
+    // An ANR dialog owns native input even when the stalled Guest mailbox is
+    // full. Consume Right/release/A/release on the UI task; retry neutral Guest
+    // state after recovery, without leaking the dialog's A into the game.
+    for (auto flag : {&board.focus_mode_, &board.pointer_mode_,
+                       &board.gamepad_consumed_, &board.swallow_until_release_}) {
+        *flag = true;
+        board.reported_buttons_ = 32;
+        busy = 4;
+        for (auto buttons : {8u, 0u, 16u, 0u}) assert(board.remote_controller_.Push(true, buttons));
+        for (uint32_t now = 140; now < 160; now += 5) board.ReportController(0, now);
+        assert(!board.remote_controller_.Peek().pending);
+        assert(board.remote_controller_.Peek().buttons() == 0);
+        assert(board.reported_buttons_ == 32);
+        *flag = false;
+        board.ReportController(0, 160);
+        assert(delivered.back().buttons == 0 && board.reported_buttons_ == 0);
+        board.remote_controller_.Clear();
+    }
+
     // Heartbeat arithmetic remains valid across the 32-bit LVGL tick wrap.
     board.report_tick_ = UINT32_MAX - 10;
     const auto before = delivered.size();
