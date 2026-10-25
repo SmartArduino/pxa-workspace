@@ -5,7 +5,8 @@ project_dir="$(cd "$test_dir/../../../.." && pwd)"
 lvgl_source="$project_dir/firmware/managed_components/lvgl__lvgl"
 # Instrument LVGL too: a release archive hides use-after-free inside its
 # widget-tree helpers even when the board's test binary enables ASan.
-lvgl_build="$project_dir/build/tests/lvgl-navigation-asan"
+test_output="${PXA_TEST_OUTPUT_ROOT:-$project_dir/local/artifacts/gamekit-navigation/$(date +%Y%m%d-%H%M%S)}"
+lvgl_build="$test_output/lvgl-navigation-asan"
 cmake -S "$lvgl_source" -B "$lvgl_build" -DCMAKE_BUILD_TYPE=Debug \
     -DLV_BUILD_CONF_PATH="$project_dir/firmware/components/pxa_integration/tests/lv_conf_overlay.h" \
     -DCONFIG_LV_BUILD_DEMOS=OFF -DCONFIG_LV_BUILD_EXAMPLES=OFF \
@@ -15,7 +16,7 @@ cmake -S "$lvgl_source" -B "$lvgl_build" -DCMAKE_BUILD_TYPE=Debug \
     '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer -O1' >/dev/null
 cmake --build "$lvgl_build" --target lvgl -j "${PXA_TEST_JOBS:-6}" >/dev/null
 lvgl_library="$lvgl_build/liblvgl.a"
-test_build="$project_dir/build/tests/doit-gamekit"
+test_build="$test_output/doit-gamekit"
 mkdir -p "$test_build"
 read -ra libraries <<< "$(pkg-config --libs sdl2 freetype2)"
 for test in navigation refresh; do
@@ -54,3 +55,21 @@ done
     "$test_dir/ime_navigation_test.cc" "$test_build/pxa_lvgl_ime.o" "$test_build/pxa_lvgl_ime_builtin.o" \
     "$lvgl_library" "${libraries[@]}" -lm -o "$test_build/ime_navigation_test"
 "$test_build/ime_navigation_test"
+
+# Use the actual firmware dialog constructors with each board's input router.
+dialog_flags=("${ime_flags[@]}" -ffunction-sections -fdata-sections
+    -I"$project_dir/firmware/components/pxa/tests/esp_stubs"
+    -I"$project_dir/firmware/components/pxa/include"
+    -I"$project_dir/firmware/components/pxa/src/runtime"
+    -I"$project_dir/firmware/components/pxa/src/package"
+    -I"$project_dir/deps/pxa-system/libpxa/runtime/include")
+"${CC:-clang}" -std=c11 "${dialog_flags[@]}" -c "$test_dir/dialog_fixture.c" -o "$test_build/dialog_fixture.o"
+for board in doit-gamekit doit-gamekit-1; do
+    board_flags=()
+    if [[ "$board" == doit-gamekit-1 ]]; then board_flags+=(-DPXA_TEST_GAMEKIT_1); fi
+    "${CXX:-clang++}" -std=c++20 "${dialog_flags[@]}" "${board_flags[@]}" \
+        -I"$project_dir/firmware/boards/$board/include" \
+        "$test_dir/dialog_navigation_test.cc" "$test_build/dialog_fixture.o" \
+        "$lvgl_library" "${libraries[@]}" -Wl,--gc-sections -lm -o "$test_build/dialog_$board"
+    "$test_build/dialog_$board"
+done

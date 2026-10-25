@@ -158,7 +158,7 @@ private:
     bool direct_active_ = false;
     std::atomic<bool> surface_dirty_{true};
     pxa_esp_surface_frame_t surface_{};
-    bool surface_acquired_ = false, system_modal_ = false;
+    bool surface_acquired_ = false;
     std::atomic<uint32_t> completed_frames_{0}, completed_us_low_{0};
     std::atomic<uint32_t> completed_content_frames_{0};
     RefreshTracker refresh_;
@@ -334,7 +334,6 @@ bool Gamekit::InitializeDisplay() {
                 self->direct_active_ = false;
                 self->refresh_.BeginRender();
                 self->surface_acquired_ = pxa_esp_surface_acquire_latest(&self->surface_);
-                self->system_modal_ = self->surface_acquired_ && self->surface_.suppress_guest_alpha;
             } else if (lv_event_get_code(event) == LV_EVENT_RENDER_READY) {
                 self->ui_trace_.End(kTag, self->surface_acquired_, true);
                 self->refresh_.EndRender();
@@ -780,7 +779,7 @@ void Gamekit::PollInput() {
     }
     if (gamepad_buttons) lv_display_trigger_activity(display_);
     const bool system_shortcuts = force_pointer_ || NativeNavigation(false,
-        NavigationScope() || system_modal_, pxa_host_accepts_controller_input(),
+        NavigationScope() != nullptr, pxa_host_accepts_controller_input(),
         pxa_esp_surface_has_visible_surface());
     const auto action = shortcuts_.Update(gamepad_buttons, now, system_shortcuts);
     if (action.home && ui_) {
@@ -797,7 +796,7 @@ void Gamekit::PollInput() {
     auto* scope = NavigationScope();
     const bool cursor_mode = force_pointer_;
     const bool focus_mode = doit_gamekit::NativeNavigation(cursor_mode,
-        scope || system_modal_, pxa_host_accepts_controller_input(),
+        scope != nullptr, pxa_host_accepts_controller_input(),
         pxa_esp_surface_has_visible_surface());
     uint32_t delivered = action.buttons;
     if (cursor_mode != pointer_mode_ || focus_mode != focus_mode_) {
@@ -844,7 +843,8 @@ void Gamekit::PollInput() {
 lv_obj_t* Gamekit::NavigationScope() const {
     // Native modal chrome takes priority over the runtime-managed PXA IME.
     auto* scope = ui_ ? pxsys_reference_lvgl_key_navigation_scope(ui_) : nullptr;
-    return scope ? scope : static_cast<lv_obj_t*>(pxa_host_input_method_navigation_root());
+    return navigation_.ResolveScope(scope ? scope :
+        static_cast<lv_obj_t*>(pxa_host_input_method_navigation_root()));
 }
 
 void Gamekit::Back() {
@@ -867,17 +867,23 @@ void Gamekit::ReportController(uint32_t report, uint32_t now) {
         connected = remote.connected();
         report = remote.buttons();
     }
-    if (gamepad_consumed_ || swallow_until_release_ || pointer_mode_ || focus_mode_) report = 0;
+    const bool native_input = gamepad_consumed_ || swallow_until_release_ || pointer_mode_ || focus_mode_;
+    if (native_input) report = 0;
     // Retry failed queue submissions and periodically refresh complete state,
     // including zero, so app startup/resume never inherits stale held keys.
     if (remote.pending || report != reported_buttons_ ||
         connected != reported_connected_ || now - report_tick_ >= 50) {
-        // One queued edge per poll. Never remove a failed submission, and never
-        // call the Host while holding the producer's critical section.
-        if (pxa_host_post_controller_state(0, connected, report)) {
+        // Native navigation already consumed this sample on the UI task. It
+        // must keep advancing even when an unresponsive app fills its mailbox.
+        // Game-owned edges still wait for acceptance. Retry the neutral guest
+        // state separately, without holding the producer's critical section.
+        const bool posted = pxa_host_post_controller_state(0, connected, report);
+        if (posted || native_input) {
             portENTER_CRITICAL(&controller_lock_);
             (void)remote_controller_.Commit(remote);
             portEXIT_CRITICAL(&controller_lock_);
+        }
+        if (posted) {
             reported_buttons_ = report;
             reported_connected_ = connected;
             report_tick_ = now;

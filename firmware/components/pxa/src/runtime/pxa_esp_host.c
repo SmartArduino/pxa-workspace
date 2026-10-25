@@ -1526,14 +1526,11 @@ bool pxa_esp_host_respond_unresponsive(uint32_t prompt_id, bool wait) {
         return true;
     }
     public_state_snapshot(&public_state);
-    if (wait) {
-        handled = pxa_wamr_engine_extend_active_deadline(
-            g_host.engine, host_now_us(NULL));
-    } else {
-        /* Terminate immediately when possible, then stop the package on the
-         * runtime thread. The queued stop also handles a call that returned
-         * before the user responded. */
-        handled = pxa_wamr_engine_terminate_active_call(g_host.engine);
+    handled = pxa_wamr_engine_resolve_expired_call(
+        g_host.engine, wait, host_now_us(NULL));
+    if (!wait && handled) {
+        /* Only queue a package stop if this decision terminated the reported
+         * call. A recovered call must not turn a late click into an app stop. */
         memset(&command, 0, sizeof(command));
         command.type = (uint8_t)PXA_ESP_HOST_CMD_UNRESPONSIVE_STOP;
         snprintf(command.payload.identity.identity,
@@ -3655,7 +3652,13 @@ static void on_watchdog_timer(void *arg) {
     portENTER_CRITICAL(&g_wamr_watchdog_lock);
     prompt_pending = g_host.unresponsive_prompt_id != 0;
     portEXIT_CRITICAL(&g_wamr_watchdog_lock);
-    if (prompt_pending) return;
+    if (prompt_pending) {
+        if (!pxa_wamr_engine_expired_call_pending(g_host.engine)) {
+            dismiss_unresponsive_prompt();
+            ESP_LOGI(PXA_ESP_HOST_TAG, "Guest recovered; dismissing unresponsive prompt");
+        }
+        return;
+    }
     if (!pxa_wamr_engine_take_expired_deadline(g_host.engine,
                                                host_now_us(NULL))) {
         return;

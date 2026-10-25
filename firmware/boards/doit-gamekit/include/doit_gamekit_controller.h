@@ -4,7 +4,7 @@
 
 namespace doit_gamekit {
 // Callers serialize these short operations. Posting to the Host happens outside
-// the lock; Commit removes only the successfully posted head, never a newer
+// the lock; Commit removes only the processed head (Guest or native UI), never a newer
 // state installed by cancellation/takeover. Identical keepalives need no slot.
 template<size_t Depth = 8>
 class ControllerSamples {
