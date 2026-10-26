@@ -67,9 +67,51 @@ idf_build_set_property(PXA_ENABLE_APP_PAGES_COMPAT OFF)
 
 project(pxa_esp_platform)
 
+include("${PXSYS_ROOT}/cmake/PxaLicensePolicy.cmake")
+if(CONFIG_LV_USE_FS_FROGFS OR CONFIG_LV_USE_THORVG)
+    message(FATAL_ERROR "PXA system license policy prohibits bundled FrogFS/ThorVG implementations")
+endif()
+if(TARGET __idf_lvgl__lvgl)
+    pxa_restrict_lvgl(__idf_lvgl__lvgl)
+endif()
+
+
 if(CONFIG_PXA_ENABLED)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_custom_target(pxa_system_license_gate
+        COMMAND "${Python3_EXECUTABLE}"
+            "${PXSYS_ROOT}/tools/licensing/check_system_licenses.py"
+            --compile-commands "${CMAKE_BINARY_DIR}/compile_commands.json"
+            --source-root "${PXSYS_ROOT}/libpxa"
+            --source-root "${PXSYS_ROOT}/system"
+            --source-root "${PXSYS_ROOT}/ui"
+            --source-root "${PXSYS_ROOT}/platforms"
+        COMMENT "Checking compiled system license policy"
+        VERBATIM)
+    add_dependencies(__idf_pxa pxa_system_license_gate)
     idf_build_get_property(pxa_python PYTHON)
     idf_build_get_property(pxa_elf EXECUTABLE)
+    get_filename_component(pxa_compiler_bin "${CMAKE_C_COMPILER}" DIRECTORY)
+    get_filename_component(pxa_toolchain_root "${pxa_compiler_bin}/.." ABSOLUTE)
+    add_custom_command(TARGET ${pxa_elf} POST_BUILD
+        COMMAND "${pxa_python}" "${PXSYS_ROOT}/tools/licensing/check_system_licenses.py"
+            --compile-commands "${CMAKE_BINARY_DIR}/compile_commands.json"
+            --ninja-dependencies --toolchain-root "${pxa_toolchain_root}"
+        COMMENT "Checking compiled headers and runtime license exceptions"
+        VERBATIM)
+
+    add_custom_command(TARGET ${pxa_elf} POST_BUILD
+        COMMAND "${pxa_python}" "${CMAKE_CURRENT_LIST_DIR}/../tools/audit-system-binaries.py"
+            --map "${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.map"
+            --idf-root "$ENV{IDF_PATH}"
+            --firmware-root "${CMAKE_CURRENT_LIST_DIR}"
+            --compiler "${CMAKE_C_COMPILER}"
+        COMMENT "Checking linked prebuilt system licenses"
+        VERBATIM)
+    set_property(TARGET ${pxa_elf} APPEND PROPERTY LINK_DEPENDS
+        "${CMAKE_CURRENT_LIST_DIR}/../tools/audit-system-binaries.py"
+        "${CMAKE_CURRENT_LIST_DIR}/../tools/system-binary-licenses.json")
+
     add_custom_command(TARGET ${pxa_elf} POST_BUILD
         COMMAND "${pxa_python}" "${CMAKE_CURRENT_LIST_DIR}/../tools/audit-codec-memory.py"
             --elf "$<TARGET_FILE:${pxa_elf}>"

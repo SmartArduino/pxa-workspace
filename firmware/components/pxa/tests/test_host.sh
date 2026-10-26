@@ -14,6 +14,7 @@ python3 "$tests_dir/test_native_move_ui.py"
 python3 "$tests_dir/test_native_file_ui.py"
 python3 "$tests_dir/test_legacy_catalog.py"
 python3 "$tests_dir/test_graceful_stop.py"
+python3 "$tests_dir/test_stop_cleanup.py"
 
 cc_flags=(-std=c99 -Wall -Wextra -Wpedantic -Werror)
 cxx_flags=(-std=c++17 -Wall -Wextra -Werror)

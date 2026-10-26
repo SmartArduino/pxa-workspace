@@ -6,7 +6,7 @@ import pxadb
 from usb_keep_awake import usb_parent
 from run_main_loop_probe import log_barrier,require_idle_packages
 import argparse
-ap=argparse.ArgumentParser();ap.add_argument('game',choices=['duke','quake']);ap.add_argument('output',type=Path);ap.add_argument('--elf',required=True);ap.add_argument('--mode',type=int,choices=[1,3,5,7,13,15]);ap.add_argument('--version',default='0.5.0');ap.add_argument('--controls',action='store_true');ap.add_argument('--controls-only',action='store_true');ap.add_argument('--expect-host-mix',action='store_true');ap.add_argument('--expect-light-cache',action='store_true');ap.add_argument('--idle-lock',action='store_true');a=ap.parse_args()
+ap=argparse.ArgumentParser();ap.add_argument('game',choices=['duke','quake']);ap.add_argument('output',type=Path);ap.add_argument('--elf',required=True);ap.add_argument('--mode',type=int,choices=[1,5,13]);ap.add_argument('--version',default='0.5.0');ap.add_argument('--controls',action='store_true');ap.add_argument('--controls-only',action='store_true');ap.add_argument('--expect-host-mix',action='store_true');ap.add_argument('--expect-light-cache',action='store_true');ap.add_argument('--idle-lock',action='store_true');a=ap.parse_args()
 mode_path=None
 out=a.output;out.mkdir(parents=True,exist_ok=False)
 app='pxa-duke3d' if a.game=='duke' else 'pxa-quake';version='0.2.0' if a.game=='duke' else a.version

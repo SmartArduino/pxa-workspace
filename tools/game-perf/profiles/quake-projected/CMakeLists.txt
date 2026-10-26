@@ -1,7 +1,0 @@
-cmake_minimum_required(VERSION 3.20)
-project(pxa_quake_projected C CXX)
-set(PXA_QUAKE_HOST_SPANS OFF CACHE BOOL "" FORCE)
-set(PXA_QUAKE_PROJECTED_SPANS ON CACHE BOOL "" FORCE)
-set(PXA_QUAKE_STATIC_GLOBALS ON CACHE BOOL "" FORCE)
-include("${CMAKE_CURRENT_LIST_DIR}/../quake-source.cmake")
-pxa_profile_add_quake()

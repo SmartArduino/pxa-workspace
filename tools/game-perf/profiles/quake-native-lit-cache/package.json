@@ -58,11 +58,9 @@
           "name": "game-render",
           "min_version": [
             1,
-            0
+            5
           ],
-          "features": [
-            "borrowed-indexed-spans"
-          ]
+          "features": []
         }
       ],
       "cmake_target": "pxa_main",

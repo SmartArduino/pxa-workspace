@@ -36,6 +36,9 @@ pxa_status_t pxa_esp_permission_store_clear_app(
  * callbacks above are used directly). */
 void pxa_esp_permission_store_bind(pxa_permission_store_t *store);
 
+/* Discard only the in-memory snapshot; persisted decisions are unchanged. */
+void pxa_esp_permission_store_release_cache(void);
+
 #ifdef __cplusplus
 }
 #endif

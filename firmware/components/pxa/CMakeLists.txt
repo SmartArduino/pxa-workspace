@@ -175,10 +175,7 @@ if(CONFIG_COMPILER_OPTIMIZATION_PERF AND
    (CONFIG_IDF_TARGET_ESP32S31 OR PXA_BOARD STREQUAL "sensecap-watcher"))
     set_property(SOURCE
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster.c"
-        "${PXA_C_CORE_ROOT}/src/services/game_render/raster_spans.c"
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster_blit.c"
-        "${PXA_C_CORE_ROOT}/src/services/game_render/raster_projected_spans.c"
-        "${PXA_C_CORE_ROOT}/src/services/game_render/raster_prepared.c"
         APPEND PROPERTY COMPILE_OPTIONS "-O3")
 endif()
 if(CONFIG_WAMR_ENABLE_LIBC_WASI)

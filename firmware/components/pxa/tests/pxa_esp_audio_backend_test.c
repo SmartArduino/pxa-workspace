@@ -320,6 +320,31 @@ int main(void) {
     assert(!b.query(b.context,a,&state) && state.submitted_samples==548 &&
         state.accepted_samples==548 && !state.queued_samples);
     b.close(b.context,a);pxa_esp_audio_deinitialize();
+    /* Activation teardown must retire queued audio and its allocation while
+     * keeping the board pull device usable by a later application. */
+    for (unsigned cycle = 0; cycle < 3; ++cycle) {
+        uint64_t retired_session;
+        assert(!b.open_pcm(b.context, &f, &info, &retired_session));
+        assert(!b.commit(b.context, retired_session, &native_gain));
+        assert(!b.submit(b.context, retired_session, native_pcm, sizeof(native_pcm)));
+        pxa_esp_audio_deinitialize();
+        assert(!g_audio.mixer && !g_audio.task && !locked);
+        pxa_memory_stats_t retired_stats;
+        assert(!pxa_memory_budget_stats(&audio_budget, audio_allocator.owner, &retired_stats));
+        assert(!retired_stats.charged[PXA_MEMORY_EXTERNAL]);
+        memset(rendered, 1, sizeof(rendered));
+        assert(!pxa_esp_audio_render(rendered, PXA_AUDIO_MIXER_FRAME));
+        for (unsigned i = 0; i < PXA_AUDIO_MIXER_FRAME; ++i) assert(!rendered[i]);
+        assert(b.query(b.context, retired_session, &state) == PXA_STATUS_NOT_FOUND);
+        b.close(b.context, retired_session);
+        assert(!b.open_pcm(b.context, &f, &info, &a) && a != retired_session);
+        assert(!b.commit(b.context, a, &native_gain));
+        assert(!b.submit(b.context, a, native_pcm, sizeof(native_pcm)));
+        assert(pxa_esp_audio_render(rendered, 320) == 267);
+        for (unsigned i = 0; i < 267; ++i) assert(rendered[i] == 10000);
+        b.close(b.context, a);
+        pxa_esp_audio_deinitialize();
+    }
     pxa_memory_stats_t stats;
     assert(!pxa_memory_budget_stats(&audio_budget, audio_allocator.owner, &stats));
     assert(!stats.charged[PXA_MEMORY_INTERNAL] && !stats.charged[PXA_MEMORY_EXTERNAL]);

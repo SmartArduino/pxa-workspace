@@ -939,4 +939,12 @@ void pxa_esp_permission_store_bind(pxa_permission_store_t *store) {
     store->save = pxa_esp_permission_store_save;
 }
 
+void pxa_esp_permission_store_release_cache(void) {
+    pthread_mutex_lock(&g_permission_store_mutex);
+    permission_cache_clear(g_permission_cache);
+    heap_caps_free(g_permission_cache);
+    g_permission_cache = NULL;
+    pthread_mutex_unlock(&g_permission_store_mutex);
+}
+
 #endif /* ESP_PLATFORM */

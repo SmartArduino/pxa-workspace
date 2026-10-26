@@ -1,7 +1,0 @@
-cmake_minimum_required(VERSION 3.20)
-project(pxa_render_kernel_probe C)
-list(APPEND CMAKE_MODULE_PATH "${PXA_CMAKE_MODULE_DIR}")
-include(PxaGuest)
-pxa_add_component(pxa_main COMPONENT_ID main NO_TRANSLATIONS SOURCES main.c)
-target_compile_options(pxa_main PRIVATE -Wall -Wextra -Werror)
-target_link_options(pxa_main PRIVATE -Wl,-z,stack-size=16384)

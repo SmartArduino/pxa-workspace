@@ -3089,9 +3089,6 @@ static void stop_active(pxa_stop_reason_t reason) {
     g_host.activation.activating_job_slot = -1;
     g_host.activation.active_identity[0] = '\0';
     g_host.activation.active_name[0] = '\0';
-    if (public_state.main_active)
-        notify_runtime_event(PXA_HOST_RUNTIME_STOPPED, stopped_identity,
-                             public_state.main_instance_id, reason);
     portENTER_CRITICAL(&g_clock_slots_lock);
     pxa_host_clock_slots_cancel_all(&g_host.clock_slots);
     portEXIT_CRITICAL(&g_clock_slots_lock);
@@ -3110,9 +3107,14 @@ static void stop_active(pxa_stop_reason_t reason) {
     }
     pxa_esp_ime_release();
     g_host.ime_only_runtime = 0;
-    /* Stop queued/decoding music before waiting for its catalog leases. */
-    pxa_esp_audio_reset_sessions();
+    /* Stop queued/decoding music before waiting for its catalog leases. The
+     * lazy mixer was allocated alongside the guest; retaining it can split
+     * the free PSRAM needed by the next guest's pinned linear memory/AOT. */
+    pxa_esp_audio_deinitialize();
     destroy_services();
+    /* A snapshot first created by a running guest can also pin a hole in
+     * PSRAM. Reload the next identity's persisted grants when needed. */
+    pxa_esp_permission_store_release_cache();
     /* A scanout lease can outlive the application, especially with the screen
      * off. Keep its allocator generation, but do not wait for display resume. */
     (void)pxa_esp_resource_memory_end();
@@ -3133,6 +3135,12 @@ static void stop_active(pxa_stop_reason_t reason) {
     g_host.runtime_workspace = NULL;
     activation_memory_release_all();
     activation_state_reset();
+    /* The system can rebuild the launcher immediately on STOPPED. Publish
+     * only after releasing the guest heap/code and activation allocations:
+     * otherwise long-lived decoded icons can fragment the next app's PSRAM. */
+    if (public_state.main_active)
+        notify_runtime_event(PXA_HOST_RUNTIME_STOPPED, stopped_identity,
+                             public_state.main_instance_id, reason);
 }
 
 static int start_verified(const char *identity) {
@@ -3448,9 +3456,6 @@ static int start_verified(const char *identity) {
             if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
                 service_capabilities[index].features =
                     PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS |
-                    PXA_GAME_RENDER_FEATURE_BORROWED_INDEXED_SPANS |
-                    PXA_GAME_RENDER_FEATURE_PROJECTED_INDEXED_SPANS |
-                    PXA_GAME_RENDER_FEATURE_INDEXED_FRAME_BATCHES |
                     PXA_GAME_RENDER_FEATURE_BORROWED_INDEXED_BLIT;
             if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {
                 service_capabilities[index].features =

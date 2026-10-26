@@ -1,0 +1,50 @@
+[
+  {
+    "root": "idf",
+    "archive_pattern": "components/esp_wifi/lib/[^/]+/lib(?:core|espnow|mesh|net80211|pp|smartconfig|wapi)\\.a",
+    "license": "components/esp_wifi/lib/LICENSE",
+    "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "selected": "Apache-2.0",
+    "evidence": "Vendor archive directory ships Apache-2.0 grant."
+  },
+  {
+    "root": "idf",
+    "archive_pattern": "components/esp_phy/lib/[^/]+/lib(?:phy|btbb)\\.a",
+    "license": "components/esp_phy/lib/LICENSE",
+    "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "selected": "Apache-2.0",
+    "evidence": "Vendor archive directory ships Apache-2.0 grant."
+  },
+  {
+    "root": "firmware",
+    "archive_pattern": "managed_components/espressif__esp_audio_codec/lib/[^/]+/libesp_audio_(?:codec|simple_dec)\\.a",
+    "license": "managed_components/espressif__esp_audio_codec/LICENSE",
+    "license_sha256": "f9af95d73bd683a810ed8dc655b2af91258852934ba8e687ddcfaaf54ff2d755",
+    "selected": "LicenseRef-Espressif-Modified-MIT",
+    "evidence": "Espressif devices only. Upstream README points to https://docs.espressif.com/projects/esp-adf/en/latest/COPYRIGHT.html for Apache/BSD third-party codec grants."
+  },
+  {
+    "root": "firmware",
+    "archive_pattern": "managed_components/espressif__esp_new_jpeg/lib/[^/]+/libesp_new_jpeg\\.a",
+    "license": "managed_components/espressif__esp_new_jpeg/LICENSE",
+    "license_sha256": "0bf7f2018fffa1caff5ecbf10d79707b218eea4e26b8c705d744de4556552815",
+    "selected": "LicenseRef-Espressif-MIT",
+    "evidence": "Vendor permits use on Espressif products; preserve attribution."
+  },
+  {
+    "root": "toolchain",
+    "archive_pattern": "(?:picolibc/)?(?:lib/gcc/[^/]+/[^/]+/[^/]+/[^/]+/(?:no-rtti/)?libgcc|[^/]+/lib/[^/]+/[^/]+/(?:no-rtti/)?libstdc\\+\\+)\\.a",
+    "license": "share/licenses/gcc/COPYING.RUNTIME",
+    "license_sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74",
+    "selected": "GPL-3.0-or-later WITH GCC-exception-3.1",
+    "evidence": "Only libgcc/libstdc++ runtime archives, with normal eligible GCC compilation. No other GPL/LGPL archive is allowed by this rule."
+  },
+  {
+    "root": "toolchain",
+    "archive_pattern": "picolibc/[^/]+/lib/[^/]+/[^/]+/(?:no-rtti/)?lib(?:c|m)\\.a",
+    "license": "share/licenses/picolibc/COPYING.picolibc",
+    "license_sha256": "94549a6fa76f26bdaebf507bf7a336a870315ed9abfe8a215b9ff7278f8974b8",
+    "selected": "BSD/MIT/ISC permissive bundle",
+    "evidence": "Picolibc license collection covers libc/libm; compiler build tools are not linked into firmware."
+  }
+]

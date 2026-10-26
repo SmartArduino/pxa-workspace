@@ -49,7 +49,8 @@ int main(void) {
     assert(policy_save(identity,name,scope,PXA_PERMISSION_ALLOW)==PXA_STATUS_OK);
     unsigned before=reads;decision=PXA_PERMISSION_DENY;
     assert(!pxa_esp_permission_store_peek(NULL,identity,name,scope,&decision) && decision==PXA_PERMISSION_ALLOW && reads==before);
-    permission_cache_clear(g_permission_cache);decision=PXA_PERMISSION_DENY;
+    pxa_esp_permission_store_release_cache();assert(!g_permission_cache);
+    pxa_esp_permission_store_release_cache();decision=PXA_PERMISSION_DENY;
     assert(!pxa_esp_permission_store_peek(NULL,identity,name,scope,&decision) && decision==PXA_PERMISSION_ALLOW && reads==before);
     assert(!readwrite && !sets && !erases && !commits);
     char path[PXA_ESP_PERMISSION_PATH_BYTES];
@@ -57,7 +58,7 @@ int main(void) {
         assert(build_slot_path(identity,slot,path,sizeof(path)));
         assert(!unlink(path) || errno==ENOENT);
     }
-    permission_cache_clear(g_permission_cache);heap_caps_free(g_permission_cache);g_permission_cache=NULL;
+    pxa_esp_permission_store_release_cache();assert(!g_permission_cache);
     assert(!rmdir(PXA_ESP_PERMISSION_POLICY_ROOT) && !rmdir(PXA_ESP_PERMISSION_STATE_ROOT) && !rmdir(CONFIG_PXA_MOUNT_POINT));
     puts("Legacy permission snapshot: real A/B policy and NVS fallback, warm/cold reads, deny/errors, no filesystem/NVS writes or erasure passed");
     return 0;

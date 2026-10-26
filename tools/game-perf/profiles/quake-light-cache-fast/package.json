@@ -58,11 +58,10 @@
           "name": "game-render",
           "min_version": [
             1,
-            2
+            5
           ],
           "features": [
-            "borrowed-indexed-blit",
-            "indexed-frame-batches"
+            "borrowed-indexed-blit"
           ]
         }
       ],

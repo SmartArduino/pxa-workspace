@@ -111,8 +111,8 @@ void pxa_esp_game_render_backend(pxa_game_render_backend_t *output) {
     memset(output, 0, sizeof(*output));
 }
 
-pxa_status_t pxa_esp_game_render_execute_spans(void *context,
-    const pxa_raster_spans_t *batch) {
+pxa_status_t pxa_esp_game_render_execute_compute(void *context,
+    const pxa_raster_compute_t *batch) {
     (void)context; (void)batch;
     assert(!"storage fixture must not rasterize");
     return PXA_STATUS_UNSUPPORTED;

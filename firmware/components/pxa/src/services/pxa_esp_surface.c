@@ -320,7 +320,7 @@ typedef struct {
     uint16_t row_begin;
     uint16_t row_end;
     uint32_t elapsed_us;
-    const pxa_raster_spans_t *indexed_spans;
+    const pxa_raster_compute_t *compute_batch;
     uint32_t byte_begin, byte_end;
 } pxa_esp_raster_worker_job_t;
 
@@ -335,14 +335,13 @@ static uint8_t g_raster_worker_attempted;
 static pxa_raster_handoff_t g_raster_handoff;
 static uint16_t g_raster_split_row;
 static uint16_t g_raster_split_height;
-static uint8_t g_indexed_primary_share = 128;
 
 static void execute_worker_job(void) {
     const uint64_t started_us = (uint64_t)esp_timer_get_time();
     memset(&g_raster_worker_job.telemetry, 0,
            sizeof(g_raster_worker_job.telemetry));
-    if (g_raster_worker_job.indexed_spans) {
-        pxa_raster_spans_execute_range(g_raster_worker_job.indexed_spans,
+    if (g_raster_worker_job.compute_batch) {
+        pxa_raster_compute_execute_range(g_raster_worker_job.compute_batch,
             g_raster_worker_job.byte_begin, g_raster_worker_job.byte_end);
     } else pxa_raster_execute_draw_list_rows(
         g_raster_worker_job.bytes, &g_raster_worker_job.list,
@@ -1587,12 +1586,12 @@ static pxa_status_t create_game_render_context(
     return PXA_STATUS_OK;
 }
 
-pxa_status_t pxa_esp_game_render_execute_spans(void *context,
-    const pxa_raster_spans_t *batch) {
+pxa_status_t pxa_esp_game_render_execute_compute(void *context,
+    const pxa_raster_compute_t *batch) {
     (void)context;
 #if PXA_PRIORITY_TILE_TRACE
     static uint32_t tile_calls, tile_worker, tile_stolen, tile_unaligned;
-    int trace_tile = batch->kind == PXA_RASTER_SPANS_PRIORITY_TILES;
+    int trace_tile = batch->kind == PXA_RASTER_COMPUTE_PRIORITY_TILES;
 #endif
     taskENTER_CRITICAL(&g_surface_lock);
     if (g_materialize_active) {
@@ -1607,45 +1606,36 @@ pxa_status_t pxa_esp_game_render_execute_spans(void *context,
      * cache-line boundary in native memory, preventing false sharing. */
     if (g_raster_worker_task && batch->pixels >= 2048) {
         uintptr_t base = (uintptr_t)batch->target;
-        uint32_t midpoint = pxa_raster_spans_split_hint(batch,
-            batch->prepared ? g_indexed_primary_share : 128);
+        uint32_t midpoint = pxa_raster_compute_split_hint(batch,
+            128);
         uint32_t split = (uint32_t)(((base + midpoint) &
                                      ~(uintptr_t)63u) - base);
         if (split && split < batch->target_bytes &&
-            pxa_raster_spans_partition_safe(batch, split, 64)) {
+            pxa_raster_compute_partition_safe(batch, split, 64)) {
             memset(&g_raster_worker_job, 0, sizeof(g_raster_worker_job));
-            g_raster_worker_job.indexed_spans = batch;
+            g_raster_worker_job.compute_batch = batch;
             g_raster_worker_job.byte_begin = split;
             g_raster_worker_job.byte_end = batch->target_bytes;
             start_worker_job();
-            uint64_t started = batch->prepared ? (uint64_t)esp_timer_get_time() : 0;
-            pxa_raster_spans_execute_range(batch, 0, split);
-            uint32_t primary_us = batch->prepared ? latency_us(started, (uint64_t)esp_timer_get_time()) : 0;
+            pxa_raster_compute_execute_range(batch, 0, split);
             int parallel = finish_worker_job();
+            (void)parallel;
 #if PXA_PRIORITY_TILE_TRACE
             if (trace_tile) {
                 if (parallel) ++tile_worker;
                 else ++tile_stolen;
             }
 #endif
-            if (batch->prepared && parallel && primary_us && g_raster_worker_job.elapsed_us) {
-                uint64_t primary = (uint64_t)g_indexed_primary_share * g_raster_worker_job.elapsed_us;
-                uint64_t secondary = (uint64_t)(256u - g_indexed_primary_share) * primary_us;
-                uint32_t target = (uint32_t)(256u * primary / (primary + secondary));
-                if (target < 64) target = 64;
-                if (target > 224) target = 224;
-                g_indexed_primary_share = (uint8_t)((3u * g_indexed_primary_share + target + 2u) / 4u);
-            }
-            g_raster_worker_job.indexed_spans = NULL;
+            g_raster_worker_job.compute_batch = NULL;
         } else {
 #if PXA_PRIORITY_TILE_TRACE
             if (trace_tile) ++tile_unaligned;
 #endif
-            pxa_raster_spans_execute_range(batch, 0, batch->target_bytes);
+            pxa_raster_compute_execute_range(batch, 0, batch->target_bytes);
         }
     } else
 #endif
-        pxa_raster_spans_execute_range(batch, 0, batch->target_bytes);
+        pxa_raster_compute_execute_range(batch, 0, batch->target_bytes);
     taskENTER_CRITICAL(&g_surface_lock);
     g_materialize_active = false;
     taskEXIT_CRITICAL(&g_surface_lock);
@@ -2619,10 +2609,10 @@ void pxa_esp_surface_release_frame(uint64_t lease) {
 void pxa_esp_surface_backend(pxa_surface_backend_t *backend) {
     if (backend != NULL) backend->struct_size = 0;
 }
-pxa_status_t pxa_esp_game_render_execute_spans(void *context,
-    const pxa_raster_spans_t *batch) {
+pxa_status_t pxa_esp_game_render_execute_compute(void *context,
+    const pxa_raster_compute_t *batch) {
     (void)context; (void)batch;
-    pxa_raster_spans_execute_range(batch, 0, batch->target_bytes);
+    pxa_raster_compute_execute_range(batch, 0, batch->target_bytes);
     return PXA_STATUS_OK;
 }
 void pxa_esp_game_render_backend(pxa_game_render_backend_t *backend) {

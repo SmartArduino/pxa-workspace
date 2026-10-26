@@ -133,18 +133,13 @@ target-device comparison and broader compiler regression checks are complete.
 Run from the workspace root with the App checkout at `local/pxa-apps`:
 
 ```sh
-bash tools/app.sh build quake-frame-io --board doit-gamekit \
+bash tools/app.sh build quake-probe --board doit-gamekit \
   --source-root tools/game-perf/profiles --target esp32s31 --output local/replay-frame-io
 ```
 
 | Profile | World rendering | Output | Producer |
 | --- | --- | --- | --- |
-| `quake-projected` | per-material projected rows | Guest | original codec |
-| `quake-frame` | multi-material packets | Guest | ordinary snapshot copies |
-| `quake-frame-blit` | multi-material packets | native indexed resolve | ordinary snapshot copies |
-| `quake-frame-bulk` | multi-material packets | native indexed resolve | bulk snapshots |
-| `quake-frame-io` | multi-material packets | native indexed resolve | bulk file/cache reads and layout-proven command codec |
-| `quake-probe` | runtime-selectable Guest or frame packets | independently selectable Guest or native resolve | sampled preparation timings in one private AOT |
+| `quake-probe` | application renderer | independently selectable Guest or native resolve | sampled preparation timings in one private AOT |
 | `duke-blit` | original Duke world renderer | native indexed resolve | native counters in existing input records |
 | `ra-size` | original RA renderer | original output | source `-Oz` code-size diagnostic; not a device load pass |
 
@@ -162,7 +157,7 @@ separately. Upstream updates should go through `common/recrof/tools/upstream.py`
 and the original-function differential checks before another device measurement.
 
 `quake-probe` is private instrumentation, compiled out of ordinary App builds.
-Modes 0/1/2/3 select Guest-only, native resolve only, native world only, or both.
+Bit 1 selects native indexed output; bit 4 selects the application light-grid cache.
 It reads one ASCII byte from `/data/pxa-render-probe-mode` after presentation;
 for SD packages this can use the normal read-only App-media fallback. PXADB
 cannot write the App-private directory. Write only the owned probe file under
@@ -305,32 +300,9 @@ ASan/UBSan pixel, scaling, cursor, odd partition, aliasing and guard checks.
 Keep the earlier `duke-blit` callback profile separate when interpreting
 measurements from the main-loop profiles.
 
-## Indexed raster kernel device comparison
+## Quake display conversion and light-grid cache
 
-`render-kernel-probe` is a private Core 2.1 application, using existing
-GameRender 1.2 borrowed indexed spans. Build/install its signed package once,
-then run the same artifact against each explicitly identified firmware:
-
-```sh
-bash tools/app.sh build render-kernel-probe --board doit-gamekit \
-  --source-root tools/game-perf/profiles --target esp32s31 --output local/render-probe
-python3 tools/game-perf/run_render_kernel_probe.py --port /dev/serial/by-id/DEVICE \
-  --serial MCU_MAC --elf FULL_ELF_SHA256 --output local/render-baseline
-```
-
-The runner requires an idle device and the ACK log clock, and rejects missing,
-conflicting, failed or incomplete execution records. It runs eight cases three
-times: horizontal lit spans, diagonal spans, fullbright spans, and short spans,
-for power-of-two and arbitrary texture dimensions. Each case has ten warmups
-and 100 measured batches. Telemetry separates native validation/execution from
-wall time, which also includes event checkpoints. Compare output hashes across
-firmwares as well as within repeats. This is a compute benchmark, not game FPS.
-The unchanged caller-owned output/source buffers stay borrowed until both cores
-complete the call. No probe control operation is added to the public ABI.
-
-## Quake Host preparation and light-grid cache
-
-`quake-host-prepare`, `quake-light-cache`, and `quake-light-cache-fast` are
+`quake-probe`, `quake-light-cache`, and `quake-light-cache-fast` are
 private comparison profiles for one signed `pxa-quake` application. The last
 profile also enables large-read `memory.copy` and the layout-checked command
 codec. Use the same built AOT when changing probe mode or Host firmware.
@@ -340,7 +312,7 @@ PXA_GAME_APPS_ROOT="$PWD/local/pxa-apps" bash tools/app.sh build quake-light-cac
   --board doit-gamekit --source-root tools/game-perf/profiles --target esp32s31 \
   --aot-only --output build/quake-probe
 python3 tools/game-perf/run_quake_host_probe.py quake build/quake-run \
-  --elf FULL_ELF_SHA256 --version INSTALLED_VERSION --mode 7 --controls
+  --elf FULL_ELF_SHA256 --version INSTALLED_VERSION --mode 5 --controls
 ```
 
 This device-specific runner guards USB `5CFF043509`, MCU `1c:29:04:d0:af:5e`,
@@ -351,13 +323,12 @@ Mode is one hexadecimal byte, with these independent bits:
 | Bit | Meaning |
 | --- | --- |
 | 1 | Native indexed output |
-| 2 | Native world frame batches |
 | 4 | Packed light-grid cache |
 | 8 | Rebuild cache hits with the original engine and compare sampled cells |
 
-Common modes: 1 = Guest world/native output, 3 = native world/output,
-5 = Guest world/cache, 7 = native world/cache, 13/15 = corresponding cache
-verification. Verification adds work and is not a performance configuration.
+Common modes: 1 = application world/native output, 5 = the same with light-grid
+cache, 13 = cache verification. Verification adds work and is not a performance
+configuration.
 Mode files affect private probes only; ordinary builds do not read them.
 
 Runs capture a 60-second LCD completion window at START `544,288,50`, HP=100,

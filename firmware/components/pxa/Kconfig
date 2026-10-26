@@ -199,18 +199,6 @@ menu "PXA Development Apps"
                 or cache; textures already use PSRAM. Zero keeps the usual
                 internal-first allocation policy.
 
-        config PXA_GAME_RENDER_PREPARE_KIB
-            int "GameRender projection workspace per context (KiB, 0 disables)"
-            range 0 1024
-            default 0
-            help
-                Cache validated projection results for synchronous indexed
-                batches in bounded PSRAM, charged to the raster budget. The
-                workspace is allocated once on first use and freed on close.
-                Allocation or capacity failure uses ordinary projection;
-                internal SRAM is never used as a fallback. Enable only after
-                measuring an end-to-end benefit for the target workload.
-
         config PXA_PARALLEL_RASTER
             bool "Use a second core for GameRender rasterization"
             depends on !FREERTOS_UNICORE
