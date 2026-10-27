@@ -38,15 +38,56 @@ esp_err_t esp_vfs_fat_info(const char *path,uint64_t *total,uint64_t *free_bytes
     (void)path;*total=4000000;*free_bytes=3000000;return ESP_OK;
 }
 void test_log(const char *tag,const char *format,...) {(void)tag;(void)format;}
-int pxa_esp_ui_shell_post_directory_prompt(const pxa_esp_ui_directory_prompt_t *p) {(void)p;assert(0);return 0;}
-void pxa_esp_ui_shell_dismiss_directory_prompt(uint32_t id) {(void)id;assert(0);}
-void pxa_esp_surface_runtime_modal_enter(void) {assert(0);}
-void pxa_esp_surface_runtime_modal_leave(void) {assert(0);}
+static uint32_t back_prompt,posted_prompt,dismissed_prompt;
+static unsigned modals;
+int pxa_esp_ui_shell_post_directory_prompt(const pxa_esp_ui_directory_prompt_t *p) {posted_prompt=p->prompt_id;return 1;}
+void pxa_esp_ui_shell_dismiss_directory_prompt(uint32_t id) {dismissed_prompt=id;}
+void pxa_esp_ui_shell_back_directory_prompt(uint32_t id) {back_prompt=id;}
+void pxa_esp_surface_runtime_modal_enter(void) {++modals;}
+void pxa_esp_surface_runtime_modal_leave(void) {assert(modals);--modals;}
 static void *allocate(void *context,size_t bytes) {
     (void)context;assert(allocation_count<8);
     void *p=calloc(1,bytes);assert(p);allocations[allocation_count++]=p;return p;
 }
 static pxa_bytes_t bytes(const char *p) {return (pxa_bytes_t){(const uint8_t *)p,strlen(p)};}
+static pxa_status_t directory_entry(void *context,size_t index,uint8_t kind,pxa_bytes_t name) {
+    unsigned *seen=context;assert(index==0 && !(*seen)++ && kind==PXA_FS_KIND_DIRECTORY);
+    assert(name.size==5 && !memcmp(name.data,"Empty",5));return PXA_STATUS_OK;
+}
+static void directory_prompt_test(pxa_esp_fs_roots_t *roots,uint64_t epoch) {
+    assert(!mkdir(CONFIG_PXA_MOUNT_POINT "/Picker",0700));
+    assert(!mkdir(CONFIG_PXA_MOUNT_POINT "/Picker/Empty",0700));
+    int file=open(CONFIG_PXA_MOUNT_POINT "/Picker/game.gb",O_CREAT|O_WRONLY,0600);assert(file>=0 && !close(file));
+    assert(request_access(roots,1,9,bytes("Read ROMs"),1,1)==PXA_STATUS_UNSUPPORTED);
+    assert(!request_access(roots,1,9,bytes("Read ROMs"),3,1));
+    uint32_t prompt=roots->prompt_id;assert(prompt && posted_prompt==prompt && modals==1);
+    pxa_esp_fs_roots_t contender=*roots;contender.prompt_id=0;
+    assert(request_access(&contender,2,10,bytes("Another app"),3,1)==PXA_STATUS_BUSY);
+    assert(!contender.prompt_id && g_choice.owner==roots);
+    unsigned seen=0;size_t count=99;uint8_t more=1;
+    assert(pxa_esp_storage_directory_entries(prompt+1,epoch,"Picker",0,12,&count,&more,directory_entry,&seen)==PXA_STATUS_CANCELLED);
+    assert(!count && !more && !seen);
+    assert(!pxa_esp_storage_directory_entries(prompt,epoch,"Picker",0,12,&count,&more,directory_entry,&seen));
+    assert(count==1 && seen==1 && !more); /* ordinary files are never directory choices */
+    assert(!pxa_esp_storage_directory_check(prompt,epoch,"Picker/Empty"));
+    assert(!pxa_esp_storage_directory_check(prompt,epoch,""));
+    assert(pxa_esp_storage_directory_check(prompt,epoch,"PXA/apps")==PXA_STATUS_DENIED);
+    assert(pxa_esp_storage_directory_check(prompt,epoch,"../outside")!=PXA_STATUS_OK);
+    assert(pxa_esp_storage_directory_check(prompt,epoch,"Picker/game.gb")!=PXA_STATUS_OK);
+    assert(pxa_esp_storage_directory_check(prompt,UINT64_MAX,"Picker")!=PXA_STATUS_OK);
+    assert(pxa_esp_storage_directory_check(prompt+1,epoch,"Picker")==PXA_STATUS_CANCELLED);
+    char long_path[257];memset(long_path,'a',sizeof(long_path)-1);long_path[sizeof(long_path)-1]=0;
+    assert(pxa_esp_storage_directory_check(prompt,epoch,long_path)==PXA_STATUS_LIMIT_EXCEEDED);
+    assert(pxa_esp_fs_roots_back(roots) && back_prompt==prompt);
+    assert(pxa_esp_storage_choose_directory(prompt,epoch,"Picker/Empty"));
+    assert(!pxa_esp_storage_choose_directory(prompt,epoch,""));
+    cancel_access(roots,2,9);assert(roots->prompt_id==prompt && modals==1);
+    cancel_access(roots,1,9);assert(!roots->prompt_id && dismissed_prompt==prompt && !modals);
+    assert(pxa_esp_storage_directory_check(prompt,epoch,"Picker")==PXA_STATUS_CANCELLED);
+    assert(!pxa_esp_storage_choose_directory(prompt,epoch,"Picker"));
+    assert(!unlink(CONFIG_PXA_MOUNT_POINT "/Picker/game.gb"));
+    assert(!rmdir(CONFIG_PXA_MOUNT_POINT "/Picker/Empty") && !rmdir(CONFIG_PXA_MOUNT_POINT "/Picker"));
+}
 int main(void) {
     pxa_esp_fs_roots_t *roots;pxa_fs_roots_backend_t *backend;
     void *directory,*file;uint32_t rights;pxa_fs_entry_t entry;uint64_t features;
@@ -66,6 +107,7 @@ int main(void) {
     assert(!(pxa_esp_fs_roots_features(roots)&PXA_FS_FEATURE_FILE_IMPORT));
     assert(!backend->request_import && !backend->cancel_import);
     assert(!pxa_esp_fs_roots_back(roots));
+    roots->prompt_id=44;assert(pxa_esp_fs_roots_back(roots) && back_prompt==44);roots->prompt_id=0;
     assert(!backend->open_root(backend->context,PXA_FS_ROOT_APP_MEDIA,id,&directory,&rights));
     int native=open(CONFIG_PXA_MOUNT_POINT "/PXA/media/test/quake/pak0.pak",O_CREAT|O_WRONLY|O_EXCL,0600);
     assert(native>=0 && write(native,"PACK0123456789",14)==14 && !close(native));
@@ -142,11 +184,14 @@ int main(void) {
     struct stat absent;assert(stat(CONFIG_PXA_MOUNT_POINT "/PXA/media/test/missing",&absent)<0);
     strcpy(roots->media_relative,"PXA/media/test/quake");
     assert(!app_media_grant(roots));storage.media_epoch=0;
+    directory_prompt_test(roots,info.mount_epoch);
     roots->persisted_mask=1;roots->grants[0].active=1;roots->grants[0].id[0]=1;
     roots->grants[0].volume_id=info.id;roots->grants[0].revision=1;roots->grants[0].rights=3;
     strcpy(roots->grants[0].relative_path,"documents");
     assert(!strncmp(roots->store_path,storage.root,strlen(storage.root)) && save_grants(roots));
     pxa_scoped_fs_grant_t saved=roots->grants[0];
+    memset(roots->grants[0].relative_path,'a',280);roots->grants[0].relative_path[280]=0;
+    assert(!save_grants(roots));roots->grants[0]=saved;
     memset(roots->grants,0,sizeof(roots->grants));roots->persisted_mask=0;load_grants(roots);
     assert(roots->persisted_mask==1 && !strcmp(roots->grants[0].relative_path,"documents"));
     uint8_t encoded[GRANT_FILE_BYTES];native=open(roots->store_path,O_RDWR);assert(native>=0);

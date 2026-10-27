@@ -75,4 +75,14 @@ dialog_link[dialog_link.index('-o')+1] = str(temporary/'dialog')
 subprocess.run(dialog_link, cwd=build, check=True)
 subprocess.run([str(temporary/'dialog')],
     env={**os.environ, 'SDL_VIDEODRIVER':'dummy', 'SDL_AUDIODRIVER':'dummy'}, check=True)
+# Directory grants use the shared file-picker widget with deferred completion.
+subprocess.run(['cc', *dialog_arguments, '-c',
+    str(root/'firmware/components/pxa_integration/tests/directory_picker_test.c'),
+    '-o', str(temporary/'directory.o')], check=True)
+directory_link = [str(temporary/'directory.o') if arg == str(temporary/'dialog.o') else arg
+                  for arg in dialog_link]
+directory_link[directory_link.index('-o')+1] = str(temporary/'directory')
+subprocess.run(directory_link, cwd=build, check=True)
+subprocess.run([str(temporary/'directory')],
+    env={**os.environ, 'SDL_VIDEODRIVER':'dummy', 'SDL_AUDIODRIVER':'dummy'}, check=True)
 PY

@@ -2,6 +2,7 @@
 #define PXA_ESP_STORAGE_H
 #include "pxa/volume.h"
 #include "pxa/install_plan.h"
+#include "pxa/wire.h"
 #include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
@@ -81,6 +82,13 @@ pxa_status_t pxa_esp_storage_folders(uint64_t epoch,const char *relative,
     size_t *count,uint8_t *more);
 bool pxa_esp_storage_choose_directory(uint32_t prompt_id,uint64_t epoch,
     const char *relative);
+/* Prompt-scoped trusted browser. Uses the requesting app's protected paths,
+ * no-link checks and exact mount epoch; neither call creates a grant. */
+typedef pxa_status_t (*pxa_esp_directory_entry_fn)(void *,size_t,uint8_t,pxa_bytes_t);
+pxa_status_t pxa_esp_storage_directory_entries(uint32_t prompt_id,uint64_t epoch,
+    const char *relative,size_t skip,size_t capacity,size_t *count,uint8_t *more,
+    pxa_esp_directory_entry_fn,void *);
+pxa_status_t pxa_esp_storage_directory_check(uint32_t prompt_id,uint64_t epoch,const char *relative);
 #ifdef __cplusplus
 }
 #endif

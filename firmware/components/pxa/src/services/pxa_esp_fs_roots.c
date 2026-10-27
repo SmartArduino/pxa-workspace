@@ -14,9 +14,9 @@
 #include "esp_heap_caps.h"
 #include "mbedtls/md.h"
 #include "pxa/wire.h"
+#include "pxa/posix/pxa_file_browser.h"
 #ifdef PXA_FS_IMPORT_LVGL
 #include "pxa/lvgl/pxa_lvgl_file_picker.h"
-#include "pxa/posix/pxa_file_browser.h"
 #include "pxa/posix/pxa_import_destination.h"
 #include "pxa_esp_dialog_style.h"
 #include "pxa_esp_system_overlay.h"
@@ -43,6 +43,7 @@ static uint8_t g_activated;
 static pthread_mutex_t g_choice_lock=PTHREAD_MUTEX_INITIALIZER;
 static struct { uint32_t prompt_id; uint64_t epoch; uint8_t ready;
     char relative[PXA_ESP_STORAGE_PATH_BYTES];
+    pxa_esp_fs_roots_t *owner;
     void *notify_context; void (*notify)(void *); } g_choice;
 static uint32_t g_prompt_sequence;
 typedef struct esp_file_import esp_file_import_t;
@@ -186,6 +187,7 @@ static int save_grants(pxa_esp_fs_roots_t *r) {
         memcpy(p,g->id,16); memcpy(p+16,g->volume_id.bytes,16);
         pxa_write_u64(p+32,g->revision); pxa_write_u32(p+40,g->rights);
         p[44]=g->active; pxa_write_u16(p+46,(uint16_t)n);
+        if(n>=GRANT_RECORD_BYTES-48)return 0;
         memcpy(p+48,g->relative_path,n);
     }
     if(r->app_storage) {
@@ -229,7 +231,7 @@ static void load_grants(pxa_esp_fs_roots_t *r) {
         pxa_scoped_fs_grant_t *g=&r->grants[i]; uint16_t len=pxa_read_u16(p+46);
         uint8_t id=0,volume=0;
         if(!p[44]) continue;
-        if(p[44]!=1 || p[45] || len>=sizeof(g->relative_path) ||
+        if(p[44]!=1 || p[45] || len>=sizeof(g->relative_path) || len>=GRANT_RECORD_BYTES-48 ||
             pxa_read_u32(p+40)!=3 || !pxa_read_u64(p+32)) { bad=1; break; }
         for(j=0;j<16;++j) { id|=p[j]; volume|=p[16+j]; }
         if(!id || !volume || (len && !pxa_fs_scoped_path_is_valid(
@@ -316,9 +318,41 @@ static pxa_status_t app_query_root(void *c,void *d,pxa_fs_root_info_t *i) {
 }
 #ifdef PXA_FS_IMPORT_LVGL
 #include "pxa_esp_file_import.inc"
-#else
-int pxa_esp_fs_roots_back(pxa_esp_fs_roots_t *r) {(void)r;return 0;}
 #endif
+int pxa_esp_fs_roots_back(pxa_esp_fs_roots_t *r) {
+    if(!r)return 0;
+#ifdef PXA_FS_IMPORT_LVGL
+    if(import_back(r))return 1;
+#endif
+    if(!r->prompt_id)return 0;
+    pxa_esp_ui_shell_back_directory_prompt(r->prompt_id);return 1;
+}
+
+pxa_status_t pxa_esp_storage_directory_entries(uint32_t id,uint64_t epoch,const char *path,
+    size_t skip,size_t capacity,size_t *count,uint8_t *more,pxa_esp_directory_entry_fn emit,void *context) {
+    if(!count || !more)return PXA_STATUS_INVALID_ARGUMENT;
+    *count=0;*more=0;
+    pthread_mutex_lock(&g_choice_lock);
+    pxa_esp_fs_roots_t *r=g_choice.prompt_id==id && id?g_choice.owner:NULL;
+    pxa_status_t status=r?pxa_file_browser_page(r->fs,&r->base.files,epoch,path,NULL,
+        skip,capacity,count,more,emit,context):PXA_STATUS_CANCELLED;
+    pthread_mutex_unlock(&g_choice_lock);return status;
+}
+pxa_status_t pxa_esp_storage_directory_check(uint32_t id,uint64_t epoch,const char *path) {
+    if(!path || strlen(path)>=PXA_ESP_STORAGE_PATH_BYTES)return PXA_STATUS_LIMIT_EXCEEDED;
+    pthread_mutex_lock(&g_choice_lock);
+    pxa_esp_fs_roots_t *r=g_choice.prompt_id==id && id?g_choice.owner:NULL;
+    pxa_volume_info_t volume;
+    pxa_status_t status=r?pxa_esp_storage_volume(epoch,&volume):PXA_STATUS_CANCELLED;
+    if(status==PXA_STATUS_OK && r->persistent && volume.identity_strength<PXA_VOLUME_ID_FILESYSTEM)
+        status=PXA_STATUS_UNSUPPORTED;
+    if(status==PXA_STATUS_OK) {
+        pxa_scoped_fs_grant_t grant={.active=1,.rights=3,.revision=1};
+        grant.id[0]=1;grant.volume_id=volume.id;strcpy(grant.relative_path,path);
+        status=pxa_scoped_fs_validate_grant(r->fs,&grant);
+    }
+    pthread_mutex_unlock(&g_choice_lock);return status;
+}
 
 static void cancel_access(void *context,pxa_component_t component,pxa_request_token_t token) {
     pxa_esp_fs_roots_t *r=context;
@@ -338,13 +372,14 @@ static pxa_status_t request_access(void *context,pxa_component_t c,
     if(purpose.size>=sizeof(prompt.purpose)) return PXA_STATUS_LIMIT_EXCEEDED;
     pxa_volume_info_t first;
     if(!pxa_esp_storage_volumes(&first,1)) return PXA_STATUS_UNAVAILABLE;
+    strcpy(prompt.app_name,r->app_name); memcpy(prompt.purpose,purpose.data,purpose.size);
+    pthread_mutex_lock(&g_choice_lock);
+    if(g_choice.prompt_id) {pthread_mutex_unlock(&g_choice_lock);return PXA_STATUS_BUSY;}
     prompt.prompt_id=++g_prompt_sequence;
     if(!prompt.prompt_id) prompt.prompt_id=++g_prompt_sequence;
-    strcpy(prompt.app_name,r->app_name); memcpy(prompt.purpose,purpose.data,purpose.size);
     r->prompt_id=prompt.prompt_id; r->component=c; r->token=t;
     r->persistent=persistent; r->rights=rights;
-    pthread_mutex_lock(&g_choice_lock);
-    memset(&g_choice,0,sizeof(g_choice)); g_choice.prompt_id=prompt.prompt_id;
+    memset(&g_choice,0,sizeof(g_choice)); g_choice.prompt_id=prompt.prompt_id;g_choice.owner=r;
     g_choice.notify=r->notify; g_choice.notify_context=r->notify_context;
     pthread_mutex_unlock(&g_choice_lock);
     pxa_esp_surface_runtime_modal_enter();

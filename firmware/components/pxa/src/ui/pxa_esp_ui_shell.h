@@ -28,6 +28,7 @@ typedef struct {
 } pxa_esp_ui_directory_prompt_t;
 int pxa_esp_ui_shell_post_directory_prompt(const pxa_esp_ui_directory_prompt_t *prompt);
 void pxa_esp_ui_shell_dismiss_directory_prompt(uint32_t prompt_id);
+void pxa_esp_ui_shell_back_directory_prompt(uint32_t prompt_id);
 
 typedef struct {
     uint64_t required_bytes,free_bytes;

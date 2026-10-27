@@ -170,6 +170,7 @@ build_and_run fs_roots -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_volume.c" \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_scoped_fs.c" \
+  "$pxa_system_dir/libpxa/adapters/posix/pxa_file_browser.c" \
   "$libpxa_build/libpxa.a" -lcrypto -lmbedcrypto -lm
 build_and_run app_storage -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   -DLFS_NO_DEBUG -DLFS_NO_WARN -DLFS_NO_ERROR \

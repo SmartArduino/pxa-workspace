@@ -140,7 +140,7 @@ static void poll_import(pxa_esp_fs_roots_t *r) {
     cancel_import(r,component,token);
     (void)pxa_fs_import_complete(r->service,component,token,status,status==PXA_STATUS_OK?&result:NULL);
 }
-int pxa_esp_fs_roots_back(pxa_esp_fs_roots_t *r) {
+static int import_back(pxa_esp_fs_roots_t *r) {
     if(!r || !r->import)return 0;
     lv_lock();pxa_lvgl_file_picker_back(r->import->picker);lv_unlock();
     return 1;
