@@ -17,6 +17,7 @@
 #include <pxsys/reference_lvgl.h>
 #include <pxsys/standard_system.h>
 #include <pxadb/pxadb_service.h>
+#include <pxa_board_common/boot_screen.h>
 
 #include "esp_mosaico_audio.h"
 #include "esp_mosaico_battery.h"
@@ -193,7 +194,7 @@ private:
     std::atomic<bool> panel_on_{false};
     std::atomic<bool> wake_pending_{false};
     MosaicoWakeTouch wake_touch_;
-    lv_obj_t* boot_screen_ = nullptr;
+    pxa_board_common::BootScreen boot_screen_;
     bool audio_initialized_ = false;
     bool wifi_initialized_ = false;
     std::atomic<bool> time_sync_initialized_{false};

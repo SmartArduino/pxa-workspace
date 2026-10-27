@@ -14,6 +14,13 @@
 #include "esp_heap_caps.h"
 #include "mbedtls/md.h"
 #include "pxa/wire.h"
+#ifdef PXA_FS_IMPORT_LVGL
+#include "pxa/lvgl/pxa_lvgl_file_picker.h"
+#include "pxa/posix/pxa_file_browser.h"
+#include "pxa/posix/pxa_import_destination.h"
+#include "pxa_esp_dialog_style.h"
+#include "pxa_esp_system_overlay.h"
+#endif
 #include "pxa/esp/pxa_esp_posix_shim.h"
 #include <dirent.h>
 #include <errno.h>
@@ -38,7 +45,9 @@ static struct { uint32_t prompt_id; uint64_t epoch; uint8_t ready;
     char relative[PXA_ESP_STORAGE_PATH_BYTES];
     void *notify_context; void (*notify)(void *); } g_choice;
 static uint32_t g_prompt_sequence;
+typedef struct esp_file_import esp_file_import_t;
 struct pxa_esp_fs_roots {
+    esp_file_import_t *import;
     pxa_scoped_fs_t *fs;
     pxa_fs_roots_backend_t base,api;
     pxa_fs_service_t *service;
@@ -305,6 +314,12 @@ static pxa_status_t app_stat_at(void *c,void *d,pxa_bytes_t p,pxa_fs_entry_t *i)
 static pxa_status_t app_query_root(void *c,void *d,pxa_fs_root_info_t *i) {
     pxa_esp_fs_roots_t *r=c; return r->base.query_root(r->base.context,d,i);
 }
+#ifdef PXA_FS_IMPORT_LVGL
+#include "pxa_esp_file_import.inc"
+#else
+int pxa_esp_fs_roots_back(pxa_esp_fs_roots_t *r) {(void)r;return 0;}
+#endif
+
 static void cancel_access(void *context,pxa_component_t component,pxa_request_token_t token) {
     pxa_esp_fs_roots_t *r=context;
     if(!r->prompt_id || component!=r->component || token!=r->token) return;
@@ -355,6 +370,9 @@ void pxa_esp_fs_roots_poll(pxa_esp_fs_roots_t *r) {
     pxa_component_t component; pxa_request_token_t token;
     if(!r || !r->service) return;
     pxa_fs_service_poll(r->service);
+#ifdef PXA_FS_IMPORT_LVGL
+    poll_import(r);
+#endif
     if(!r->prompt_id) return;
     pthread_mutex_lock(&g_choice_lock);
     if(g_choice.prompt_id==r->prompt_id && g_choice.ready) {
@@ -469,6 +487,11 @@ pxa_status_t pxa_esp_fs_roots_create(const pxa_esp_fs_roots_config_t *config,pxa
     r->api.request_access=config->user_directories?request_access:NULL;
     r->api.cancel_access=config->user_directories?cancel_access:NULL;
     r->api.app_media_path=app_media_path;
+#ifdef PXA_FS_IMPORT_LVGL
+    if(!pxa_esp_media_relative_managed(r->media_relative)) {
+        r->api.request_import=request_import; r->api.cancel_import=cancel_import;
+    }
+#endif
     r->api.features=PXA_FS_FEATURE_APP_MEDIA_ROOT|PXA_FS_FEATURE_APP_MEDIA_PATH;
     if(r->media_mount_epoch) {
         status=pxa_esp_volumes_retain(r->media_mount_epoch);
@@ -484,11 +507,15 @@ uint64_t pxa_esp_fs_roots_features(const pxa_esp_fs_roots_t *r) {
     if(!r) return 0;
     return PXA_FS_FEATURE_SCOPED_ROOTS | r->api.features |
         (r->api.read_at?PXA_FS_FEATURE_READ_AT:0) |
-        (r->api.request_access?PXA_FS_FEATURE_USER_DIRECTORY_GRANTS:0);
+        (r->api.request_access?PXA_FS_FEATURE_USER_DIRECTORY_GRANTS:0) |
+        (r->api.request_import?PXA_FS_FEATURE_FILE_IMPORT:0);
 }
 void pxa_esp_fs_roots_destroy(pxa_esp_fs_roots_t *r) {
     if(!r) return;
     cancel_access(r,r->component,r->token);
+#ifdef PXA_FS_IMPORT_LVGL
+    if(r->import)cancel_import(r,r->import->component,r->import->token);
+#endif
     pxa_scoped_fs_deinit(r->fs); r->service=NULL;
     if(r->media_retained) {pxa_esp_volumes_release(r->media_mount_epoch);r->media_retained=0;}
 }

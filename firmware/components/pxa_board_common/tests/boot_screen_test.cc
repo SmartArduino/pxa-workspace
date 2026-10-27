@@ -38,9 +38,28 @@ static void Check(unsigned width, unsigned height) {
     lv_refr_now(display); // The very first flush must already be useful content.
     const auto dark = lv_color_to_u16(lv_color_hex(0x111827));
     const size_t dark_count = std::count(capture.pixels.begin(), capture.pixels.end(), dark);
-    assert(dark_count > capture.pixels.size() * 95 / 100);
-    assert(dark_count < capture.pixels.size()); // The built-in startup text rendered.
+    assert(dark_count > capture.pixels.size() * 75 / 100);
+    assert(dark_count < capture.pixels.size() * 98 / 100);
+    // Both colors must be visible on the very first frame, including scaled screens.
+    const auto green = lv_color_to_u16(lv_color_hex(0xb6f568));
+    const auto white = lv_color_to_u16(lv_color_hex(0xe5e7eb));
+    assert(std::count(capture.pixels.begin(), capture.pixels.end(), green) > 30);
+    assert(std::count(capture.pixels.begin(), capture.pixels.end(), white) > 30);
     assert(std::count(capture.pixels.begin(), capture.pixels.end(), 0xffff) == 0);
+    if (const char* directory = std::getenv("PXA_BOOT_CAPTURE_DIR")) {
+        char name[1024];
+        std::snprintf(name, sizeof(name), "%s/boot-%ux%u.ppm", directory, width, height);
+        auto* file = std::fopen(name, "wb");
+        assert(file);
+        std::fprintf(file, "P6\n%u %u\n255\n", width, height);
+        for (auto pixel : capture.pixels) {
+            const unsigned char rgb[] = {static_cast<unsigned char>((pixel >> 11) * 255 / 31),
+                static_cast<unsigned char>(((pixel >> 5) & 63) * 255 / 63),
+                static_cast<unsigned char>((pixel & 31) * 255 / 31)};
+            assert(std::fwrite(rgb, 1, 3, file) == 3);
+        }
+        std::fclose(file);
+    }
     auto* ready = lv_obj_create(root); // Simulate the newly created system UI.
     boot.Hide();
     boot.Hide();
@@ -50,7 +69,7 @@ static void Check(unsigned width, unsigned height) {
     assert(size_t(std::count(capture.pixels.begin(), capture.pixels.end(), dark)) == capture.pixels.size());
     lv_display_delete(display);
     free(draw);
-    std::printf("Boot first frame %ux%u: dark background + built-in text; repeated show/hide and UI handover passed\n",
+    std::printf("Boot first frame %ux%u: PXA v1 logo + startup text; repeated show/hide and UI handover passed\n",
         width, height);
 }
 
@@ -58,5 +77,9 @@ int main() {
     lv_init();
     Check(320, 240);
     Check(800, 480);
+    Check(240, 320);
+    Check(240, 240);
+    Check(296, 240);
+    Check(412, 412);
     lv_deinit();
 }

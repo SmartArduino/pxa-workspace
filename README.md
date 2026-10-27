@@ -215,3 +215,9 @@ board port 提供显示创建与显示 Profile，以及可选的网络、音量�
 `deps/pxa-system` 是独立 Git checkout，并固定 WAMR 和 page-manager 子模块。ESP
 host 直接持有很小的 WAMR/ESP-IDF 声明兼容层。host 与板级依赖
 均保存在本工程内，因此源码和 CMake 文件不包含原 pai-touch 演示固件的路径。
+
+## 关于 DOIT
+
+公司：**深圳四博智联科技有限公司（DOIT）**。
+
+[公司官网](https://doit.am/) · [关于 PXA 与 DOIT](https://pxa.doit.am/about/)

@@ -239,3 +239,9 @@ integration component includes them.
 page-manager submodules. The ESP host owns its small WAMR/ESP-IDF declaration
 shim directly. Source and CMake files contain
 no path to the original pai-touch demonstration firmware.
+
+## About DOIT
+
+Company: **深圳四博智联科技有限公司 (DOIT)**.
+
+[Company website](https://doit.am/) · [About PXA and DOIT](https://pxa.doit.am/about/)

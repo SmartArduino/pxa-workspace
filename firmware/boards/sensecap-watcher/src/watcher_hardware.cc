@@ -162,6 +162,12 @@ bool SensecapWatcherHardware::Initialize() {
     if (!InitializePower()) return false;
     if (!InitializeRgbLed()) ESP_LOGW(kTag, "Continuing with the RGB LED on");
     if (!InitializeDisplay()) return false;
+    if (!lvgl_port_lock(1000)) return false;
+    lv_lock();
+    boot_screen_.Show(display_);
+    lv_unlock();
+    lvgl_port_unlock();
+    ShowInitialFrame();
     if (!InitializeTouch()) ESP_LOGW(kTag, "Continuing without touch input");
     if (!InitializeBattery()) ESP_LOGW(kTag, "Continuing without battery data");
     if (!InitializeInputs()) ESP_LOGW(kTag, "Continuing without wheel input");
@@ -1145,6 +1151,7 @@ bool SensecapWatcherHardware::PollPowerKey(bool* pressed) {
 
 void SensecapWatcherHardware::AttachSystem(
     pxsys_standard_system_t* system, pxsys_reference_lvgl_t* reference_ui) {
+    boot_screen_.Hide();
     system_ = system;
     reference_ui_ = reference_ui;
     if (reference_ui_ != nullptr) {

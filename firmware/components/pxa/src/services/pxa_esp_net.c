@@ -522,7 +522,8 @@ static pxa_status_t start_request(void *context,
         request->url.size >= PXA_ESP_NET_URL_CAPACITY ||
         (request->abi_minor < 2 && (request->max_response_bytes == 0 ||
                                   request->max_response_bytes > PXA_ESP_NET_MAX_RESPONSE_BYTES)) ||
-        request->timeout_ms < 100 || request->timeout_ms > 60000 ||
+        request->timeout_ms < 100 || request->timeout_ms >
+            (request->abi_minor >= 2 ? PXA_NET_MAX_STREAM_TIMEOUT_MS : 60000u) ||
         request->header_count > PXA_ESP_NET_MAX_HEADERS ||
         request->wanted_response_header_count > PXA_ESP_NET_MAX_HEADERS ||
         request->body.size > PXA_ESP_NET_MAX_INLINE_BODY_BYTES ||

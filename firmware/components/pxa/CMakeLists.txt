@@ -94,6 +94,8 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/esp/pxa_esp_posix_shim.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_fs.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_scoped_fs.c"
+    "${PXA_C_CORE_ROOT}/adapters/posix/pxa_file_browser.c"
+    "${PXA_C_CORE_ROOT}/adapters/posix/pxa_import_destination.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_clock.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_scheduler_store.c"
     "${PXA_C_CORE_ROOT}/adapters/posix/pxa_posix_storage.c"
@@ -106,6 +108,7 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/wamr/pxa_wamr_engine.c"
     "${PXA_C_CORE_ROOT}/adapters/wamr/pxa_wamr_file_reader.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ui.c"
+    "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_file_picker.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_ui_symbols.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_image.c"
     "${PXA_C_CORE_ROOT}/adapters/lvgl/pxa_lvgl_gif.c"
@@ -152,6 +155,10 @@ if(PXA_RASTER_SPAN_IRAM AND CONFIG_COMPILER_OPTIMIZATION_PERF AND CONFIG_IDF_TAR
     list(APPEND PXA_LINKER_FRAGMENTS "raster_span.lf")
 endif()
 
+# The FS backend can also be built by headless Host tools/tests. Only the
+# product binding enables the optional LVGL picker and advertises file-import.
+set_property(SOURCE "src/services/pxa_esp_fs_roots.c" APPEND PROPERTY
+    COMPILE_DEFINITIONS PXA_FS_IMPORT_LVGL=1)
 idf_component_register(
     SRCS ${PXA_SRCS}
     INCLUDE_DIRS "include" "${PXA_C_CORE_ROOT}/include"

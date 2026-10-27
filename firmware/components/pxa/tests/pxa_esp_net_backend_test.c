@@ -170,6 +170,18 @@ static void test_stream(pxa_net_backend_t *b) {
     r.url = (pxa_bytes_t){(const uint8_t*)"http://test.invalid",19};
     r.timeout_ms = 1000; r.buffer_bytes = 512; r.response_header_bytes = 1024;
     r.max_body_bytes = 8192;
+    /* A live exchange survives 65 seconds and still releases its bounded
+     * buffer on cancellation. Connection setup keeps a short timeout. */
+    r.timeout_ms = PXA_NET_MAX_STREAM_TIMEOUT_MS;
+    assert(b->open_exchange(NULL,&r,&exchange) == PXA_STATUS_OK);
+    step_stream();
+    assert(mock_client.timeout_ms <= 15000);
+    mock_time += INT64_C(65000000);
+    step_stream();
+    assert(http_stream((pxa_esp_net_slot_t *)exchange)->stream.error == 0);
+    b->close_exchange(NULL,exchange);step_stream();
+    assert(live_allocations == 1 && !queued_count);
+    r.timeout_ms = 1000;
     for (r.buffer_bytes = 512; r.buffer_bytes <= 4096; r.buffer_bytes *= 8) {
       for (mock_mode = 0; mock_mode < 2; ++mock_mode) {
         size_t total = 0, allocations;

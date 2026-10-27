@@ -21,6 +21,7 @@
 #include <led_strip.h>
 #include <lvgl.h>
 #include <pxa_board_common/ledc_backlight.h>
+#include <pxa_board_common/boot_screen.h>
 #include <pxadb/pxadb_service.h>
 #include <pxadb_pointer_samples.h>
 
@@ -153,6 +154,7 @@ private:
     TouchPanelIo touch_io_ = {};
     esp_lcd_touch_handle_t touch_ = nullptr;
     lv_display_t* display_ = nullptr;
+    pxa_board_common::BootScreen boot_screen_;
     lv_indev_t* touch_indev_ = nullptr;
     lv_indev_t* injected_pointers_[kDebugPointers] = {};
     // Only the LVGL/port owner changes pending; the flush task publishes the

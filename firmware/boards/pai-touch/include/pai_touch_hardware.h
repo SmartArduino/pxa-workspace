@@ -11,6 +11,7 @@
 #include <lvgl.h>
 #include <pxsys/reference_lvgl.h>
 #include <pxadb/pxadb_service.h>
+#include <pxa_board_common/boot_screen.h>
 
 class AdcBatteryMonitor;
 class AdcButton;
@@ -83,6 +84,7 @@ private:
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
     lv_display_t* display_ = nullptr;
+    pxa_board_common::BootScreen boot_screen_;
     esp_lcd_touch_handle_t touch_ = nullptr;
     lv_indev_t* physical_pointers_[kTouchMaxPointers] = {};
     portMUX_TYPE touch_lock_ = portMUX_INITIALIZER_UNLOCKED;

@@ -1034,10 +1034,7 @@ void EspMosaicoHardware::AttachSystem(
     pxsys_standard_system_t* system, pxsys_reference_lvgl_t* reference_ui) {
     system_ = system;
     reference_ui_ = reference_ui;
-    if (boot_screen_ != nullptr) {
-        lv_obj_delete(boot_screen_);
-        boot_screen_ = nullptr;
-    }
+    boot_screen_.Hide();
     lv_display_trigger_activity(display_);
     if (reference_ui_ != nullptr) {
         (void)pxsys_reference_lvgl_set_lock_changed_callback(
@@ -1244,21 +1241,9 @@ void EspMosaicoHardware::IdleScreenOff() {
 void EspMosaicoHardware::ShowBootFrame() {
     if (esp_lv_adapter_lock(2000) != ESP_OK) return;
     lv_lock();
-    boot_screen_ = lv_obj_create(lv_display_get_screen_active(display_));
-    if (boot_screen_ != nullptr) {
-        lv_obj_remove_style_all(boot_screen_);
-        lv_obj_set_size(boot_screen_, mosaico_board::kWidth, mosaico_board::kHeight);
-        lv_obj_set_style_bg_color(boot_screen_, lv_color_hex(0x111827), 0);
-        lv_obj_set_style_bg_opa(boot_screen_, LV_OPA_COVER, 0);
-        lv_obj_t* label = lv_label_create(boot_screen_);
-        lv_label_set_text(label, "PXA\nStarting...");
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xe5e7eb), 0);
-        lv_obj_center(label);
-        ShowInitialFrame();
-        ESP_LOGI(kTag, "Boot frame visible at %lld ms", esp_timer_get_time() / 1000);
-    }
+    boot_screen_.Show(display_);
+    ShowInitialFrame();
+    ESP_LOGI(kTag, "Boot frame visible at %lld ms", esp_timer_get_time() / 1000);
     lv_unlock();
     esp_lv_adapter_unlock();
 }

@@ -407,9 +407,13 @@ static pxa_status_t initialize_fs(
     }
     if(user_directories || fixed_media) {
         pxa_fs_roots_backend_t *roots=NULL;
+        char display_name[64];pxa_bytes_t name=host->manifest->name;
+        size_t name_size=name.size<sizeof(display_name)?name.size:sizeof(display_name)-1;
+        while(name_size<name.size && name_size && (name.data[name_size]&0xc0)==0x80)--name_size;
+        memcpy(display_name,name.data,name_size);display_name[name_size]=0;
         const pxa_esp_fs_roots_config_t roots_config={
             .allocator_context=host->allocator_context,.allocate=host->allocate,
-            .identity=host->identity,.name=host->identity,.media_relative=host->media_relative,
+            .identity=host->identity,.name=display_name,.media_relative=host->media_relative,
             .media_mount_epoch=host->media_mount_epoch,.app_storage=host->app_storage,
             .user_directories=user_directories,.notify_context=host->assets_notify_context,.notify=host->assets_notify};
         status=pxa_esp_fs_roots_create(&roots_config,&services->fs_roots,&roots);
@@ -670,7 +674,7 @@ static pxa_status_t initialize_bounded_services(
     net_config.max_response_header_bytes = PXA_ESP_NET_RESPONSE_HEADER_BYTES;
     net_config.min_timeout_ms = 100;
     net_config.default_timeout_ms = PXA_ESP_NET_DEFAULT_TIMEOUT_MS;
-    net_config.max_timeout_ms = 60000;
+    net_config.max_timeout_ms = PXA_NET_MAX_STREAM_TIMEOUT_MS;
     net_config.backend = net_backend;
     net_config.permissions = services->permission;
     workspace_size = pxa_net_service_workspace_size(&net_config);

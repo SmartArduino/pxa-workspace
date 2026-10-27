@@ -19,5 +19,7 @@ pxa_status_t pxa_esp_fs_roots_create(const pxa_esp_fs_roots_config_t *,pxa_esp_f
 void pxa_esp_fs_roots_bind(pxa_esp_fs_roots_t *,pxa_fs_service_t *);
 uint64_t pxa_esp_fs_roots_features(const pxa_esp_fs_roots_t *);
 void pxa_esp_fs_roots_poll(pxa_esp_fs_roots_t *);
+/* Runtime-owner Back routing: consume before dispatching a Guest Window event. */
+int pxa_esp_fs_roots_back(pxa_esp_fs_roots_t *);
 void pxa_esp_fs_roots_destroy(pxa_esp_fs_roots_t *);
 #endif

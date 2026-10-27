@@ -4,8 +4,8 @@
 
 namespace pxa_board_common {
 
-// Call with the board/LVGL locks held. Uses only built-in fonts and remains
-// below the system layer, so no storage or Host service is needed to draw it.
+// Call with the board/LVGL locks held. Uses the shared PXA v1 identity embedded
+// in Flash and built-in fonts; no storage or Host service is needed to draw it.
 class BootScreen {
 public:
     void Show(lv_display_t* display);

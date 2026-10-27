@@ -139,7 +139,7 @@ static void stream_step(pxa_esp_net_state_t *net, pxa_esp_net_slot_t *slot) {
         esp_err_t error = ESP_OK;
         config.url = slot->url;
         config.method = esp_method(slot->method);
-        config.timeout_ms = (int)slot->timeout_ms;
+        config.timeout_ms = (int)(slot->timeout_ms > 60000u ? 15000u : slot->timeout_ms);
         config.disable_auto_redirect = true;
         config.buffer_size = 512;
         config.buffer_size_tx = 512;

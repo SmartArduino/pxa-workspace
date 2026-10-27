@@ -177,6 +177,12 @@ bool PaiTouchHardware::Initialize() {
     // Wake the JL701 before display and network startup can leave it idle.
     if (!audio_.Initialize()) ESP_LOGW(kTag, "Continuing without JL701 audio");
     if (!InitializeDisplay()) return false;
+    if (!lvgl_port_lock(1000)) return false;
+    lv_lock();
+    boot_screen_.Show(display_);
+    lv_unlock();
+    lvgl_port_unlock();
+    ShowInitialFrame();
     nvs_handle_t performance_handle;
     if (nvs_open(kPerformanceNamespace, NVS_READONLY, &performance_handle) ==
         ESP_OK) {
@@ -517,6 +523,7 @@ bool PaiTouchHardware::InitializeWifi() {
 
 void PaiTouchHardware::AttachSystem(pxsys_standard_system_t* system,
                                     pxsys_reference_lvgl_t* reference_ui) {
+    boot_screen_.Hide();
     system_ = system;
     reference_ui_ = reference_ui;
     if (reference_ui_ != nullptr) {

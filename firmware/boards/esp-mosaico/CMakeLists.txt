@@ -29,6 +29,7 @@ idf_component_register(
         lvgl
         pxa
         pxa_board_api
+        pxa_board_common
         pxa_lvgl_memory
         pxa_system_reference_ui
         pxa_system_standard

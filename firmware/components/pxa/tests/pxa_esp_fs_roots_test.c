@@ -63,6 +63,9 @@ int main(void) {
     assert(!pxa_esp_storage_debug_path("PXA/system",true,NULL,0));
     pxa_esp_fs_roots_config_t config={.allocate=allocate,.identity="test:quake",.name="Quake",.media_relative="PXA/media/test/quake"};
     assert(!pxa_esp_fs_roots_create(&config,&roots,&backend));
+    assert(!(pxa_esp_fs_roots_features(roots)&PXA_FS_FEATURE_FILE_IMPORT));
+    assert(!backend->request_import && !backend->cancel_import);
+    assert(!pxa_esp_fs_roots_back(roots));
     assert(!backend->open_root(backend->context,PXA_FS_ROOT_APP_MEDIA,id,&directory,&rights));
     int native=open(CONFIG_PXA_MOUNT_POINT "/PXA/media/test/quake/pak0.pak",O_CREAT|O_WRONLY|O_EXCL,0600);
     assert(native>=0 && write(native,"PACK0123456789",14)==14 && !close(native));

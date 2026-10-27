@@ -4078,6 +4078,7 @@ static void post_back(void) {
     uint8_t close_requested = 1;
     int dispatched;
     if (g_host.activation.active_component == PXA_COMPONENT_INVALID) return;
+    if (pxa_esp_fs_roots_back(g_host.activation.services.fs_roots)) return;
     dispatched = dispatch_back_request(&close_requested);
     if (dispatched < 0 || (dispatched > 0 && !close_requested)) return;
     begin_graceful_stop(PXA_STOP_NORMAL, 1, 1200);
