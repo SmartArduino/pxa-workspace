@@ -179,6 +179,7 @@ static void apply_window_configuration(
     pxsys_window_snapshot_t window;
     pxsys_window_snapshot_init(&window);
     window.edge_to_edge = configuration->edge_to_edge;
+    window.keep_screen_on = configuration->keep_screen_on;
     window.status_bar_mode =
         (pxsys_window_bar_mode_t)configuration->status_bar_mode;
     window.navigation_bar_mode =

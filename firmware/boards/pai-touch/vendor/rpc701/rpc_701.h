@@ -22,6 +22,9 @@ void rpc_701_deinit(void);
 /* Audio OPUS Frame Buffer API */
 int audio_opus_frame_write(const uint8_t *data, size_t len);
 int audio_opus_frame_read(uint8_t *data, size_t max_len);
+/* Return one complete packet, 0 when empty, or -1 on invalid/oversized data.
+ * Unlike audio_opus_frame_read, this never waits for an incoming frame. */
+int audio_opus_frame_try_read(uint8_t *data, size_t max_len);
 size_t audio_opus_frame_available(void);
 void audio_opus_frame_flush(void);
 

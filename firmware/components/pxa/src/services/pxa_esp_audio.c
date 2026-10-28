@@ -815,7 +815,10 @@ void pxa_esp_audio_deinitialize(void) {
     pxa_memory_release(retired);
 }
 
+#include "pxa_esp_capture.inc"
+
 void pxa_esp_audio_reset_sessions(void) {
+    if (capture.active) capture_close(NULL,capture.active);
     pxa_esp_audio_sink_t sink;
     uint16_t active_mask = 0;
     uint16_t asset_mask = 0;
@@ -854,6 +857,8 @@ void pxa_esp_audio_reset_sessions(void) {
 }
 
 void pxa_esp_audio_set_suspended(bool suspended) {
+    capture.suspended = suspended;
+    if (suspended && capture.active) capture_close(NULL,capture.active);
     pxa_esp_audio_sink_t pcm_sink;
     pxa_esp_audio_asset_sink_t asset_sink;
     uint16_t pcm_mask = 0;
@@ -896,6 +901,10 @@ void pxa_esp_audio_backend(pxa_audio_backend_t *output) {
     memset(output, 0, sizeof(*output));
     output->struct_size = sizeof(*output);
     output->context = &g_audio;
+    output->open_capture = capture_open;
+    output->capture_io = capture_io;
+    output->close_capture = capture_close;
+    output->capture_frame_ms = capture_frame_ms;
     output->open = audio_open;
     output->open_pcm = audio_open_pcm;
     output->commit = audio_commit;

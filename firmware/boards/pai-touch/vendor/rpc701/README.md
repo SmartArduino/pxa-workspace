@@ -17,7 +17,7 @@ are gone.
 
 ## How it is used
 
-`src/jl701_audio_link.cc` is the only consumer. It drives the UART transport
+`src/jl701_audio_link.cc` drives the UART transport
 and uses `rpc_701_init` / `rpc_701_feed_rx` / `rpc_701_reset_rx`, `rpc_vb_init`,
 `rpc_heartbeat`, `rpc_music_volume_set` and `rpc_sen_audio_pcm`. The rest of
 the published API (Bluetooth, music library, alarms, OTA, wake words) stays
@@ -26,6 +26,11 @@ is deliberately the only surface the board exposes.
 
 The RPC headers stay private to this component (`PRIV_INCLUDE_DIRS`); nothing
 outside `firmware/boards/pai-touch` may include them.
+
+`src/pai_touch_audio.cc` also consumes microphone Opus packets through
+`audio_opus_frame_try_read`. This local addition returns immediately when the
+ring is empty and rejects oversized packets instead of truncating them; PXA
+capture reads must not block the UI thread. The legacy timed read is retained.
 
 ## Refreshing
 

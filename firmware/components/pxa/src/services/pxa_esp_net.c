@@ -12,6 +12,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
+#include "esp_netif.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -867,6 +868,18 @@ static void stream_close(void *context, void *exchange) {
     xTaskNotifyGive(g_net->task);
 }
 
+static pxa_status_t esp_connectivity(void *context,uint32_t *state) {
+    (void)context;
+    esp_netif_t *interface=esp_netif_get_default_netif();
+    esp_netif_ip_info_t ip={0};
+    *state=interface && esp_netif_is_netif_up(interface) &&
+        esp_netif_get_ip_info(interface,&ip)==ESP_OK && ip.ip.addr
+        ? PXA_NET_CONNECTIVITY_ONLINE : PXA_NET_CONNECTIVITY_OFFLINE;
+    return PXA_STATUS_OK;
+}
+
+#include "pxa_esp_socket.inc"
+
 int pxa_esp_net_backend(pxa_net_backend_t *output,
                         pxa_esp_net_notify_fn notify, void *notify_context) {
     if (output == NULL || notify == NULL) return 0;
@@ -883,6 +896,10 @@ int pxa_esp_net_backend(pxa_net_backend_t *output,
     output->open_exchange = stream_open;
     output->exchange_io = stream_io;
     output->close_exchange = stream_close;
+    output->open_socket = esp_socket_open;
+    output->socket_io = esp_socket_io;
+    output->close_socket = esp_socket_close;
+    output->connectivity = esp_connectivity;
     return 1;
 }
 

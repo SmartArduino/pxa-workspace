@@ -1140,6 +1140,26 @@ int audio_opus_frame_read(uint8_t *data, size_t max_len)
 	return recv_len;
 }
 
+int audio_opus_frame_try_read(uint8_t *data, size_t max_len)
+{
+	if (!s_audio_ringbuf || !data || !max_len) {
+		return -1;
+	}
+	size_t len;
+	uint8_t *frame = xRingbufferReceive(s_audio_ringbuf, &len, 0);
+	if (!frame) {
+		return 0;
+	}
+	/* Opus packets are indivisible: never return a truncated packet. */
+	int result = -1;
+	if (len <= max_len) {
+		memcpy(data, frame, len);
+		result = (int)len;
+	}
+	vRingbufferReturnItem(s_audio_ringbuf, frame);
+	return result;
+}
+
 size_t audio_opus_frame_available(void)
 {
 	if (!s_audio_ringbuf) {

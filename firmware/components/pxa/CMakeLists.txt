@@ -129,6 +129,8 @@ set(PXA_PRIV_REQUIRES
     mbedtls
     espressif__esp_audio_codec
     esp_http_client
+    tcp_transport
+    esp_netif
     esp_hw_support
     joltwallet__littlefs
     nvs_flash
