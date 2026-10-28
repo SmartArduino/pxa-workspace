@@ -32,6 +32,10 @@ idf_component_register(
     PRIV_REQUIRES ${PXADB_PRIV_REQUIRES})
 
 # Native debug filesystem maintenance reuses the SDK's bounded Host walker.
+if(NOT DEFINED PXSYS_ROOT)
+    get_filename_component(PXSYS_ROOT
+        "${CMAKE_CURRENT_LIST_DIR}/../../../deps/pxa-system" ABSOLUTE)
+endif()
 target_include_directories(${COMPONENT_LIB} PRIVATE
     "${PXSYS_ROOT}/libpxa/adapters/include")
 

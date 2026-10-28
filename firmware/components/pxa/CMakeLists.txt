@@ -117,9 +117,14 @@ list(APPEND PXA_SRCS
     "${PXA_C_CORE_ROOT}/adapters/image/pxa_stream_png.c"
     "${PXA_C_CORE_ROOT}/adapters/image/vendor/pngle.c"
     "${PXA_C_CORE_ROOT}/adapters/image/vendor/miniz.c")
+if(IDF_VERSION_MAJOR LESS 6)
+    set(PXA_JSON_COMPONENT json)
+else()
+    set(PXA_JSON_COMPONENT espressif__cjson)
+endif()
 set(PXA_PRIV_REQUIRES
     bootloader_support
-    espressif__cjson
+    ${PXA_JSON_COMPONENT}
     espressif__freetype
     mbedtls
     espressif__esp_audio_codec

@@ -224,10 +224,10 @@ if desktop.get("round", False):
     print("--round")
 if desktop.get("gestures", False):
     print("--gestures")
-if not isinstance(desktop.get("navigation_bar", True), bool):
-    raise SystemExit("desktop.navigation_bar must be true or false")
-if not desktop.get("navigation_bar", True):
-    print("--no-navigation-bar")
+if "navigation_bar" in desktop:
+    if not isinstance(desktop["navigation_bar"], bool):
+        raise SystemExit("desktop.navigation_bar must be true or false")
+    print("--navigation-bar" if desktop["navigation_bar"] else "--no-navigation-bar")
 PYTHON
 )
 

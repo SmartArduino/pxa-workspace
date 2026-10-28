@@ -296,6 +296,10 @@ bool pxa_host_set_ui_palette_extended(const uint32_t rgba[32]);
 /* Native controls use the shell's already density-adapted theme metrics.
  * A zero radius is valid for square-corner themes. */
 bool pxa_host_set_ui_metrics(uint16_t base_spacing_px, uint16_t base_radius_px);
+/* Call before starting the runtime. Borrowed LVGL fonts remain owned by the
+ * native product and must outlive it. Used when the system TTF is unavailable,
+ * allowing small internal-storage products to reuse their existing CJK font. */
+bool pxa_host_set_ui_fallback_fonts(const void *text_font, const void *title_font);
 /* Thread-safe locale snapshot used for startup configuration and subsequent
  * configuration events. locale is a canonical BCP 47 tag. */
 bool pxa_host_set_locale(const char *locale, uint8_t text_direction);

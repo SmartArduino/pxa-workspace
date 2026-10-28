@@ -264,11 +264,22 @@ void pxa_esp_ui_shell_refresh_apps(void) {
     app_pages_request_apps_refresh();
 }
 
+static const lv_font_t *g_product_text_font;
+static const lv_font_t *g_product_title_font;
+bool pxa_host_set_ui_fallback_fonts(const void *text_font, const void *title_font) {
+    if (text_font == NULL || title_font == NULL) return false;
+    g_product_text_font = (const lv_font_t *)text_font;
+    g_product_title_font = (const lv_font_t *)title_font;
+    return true;
+}
+
 const lv_font_t *pxa_esp_ui_shell_text_font(void) {
+    if (g_product_text_font != NULL) return g_product_text_font;
     return app_pages_get_text_font();
 }
 
 const lv_font_t *pxa_esp_ui_shell_title_font(void) {
+    if (g_product_title_font != NULL) return g_product_title_font;
     return app_pages_get_title_font();
 }
 

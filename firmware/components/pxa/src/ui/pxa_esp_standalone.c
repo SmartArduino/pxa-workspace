@@ -445,12 +445,23 @@ void pxa_esp_ui_shell_dismiss_app_launch(const char *identity) {
 }
 void pxa_esp_ui_shell_refresh_apps(void) {}
 
+static const lv_font_t *g_product_text_font;
+static const lv_font_t *g_product_title_font;
+bool pxa_host_set_ui_fallback_fonts(const void *text_font, const void *title_font) {
+    if (text_font == NULL || title_font == NULL) return false;
+    g_product_text_font = (const lv_font_t *)text_font;
+    g_product_title_font = (const lv_font_t *)title_font;
+    return true;
+}
+
 const lv_font_t *pxa_esp_ui_shell_text_font(void) {
+    if (g_product_text_font != NULL) return g_product_text_font;
     return &font_puhui_basic_14_1 != NULL ? &font_puhui_basic_14_1
                                           : LV_FONT_DEFAULT;
 }
 
 const lv_font_t *pxa_esp_ui_shell_title_font(void) {
+    if (g_product_title_font != NULL) return g_product_title_font;
     return &font_puhui_basic_20_4 != NULL ? &font_puhui_basic_20_4
                                           : LV_FONT_DEFAULT;
 }
