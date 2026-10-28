@@ -10,7 +10,7 @@ class StudyFontTest(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         corpus = (root / "tools/fonts/study-phonetics.txt").read_text(encoding="utf-8")
         required = {ord(char) for char in corpus if not char.isspace()}
-        sample = {ord(char) for char in "rén nǚ ā é ě ù ə ɪ ʊ ʃ ʒ ŋ ˈ ː" if not char.isspace()}
+        sample = {ord(char) for char in "rén nǚ ā é ě ù ə ɪ ʊ ʃ ʒ ŋ ˈ ː Ω" if not char.isspace()}
         self.assertTrue({codepoint for codepoint in sample if codepoint > 127} <= required)
         with TTFont(root / "factory/base/system/fonts/noto_sans_cjk_common.ttf") as font:
             cmap = font.getBestCmap()
