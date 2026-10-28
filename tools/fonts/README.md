@@ -1,6 +1,6 @@
 # 按设备生成系统字体
 
-默认工厂字体使用 `zh-Hans,en`：2013《通用规范汉字表》全部 **8105** 字、英文 ASCII，以及原系统的标点、数学符号、箭头和图标映射。简体字形使用 **Noto Sans CJK SC** 大陆黑体。文件仍叫 `noto_sans_cjk_common.ttf`，内部名称为 PXA Sans SC。当前为 **2,777,480 B**，比此前 3,879,128 B 减少约 **1.05 MiB**，同时补齐了原先缺少的 1347 个规范汉字。
+默认工厂字体使用 `zh-Hans,en` 加学习音标语料：2013《通用规范汉字表》全部 **8105** 字、英文 ASCII、拼音声调、常用英语 IPA，以及原系统的标点、数学符号、箭头和图标映射。简体字形使用 **Noto Sans CJK SC** 大陆黑体。文件仍叫 `noto_sans_cjk_common.ttf`，内部名称为 PXA Sans SC，当前为 **2,787,448 B**。拼音和音标语料位于 `study-phonetics.txt`，不能用普通 ASCII 字体代替，否则会丢失声调或音素。
 
 字体和拼音字表独立裁剪。只编译简体输入法并不会自动删除 TTF 内的繁体轮廓；选择精简字体也不会自动扩大 Provider 的字表。8105 字是规范汉字表覆盖，不等于 Unicode 中所有汉字，更不等于智能词句输入。
 
@@ -11,14 +11,23 @@
 从项目根目录运行：
 
 ```sh
-# 固定的原字体，便于复现实测结果；也可使用当前工厂字体作为 base。
-git show 841bff368885fb4a695d9a01f21250c5d1f3a68b:factory/base/system/fonts/noto_sans_cjk_common.ttf > /tmp/pxa-font-base.ttf
+font_output="local/artifacts/fonts/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$font_output"
+git show 51e308e:factory/base/system/fonts/noto_sans_cjk_common.ttf > "$font_output/base.ttf"
 python3 tools/fonts/build_common_font.py \
-  --base /tmp/pxa-font-base.ttf \
+  --base "$font_output/base.ttf" \
   --source /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc \
   --languages zh-Hans,en \
-  --output /tmp/noto_sans_cjk_common.ttf --report /tmp/pxa-font-build.json
+  --corpus tools/fonts/study-phonetics.txt \
+  --fallback-source /usr/share/fonts/noto/NotoSans-Regular.ttf \
+  --output "$font_output/noto_sans_cjk_common.ttf" --report "$font_output/build.json"
 ```
+
+学习音标的补充源为 OFL 1.1 授权的 Noto Sans Regular 2.015。其实际 TTF SHA-256 为
+`478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823`；分发时保留工厂字体目录的
+`OFL.txt`、`OFL-Latin.txt` 和 `NOTICE`。构建器展开补充 TTF 的复合轮廓后合入主字体，设备仍只加载一份 TTF。
+更新既有设备且需保留全部原字形时，使用该设备的字体作 base，省略 `--languages` 并选择
+`--traditional none`，仅加入所选 corpus，不隐式扩充或裁剪汉字。先核对旧码位、字宽和渲染结果，再按产品维护流程替换。
 
 | `--languages` | 字集与地区字形 |
 |---|---|

@@ -1,9 +1,10 @@
 PXA Sans SC Regular (SIL Open Font License 1.1)
 
-Device profile: zh-Hans,en (2026-10-15).
+Device profile: zh-Hans,en plus study phonetics (2026-10-28).
 Covers all 8,105 characters in the 2013 Table of General Standard Chinese
 Characters (including 196 supplementary-plane Han characters), printable
-English ASCII, and the existing system punctuation, symbols and icon mappings.
+English ASCII, Pinyin tone letters, common English IPA, and the existing
+system punctuation, symbols and icon mappings.
 Unselected traditional-only, Japanese, Korean and other writing systems are
 not included. Shared simplified/traditional characters remain present.
 
@@ -16,13 +17,19 @@ This is not a complete Unicode font. Unknown characters have an outlined
 
 Noto Sans CJK copyright: 2014-2021 Adobe (http://www.adobe.com/).
 Noto is a trademark of Google Inc. Distribute this NOTICE and OFL.txt with
-this font. Build-time fontTools is not needed on the device.
+this font. Latin phonetic outlines also use Noto Sans Regular 2.015:
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic).
+Its SIL Open Font License 1.1 is preserved in OFL-Latin.txt. Both licenses
+and this NOTICE must accompany the derivative. Build-time fontTools is
+not needed on the device.
 
 Build tool: tools/fonts/build_common_font.py --languages zh-Hans,en
-Base SHA-256: 7b89dc0cb85fec0458461953a7e9a08c4012a0f84c3ce44e64407743a248bd10
+ --corpus tools/fonts/study-phonetics.txt --fallback-source NotoSans-Regular.ttf
+Base SHA-256: 121cb206d826af5259cfb78418defde651a9daa80fa1d7d51de3eea716c934a4
 Source TTC SHA-256: b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a
-Output SHA-256: 121cb206d826af5259cfb78418defde651a9daa80fa1d7d51de3eea716c934a4
-Output bytes: 2,777,480. Character mappings: 9,883.
+Latin TTF SHA-256: 478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823
+Output SHA-256: cca7ec0c8528d7af50cd262d760180203b06d044698d23a52b2f1b27513e9d67
+Output bytes: 2,787,448. Character mappings: 9,973.
 
 Optional language profiles and additional application corpora can be built
 instead; see tools/fonts/README.md. Traditional profiles may use three rare

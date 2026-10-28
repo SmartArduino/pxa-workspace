@@ -72,10 +72,38 @@ class CmapTest(unittest.TestCase):
                 for cp in mapping:self.assertEqual(check.getGlyphID(actual[cp]),fb.font.getGlyphID(mapping[cp]))
 
     def test_common_big5_includes_last_level_one_row(self):
+        self.assertEqual(big5_characters('none'),set())
         common=big5_characters('common')
         self.assertIn(ord(bytes.fromhex('c67e').decode('big5')),common)
         self.assertIn(ord('靈'),common)
         self.assertLess(len(common),len(big5_characters('all')))
+
+    def test_composite_ttf_supplement_preserves_base_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory);base=path/'base.ttf';fallback=path/'latin.ttf';output=path/'out.ttf'
+            fixture_font(base)
+            fb=FontBuilder(1000,isTTF=True)
+            glyphs={}
+            for name in ('.notdef','base','acute'):
+                pen=TTGlyphPen(None);pen.moveTo((0,0));pen.lineTo((300,0));pen.lineTo((0,500));pen.closePath()
+                glyphs[name]=pen.glyph()
+            pen=TTGlyphPen(glyphs);pen.addComponent('base',(1,0,0,1,0,0));pen.addComponent('acute',(1,0,0,1,0,200))
+            glyphs['accented']=pen.glyph()
+            fb.setupGlyphOrder(list(glyphs));fb.setupCharacterMap({ord('é'):'accented'});fb.setupGlyf(glyphs)
+            fb.setupHorizontalMetrics({name:(600,0) for name in glyphs})
+            fb.setupHorizontalHeader(ascent=800,descent=-200)
+            fb.setupNameTable(dict(familyName='Synthetic Latin',styleName='Regular'))
+            fb.setupOS2(sTypoAscender=800,sTypoDescender=-200,usWinAscent=800,usWinDescent=200)
+            fb.setupPost();fb.save(fallback)
+            corpus=path/'corpus.txt';corpus.write_text('é',encoding='utf-8')
+            report=build(base,base,0,output,[corpus],coverage='none',fallback_path=fallback)
+            self.assertEqual(report['removed_codepoints'],0)
+            with TTFont(base) as previous,TTFont(output) as result:
+                cmap=result.getBestCmap()
+                self.assertTrue(set(previous.getBestCmap()) <= set(cmap))
+                glyph=result['glyf'][cmap[ord('é')]]
+                self.assertFalse(glyph.isComposite())
+                self.assertEqual(glyph.yMax,700)
 
     def test_language_repertoires_are_independent(self):
         sc=language_characters(('zh-Hans',));tc=language_characters(('zh-Hant',))

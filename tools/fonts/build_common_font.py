@@ -23,6 +23,7 @@ from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.cu2quPen import Cu2QuPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.pens.transformPen import TransformPen
+from fontTools.pens.recordingPen import DecomposingRecordingPen
 from fontTools.ttLib import TTFont
 from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
 from fontTools import subset
@@ -195,6 +196,8 @@ class CompactCmap4(CmapSubtable):
 
 
 def big5_characters(coverage='common'):
+    if coverage == 'none':
+        return set()
     result = set()
     for lead in range(0xa1, 0xfa if coverage == 'all' else 0xc7):
         for trail in list(range(0x40, 0x7f)) + list(range(0xa1, 0xff)):
@@ -303,7 +306,10 @@ def _build(base_path, source_path, face, output, corpora, coverage='common', fal
                 metrics[name] = source['hmtx'][source_map[cp]]
             else:
                 scale = base['head'].unitsPerEm / fallback['head'].unitsPerEm
-                fallback.getGlyphSet()[fallback_map[cp]].draw(TransformPen(
+                fallback_glyphs = fallback.getGlyphSet()
+                outline = DecomposingRecordingPen(fallback_glyphs)
+                fallback_glyphs[fallback_map[cp]].draw(outline)
+                outline.replay(TransformPen(
                     Cu2QuPen(pen, max_err=1.0, reverse_direction=True),
                     (scale, 0, 0, scale, 0, 0)))
                 metrics[name] = tuple(round(n * scale) for n in fallback['hmtx'][fallback_map[cp]])
@@ -393,7 +399,8 @@ def main():
     parser.add_argument('--languages', help='Comma-separated optional sets: '+', '.join(LANGUAGES)+'. Omit to preserve existing coverage.')
     parser.add_argument('--fallback-source', type=Path, help='Optional OFL font for missing source glyphs')
     parser.add_argument('--corpus', type=Path, action='append', default=[])
-    parser.add_argument('--traditional', choices=('common','all'), default='common')
+    parser.add_argument('--traditional', choices=('none','common','all'), default='common',
+                        help='Without --languages, none preserves the base and adds only corpus characters')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
