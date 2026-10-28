@@ -27,8 +27,11 @@ def audit(map_path, idf_root, firmware_root, compiler, policy):
             license_path=root/rule['license']
             if not license_path.is_file() or hashlib.sha256(license_path.read_bytes()).hexdigest()!=rule['license_sha256']:
                 failures.append(f'{path}: license changed; re-review required');matched=True;break
+            archive_hash=hashlib.sha256(path.read_bytes()).hexdigest()
+            if rule.get('archive_sha256') and archive_hash!=rule['archive_sha256']:
+                failures.append(f'{path}: archive changed; re-review required');matched=True;break
             selected.append({'path':str(path),'license':rule['selected'],'license_file':str(license_path),
-                'sha256':hashlib.sha256(path.read_bytes()).hexdigest()})
+                'sha256':archive_hash})
             matched=True;break
         if not matched:failures.append(f'{path}: prebuilt archive has no reviewed license rule')
     return selected,failures

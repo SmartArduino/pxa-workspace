@@ -46,5 +46,50 @@
     "license_sha256": "94549a6fa76f26bdaebf507bf7a336a870315ed9abfe8a215b9ff7278f8974b8",
     "selected": "BSD/MIT/ISC permissive bundle",
     "evidence": "Picolibc license collection covers libc/libm; compiler build tools are not linked into firmware."
+  },
+  {
+    "root": "toolchain",
+    "archive_pattern": "picolibc/lib/gcc/xtensa\\-esp\\-elf/16\\.1\\.0/esp32s3/libgcc\\.a",
+    "archive_sha256": "c14eeac936f3904c97bc37fb46b0503e8d804018df43c6316649c0f60dd30b22",
+    "license": "share/licenses/gcc/COPYING.RUNTIME",
+    "license_sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74",
+    "selected": "GPL-3.0-or-later WITH GCC-exception-3.1",
+    "evidence": "ESP32-S3 GCC16.1 runtime only; COPYING.RUNTIME3.1 verified and matches existing reviewed grant. Eligible ordinary GCC compilation; no IR plugins or LTO. This exact archive is pinned."
+  },
+  {
+    "root": "toolchain",
+    "archive_pattern": "picolibc/xtensa\\-esp\\-elf/lib/esp32s3/libstdc\\+\\+\\.a",
+    "archive_sha256": "47815cdb0679afe1b6514f53860e775552fffbd26267055888e0c8b51dea64cd",
+    "license": "share/licenses/gcc/COPYING.RUNTIME",
+    "license_sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74",
+    "selected": "GPL-3.0-or-later WITH GCC-exception-3.1",
+    "evidence": "ESP32-S3 GCC16.1 libstdc++ runtime only; installed C++ new header explicitly grants GCC Runtime Library Exception3.1. Ordinary eligible GCC compilation; exact archive pinned."
+  },
+  {
+    "root": "toolchain",
+    "archive_pattern": "picolibc/xtensa\\-esp\\-elf/lib/esp32s3/libc\\.a",
+    "archive_sha256": "0863583f58c4c72daf75d057b4adf8ab750cdda2c324eeb42a4173930f84a07b",
+    "license": "share/licenses/picolibc/COPYING.picolibc",
+    "license_sha256": "94549a6fa76f26bdaebf507bf7a336a870315ed9abfe8a215b9ff7278f8974b8",
+    "selected": "BSD/MIT/ISC permissive bundle",
+    "evidence": "Same reviewed Picolibc license collection. Its AGPL entry is scripts/GeneratePicolibcCrossFile.sh and GPL2 entries are test/test-stdio fixtures; neither is linked into this runtime archive. Only this exact ESP32-S3 libc binary is admitted."
+  },
+  {
+    "root": "toolchain",
+    "archive_pattern": "picolibc/xtensa\\-esp\\-elf/lib/esp32s3/libm\\.a",
+    "archive_sha256": "93900d0661461a187dedf37c7983605e6cb017aa15278745cfbd27e8f5bbff66",
+    "license": "share/licenses/picolibc/COPYING.picolibc",
+    "license_sha256": "94549a6fa76f26bdaebf507bf7a336a870315ed9abfe8a215b9ff7278f8974b8",
+    "selected": "BSD/MIT/ISC permissive bundle",
+    "evidence": "Same reviewed Picolibc runtime license collection; build scripts and test fixtures are excluded. Only this exact ESP32-S3 math runtime binary is admitted."
+  },
+  {
+    "root": "idf",
+    "archive_pattern": "components/xtensa/esp32s3/libxt_hal\\.a",
+    "archive_sha256": "4823e6c657199a6726f3163f15e1222edb85a8a33eeaafd2aad0cc06150cc4ec",
+    "license": "docs/en/COPYRIGHT.rst",
+    "license_sha256": "50efe887fcc2662f2ec264f0b74c5f449eb460ceccf6dd7361518dba6645185b",
+    "selected": "MIT",
+    "evidence": "ESP-IDF copyright notice explicitly identifies Xtensa libhal under the Tensilica MIT grant; adjacent HAL/core headers retain Cadence MIT notices. Verified against https://github.com/espressif/esp-idf/blob/master/docs/en/COPYRIGHT.rst . Exact ESP32-S3 HAL archive pinned; no compiler overlays admitted."
   }
 ]
