@@ -60,6 +60,7 @@ idf_build_set_property(DEPENDENCIES_LOCK "dependencies.lock.${PXA_BOARD}")
 # relying on the top-level PXA_BOARD cache variable in that process.
 idf_build_set_property(PXA_BOARD_COMPONENT "${PXA_BOARD_COMPONENT}")
 idf_build_set_property(PXA_BOARD_ID "${PXA_BOARD}")
+idf_build_set_property(PXA_ENABLE_VOICE_TRIGGER "${PXA_ENABLE_VOICE_TRIGGER}")
 idf_build_set_property(MINIMAL_BUILD ON)
 # The generic ESP PXA host has no app_pages dependency. Legacy products can
 # provide their own compatibility component without changing this project.

@@ -4,6 +4,11 @@
 # the RPC headers stay private to it; `jl701_audio_link` is the only audio
 # surface the board exposes.
 include("${CMAKE_CURRENT_LIST_DIR}/vendor/rpc701/pai_touch_rpc701.cmake")
+idf_build_get_property(PXA_VOICE_TRIGGER_ENABLED PXA_ENABLE_VOICE_TRIGGER)
+set(PXA_PAI_VOICE_TRIGGER_SOURCES "")
+if(PXA_VOICE_TRIGGER_ENABLED)
+    list(APPEND PXA_PAI_VOICE_TRIGGER_SOURCES "src/pai_touch_voice_trigger.cc")
+endif()
 
 idf_component_register(
     SRCS
@@ -14,6 +19,7 @@ idf_component_register(
         "src/adc_battery_monitor.cc"
         "src/button.cc"
         "src/te_sync_panel.cc"
+        ${PXA_PAI_VOICE_TRIGGER_SOURCES}
         ${PXA_RPC701_SRCS}
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS ${PXA_RPC701_INCLUDE_DIR}

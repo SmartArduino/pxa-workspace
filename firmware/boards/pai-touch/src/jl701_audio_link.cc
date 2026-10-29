@@ -1,4 +1,5 @@
 #include "jl701_audio_link.h"
+#include "pai_touch_voice_trigger.h"
 
 #include <algorithm>
 #include <atomic>
@@ -110,6 +111,9 @@ int InitializeSlave(bool wake_first) {
     /* The coprocessor booted again, so the level has to be re-sent. */
     s_link.volume_dirty.store(true);
     s_link.ready.store(true);
+#if PXA_ENABLE_VOICE_TRIGGER
+    pai_touch_voice_trigger_refresh();
+#endif
     ESP_LOGI(kTag, "JL701 audio ready on UART%d at %d baud",
              static_cast<int>(s_link.config.uart_num),
              s_link.config.baud_rate);
@@ -194,6 +198,10 @@ void HeartbeatTask(void* context) {
     while (true) {
         if (s_link.ready.load()) {
             if (rpc_heartbeat() == RPC_ERR_SUCCESS) {
+#if PXA_ENABLE_VOICE_TRIGGER
+                // Catalog discovery retries outside the runtime/audio tasks.
+                pai_touch_voice_trigger_refresh();
+#endif
                 if (failed_ms > 0) {
                     ESP_LOGI(kTag, "JL701 heartbeat recovered");
                     failed_ms = 0;
@@ -208,6 +216,9 @@ void HeartbeatTask(void* context) {
                     failed_ms = 0;
                     not_ready_ms = 0;
                     s_link.ready.store(false);
+#if PXA_ENABLE_VOICE_TRIGGER
+                    pai_touch_voice_trigger_link_lost();
+#endif
                     ESP_LOGW(kTag, "JL701 unresponsive, reinitializing");
                 }
             }
@@ -273,6 +284,10 @@ bool jl701_audio_link_start(const jl701_audio_link_config_t* config) {
         return false;
     }
     rpc_resister_event_callbacks();
+#if PXA_ENABLE_VOICE_TRIGGER
+    if (!pai_touch_voice_trigger_initialize())
+        ESP_LOGW(kTag, "Optional voice trigger backend unavailable");
+#endif
 
     if (xTaskCreate(RxTask, "jl701_rx", kRxTaskStackSize, nullptr,
                     kRxTaskPriority, &s_link.rx_task) != pdPASS) {

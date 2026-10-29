@@ -87,7 +87,12 @@
 #define PXA_ESP_HOST_TAG "PxaHost"
 #define PXA_ESP_HOST_MAX_APP_ID PXA_HOST_COMMAND_MAX_IDENTITY_BYTES
 #define PXA_ESP_HOST_MAX_PATH 160
-#define PXA_ESP_HOST_MAX_SERVICES 21
+#define PXA_ESP_HOST_MAX_SERVICES (21 + PXA_VOICE_TRIGGER_SERVICE_COUNT)
+#if PXA_ENABLE_VOICE_TRIGGER
+#define PXA_VOICE_TRIGGER_SERVICE_COUNT 1
+#else
+#define PXA_VOICE_TRIGGER_SERVICE_COUNT 0
+#endif
 #define PXA_ESP_HOST_EVENT_DRAIN_ROUNDS 3
 #define PXA_ESP_HOST_BACK_EVENT_DRAIN_LIMIT 32
 #define PXA_ESP_HOST_CLOCK_PERIOD_US 5000
@@ -1451,6 +1456,15 @@ static pxa_status_t request_runtime_permission_prompt(
                                 pxa_esp_host_locale_is_chinese() ?
                                     "未知权限" : "Unknown permission");
     copy_permission_prompt_text(prompt.scope, sizeof(prompt.scope), scope, "-");
+#if PXA_ENABLE_VOICE_TRIGGER
+    if (strcmp(prompt.permission_name, PXA_VT_PERMISSION) == 0) {
+        snprintf(prompt.permission_name, sizeof(prompt.permission_name), "%s",
+            pxa_esp_host_locale_is_chinese() ? "语音唤醒" : "Voice wake events");
+        if (strcmp(prompt.scope, PXA_VT_DEFAULT_SCOPE) == 0)
+            snprintf(prompt.scope, sizeof(prompt.scope), "%s",
+                pxa_esp_host_locale_is_chinese() ? "设备默认唤醒词" : "Device default wake words");
+    }
+#endif
     if (pxa_esp_host_locale_is_chinese()) {
         if (strcmp(prompt.permission_name, "net.client") == 0)
             snprintf(prompt.permission_name, sizeof(prompt.permission_name),
@@ -2107,6 +2121,10 @@ static int drain_active_events(void) {
         int delivered = 0;
         if (g_host.activation.services.assets) pxa_assets_service_poll(g_host.activation.services.assets);
         if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
+#if PXA_ENABLE_VOICE_TRIGGER
+        if (g_host.activation.services.voice_trigger)
+            (void)pxa_vt_service_poll(g_host.activation.services.voice_trigger, host_now_us(NULL));
+#endif
         for (index = 0; index < g_host.activation.active_component_count; ++index) {
             pxa_wamr_event_result_t result;
             const pxa_status_t status = pxa_wamr_engine_deliver_event_result(
@@ -4460,6 +4478,10 @@ static void sync_ui_lifecycle(void) {
     interactive = g_host.display_interactive;
     portEXIT_CRITICAL(&g_process_state_lock);
     effective = requested && interactive;
+#if PXA_ENABLE_VOICE_TRIGGER
+    pxa_vt_service_set_foreground(g_host.activation.services.voice_trigger,
+        effective ? component : PXA_COMPONENT_INVALID);
+#endif
     if (g_host.lifecycle_effective != effective) {
         portENTER_CRITICAL(&g_clock_slots_lock);
         pxa_host_clock_slots_pause_component(&g_host.clock_slots, component,
@@ -4594,6 +4616,10 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
         (void)pxa_assets_service_poll(g_host.activation.services.assets);
     }
     if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
+#if PXA_ENABLE_VOICE_TRIGGER
+    if (g_host.activation.services.voice_trigger)
+        (void)pxa_vt_service_poll(g_host.activation.services.voice_trigger, host_now_us(NULL));
+#endif
     pxa_esp_fs_roots_poll(g_host.activation.services.fs_roots);
     if (take_net_completion_ready()) drain_net_completions();
     (void)dispatch_pending_pointer();
@@ -4701,6 +4727,10 @@ static void run(void) {
         int handled = 0;
         sync_ui_lifecycle();
         if (g_host.cooperative_exit_pending) continue;
+#if PXA_ENABLE_VOICE_TRIGGER
+        if (pxa_vt_service_active(g_host.activation.services.voice_trigger))
+            drain_active_events();
+#endif
         advance_graceful_stop();
         if (g_host.cooperative_exit_pending) continue;
         maintain_native_ime_runtime();
@@ -4928,6 +4958,10 @@ static void run(void) {
         } else {
             (void)ulTaskNotifyTake(
                 pdTRUE,
+#if PXA_ENABLE_VOICE_TRIGGER
+                pxa_vt_service_active(g_host.activation.services.voice_trigger)
+                    ? pdMS_TO_TICKS(20) :
+#endif
                 g_host.graceful_stop_active ||
                     (g_host.activation.active_component !=
                          PXA_COMPONENT_INVALID &&

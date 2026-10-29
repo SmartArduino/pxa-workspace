@@ -49,6 +49,16 @@ set(PXA_SRCS
     "src/ui/pxa_esp_install_dialog.c"
     "src/ui/pxa_esp_store_result.c")
 
+# Product extension: absent from libpxa and the standard service inventory.
+idf_build_get_property(PXA_VOICE_TRIGGER_ENABLED PXA_ENABLE_VOICE_TRIGGER)
+get_filename_component(PXA_VOICE_TRIGGER_ROOT
+    "${CMAKE_CURRENT_LIST_DIR}/../../../extensions/voice-trigger" ABSOLUTE)
+if(PXA_VOICE_TRIGGER_ENABLED)
+    list(APPEND PXA_SRCS
+        "${PXA_VOICE_TRIGGER_ROOT}/src/voice_trigger.c"
+        "src/services/pxa_esp_voice_trigger.c")
+endif()
+
 # Native products can supply the existing audio sinks without linking the
 # standalone mixer or its global codec allocation hooks.
 idf_build_get_property(PXA_BUILTIN_AUDIO_OUTPUT PXA_BUILTIN_AUDIO_OUTPUT)
@@ -181,6 +191,11 @@ idf_component_register(
 )
 if(CONFIG_PXA_ENABLED AND CONFIG_LV_USE_FREETYPE)
     target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=FT_Stream_Open")
+endif()
+if(PXA_VOICE_TRIGGER_ENABLED)
+    target_include_directories(${COMPONENT_LIB} PUBLIC
+        "${PXA_VOICE_TRIGGER_ROOT}/include")
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC PXA_ENABLE_VOICE_TRIGGER=1)
 endif()
 # Device benchmarks select O3 for the S31 span kernel and Watcher's native
 # game renderer. Keep this local to the rasterizer and performance builds,

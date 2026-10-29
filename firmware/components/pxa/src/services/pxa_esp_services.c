@@ -270,7 +270,17 @@ static pxa_status_t initialize_permission(
                                         strlen(host->identity)};
     config.declarations = services->declarations;
     config.declaration_count = services->declaration_count;
-    config.max_authorities = 4;
+    /* Independent optional extensions declare their own permissions. A fixed
+     * four-authority pool silently prevents a fifth permission from being
+     * acquired alongside network/capture/playback. Budget one authority per
+     * declaration and component, bounded by the runtime's 64-handle limit. */
+    {
+        uint32_t count = (uint32_t)services->declaration_count *
+            (host->manifest->component_count ? host->manifest->component_count : 1u);
+        if (count < 4u) count = 4u;
+        if (count > 64u) count = 64u;
+        config.max_authorities = (uint16_t)count;
+    }
     config.max_pending_prompts = 1;
     config.prompt_context = host->permission_prompt_context;
     config.prompt = host->permission_prompt;
@@ -1082,6 +1092,11 @@ static pxa_status_t register_services(
     if (services->assets) PXA_REGISTER(pxa_assets_service_register(services->assets), "register-assets-service");
     PXA_REGISTER(pxa_game_render_service_register(services->game_render),
                  "register-game-render-service");
+#if PXA_ENABLE_VOICE_TRIGGER
+    if (services->voice_trigger)
+        PXA_REGISTER(pxa_vt_service_register(services->voice_trigger),
+                     "register-voice-trigger-extension");
+#endif
 #undef PXA_REGISTER
     return PXA_STATUS_OK;
 }
@@ -1104,6 +1119,17 @@ pxa_status_t pxa_esp_services_initialize(
     }
     pxa_esp_services_destroy(services);
     status = initialize_permission(services, config, result);
+#if PXA_ENABLE_VOICE_TRIGGER
+    if (status == PXA_STATUS_OK && pxa_esp_voice_trigger_backend()) {
+        size_t size = pxa_vt_service_workspace_size();
+        status = allocate_workspace(config, size,
+            &services->voice_trigger_workspace, result, "allocate-voice-trigger");
+        if (status == PXA_STATUS_OK)
+            status = pxa_vt_service_init(services->voice_trigger_workspace, size,
+                config->runtime, services->permission, pxa_esp_voice_trigger_backend(),
+                &services->voice_trigger);
+    }
+#endif
     if (status == PXA_STATUS_OK &&
         manifest_requires_service(config->manifest, PXA_FS_SERVICE_ID))
         status = initialize_fs(services, config, result);
@@ -1126,6 +1152,9 @@ pxa_status_t pxa_esp_services_initialize(
 
 void pxa_esp_services_destroy(pxa_esp_services_t *services) {
     if (services == NULL) return;
+#if PXA_ENABLE_VOICE_TRIGGER
+    pxa_vt_service_deinit(services->voice_trigger);
+#endif
     pxa_esp_fs_roots_destroy(services->fs_roots);
     if (services->ui != NULL) pxa_ui_service_deinit(services->ui);
     if (services->scheduler_store != NULL) {

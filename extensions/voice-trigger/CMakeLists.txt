@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+cmake_minimum_required(VERSION 3.20)
+project(pxa_voice_trigger VERSION 0.1.0 LANGUAGES C CXX)
+set(PXA_SYSTEM_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../deps/pxa-system" CACHE PATH "PXA Host/Guest SDK checkout")
+if(NOT TARGET pxa)
+    add_subdirectory("${PXA_SYSTEM_ROOT}/libpxa" "${CMAKE_CURRENT_BINARY_DIR}/libpxa")
+endif()
+add_library(pxa_voice_trigger STATIC src/voice_trigger.c)
+target_include_directories(pxa_voice_trigger PUBLIC include)
+target_link_libraries(pxa_voice_trigger PUBLIC pxa)
+target_compile_features(pxa_voice_trigger PRIVATE c_std_99)
+target_compile_options(pxa_voice_trigger PRIVATE -Wall -Wextra -Wpedantic -Werror)
+include(sdk/VoiceTrigger.cmake)
+option(PXA_VOICE_TRIGGER_TESTS "Build the extension integration tests" ON)
+if(PXA_VOICE_TRIGGER_TESTS)
+    enable_testing()
+    add_executable(voice_trigger_host_test tests/host_test.c)
+    target_link_libraries(voice_trigger_host_test PRIVATE pxa_voice_trigger)
+    target_compile_options(voice_trigger_host_test PRIVATE -Wall -Wextra -Wpedantic -Werror -UNDEBUG)
+    add_test(NAME voice_trigger_host COMMAND voice_trigger_host_test)
+    add_executable(voice_trigger_sdk_test tests/sdk_test.cpp
+        "${PXA_SYSTEM_ROOT}/sdk/guest-cpp/src/runtime.cpp")
+    target_link_libraries(voice_trigger_sdk_test PRIVATE pxa::voice_trigger)
+    target_include_directories(voice_trigger_sdk_test PRIVATE
+        "${PXA_SYSTEM_ROOT}/sdk/guest-cpp/include"
+        "${PXA_SYSTEM_ROOT}/sdk/testing")
+    target_compile_options(voice_trigger_sdk_test PRIVATE -std=c++2c
+        -fno-exceptions -fno-rtti -Wall -Wextra -Werror -Wno-attributes -UNDEBUG)
+    add_test(NAME voice_trigger_sdk COMMAND voice_trigger_sdk_test)
+endif()

@@ -1,0 +1,15 @@
+{
+  "format": "pxa-workspace-extensions-1",
+  "description": "Workspace allocations, not a PXA standard or globally reserved vendor range. HELLO identity and version negotiation are mandatory.",
+  "extensions": [
+    {
+      "name": "org.doit.voice-trigger",
+      "service_id": 33025,
+      "resource_type": 33025,
+      "version": [0, 1],
+      "identity": "cd3479d1-53f1-47bc-a8cc-54873b706cb2",
+      "permission": "org.doit.voice-trigger",
+      "scope": "system.default"
+    }
+  ]
+}

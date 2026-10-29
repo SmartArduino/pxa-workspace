@@ -28,6 +28,9 @@
 #include "pxa_esp_net.h"
 #include "pxa_esp_fs_roots.h"
 #include "pxa_esp_app_storage.h"
+#if PXA_ENABLE_VOICE_TRIGGER
+#include <pxa/pxa_voice_trigger.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,6 +75,10 @@ typedef struct {
 
     pxa_sensor_service_t *sensor;
     void *sensor_workspace;
+#if PXA_ENABLE_VOICE_TRIGGER
+    pxa_vt_service_t *voice_trigger;
+    void *voice_trigger_workspace;
+#endif
 
     pxa_device_service_t *device;
     void *device_workspace;
