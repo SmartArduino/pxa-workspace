@@ -338,9 +338,17 @@ static void run_worker(void *context) {
             pxa_status_t status = input_open(&input, job.info.path, job.info.stored_bytes, job.token);
             if (status == PXA_STATUS_OK) {
                 pxa_asset_input_t callbacks = {&input, input_read, input_cancelled, input_yield};
-                status = pxa_asset_load_resident(&job.info, &callbacks, pixel_allocate, pixel_release,
-                    (void *)pxa_esp_resource_allocator(job.memory_class, job.info.kind == PXA_ASSET_AUDIO ? PXA_MEMORY_AUDIO :
-                        job.info.kind == PXA_ASSET_IMAGE ? PXA_MEMORY_IMAGE : PXA_MEMORY_RASTER), &asset);
+                const pxa_memory_allocator_t *allocator = pxa_esp_resource_allocator(job.memory_class,
+                    job.info.kind == PXA_ASSET_AUDIO ? PXA_MEMORY_AUDIO :
+                    job.info.kind == PXA_ASSET_IMAGE ? PXA_MEMORY_IMAGE : PXA_MEMORY_RASTER);
+                if (job.info.encoding == PXA_ASSET_ENCODING_PNG ||
+                    job.info.encoding == PXA_ASSET_ENCODING_PNG_RGB565)
+                    status = pxa_asset_load_png(&job.info, &callbacks, allocator,
+                        pxa_esp_resource_allocator(PXA_MEMORY_EXTERNAL,PXA_MEMORY_TEMPORARY),
+                        g_assets.config.image_backend, &asset);
+                else
+                    status = pxa_asset_load_resident(&job.info, &callbacks, pixel_allocate, pixel_release,
+                        (void *)allocator, &asset);
                 input_close(&input);
             }
             lock();
@@ -385,7 +393,7 @@ static pxa_status_t inspect_asset(void *context, pxa_component_t component, pxa_
     memset(state, 0, sizeof(*state));
     pxa_status_t status = find_asset(context, component, path, &info);
     if (status != PXA_STATUS_OK) return status;
-    if (!pxa_asset_object_required_bytes(&info)) return PXA_STATUS_UNSUPPORTED;
+    if (!pxa_asset_resident_required_bytes(&info)) return PXA_STATUS_UNSUPPORTED;
     lock();
     status = pxa_asset_cache_inspect(g_assets.cache, component, g_assets.package_key, &info,
         pxa_asset_default_memory_class(&info), state);

@@ -17,6 +17,7 @@ typedef struct {
     size_t max_catalog_bytes;
     void *notify_context;
     void (*notify)(void *context); /* Persistent Host wakeup only, not Guest. */
+    const pxa_image_backend_t *image_backend; /* Optional cached PNG decoder. */
     /* Optional storage-delay/failure hook, after arbitration and outside locks.
      * lane: resource=0/music=1. It must observe cancellation during injected
      * waits; a real OS read already in progress is not preemptible. */

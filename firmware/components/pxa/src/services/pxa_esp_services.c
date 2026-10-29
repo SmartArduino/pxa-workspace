@@ -796,6 +796,7 @@ static pxa_status_t initialize_assets(
     if (!guest_assets && !music) return PXA_STATUS_OK;
     worker.manifest = host->manifest;
     worker.package_root = host->package_root;
+    worker.image_backend = pxa_esp_rom_image_backend();
     worker.notify = host->assets_notify;
     worker.notify_context = host->assets_notify_context;
     worker.max_catalog_bytes = 64u * 1024u;
