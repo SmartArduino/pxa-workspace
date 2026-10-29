@@ -1,6 +1,6 @@
 # 按设备生成系统字体
 
-默认工厂字体使用 `zh-Hans,en` 加学习音标语料：2013《通用规范汉字表》全部 **8105** 字、英文 ASCII、拼音声调、常用英语 IPA，以及原系统的标点、数学符号、箭头和图标映射。简体字形使用 **Noto Sans CJK SC** 大陆黑体。文件仍叫 `noto_sans_cjk_common.ttf`，内部名称为 PXA Sans SC，当前为 **2,787,584 B**。拼音和音标语料位于 `study-phonetics.txt`，不能用普通 ASCII 字体代替，否则会丢失声调或音素。
+默认工厂字体使用 `zh-Hans,en` 加学习音标语料：2013《通用规范汉字表》全部 **8105** 字、英文 ASCII、拼音声调、常用英语 IPA，以及原系统的标点、数学符号、箭头和图标映射。简体字形使用 **Noto Sans CJK SC** 大陆黑体。文件仍叫 `noto_sans_cjk_common.ttf`，内部名称为 PXA Sans SC，当前为 **2,788,052 B**。诗词补充字「罍、殽、晞、曈、浥、焜」保存在 `study-hanzi.txt`。拼音和音标语料位于 `study-phonetics.txt`，不能用普通 ASCII 字体代替，否则会丢失声调或音素。
 
 字体和拼音字表独立裁剪。只编译简体输入法并不会自动删除 TTF 内的繁体轮廓；选择精简字体也不会自动扩大 Provider 的字表。8105 字是规范汉字表覆盖，不等于 Unicode 中所有汉字，更不等于智能词句输入。
 
@@ -19,6 +19,7 @@ python3 tools/fonts/build_common_font.py \
   --source /usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc \
   --languages zh-Hans,en \
   --corpus tools/fonts/study-phonetics.txt \
+  --corpus tools/fonts/study-hanzi.txt \
   --fallback-source /usr/share/fonts/noto/NotoSans-Regular.ttf \
   --output "$font_output/noto_sans_cjk_common.ttf" --report "$font_output/build.json"
 ```
@@ -78,3 +79,5 @@ TTF 缩小主要节省 Flash，不能按文件大小推算 RAM。使用同一字
 生成器先写临时文件，完整校验后原子替换输出；失败保留原文件，并保留既有输出权限（新输出继承 base 权限）。支持 base 原位更新并正确记录原始摘要，拒绝用输出覆盖源字体或 corpus，TTF 读取句柄会在替换前关闭。切换地区时会从对应源 face 更新 CJK 字形，不能将 TC/JP base 的字形仅改名为 SC；仅同地区才保留原轮廓。字形去重不会把有效字符合并为 `.notdef`（glyph ID 0）。
 
 进一步完善的验证见 `deps/pxa-system/docs/zh-CN/input-methods-refinement-20261015.md`；首次扩字表的记录见 `deps/pxa-system/docs/zh-CN/input-methods-character-coverage-20261015.md`。之前阅读器报告的繁体语料验收适用于此前的较大字体；默认精简配置明确不再包含未选语言，阅读繁体作品应选择双字集或相应 corpus。
+
+缺字占位在 PXA 固件、桌面及浏览器模拟器中默认开启。正常字体与图标回退仍优先查询，全部未命中时才显示方框；补字不能依靠关闭占位隐藏问题。`common/study/tests/guests/study-font-probe` 显示补充汉字、拼音/音标、图标，以及故意未收录的 U+0378，供真机与模拟器检查。

@@ -6,6 +6,19 @@ from fontTools.ttLib import TTFont
 
 
 class StudyFontTest(unittest.TestCase):
+    def test_shipped_font_has_rare_poetry_characters(self):
+        root = Path(__file__).resolve().parents[2]
+        corpus = (root / "tools/fonts/study-hanzi.txt").read_text(encoding="utf-8")
+        required = {ord(char) for char in corpus if not char.isspace()}
+        self.assertTrue(set(map(ord, "罍殽晞曈浥焜")) <= required)
+        with TTFont(root / "factory/base/system/fonts/noto_sans_cjk_common.ttf") as font:
+            cmap = font.getBestCmap()
+            self.assertFalse(required - set(cmap), "Missing poetry characters")
+            self.assertTrue(all(font.getGlyphID(cmap[cp]) > 0 for cp in required))
+            # The visual probe deliberately uses an unassigned codepoint, so
+            # it exercises the Host's placeholder rather than a bundled glyph.
+            self.assertNotIn(0x0378, cmap)
+
     def test_shipped_font_has_pinyin_and_english_ipa(self):
         root = Path(__file__).resolve().parents[2]
         corpus = (root / "tools/fonts/study-phonetics.txt").read_text(encoding="utf-8")
