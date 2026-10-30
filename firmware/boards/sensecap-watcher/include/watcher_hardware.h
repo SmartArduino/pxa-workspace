@@ -219,5 +219,6 @@ private:
     std::atomic<uint32_t> snapshot_frame_id_{0};
     std::atomic<int64_t> snapshot_timestamp_us_{0};
     std::atomic<bool> wifi_initialized_{false};
+    std::atomic<bool> time_sync_initialized_{false};
     std::atomic<bool> wifi_enabled_{true};
 };

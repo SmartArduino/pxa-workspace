@@ -17,6 +17,7 @@
 #include <esp_lcd_touch.h>
 #include "watcher_spd2010_touch.h"
 #include <esp_log.h>
+#include <esp_netif_sntp.h>
 #include <esp_lv_decoder.h>
 #include <esp_lvgl_port.h>
 #include <esp_system.h>
@@ -1279,6 +1280,11 @@ void SensecapWatcherHardware::PublishStatus() {
 bool SensecapWatcherHardware::InitializeWifi() {
     auto& wifi = WifiManager::GetInstance();
     wifi.SetEventCallback([this](WifiEvent event, const std::string&) {
+        if (event == WifiEvent::Connected && time_sync_initialized_.load()) {
+            const auto result = esp_netif_sntp_start();
+            if (result != ESP_OK)
+                ESP_LOGW(kTag, "Unable to start time sync: %s", esp_err_to_name(result));
+        }
         if (event == WifiEvent::Connected || event == WifiEvent::Disconnected ||
             event == WifiEvent::ConfigModeEnter ||
             event == WifiEvent::ConfigModeExit) {
@@ -1289,6 +1295,14 @@ bool SensecapWatcherHardware::InitializeWifi() {
     config.ssid_prefix = "SenseCAP-Watcher";
     config.language = "zh-CN";
     if (!wifi.Initialize(config)) return false;
+    esp_sntp_config_t clock = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    clock.start = false;
+    clock.wait_for_sync = false;
+    clock.sync_cb = [](struct timeval*) { ESP_LOGI(kTag, "System time synchronized"); };
+    const auto result = esp_netif_sntp_init(&clock);
+    time_sync_initialized_.store(result == ESP_OK);
+    if (result != ESP_OK)
+        ESP_LOGW(kTag, "Unable to initialize time sync: %s", esp_err_to_name(result));
     wifi_initialized_.store(true);
     wifi.StartStation();
     return true;
