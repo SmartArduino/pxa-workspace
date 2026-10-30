@@ -22,7 +22,7 @@ def main():
     args = parser.parse_args()
     ws, site, output = (p.resolve() for p in (args.workspace, args.website, args.output))
     projects = [ws / 'apps/tutorial-cpp', ws / 'apps/tutorial-c']
-    if any(p.exists() for p in projects) or (ws / 'tutorial-scenario.json').exists():
+    if any(p.exists() for p in projects):
         parser.error('Use a fresh configured workspace; existing tutorial projects are retained')
     output.mkdir(parents=True, exist_ok=False)
     result = {'passed': False, 'steps': [], 'physical_device_tested': False,
@@ -55,9 +55,10 @@ def main():
         run('context-cpp', ['context', 'apps/tutorial-cpp', '--query', 'Button'])
         text = (site / 'content/ai-tools-reference.md').read_text()
         scenario = json.loads(re.search(r'```json\n(.*?)```', text, re.S).group(1))
-        (ws / 'tutorial-scenario.json').write_text(json.dumps(scenario))
+        (projects[0] / 'tests').mkdir()
+        (projects[0] / 'tests/hello.json').write_text(json.dumps(scenario))
         verify('cpp-interaction', ['apps/tutorial-cpp', '--profiles', 'pai-touch', 'sensecap-watcher',
-                                  '--scenario', 'tutorial-scenario.json', '--store-screenshots'])
+                                  '--scenario', 'apps/tutorial-cpp/tests/hello.json', '--store-screenshots'])
         run('scope-after-cpp', ['scope', 'check'])
         run('init-c', ['init', 'apps/tutorial-c', '--id', 'pxa-tutorial-c', '--language', 'c'])
         assert (projects[1] / 'main.c').is_file() and not (projects[1] / 'main.cpp').exists()
@@ -67,10 +68,11 @@ def main():
             {'name': 'confirm', 'action': 'controller', 'buttons': 16, 'ms': 100},
             {'name': 'settle', 'action': 'wait', 'ms': 180},
             {'name': 'count-one', 'action': 'screenshot'}]}
-        # The scenario is outside both app source trees, as documented.
-        (ws / 'tutorial-scenario.json').write_text(json.dumps(scenario))
+        # Reusable test inputs belong to the selected app, within its edit scope.
+        (projects[1] / 'tests').mkdir()
+        (projects[1] / 'tests/hello.json').write_text(json.dumps(scenario))
         verify('c-controller', ['apps/tutorial-c', '--profiles', 'pai-touch',
-                                '--scenario', 'tutorial-scenario.json', '--store-screenshots'])
+                                '--scenario', 'apps/tutorial-c/tests/hello.json', '--store-screenshots'])
         (projects[1] / 'store.json').write_text(json.dumps({
             'kind': 'app', 'category': 'tools', 'tags': ['计数', '工具'],
             'icon': None, 'cover': None}, ensure_ascii=False))
