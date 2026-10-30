@@ -87,7 +87,12 @@
 #define PXA_ESP_HOST_TAG "PxaHost"
 #define PXA_ESP_HOST_MAX_APP_ID PXA_HOST_COMMAND_MAX_IDENTITY_BYTES
 #define PXA_ESP_HOST_MAX_PATH 160
-#define PXA_ESP_HOST_MAX_SERVICES (21 + PXA_VOICE_TRIGGER_SERVICE_COUNT)
+#define PXA_ESP_HOST_MAX_SERVICES (22 + PXA_VOICE_TRIGGER_SERVICE_COUNT + PXA_PERIPHERALS_SERVICE_COUNT)
+#if PXA_ENABLE_PERIPHERALS
+#define PXA_PERIPHERALS_SERVICE_COUNT 1
+#else
+#define PXA_PERIPHERALS_SERVICE_COUNT 0
+#endif
 #if PXA_ENABLE_VOICE_TRIGGER
 #define PXA_VOICE_TRIGGER_SERVICE_COUNT 1
 #else
@@ -466,6 +471,7 @@ typedef struct {
 } pxa_host_system_event_t;
 
 static int drain_active_events(void);
+static void poll_sensors(void);
 
 static void notify_runtime_event(pxa_host_runtime_event_t event,
                                  const char *identity,
@@ -1456,6 +1462,32 @@ static pxa_status_t request_runtime_permission_prompt(
                                 pxa_esp_host_locale_is_chinese() ?
                                     "未知权限" : "Unknown permission");
     copy_permission_prompt_text(prompt.scope, sizeof(prompt.scope), scope, "-");
+    if (strcmp(prompt.permission_name, PXA_HAPTICS_PERMISSION) == 0) {
+        snprintf(prompt.permission_name, sizeof(prompt.permission_name), "%s",
+            pxa_esp_host_locale_is_chinese() ? "振动反馈" : "Vibration feedback");
+        if (strcmp(prompt.scope, PXA_HAPTICS_SCOPE) == 0)
+            snprintf(prompt.scope, sizeof(prompt.scope), "%s",
+                pxa_esp_host_locale_is_chinese() ? "设备振动马达" : "Device actuator");
+    }
+#if PXA_ENABLE_PERIPHERALS
+    if (strcmp(prompt.permission_name, PXA_PERIPHERALS_PERMISSION) == 0) {
+        const bool chinese = pxa_esp_host_locale_is_chinese();
+        snprintf(prompt.permission_name, sizeof(prompt.permission_name), "%s",
+            chinese ? "外设访问" : "Peripheral access");
+        const char *label = NULL;
+        if (strcmp(prompt.scope, "indicator.rgb") == 0)
+            label = chinese ? "板载 RGB 指示灯" : "On-board RGB indicator";
+        else if (strcmp(prompt.scope, "indicator.status") == 0)
+            label = chinese ? "板载状态灯" : "On-board status indicator";
+        else if (strcmp(prompt.scope, "grove.i2c") == 0)
+            label = chinese ? "Grove 外接 I2C 设备" : "External Grove I2C devices";
+        else if (strcmp(prompt.scope, "camera.jpeg") == 0)
+            label = chinese ? "摄像头图像" : "Camera images";
+        else if (strcmp(prompt.scope, "vision.inference") == 0)
+            label = chinese ? "摄像头视觉识别" : "Camera visual recognition";
+        if (label != NULL) snprintf(prompt.scope, sizeof(prompt.scope), "%s", label);
+    }
+#endif
 #if PXA_ENABLE_VOICE_TRIGGER
     if (strcmp(prompt.permission_name, PXA_VT_PERMISSION) == 0) {
         snprintf(prompt.permission_name, sizeof(prompt.permission_name), "%s",
@@ -2121,6 +2153,8 @@ static int drain_active_events(void) {
         int delivered = 0;
         if (g_host.activation.services.assets) pxa_assets_service_poll(g_host.activation.services.assets);
         if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
+        if (g_host.activation.services.storage) pxa_storage_service_poll(g_host.activation.services.storage);
+        poll_sensors();
 #if PXA_ENABLE_VOICE_TRIGGER
         if (g_host.activation.services.voice_trigger)
             (void)pxa_vt_service_poll(g_host.activation.services.voice_trigger, host_now_us(NULL));
@@ -2149,6 +2183,7 @@ static int drain_active_events(void) {
         if (!delivered || host_now_us(NULL) - started_us >= 8000) break;
     }
     pxa_esp_fs_roots_poll(g_host.activation.services.fs_roots);
+    if (g_host.activation.services.storage) pxa_storage_service_poll(g_host.activation.services.storage);
     /* Guest callbacks can start/cancel decoding even on the final drain round.
      * A ready file needs another owner turn; a blocked stream waits for its
      * native I/O wake. No Guest timer or image-specific worker is required. */
@@ -2158,6 +2193,8 @@ static int drain_active_events(void) {
         wake_runtime_thread();
     }
     pxa_esp_ime_drain();
+    /* A subscription may have opened in the final Guest callback. */
+    poll_sensors();
     refresh_input_capture_state();
     return 1;
 }
@@ -3016,9 +3053,29 @@ static pxa_status_t initialize_engine(uint16_t max_components) {
 
 /* --- sensor/audio providers --------------------------------------------- */
 
+/* Only the runtime task touches the service. The timer reads this flag and
+ * posts a coalesced wake; it never dereferences an activation's workspace. */
+static uint8_t g_sensor_active;
+
+static void poll_sensors(void) {
+    pxa_sensor_service_t *sensor = g_host.activation.services.sensor;
+    int active = sensor && pxa_sensor_has_active_subscriptions(sensor);
+    if (active) {
+        pxa_component_t affected[8];
+        size_t count = 0;
+        (void)pxa_sensor_poll(sensor, host_now_us(NULL), affected, 8, &count);
+    }
+#if PXA_ENABLE_PERIPHERALS
+    pxa_peripherals_service_poll(g_host.activation.services.peripherals);
+    active |= pxa_peripherals_service_pending(g_host.activation.services.peripherals);
+#endif
+    __atomic_store_n(&g_sensor_active, active ? 1u : 0u, __ATOMIC_RELEASE);
+}
+
 /* --- services ----------------------------------------------------------- */
 
 static void destroy_services(void) {
+    __atomic_store_n(&g_sensor_active, 0u, __ATOMIC_RELEASE);
     pxa_esp_services_destroy(&g_host.activation.services);
     g_host.activation.ui_component = PXA_COMPONENT_INVALID;
 }
@@ -3429,6 +3486,7 @@ static int start_verified(const char *identity) {
             HOST_SERVICE_VERSION(STORAGE),
             HOST_SERVICE_VERSION(IPC),
             HOST_SERVICE_VERSION(SENSOR),
+            HOST_SERVICE_VERSION(HAPTICS),
             HOST_SERVICE_VERSION(NET),
             HOST_SERVICE_VERSION(AUDIO),
             HOST_SERVICE_VERSION(PERMISSION),
@@ -3616,6 +3674,8 @@ static void on_maintenance_timer(void *arg) {
     now_us = host_now_us(NULL);
     /* Keep the newest move buffered and wake the guest at display cadence. */
     if (pointer_mailbox_has_move()) wake_runtime_thread();
+    if (__atomic_load_n(&g_sensor_active, __ATOMIC_ACQUIRE))
+        (void)post_maintenance(PXA_ESP_HOST_CMD_SENSOR_MAINTENANCE);
     if (now_us >= g_host.next_maintenance_us) {
         g_host.next_maintenance_us =
             now_us + PXA_ESP_HOST_MAINTENANCE_PERIOD_US;
@@ -4478,6 +4538,12 @@ static void sync_ui_lifecycle(void) {
     interactive = g_host.display_interactive;
     portEXIT_CRITICAL(&g_process_state_lock);
     effective = requested && interactive;
+    pxa_haptics_service_set_foreground(g_host.activation.services.haptics,
+        effective ? component : PXA_COMPONENT_INVALID);
+#if PXA_ENABLE_PERIPHERALS
+    pxa_peripherals_service_set_foreground(g_host.activation.services.peripherals,
+        effective ? component : PXA_COMPONENT_INVALID);
+#endif
 #if PXA_ENABLE_VOICE_TRIGGER
     pxa_vt_service_set_foreground(g_host.activation.services.voice_trigger,
         effective ? component : PXA_COMPONENT_INVALID);
@@ -4616,6 +4682,8 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
         (void)pxa_assets_service_poll(g_host.activation.services.assets);
     }
     if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
+    if (g_host.activation.services.storage) pxa_storage_service_poll(g_host.activation.services.storage);
+    poll_sensors();
 #if PXA_ENABLE_VOICE_TRIGGER
     if (g_host.activation.services.voice_trigger)
         (void)pxa_vt_service_poll(g_host.activation.services.voice_trigger, host_now_us(NULL));
@@ -4901,6 +4969,8 @@ static void run(void) {
                 break;
             }
             case PXA_ESP_HOST_CMD_SENSOR_MAINTENANCE:
+                poll_sensors();
+                drain_active_events();
                 break;
             case PXA_ESP_HOST_CMD_NET_MAINTENANCE: {
                 drain_net_completions();

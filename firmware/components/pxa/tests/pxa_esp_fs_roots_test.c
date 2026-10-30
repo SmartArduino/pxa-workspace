@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "pxa_esp_fs_roots.h"
 #include "pxa_esp_ui_shell.h"
+#include "pxa_esp_record_seal.h"
 #include "pxa/pxa_esp_storage.h"
 #include "esp_vfs_fat.h"
 #include <assert.h>
@@ -12,6 +13,17 @@
 #include <openssl/hmac.h>
 #include "../src/services/pxa_esp_fs_roots.c"
 
+/* Namespace MAC and grant MAC are independent Host authorities. */
+pxa_status_t pxa_esp_record_seal(pxa_bytes_t purpose,pxa_bytes_t binding,pxa_bytes_t body,uint8_t tag[32]) {
+    uint8_t input[512]={0},key[32]={0x67};size_t size=12;unsigned tag_bytes=0;
+    assert(12+purpose.size+binding.size+body.size<=sizeof(input));
+    pxa_write_u32(input,(uint32_t)purpose.size);pxa_write_u32(input+4,(uint32_t)binding.size);pxa_write_u32(input+8,(uint32_t)body.size);
+    memcpy(input+size,purpose.data,purpose.size);size+=purpose.size;
+    memcpy(input+size,binding.data,binding.size);size+=binding.size;
+    memcpy(input+size,body.data,body.size);size+=body.size;
+    assert(HMAC(EVP_sha256(),key,sizeof(key),input,size,tag,&tag_bytes) && tag_bytes==32);
+    return PXA_STATUS_OK;
+}
 static unsigned random_state=1,allocation_count;
 static void *allocations[8];
 struct pxa_esp_app_storage {const char *root;uint8_t key[32];uint64_t media_epoch;};
@@ -88,6 +100,67 @@ static void directory_prompt_test(pxa_esp_fs_roots_t *roots,uint64_t epoch) {
     assert(!unlink(CONFIG_PXA_MOUNT_POINT "/Picker/game.gb"));
     assert(!rmdir(CONFIG_PXA_MOUNT_POINT "/Picker/Empty") && !rmdir(CONFIG_PXA_MOUNT_POINT "/Picker"));
 }
+static void migrated_grant_test(pxa_esp_fs_roots_t *roots,pxa_fs_roots_backend_t *backend) {
+    const char *mount=CONFIG_PXA_MOUNT_POINT "/grant-card";
+    const char *relocated=CONFIG_PXA_MOUNT_POINT "/returned-card";
+    char original[256]="PXA/media/",relative[256],absolute[768],namespace_root[512],marker[768];
+    uint8_t publisher[32]={7},grant_id[16]={7};pxa_volume_info_t volume;
+    memset(original+10,'0',64);original[11]='7';strcpy(original+74,"/game/roms");
+    assert(!mkdir(mount,0700));
+    assert(!pxa_esp_storage_register_fat(mount,"grant card","grant-card",10,4000000,3000000,3,4096));
+    assert(!pxa_esp_storage_resolve_volume(mount,&volume));
+    assert(snprintf(absolute,sizeof(absolute),"%s/%s",mount,original)<(int)sizeof(absolute));
+    for(char *p=absolute+strlen(mount)+1;*p;++p)if(*p=='/') {*p=0;assert(!mkdir(absolute,0700) || errno==EEXIST);*p='/';}
+    assert(!mkdir(absolute,0700));
+    assert(snprintf(marker,sizeof(marker),"%s/game.gb",absolute)<(int)sizeof(marker));
+    int fd=open(marker,O_WRONLY|O_CREAT|O_EXCL,0600);assert(fd>=0 && write(fd,"ROM",3)==3 && !close(fd));
+    memset(roots->grants,0,sizeof(roots->grants));roots->persisted_mask=1;
+    pxa_scoped_fs_grant_t *grant=&roots->grants[0];
+    memcpy(grant->id,grant_id,16);grant->active=1;grant->revision=17;grant->rights=3;grant->volume_id=volume.id;
+    strcpy(grant->relative_path,original);assert(save_grants(roots));
+    memset(roots->grants,0,sizeof(roots->grants));roots->persisted_mask=0;load_grants(roots);
+    assert(roots->persisted_mask==1 && grant->revision==17 && !strcmp(grant->relative_path,original));
+    assert(snprintf(namespace_root,sizeof(namespace_root),"%s/PXA",mount)<(int)sizeof(namespace_root));
+    assert(!pxa_esp_publisher_bind(namespace_root,&volume.id,"media",publisher,"lucinhu"));
+    assert(access(absolute,F_OK)<0 && errno==ENOENT);
+    void *directory=NULL,*file=NULL;uint32_t rights=0;pxa_fs_entry_t entry;uint64_t features;size_t count;uint8_t data[3];
+    assert(!backend->open_root(backend->context,PXA_FS_ROOT_GRANT,grant_id,&directory,&rights) && rights==3);
+    assert(!strcmp(grant->relative_path,original) && grant->revision==17); /* No persisted-path rewrite. */
+    assert(!backend->open_at(backend->context,directory,bytes("game.gb"),PXA_FS_OPEN_READ,&file,&entry,&features));
+    assert(!backend->read_at(backend->files.context,file,0,data,sizeof(data),&count) && count==3 && !memcmp(data,"ROM",3));
+    backend->files.close(backend->files.context,file,PXA_FS_KIND_REGULAR);
+    backend->files.close(backend->files.context,directory,PXA_FS_KIND_DIRECTORY);
+    /* Missing media is never manufactured, and a removed/reinserted card
+     * resolves by durable volume identity despite its changed path and epoch. */
+    strcpy(relative,original);strcat(relative,"/missing");strcpy(grant->relative_path,relative);
+    assert(backend->open_root(backend->context,PXA_FS_ROOT_GRANT,grant_id,&directory,&rights)!=PXA_STATUS_OK && !directory && !rights);
+    assert(snprintf(marker,sizeof(marker),"%s/PXA/media/lucinhu/game/roms/missing",mount)<(int)sizeof(marker));
+    assert(access(marker,F_OK)<0 && errno==ENOENT);strcpy(grant->relative_path,original);
+    assert(!pxa_esp_storage_drain_volume(volume.mount_epoch) && !pxa_esp_storage_unregister_volume(volume.mount_epoch));
+    assert(backend->open_root(backend->context,PXA_FS_ROOT_GRANT,grant_id,&directory,&rights)!=PXA_STATUS_OK && !directory && !rights);
+    assert(!rename(mount,relocated));
+    assert(!pxa_esp_storage_register_fat(relocated,"returned grant card","grant-card",10,4000000,3000000,3,4096));
+    pxa_volume_info_t returned;assert(!pxa_esp_storage_resolve_volume(relocated,&returned));
+    assert(returned.mount_epoch!=volume.mount_epoch && !memcmp(returned.id.bytes,volume.id.bytes,16));
+    assert(!backend->open_root(backend->context,PXA_FS_ROOT_GRANT,grant_id,&directory,&rights));
+    assert(!backend->open_at(backend->context,directory,bytes("game.gb"),PXA_FS_OPEN_READ,&file,&entry,&features));
+    assert(!backend->read_at(backend->files.context,file,0,data,sizeof(data),&count) && count==3 && !memcmp(data,"ROM",3));
+    backend->files.close(backend->files.context,file,PXA_FS_KIND_REGULAR);
+    backend->files.close(backend->files.context,directory,PXA_FS_KIND_DIRECTORY);
+    assert(snprintf(marker,sizeof(marker),"%s/PXA/media/lucinhu/.publisher.pxi",relocated)<(int)sizeof(marker));
+    fd=open(marker,O_RDWR);assert(fd>=0);uint8_t changed=99;assert(pwrite(fd,&changed,1,15)==1 && !close(fd));
+    assert(backend->open_root(backend->context,PXA_FS_ROOT_GRANT,grant_id,&directory,&rights)==PXA_STATUS_DENIED && !directory && !rights);
+    assert(!strcmp(grant->relative_path,original) && grant->revision==17 && !memcmp(grant->id,grant_id,16));
+    assert(!pxa_esp_storage_drain_volume(returned.mount_epoch) && !pxa_esp_storage_unregister_volume(returned.mount_epoch));
+    assert(!unlink(marker));
+    assert(snprintf(absolute,sizeof(absolute),"%s/PXA/media/lucinhu/game/roms/game.gb",relocated)<(int)sizeof(absolute));
+    assert(!unlink(absolute));*strrchr(absolute,'/')=0;
+    for(unsigned i=0;i<4;++i) {assert(!rmdir(absolute));*strrchr(absolute,'/')=0;}
+    assert(snprintf(marker,sizeof(marker),"%s/volume.0.pxv",absolute)<(int)sizeof(marker) && !unlink(marker));
+    assert(snprintf(marker,sizeof(marker),"%s/volume.1.pxv",absolute)<(int)sizeof(marker) && !unlink(marker));
+    assert(!rmdir(absolute) && !rmdir(relocated));
+    puts("Persisted media grants: authenticated old prefix, read after rename, stable token, unavailable/tampered/missing refusal and changed mount path recovery passed");
+}
 int main(void) {
     pxa_esp_fs_roots_t *roots;pxa_fs_roots_backend_t *backend;
     void *directory,*file;uint32_t rights;pxa_fs_entry_t entry;uint64_t features;
@@ -143,9 +216,9 @@ int main(void) {
     backend->files.close(backend->files.context,file,PXA_FS_KIND_REGULAR);
     backend->files.close(backend->files.context,directory,PXA_FS_KIND_DIRECTORY);
     pxa_esp_fs_roots_destroy(roots);while(allocation_count)free(allocations[--allocation_count]);
-    char managed[256]="PXA/media/",absolute[768];
-    memset(managed+10,'a',64);strcpy(managed+74,"/quake/");
-    memset(managed+81,'b',64);strcpy(managed+145,"/package");
+    char managed[256]="PXA/media/lucinhu-17982acd/quake/",absolute[768];
+    const size_t generation_offset=strlen(managed);
+    memset(managed+generation_offset,'b',64);strcpy(managed+generation_offset+64,"/package");
     config.media_relative=managed;
     assert(!pxa_esp_fs_roots_create(&config,&roots,&backend));
     assert(backend->open_root(backend->context,PXA_FS_ROOT_APP_MEDIA,id,&directory,&rights)==PXA_STATUS_UNAVAILABLE);
@@ -202,6 +275,7 @@ int main(void) {
     roots->grants[0]=saved;roots->persisted_mask=1;assert(save_grants(roots));
     storage.key[0]=2;memset(roots->grants,0,sizeof(roots->grants));roots->persisted_mask=0;load_grants(roots);
     assert(!roots->persisted_mask);storage.key[0]=1;load_grants(roots);assert(roots->persisted_mask==1);
+    migrated_grant_test(roots,backend);
     assert(!unlink(roots->store_path));
     pxa_esp_fs_roots_destroy(roots);while(allocation_count)free(allocations[--allocation_count]);
     assert(!rmdir(CONFIG_PXA_MOUNT_POINT "/PXA/apps"));

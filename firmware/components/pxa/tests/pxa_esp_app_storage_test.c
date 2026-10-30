@@ -2,6 +2,7 @@
 #include "pxa_esp_app_storage.h"
 #include "pxa_esp_volumes.h"
 #include "pxa_esp_record_seal.h"
+#include "pxa_esp_publisher_directory.h"
 #include "record_test_auth.h"
 #include "esp_littlefs.h"
 #include "esp_vfs_fat.h"
@@ -106,9 +107,10 @@ static void make_home(const char *mount,uint64_t epoch,const char *name,pxa_posi
     assert(!pxa_esp_storage_volume(epoch,&info));home->record.app_volume=info.id;
     home->record.flags=PXA_INSTALL_RECORD_ENABLED;strcpy(home->record.app_id,name);
     home->record.install_id[0]=1;home->record.publisher_root[0]=1;
-    assert(snprintf(home->locator,sizeof(home->locator),"publisher/%s",name)<(int)sizeof(home->locator));
+    memset(home->locator,'0',64);home->locator[1]='1';
+    assert(snprintf(home->locator+64,sizeof(home->locator)-64,"/%s",name)<(int)sizeof(home->locator)-64);
     assert(snprintf(path,sizeof(path),"%s/PXA/apps",mount)<(int)sizeof(path));assert(!mkdir(path,0700) || errno==EEXIST);
-    assert(snprintf(path,sizeof(path),"%s/PXA/apps/publisher",mount)<(int)sizeof(path));assert(!mkdir(path,0700) || errno==EEXIST);
+    assert(snprintf(path,sizeof(path),"%s/PXA/apps/%.64s",mount,home->locator)<(int)sizeof(path));assert(!mkdir(path,0700) || errno==EEXIST);
     assert(snprintf(home->home,sizeof(home->home),"%s/PXA/apps/%s",mount,home->locator)<(int)sizeof(home->home));
     assert(!mkdir(home->home,0700));
 }
@@ -152,6 +154,11 @@ static void check_changed_mount_path(bool native) {
         assert(!permissions.save(permissions.context,app,name,scope,PXA_PERMISSION_ALLOW));
     }
     assert(!pxa_esp_app_storage_close(&storage));
+    char namespace_root[512];
+    assert(snprintf(namespace_root,sizeof(namespace_root),"%s/PXA",original)<(int)sizeof(namespace_root));
+    assert(!pxa_esp_publisher_bind(namespace_root,&before.id,"apps",home.record.publisher_root,"lucinhu"));
+    assert(!pxa_esp_publisher_path(epoch,"apps",home.locator,home.home,sizeof(home.home)));
+    assert(strstr(home.home,"/apps/lucinhu/portable"));
     assert(!pxa_esp_storage_drain_volume(epoch) && !pxa_esp_storage_unregister_volume(epoch));
     assert(!rename(original,relocated));
     config.mount_path=relocated;uint64_t new_epoch;
@@ -160,7 +167,7 @@ static void check_changed_mount_path(bool native) {
     assert(!memcmp(before.id.bytes,after.id.bytes,16));
     assert(pxa_esp_app_storage_create(&home,epoch,native?0:131072,NULL,&storage)!=PXA_STATUS_OK && !storage);
     assert(pxa_esp_app_storage_create(&home,new_epoch,native?0:131072,NULL,&storage)==PXA_STATUS_DENIED && !storage);
-    assert(snprintf(home.home,sizeof(home.home),"%s/PXA/apps/%s",relocated,home.locator)<(int)sizeof(home.home));
+    assert(!pxa_esp_publisher_path(new_epoch,"apps",home.locator,home.home,sizeof(home.home)));
     assert(!memcmp(&record,&home.record,sizeof(record)));
     assert(!pxa_esp_app_storage_create(&home,new_epoch,native?0:131072,NULL,&storage));
     assert(!pxa_esp_app_storage_root(storage,&root));

@@ -10,7 +10,7 @@ PXA 在每个受管理卷内使用 `/PXA`。用户选择的是“内部存储”
 <volume>/PXA/
   volume.0.pxv                    # 本卷 UUID 镜像
   volume.1.pxv
-  apps/<publisher-root>/<app-id>/
+  apps/<publisher-directory>/<app-id>/
     install.0.pxi                 # 本地认证安装记录
     install.1.pxi
     package/                      # 当前签名清单、代码与包内资源
@@ -21,11 +21,15 @@ PXA 在每个受管理卷内使用 `/PXA`。用户选择的是“内部存储”
   cache/store/
     .store-<token>.pxa             # 下载暂存或完成的离线包
     .store-<token>.pxa.meta        # 离线包的认证完成描述
-  media/<publisher-root>/<app-id>/ # 当前手工导入的游戏资源
+  media/<publisher-directory>/<app-id>/ # 当前手工导入的游戏资源
   system/fonts/                   # 板策略选定卷上的系统字体
 ```
 
-`publisher-root` 是发布者 lineage root 的 64 位小写十六进制标识；App ID 来自签名清单。不同发布者的同名应用不共用目录。显示名称及其国际化不改变安装身份。
+`publisher-directory` 优先使用签名包作者资料中的开发者名称，例如 `lucinhu`；名称已被占用时追加签名根指纹，例如 `lucinhu-17982acd`，发生指纹前缀冲突时继续延长。无已验证作者资料的包继续使用完整签名根目录。App ID 来自签名清单。名称只用于磁盘路径，应用跳转和安装记录继续使用完整 `publisher-root + App ID`，不因昵称、显示语言或挂载位置改变。
+
+每个卷的 `apps` 和 `media` 发布者目录分别包含 `.publisher.pxi`，由设备认证绑定卷身份、用途、完整签名根与实际目录名；新安装不依赖逐应用 NVS 表。首次分配的名称保持稳定，修改作者昵称不会移动已有应用。无法验证的目录不被接管，同名作者不共用数据。
+
+旧完整签名根目录先提交认证名称，再原子改名；中断后旧目录或新目录均可恢复，发现双重归属时拒绝模糊访问。应用目录只有在同作者应用空闲且没有待恢复搬家事务时才迁移；已存在的共享媒体目录只在启动阶段迁移，避免影响其他应用已打开的目录授权。运行时安装可先保留媒体旧路径，下一次启动完成改名。既有目录授权在访问时按已认证的名称解析，授权 ID 和权限保持不变。
 
 `data-generation` 使用固定宽度十六进制编码。更新保留当前数据代际；清除数据准备新代际、提交本地记录后再回收旧目录。历史数据代际零使用 `home/private` 兼容路径。Guest 只访问 Host 提供的私有 FS、KV 和 Assets，不能拼接这些原生路径。
 
@@ -102,9 +106,9 @@ GameKit 没有内部文件分区时可将 SD 挂到 `/pxa`；有内部卷时 SD 
 
 ## 游戏媒体与签名资源包
 
-现有游戏使用自动绑定的只读 app-media 根访问 `/PXA/media/<publisher-root>/<app-id>`，无需每次选择游戏文件夹。选择其他用户目录时才使用目录授权接口。
+现有游戏使用自动绑定的只读 app-media 根访问 `/PXA/media/<publisher-directory>/<app-id>`，无需每次选择游戏文件夹。选择其他用户目录时才使用目录授权接口。
 
-Manifest 0.8 区分应用包和资源包。资源包有签名文件清单，没有可执行组件或权限；应用的签名清单直接绑定资源清单 SHA-256，与传输压缩方式无关。准备完成的资源固定存放于资源卷的 `/PXA/media/<publisher-root>/<app-id>/<resource-manifest-sha256>/package/`。代码更新可以复用同一资源代际，不能原地改写它。
+Manifest 0.8 区分应用包和资源包。资源包有签名文件清单，没有可执行组件或权限；应用的签名清单直接绑定资源清单 SHA-256，与传输压缩方式无关。准备完成的资源固定存放于资源卷的 `/PXA/media/<publisher-directory>/<app-id>/<resource-manifest-sha256>/package/`。代码更新可以复用同一资源代际，不能原地改写它。
 
 Host 原生安装器可在选定卷准备资源包，并将已准备的准确代际写入应用的本地认证安装记录。安装及启动检查签名身份、绑定摘要与资源文件；运行会话保留精确资源挂载。资源卷缺失或损坏时拒绝启动，不创建空代际掩盖问题。开发工具可用相同 `PACKAGE install-volume` 命令安装签名资源包，再安装引用它的应用。手工媒体目录仍用于旧版游戏，不会被资源安装隐式认领或删除。
 

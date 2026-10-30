@@ -131,6 +131,10 @@ static pxa_status_t prepare(resource_move_t *move,uint64_t app_epoch,uint64_t ta
     int n=snprintf(move->source_package,sizeof(move->source_package),"%s/%s",move->source->root,move->relative+4);
     if(n<0 || (size_t)n>=sizeof(move->source_package))return PXA_STATUS_LIMIT_EXCEEDED;
     status=read_manifest(move);if(status!=PXA_STATUS_OK)return status;
+    /* Publisher aliases belong to each volume. Resolve the target independently
+     * when its human name is occupied by another signing identity. */
+    status=pxa_esp_installations_media_path(&move->projected,move->relative,sizeof(move->relative));
+    if(status!=PXA_STATUS_OK)return status;
     /* Preview probes presence only. Commit fully verifies reuse; a damaged
      * generation is never silently repaired or overwritten by relocation. */
     n=snprintf(move->result_root,sizeof(move->result_root),"%s/%s",move->target->root,move->relative+4);

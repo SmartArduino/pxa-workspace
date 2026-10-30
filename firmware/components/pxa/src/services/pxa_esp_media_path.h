@@ -23,9 +23,10 @@ static inline bool pxa_esp_media_relative_valid(const char *path) {
             const char *digest=end+1;
             if(strlen(digest)!=72 || strcmp(digest+64,"/package"))return false;
             for(unsigned i=0;i<64;++i)
-                if(!((digest[i]>='0' && digest[i]<='9') || (digest[i]>='a' && digest[i]<='f')) ||
-                    !((path[10+i]>='0' && path[10+i]<='9') || (path[10+i]>='a' && path[10+i]<='f')))return false;
-            return part-path==75; /* Managed publisher is a full digest. */
+                if(!((digest[i]>='0' && digest[i]<='9') || (digest[i]>='a' && digest[i]<='f')))return false;
+            /* The Host authenticates the publisher directory separately. Its
+             * physical name can be a verified handle or the legacy full root. */
+            return true;
         }
         if(!end)return false;
         part=end+1;

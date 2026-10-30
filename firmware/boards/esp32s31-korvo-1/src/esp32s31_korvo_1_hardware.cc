@@ -5,6 +5,8 @@
 #include "esp32s31_korvo_1_pxa_surface.h"
 #include "korvo_lvgl_accel.h"
 #include <pxa_board_common/display_completion.h>
+#include <pxa_board_common/rgb_port.h>
+#include <led_strip.h>
 
 #include <algorithm>
 #include <array>
@@ -83,9 +85,34 @@ uint8_t ReadKorvoAdcButton(button_driver_t* driver) {
 }
 }
 
+void Esp32S31Korvo1InitializeSd();
+bool Esp32S31Korvo1InitializeVision(i2c_master_bus_handle_t bus);
+
 bool Esp32S31Korvo1Hardware::Initialize() {
     if (!InitializeI2c() || !InitializeDisplay()) return false;
     ShowInitialFrame();
+    Esp32S31Korvo1InitializeSd();
+    if (!Esp32S31Korvo1InitializeVision(i2c_bus_)) ESP_LOGW(kTag, "Camera application interface unavailable");
+    led_strip_handle_t indicator = nullptr;
+    const led_strip_config_t strip_config = {
+        .strip_gpio_num = KORVO_RGB_LED,
+        .max_leds = 1,
+        .led_pixel_format = LED_PIXEL_FORMAT_GRB,
+        .led_model = LED_MODEL_WS2812,
+        .flags = {.invert_out = false},
+    };
+    const led_strip_rmt_config_t strip_rmt = {
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = 10 * 1000 * 1000,
+        .flags = {.with_dma = false},
+    };
+    if (led_strip_new_rmt_device(&strip_config, &strip_rmt, &indicator) == ESP_OK) {
+        (void)led_strip_clear(indicator);
+        if (!pxa_board_rgb_port_initialize(indicator, [](void* context, unsigned r, unsigned g, unsigned b) {
+                auto strip = static_cast<led_strip_handle_t>(context);
+                return led_strip_set_pixel(strip, 0, r, g, b) == ESP_OK && led_strip_refresh(strip) == ESP_OK;
+            })) ESP_LOGW(kTag, "RGB application interface unavailable");
+    } else ESP_LOGW(kTag, "Continuing without RGB indicator");
     if (!InitializeTouch()) ESP_LOGW(kTag, "Continuing without GT1151 touch");
     if (!InitializeButtons()) ESP_LOGW(kTag, "Continuing without ADC buttons");
     audio_initialized_.store(audio_.Initialize(i2c_bus_));

@@ -81,6 +81,43 @@ int main() {
     lv_obj_add_state(disabled, LV_STATE_DISABLED);
     Update(navigation);
     assert(navigation.focused() == first);
+#ifdef PXA_TEST_GAMEKIT_1
+    // Home restores bookmarks through the discovered keypad group before
+    // Update runs. Touch mode must not repeatedly create a default blue focus
+    // and immediately discard it. Re-enabling the pad restores its selection.
+    auto discover_group = [&]() -> lv_group_t* {
+        for (auto* device = lv_indev_get_next(nullptr); device;
+             device = lv_indev_get_next(device))
+            if (lv_indev_get_type(device) == LV_INDEV_TYPE_KEYPAD &&
+                lv_indev_get_display(device) == display)
+                return lv_indev_get_group(device);
+        return nullptr;
+    };
+    unsigned focus_events = 0;
+    lv_obj_add_event_cb(first, [](lv_event_t* event) {
+        ++*static_cast<unsigned*>(lv_event_get_user_data(event));
+    }, LV_EVENT_FOCUSED, &focus_events);
+    navigation.SetInputActive(false);
+    Update(navigation, 0, nullptr, false);
+    for (unsigned i = 0; i < 20; ++i) {
+        if (auto* group = discover_group(); group && !lv_group_get_obj_count(group))
+            lv_group_add_obj(group, first);
+        Update(navigation, 0, nullptr, false, 60);
+        lv_refr_now(display);
+        assert(!lv_obj_has_state(first, LV_STATE_FOCUSED));
+    }
+    assert(focus_events == 0);
+    navigation.SetInputActive(true);
+    auto* restored_group = discover_group();
+    assert(restored_group);
+    lv_group_add_obj(restored_group, first);
+    Update(navigation);
+    assert(navigation.focused() == first && focus_events >= 1 && focus_events <= 2);
+    AssertVisibleFocus(display, first);
+    const unsigned restored_events = focus_events;
+    for (unsigned i = 0; i < 20; ++i) Update(navigation, 0, nullptr, true, 60);
+    assert(focus_events == restored_events);
+#endif
     Tap(navigation, Right);
     assert(navigation.focused() == right);
     Tap(navigation, Left);

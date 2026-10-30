@@ -1,5 +1,10 @@
 #include "esp_mosaico_hardware.h"
 #include "esp_mosaico_transfer.h"
+#include "esp_mosaico_refresh.h"
+#include "esp_mosaico_storage.h"
+#include "esp_mosaico_sensors.h"
+#include "esp_mosaico_haptics.h"
+#include "esp_mosaico_peripherals.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -37,10 +42,15 @@
 
 #include "esp_mosaico_pxa_surface.h"
 
+#ifndef CONFIG_PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT
+#define CONFIG_PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT 0
+#endif
+
 namespace {
 
 constexpr char kTag[] = "mosaico_hw";
 constexpr size_t kFramePixels = mosaico_board::kWidth * mosaico_board::kHeight;
+constexpr bool kDirectPsramDma = CONFIG_PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT;
 
 esp_err_t ConfigureOutput(int pin, int level,
                            gpio_mode_t mode = GPIO_MODE_OUTPUT) {
@@ -67,11 +77,15 @@ uint8_t SignalLevel(int rssi) {
 }
 
 bool EspMosaicoHardware::Initialize() {
-    if (!InitializeUsb()) ESP_LOGW(kTag, "USB CDC console unavailable");
+    usb_console_ready_ = InitializeUsb();
+    if (!usb_console_ready_) ESP_LOGW(kTag, "USB CDC console unavailable");
     if (!DetectHardware() || !InitializePower() || !InitializeI2c() ||
         !InitializeDisplay())
         return false;
     ShowBootFrame();
+    if (!EspMosaicoInitializeHaptics()) ESP_LOGW(kTag, "Vibration motor unavailable");
+    EspMosaicoInitializeSensors(i2c_bus_, &battery_);
+    if (!EspMosaicoInitializeStorage()) ESP_LOGW(kTag, "Continuing without NAND storage");
     if (!InitializeTouch()) ESP_LOGW(kTag, "Continuing without CST92xx touch");
     // The same worker owns touch and low-rate battery I/O, even if the touch
     // controller is absent. Never poll hardware from the LVGL status callback.
@@ -79,6 +93,9 @@ bool EspMosaicoHardware::Initialize() {
                     &touch_task_) != pdPASS)
         ESP_LOGW(kTag, "Touch/battery polling task unavailable");
     if (!InitializeButton()) ESP_LOGW(kTag, "Function button unavailable");
+    if (!InitializeBootButton()) ESP_LOGW(kTag, "BOOT/Back button unavailable");
+    if (!EspMosaicoInitializePeripherals(i2c_bus_, hardware_revision_, usb_console_ready_))
+        ESP_LOGW(kTag, "Expansion interface unavailable");
     audio_initialized_ = audio_.Initialize(i2c_bus_);
     if (!audio_initialized_) ESP_LOGW(kTag, "Continuing without ES8311 audio");
     wifi_initialized_ = InitializeWifi();
@@ -92,6 +109,7 @@ bool EspMosaicoHardware::DetectHardware() {
                                  sizeof(version) * 8) != ESP_OK)
         return false;
     hardware_ = mosaico_board::DecodeHardwareConfig(version);
+    hardware_revision_ = version;
     if (!hardware_) {
         ESP_LOGE(kTag, "Unsupported hardware version 0x%04x", version);
         return false;
@@ -241,7 +259,7 @@ bool EspMosaicoHardware::InitializeDisplay() {
         .trans_queue_depth = 10,
         .lcd_cmd_bits = 32,
         .lcd_param_bits = 8,
-        .flags = {.quad_mode = true},
+        .flags = {.quad_mode = true, .psram_dma_direct = kDirectPsramDma},
     };
     if (esp_lcd_new_panel_io_spi(SPI2_HOST, &io_config, &panel_io_) != ESP_OK)
         return false;
@@ -320,7 +338,14 @@ bool EspMosaicoHardware::InitializeDisplay() {
     lv_timer_set_period(lv_display_get_refr_timer(display_), mosaico_board::kUiRefreshPeriodMs);
     lv_display_add_event_cb(display_, [](lv_event_t* event) {
         auto* self = static_cast<EspMosaicoHardware*>(lv_event_get_user_data(event));
-        if (lv_event_get_code(event) == LV_EVENT_RENDER_START) {
+        if (lv_event_get_code(event) == LV_EVENT_REFR_START) {
+            // UI priority can win the lock before the asynchronous presenter.
+            // Compose the complete eligible frame here, before restoring and
+            // software-rendering a retained framebuffer that would be discarded.
+            (void)mosaico_board::PresentPendingRefresh(self->display_, [self]() {
+                return self->PresentDirectFrame();
+            });
+        } else if (lv_event_get_code(event) == LV_EVENT_RENDER_START) {
             self->refresh_started_us_ = esp_timer_get_time();
             self->WaitForUiSnapshot();
             self->refresh_wait_us_ = esp_timer_get_time() - self->refresh_started_us_;
@@ -561,6 +586,7 @@ bool EspMosaicoHardware::TransferArea(
     te_wait_us_ = esp_timer_get_time() - te_wait_started;
     const uint8_t* pixels = frame + area.y1 * source_stride + area.x1 * sizeof(uint16_t);
     const int64_t transfer_started_us = esp_timer_get_time();
+    last_transfer_pixels_ = lv_area_get_width(&area) * lv_area_get_height(&area);
     // Set the selected refresh window once. RAMWRC continues at the next pixel;
     // per-band CASET/RASET would drain SPI and add four polling transactions.
     const uint8_t columns[] = {static_cast<uint8_t>(area.x1 >> 8),
@@ -577,14 +603,37 @@ bool EspMosaicoHardware::TransferArea(
         redraw_pending_ = true;
         return false;
     }
-    const bool completed = mosaico_board::TransferBands(
-        area, pixels, source_stride, transfer_pixels_,
-        [this]() {
+    const auto wait_transfer = [this]() {
             if (WaitForTransfer(pdMS_TO_TICKS(1000))) return true;
             ++transfer_errors_;
-            ESP_LOGE(kTag, "Panel transfer timed out; retaining the DMA buffers");
+            ESP_LOGE(kTag, "Panel transfer timed out; retaining the DMA source");
             return false;
-        },
+        };
+    auto direct = mosaico_board::DirectTransferResult::Ineligible;
+    if (kDirectPsramDma) {
+        direct = mosaico_board::TransferContiguousRows(area, pixels, source_stride,
+            wait_transfer, [this](const uint8_t* source, size_t bytes) {
+                (void)xSemaphoreTake(transfer_done_, 0);
+                // tx_color may have queued some chunks before a later failure.
+                // Keep ownership until the IO driver has drained those chunks.
+                transfer_pending_ = true;
+                const esp_err_t result = esp_lcd_panel_io_tx_color(
+                    panel_io_, 0x32002c00, source, bytes);
+                if (result != ESP_OK) {
+                    ++transfer_errors_;
+                    ESP_LOGE(kTag, "Direct panel transfer failed: %s", esp_err_to_name(result));
+                    if (esp_lcd_panel_io_tx_param(panel_io_, -1, nullptr, 0) == ESP_OK)
+                        transfer_pending_ = false;
+                    return false;
+                }
+                ++direct_dma_transfers_;
+                return true;
+            });
+    }
+    const bool staged = direct == mosaico_board::DirectTransferResult::Ineligible;
+    if (staged) ++staged_dma_transfers_;
+    const bool completed = staged ? mosaico_board::TransferBands(
+        area, pixels, source_stride, transfer_pixels_, wait_transfer,
         [this, &area](int32_t first_row, int32_t rows, const uint8_t* staging) {
             (void)xSemaphoreTake(transfer_done_, 0);
             const int command = first_row == area.y1 ? 0x32002c00 : 0x32003c00;
@@ -599,7 +648,7 @@ bool EspMosaicoHardware::TransferArea(
             transfer_pending_ = true;
             return true;
         },
-        [](int32_t, int32_t) {});
+        [](int32_t, int32_t) {}) : direct == mosaico_board::DirectTransferResult::Completed;
     const uint32_t transfer_us = static_cast<uint32_t>(
         esp_timer_get_time() - transfer_started_us);
     transfer_duration_us_ = transfer_us;
@@ -703,11 +752,37 @@ bool EspMosaicoHardware::QueuePresent(const lv_area_t& area, uint64_t timestamp,
     // Exactly one submitted frame, plus the frame LVGL is currently drawing.
     const int64_t wait_started = esp_timer_get_time();
     xSemaphoreTake(present_available_, portMAX_DELAY);
+    // A timed-out direct transfer can still read scanout. Do not exchange it
+    // into the producer role, or queue a UI copy over it, until DMA is drained.
+    if (!WaitForTransfer(pdMS_TO_TICKS(10))) {
+        xSemaphoreGive(present_available_);
+        redraw_pending_ = true;
+        return false;
+    }
     present_wait_us_ = esp_timer_get_time() - wait_started;
     refresh_wait_us_ += present_wait_us_.load();
     FlushRequest request = {area, timestamp, {frame_id}, raster_ready_tick_us, FlushKind::Frame};
     const auto previous = ui_frame_state_.load(std::memory_order_acquire);
     if (frame_id != 0) {
+        // The composed producer remains a complete frame. Only the panel
+        // window shrinks; exchanging full snapshots preserves screenshots and
+        // the existing LVGL restoration/failure recovery rules.
+        if (displayed_frame_valid_ && displayed_frame_initialized_) {
+            const lv_area_t overlay = {
+                (mosaico_board::kWidth - PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) / 2, 0,
+                (mosaico_board::kWidth + PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) / 2 - 1,
+                PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT - 1};
+            const int64_t started = esp_timer_get_time();
+            const auto damage = mosaico_board::FindFrameDamage(scanout_pixels_, present_pixels_,
+                &request.area, pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY)
+                    ? &overlay : nullptr);
+            damage_scan_us_ = esp_timer_get_time() - started;
+            if (damage == mosaico_board::FrameDamage::Unchanged) ++identical_frames_;
+            if (damage != mosaico_board::FrameDamage::Unavailable &&
+                (request.area.x1 || request.area.y1 ||
+                 request.area.x2 != mosaico_board::kWidth - 1 ||
+                 request.area.y2 != mosaico_board::kHeight - 1)) ++partial_frames_;
+        }
         const int64_t snapshot_started = esp_timer_get_time();
         if (!mosaico_board::ExchangeRefreshFrame(area, present_pixels_, scanout_pixels_)) {
             xSemaphoreGive(present_available_);
@@ -750,6 +825,14 @@ void EspMosaicoHardware::FlushTask(void* context) {
         if (!content && xSemaphoreTake(self->present_available_, 0) != pdTRUE)
             continue;
         xSemaphoreTake(self->panel_mutex_, portMAX_DELAY);
+        // Idle HUD writes also need the source fence after a failed transfer.
+        // Content producers already fenced this before reserving/queueing.
+        if (!content && !self->WaitForTransfer(pdMS_TO_TICKS(10))) {
+            self->redraw_pending_ = true;
+            xSemaphoreGive(self->panel_mutex_);
+            xSemaphoreGive(self->present_available_);
+            continue;
+        }
         const bool ui = content && request.kind == FlushKind::UiSnapshot;
         if (ui) {
             const int64_t started = esp_timer_get_time();
@@ -783,7 +866,9 @@ void EspMosaicoHardware::FlushTask(void* context) {
             continue;
         }
         lv_area_t dirty = content ? request.area : overlay_area;
-        if (enabled && (changed || dirty.y1 < PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT)) {
+        // A direct frame swaps the whole snapshot even when only a small panel
+        // window changes. Keep its captured HUD complete outside that window.
+        if (enabled && (content || changed || dirty.y1 < PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT)) {
             pxa_board_performance_draw_rgb565(
                 reinterpret_cast<uint16_t*>(self->scanout_pixels_),
                 mosaico_board::kWidth, mosaico_board::kHeight, mosaico_board::kWidth,
@@ -794,6 +879,12 @@ void EspMosaicoHardware::FlushTask(void* context) {
                 region.Include(overlay_area);
                 (void)region.Take(&dirty);
             }
+        }
+        if (content && !enabled && overlay_enabled) {
+            mosaico_board::RefreshRegion region;
+            region.Include(dirty);
+            region.Include(overlay_area);
+            (void)region.Take(&dirty);
         }
         const uint64_t frame_id = content && !ui ? request.frame_id : 0;
         const bool completed = self->TransferArea(dirty, self->scanout_pixels_,
@@ -999,6 +1090,18 @@ bool EspMosaicoHardware::InitializeButton() {
         }, this) == ESP_OK;
 }
 
+bool EspMosaicoHardware::InitializeBootButton() {
+    const button_config_t config = {};
+    const button_gpio_config_t gpio_config = {
+        .gpio_num = mosaico_board::kBootButton, .active_level = 0,
+    };
+    if (iot_button_new_gpio_device(&config, &gpio_config, &boot_button_) != ESP_OK) return false;
+    return iot_button_register_cb(boot_button_, BUTTON_SINGLE_CLICK, nullptr,
+        [](void*, void* context) {
+            static_cast<EspMosaicoHardware*>(context)->boot_pending_ = true;
+        }, this) == ESP_OK;
+}
+
 bool EspMosaicoHardware::InitializeWifi() {
     // The board's Chinese/Singapore display profile uses UTC+8. SNTP still
     // sets UTC epoch time; TZ affects only local calendar/status formatting.
@@ -1040,6 +1143,7 @@ void EspMosaicoHardware::AttachSystem(
         (void)pxsys_reference_lvgl_set_lock_changed_callback(
             reference_ui_, this, [](void* context, bool locked) {
                 auto* self = static_cast<EspMosaicoHardware*>(context);
+                if (locked) (void)EspMosaicoVibrate(0);
                 self->UpdateInteractivity();
                 if (!locked) {
                     // Defer redraw until the lock callback and input event
@@ -1070,6 +1174,11 @@ void EspMosaicoHardware::ProcessControls() {
     // Reuse the existing 16-ms display timer. Status/network polling remains
     // on its 100-ms timer; Home, Back and wake no longer wait for that timer.
     if (system_ == nullptr || power_action_.load() >= 0) return;
+    if (boot_pending_.exchange(false)) {
+        if (!panel_on_.load() || (reference_ui_ && pxsys_reference_lvgl_is_locked(reference_ui_)))
+            wake_pending_ = true;
+        else back_pending_ = true;
+    }
     if (home_pending_.exchange(false)) {
         lv_display_trigger_activity(display_);
         if (!panel_on_ || (reference_ui_ != nullptr &&
@@ -1149,7 +1258,13 @@ void EspMosaicoHardware::PerformPowerAction() {
         return;
     }
     (void)pxa_system_clock_save();
+    if (!EspMosaicoStopPeripherals()) {
+        ESP_LOGE(kTag, "Power action cancelled: expansion resource cleanup failed");
+        power_action_ = -1; power_menu_pending_ = true; wake_pending_ = true;
+        return;
+    }
     audio_.StopForShutdown();
+    (void)EspMosaicoVibrate(0);
     vTaskDelay(pdMS_TO_TICKS(120));
     if (power_action_.load() == PXSYS_REFERENCE_POWER_ACTION_RESTART) {
         esp_restart();
@@ -1374,6 +1489,14 @@ void EspMosaicoHardware::PublishDiagnostics() {
              static_cast<unsigned long>(compact_transfers_.load()),
              compact_te_enabled_.load(),
              static_cast<unsigned>(mosaico_board::kDrawBufferRows));
+    ESP_LOGI(kTag, "transfer_path psram_direct=%lu staged=%lu enabled=%d",
+             static_cast<unsigned long>(direct_dma_transfers_.load()),
+             static_cast<unsigned long>(staged_dma_transfers_.load()), kDirectPsramDma);
+    ESP_LOGI(kTag, "damage_stats compare_us=%lu partial_frames=%lu identical_frames=%lu tx_pixels=%lu",
+             static_cast<unsigned long>(damage_scan_us_.load()),
+             static_cast<unsigned long>(partial_frames_.load()),
+             static_cast<unsigned long>(identical_frames_.load()),
+             static_cast<unsigned long>(last_transfer_pixels_.load()));
     ESP_LOGI(kTag, "power idle_ms=%lu locked=%d panel_on=%d dim=%d touch_clock=lvgl",
              static_cast<unsigned long>(lv_display_get_inactive_time(display_)),
              reference_ui_ != nullptr && pxsys_reference_lvgl_is_locked(reference_ui_),

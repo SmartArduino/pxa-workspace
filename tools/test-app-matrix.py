@@ -102,8 +102,9 @@ def main() -> int:
             report["apps"][identity] = row
             started = time.monotonic()
             try:
-                if any(metadata.get(k) != [2, 0] for k in ("min_sdk", "target_sdk", "compile_sdk")):
-                    raise ValueError("manifest must declare the current Core 2 SDK")
+                # The official packager validates Core/service requirements.
+                # Do not reject valid newer/minimum-compatible manifests here
+                # by hard-coding an obsolete release's Core minor version.
                 package = directory / ("pxa-" + name)
                 old = previous.get("apps", {}).get(identity, {})
                 build_done = (args.resume and old.get("build_passed") and

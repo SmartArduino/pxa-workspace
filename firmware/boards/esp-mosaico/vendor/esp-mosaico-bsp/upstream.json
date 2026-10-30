@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/esp-mosaico/esp-mosaico-bsp",
+  "commit": "7cbfb390638dcb93522fc3cde094b2d43cf907c2",
+  "license": "Apache-2.0",
+  "source": "components/esp-mosaico-bsp/onboard/nand_flash.c",
+  "source_sha256": "1927adababc22627a07480ba6f51ddc55cf55d74b842042fcd0336ec0d9ca451",
+  "adapted_in": "../../src/esp_mosaico_storage.cc",
+  "changes": "Retains the single-line HOLD/WP and QE bootstrap; integrates ownership-safe cleanup with the PXA Dhara/FAT BDL mount."
+}

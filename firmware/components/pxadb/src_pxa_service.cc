@@ -1381,6 +1381,11 @@ void SendInfo(unsigned long sequence) {
              static_cast<unsigned>(PXA_CORE_VERSION_MINOR));
     pxa_volume_info_t storage={};
     if(pxa_esp_storage_resolve_volume(CONFIG_PXA_MOUNT_POINT,&storage)==PXA_STATUS_OK &&
+        // INFO drives upload admission. Its free-space value must include
+        // recent uninstalls and filesystem writes, not a cached mount sample.
+        // This runs on the PXADB worker, outside the application Host path.
+        pxa_esp_storage_refresh_volume(storage.mount_epoch)==PXA_STATUS_OK &&
+        pxa_esp_storage_resolve_volume(CONFIG_PXA_MOUNT_POINT,&storage)==PXA_STATUS_OK &&
         (storage.space_known&3)==3 && storage.free_bytes<=storage.total_bytes){
         const size_t used=strlen(payload);
         snprintf(payload+used,sizeof(payload)-used,";storage_total=%" PRIu64 ";storage_used=%" PRIu64 ";storage_free=%" PRIu64,

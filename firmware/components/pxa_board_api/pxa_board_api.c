@@ -49,6 +49,33 @@ const pxa_board_port_t* pxa_board_current(void) {
     return g_board_port;
 }
 
+bool pxa_board_wifi_get_enabled(void) {
+    nvs_handle_t handle;
+    uint8_t value = 1;
+    if (nvs_open("pxa_user", NVS_READONLY, &handle) != ESP_OK)
+        return true;
+    const esp_err_t result = nvs_get_u8(handle, "wifi", &value);
+    nvs_close(handle);
+    return result != ESP_OK || value != 0;
+}
+
+bool pxa_board_wifi_set_enabled(bool enabled) {
+    nvs_handle_t handle;
+    if (nvs_open("pxa_user", NVS_READWRITE, &handle) != ESP_OK)
+        return false;
+    uint8_t saved;
+    if (nvs_get_u8(handle, "wifi", &saved) == ESP_OK && saved == (enabled ? 1 : 0)) {
+        nvs_close(handle);
+        return true;
+    }
+    esp_err_t result = nvs_set_u8(handle, "wifi", enabled ? 1 : 0);
+    if (result == ESP_OK) result = nvs_commit(handle);
+    nvs_close(handle);
+    if (result != ESP_OK)
+        ESP_LOGW("pxa_board", "Could not save Wi-Fi switch (error %d)", (int)result);
+    return result == ESP_OK;
+}
+
 bool pxa_board_performance_get(pxsys_reference_performance_option_t option) {
     load_performance_settings();
     switch (option) {

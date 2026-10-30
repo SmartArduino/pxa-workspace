@@ -10,5 +10,7 @@ dependencies:
   espressif/esp_lv_decoder: ^0.4.3
   espressif/esp_lvgl_adapter: ^0.7.2
   espressif/esp_tinyusb: '2.2.1'
+  espressif/spi_nand_flash: '1.4.4'
+  espressif/dhara: '1.1.0'
   espressif/freetype: ^2.14.3~1
   lvgl/lvgl: ^9.6.0~1

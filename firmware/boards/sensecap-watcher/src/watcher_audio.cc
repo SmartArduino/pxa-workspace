@@ -7,6 +7,8 @@
 #include <esp_codec_dev_defaults.h>
 #include <esp_log.h>
 #include <es8311_codec.h>
+#include <es7243_adc.h>
+#include <es7243e_adc.h>
 #include <pxa/pxa_host.h>
 
 namespace {
@@ -22,7 +24,7 @@ bool WatcherAudio::Initialize(i2c_master_bus_handle_t i2c_bus) {
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG(
         WATCHER_AUDIO_I2S_PORT, I2S_ROLE_MASTER);
     channel_config.auto_clear = true;
-    if (i2s_new_channel(&channel_config, &tx_channel_, nullptr) != ESP_OK) {
+    if (i2s_new_channel(&channel_config, &tx_channel_, &rx_channel_) != ESP_OK) {
         tx_channel_ = nullptr;
         ESP_LOGE(kTag, "Cannot create I2S TX channel");
         return false;
@@ -60,10 +62,14 @@ bool WatcherAudio::Initialize(i2c_master_bus_handle_t i2c_bus) {
         ESP_LOGE(kTag, "Cannot start I2S0 TX");
         return false;
     }
+    // Watcher microphone ADC drives the right slot (Seeed BSP).
+    auto input_config = std_config;
+    input_config.slot_cfg.slot_mask = I2S_STD_SLOT_RIGHT;
+    if (i2s_channel_init_std_mode(rx_channel_, &input_config) != ESP_OK) return false;
 
     audio_codec_i2s_cfg_t i2s_config = {};
     i2s_config.port = WATCHER_AUDIO_I2S_PORT;
-    i2s_config.rx_handle = nullptr;
+    i2s_config.rx_handle = rx_channel_;
     i2s_config.tx_handle = tx_channel_;
     data_if_ = audio_codec_new_i2s_data(&i2s_config);
     if (data_if_ == nullptr) {
@@ -136,7 +142,66 @@ bool WatcherAudio::Initialize(i2c_master_bus_handle_t i2c_bus) {
         }, this, true)) return false;
     ESP_LOGI(kTag, "ES8311 speaker ready at %d Hz mono",
              WATCHER_AUDIO_SAMPLE_RATE);
+    // Board revisions use ES7243 (0x13) or ES7243E (0x14). Probe before
+    // choosing the matching existing permissively licensed codec driver.
+    const bool original = i2c_master_probe(i2c_bus, 0x13, 20) == ESP_OK;
+    const bool newer = !original && i2c_master_probe(i2c_bus, 0x14, 20) == ESP_OK;
+    if (original || newer) {
+        audio_codec_i2c_cfg_t input_control = {};
+        input_control.port = static_cast<uint8_t>(WATCHER_I2C_PORT);
+        input_control.addr = uint8_t((original ? 0x13 : 0x14) << 1);
+        input_control.bus_handle = i2c_bus;
+        const auto* input_ctrl = audio_codec_new_i2c_ctrl(&input_control);
+        const audio_codec_if_t* input_codec = nullptr;
+        if (input_ctrl && original) {
+            es7243_codec_cfg_t config = {};
+            config.ctrl_if = input_ctrl;
+            input_codec = es7243_codec_new(&config);
+        } else if (input_ctrl) {
+            es7243e_codec_cfg_t config = {};
+            config.ctrl_if = input_ctrl;
+            input_codec = es7243e_codec_new(&config);
+        }
+        esp_codec_dev_cfg_t input_device = {
+            .dev_type = ESP_CODEC_DEV_TYPE_IN, .codec_if = input_codec, .data_if = data_if_,
+        };
+        if (input_codec) microphone_ = esp_codec_dev_new(&input_device);
+    }
+    if (!microphone_ || !capture_.Initialize(
+        [](void* context, bool enabled) {
+            return static_cast<WatcherAudio*>(context)->SetCaptureEnabled(enabled);
+        }, [](void* context, int16_t* pcm, size_t samples) {
+            return static_cast<WatcherAudio*>(context)->ReadCapture(pcm, samples);
+        }, this)) ESP_LOGW(kTag, "Continuing without microphone capture");
     return true;
+}
+
+bool WatcherAudio::SetCaptureEnabled(bool enabled) {
+    if (!microphone_ || !mutex_) return false;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    int result;
+    if (!enabled) result = esp_codec_dev_close(microphone_);
+    else {
+        esp_codec_dev_sample_info_t info = {};
+        info.bits_per_sample = 16;
+        info.channel = 1;
+        info.channel_mask = I2S_STD_SLOT_RIGHT;
+        info.sample_rate = WATCHER_AUDIO_SAMPLE_RATE;
+        result = esp_codec_dev_open(microphone_, &info);
+        if (result == ESP_OK) result = esp_codec_dev_set_in_gain(microphone_, 24.0f);
+        if (result != ESP_OK) (void)esp_codec_dev_close(microphone_);
+    }
+    xSemaphoreGive(mutex_);
+    return result == ESP_OK;
+}
+
+int32_t WatcherAudio::ReadCapture(int16_t* pcm, size_t samples) {
+    if (!pcm || !samples || samples > 320) return PXA_STATUS_INVALID_ARGUMENT;
+    size_t bytes = 0;
+    const auto error = i2s_channel_read(rx_channel_, pcm, samples * sizeof(int16_t), &bytes, 40);
+    if (error != ESP_OK && error != ESP_ERR_TIMEOUT) return PXA_STATUS_IO_ERROR;
+    if (bytes > samples * sizeof(int16_t) || bytes % sizeof(int16_t)) return PXA_STATUS_IO_ERROR;
+    return bytes ? int32_t(bytes / sizeof(int16_t)) : PXA_STATUS_WOULD_BLOCK;
 }
 
 void WatcherAudio::SetVolume(uint8_t percent) {

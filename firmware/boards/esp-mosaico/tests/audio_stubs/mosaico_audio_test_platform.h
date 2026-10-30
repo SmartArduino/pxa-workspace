@@ -1,5 +1,6 @@
 #pragma once
 #include <audio_platform.h>
+constexpr int PXA_STATUS_UNAVAILABLE=-7, PXA_STATUS_INVALID_ARGUMENT=-1, PXA_STATUS_IO_ERROR=-8, PXA_STATUS_WOULD_BLOCK=-5;
 
 using esp_err_t = int;
 using gpio_num_t = int;
@@ -9,7 +10,7 @@ using esp_codec_dev_handle_t = void*;
 enum { ESP_OK = 0, ESP_FAIL = -1, ESP_ERR_NO_MEM = -2, ESP_ERR_INVALID_STATE = -3,
        I2S_NUM_0, I2C_NUM_0, I2S_ROLE_MASTER, I2S_DATA_BIT_WIDTH_16BIT,
        I2S_SLOT_MODE_STEREO, GPIO_MODE_INPUT_OUTPUT, ESP_CODEC_DEV_WORK_MODE_DAC,
-       ESP_CODEC_DEV_TYPE_OUT, GPIO_NUM_NC = -1 };
+       ESP_CODEC_DEV_TYPE_OUT, ESP_CODEC_DEV_TYPE_IN, ESP_CODEC_DEV_WORK_MODE_ADC, ESP_ERR_TIMEOUT, GPIO_NUM_NC = -1 };
 struct gpio_config_t { uint64_t pin_bit_mask; int mode; };
 struct i2s_chan_config_t { int id, role; size_t dma_desc_num, dma_frame_num; bool auto_clear; };
 struct i2s_std_config_t {
@@ -45,7 +46,7 @@ struct esp_codec_dev_sample_info_t { int bits_per_sample, channel, channel_mask;
 int gpio_set_level(gpio_num_t, int);
 int gpio_get_level(gpio_num_t);
 int gpio_config(const gpio_config_t*);
-int i2s_new_channel(const i2s_chan_config_t*, i2s_chan_handle_t*, void*);
+int i2s_new_channel(const i2s_chan_config_t*, i2s_chan_handle_t*, i2s_chan_handle_t*);
 int i2s_channel_init_std_mode(i2s_chan_handle_t, const i2s_std_config_t*);
 int i2s_channel_register_event_callback(i2s_chan_handle_t, const i2s_event_callbacks_t*, void*);
 int i2s_channel_enable(i2s_chan_handle_t);
@@ -82,4 +83,22 @@ public:
 private:
     bool (*write_)(void*, const int16_t*, size_t) = nullptr;
     void* context_ = nullptr;
+};
+
+int esp_codec_dev_close(esp_codec_dev_handle_t);
+int esp_codec_dev_set_in_gain(esp_codec_dev_handle_t, float);
+int i2s_channel_read(i2s_chan_handle_t, void*, size_t, size_t*, unsigned);
+class PxaAudioCaptureInput {
+public:
+    using Control = bool(*)(void*, bool);
+    using Read = int32_t(*)(void*, int16_t*, size_t);
+    bool Initialize(Control control, Read read, void* context) {
+        control_ = control; read_ = read; context_ = context; active = this; return true;
+    }
+    bool Enable(bool enabled) { opened_ = enabled; return control_(context_, enabled); }
+    int32_t ReadPcm(int16_t* output, size_t samples) { return read_(context_, output, samples); }
+    void StopForShutdown() { if (opened_) { Enable(false); opened_ = false; } }
+    inline static PxaAudioCaptureInput* active = nullptr;
+private:
+    Control control_ = nullptr; Read read_ = nullptr; void* context_ = nullptr; bool opened_ = false;
 };

@@ -1,9 +1,10 @@
 idf_component_register(
     SRCS "src/doit_gamekit_1_board.cc" "src/doit_gamekit_1_audio.cc"
          "src/doit_gamekit_1_panel.cc" "src/doit_gamekit_1_touch.cc"
+         "src/doit_gamekit_1_battery.cc"
     INCLUDE_DIRS "include"
     PRIV_REQUIRES
-        78__esp-wifi-connect esp_driver_gpio esp_driver_spi esp_driver_sdmmc
+        78__esp-wifi-connect esp_adc esp_driver_gpio esp_driver_spi esp_driver_sdmmc
         esp_driver_i2s esp_driver_i2c esp_driver_ledc esp_lcd esp_netif esp_timer fatfs sdmmc esp_partition joltwallet__littlefs
         espressif__esp_lv_decoder espressif__esp_lvgl_port
         lvgl pxa pxadb pxa_board_api pxa_board_common pxa_system_reference_ui

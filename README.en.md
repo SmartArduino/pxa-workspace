@@ -12,16 +12,16 @@ same `pxa_board_port_t` contract:
 
 ## Developing an app? Start with DevKit
 
-You do not need this workspace or ESP-IDF. Download [DevKit 0.5.0](https://pxa.doit.am/docs/downloads/), extract it, then run:
+You do not need this workspace or ESP-IDF. Download [DevKit 0.6.0](https://pxa.doit.am/docs/downloads/), extract it, then run:
 
 ```sh
-export PATH="$PWD/pxa-devkit-0.5.0-linux-x86_64/bin:$PATH"
+export PATH="$PWD/pxa-devkit-0.6.0-linux-x86_64/bin:$PATH"
 pxa init hello
 pxa run hello
 ```
 
 C++26 and O3 are the defaults; `pxa.lock` pins the SDK and toolchain. The published binary requires Linux x86_64 and glibc 2.39+. Apps require Core 2.0 and their declared services.
-[Getting started (Chinese)](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [Release](https://github.com/SmartArduino/pxa-system/releases/tag/v0.5.0) · [0.4.0 validation (Chinese)](docs/release-0.5.0.zh-CN.md)
+[Getting started (Chinese)](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [Release](https://github.com/SmartArduino/pxa-system/releases/tag/v0.6.0) · [Release notes and upgrade (Chinese)](docs/release-0.6.0.zh-CN.md)
 
 The optional [PXA AI kit](https://pxa.doit.am/docs/ai-development/) adds development/debug/device/release skills, project-scoped agents and repeatable verification scripts. It works with the existing DevKit and adds no device runtime overhead.
 

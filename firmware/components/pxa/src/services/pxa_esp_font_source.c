@@ -67,16 +67,20 @@ pxa_status_t pxa_esp_font_source_release(pxa_esp_font_source_t **source) {
 #include FT_FREETYPE_H
 #include FT_SYSTEM_H
 #include <errno.h>
-typedef struct {uint64_t epoch;uint32_t size,position;int fd;} font_stream_t;
+#define FONT_CACHE_PAGE_BYTES 4096u
+typedef struct {
+    uint64_t epoch;
+    uint32_t size,position;
+    int fd;
+    uint8_t *cache;
+    uint32_t cache_start[2];
+    uint16_t cache_size[2];
+    uint8_t recent;
+} font_stream_t;
 /* The source owner pins live font objects, while each open stream owns an
  * independent pin until FT_Done_Face closes it. No whole-font RAM copy. */
-static unsigned long stream_read(FT_Stream stream,unsigned long offset,
+static unsigned long stream_read_direct(font_stream_t *file,unsigned long offset,
     unsigned char *buffer,unsigned long count) {
-    font_stream_t *file=stream->descriptor.pointer;
-    if(!file || ready(file->epoch)!=PXA_STATUS_OK || offset>file->size)
-        return count?0:1;
-    if(!count)return 0;
-    if(count>file->size-offset)count=file->size-offset;
     if(offset!=file->position) {
         if(lseek(file->fd,(off_t)offset,SEEK_SET)!=(off_t)offset)return 0;
         file->position=(uint32_t)offset;
@@ -92,9 +96,46 @@ static unsigned long stream_read(FT_Stream stream,unsigned long offset,
     }
     return done;
 }
+static unsigned long stream_read(FT_Stream stream,unsigned long offset,
+    unsigned char *buffer,unsigned long count) {
+    font_stream_t *file=stream->descriptor.pointer;
+    if(!file || ready(file->epoch)!=PXA_STATUS_OK || offset>file->size)
+        return count?0:1;
+    if(!count)return 0;
+    if(count>file->size-offset)count=file->size-offset;
+    if(!file->cache)return stream_read_direct(file,offset,buffer,count);
+    unsigned long done=0;
+    while(done<count && ready(file->epoch)==PXA_STATUS_OK) {
+        const uint32_t at=(uint32_t)(offset+done);
+        unsigned slot;
+        for(slot=0;slot<2;++slot)
+            if(at>=file->cache_start[slot] &&
+               at-file->cache_start[slot]<file->cache_size[slot])break;
+        if(slot==2) {
+            slot=1u-file->recent;
+            const uint32_t start=at&~(FONT_CACHE_PAGE_BYTES-1u);
+            unsigned long bytes=file->size-start;
+            if(bytes>FONT_CACHE_PAGE_BYTES)bytes=FONT_CACHE_PAGE_BYTES;
+            file->cache_size[slot]=0;
+            const unsigned long loaded=stream_read_direct(file,start,
+                file->cache+slot*FONT_CACHE_PAGE_BYTES,bytes);
+            if(loaded<=at-start)break;
+            file->cache_start[slot]=start;
+            file->cache_size[slot]=(uint16_t)loaded;
+        }
+        file->recent=(uint8_t)slot;
+        const size_t begin=at-file->cache_start[slot];
+        size_t bytes=file->cache_size[slot]-begin;
+        if(bytes>count-done)bytes=count-done;
+        memcpy(buffer+done,file->cache+slot*FONT_CACHE_PAGE_BYTES+begin,bytes);
+        done+=bytes;
+    }
+    return done;
+}
 static void stream_close(FT_Stream stream) {
     font_stream_t *file=stream->descriptor.pointer;if(!file)return;
     (void)close(file->fd);(void)pxa_esp_volumes_release(file->epoch);
+    heap_caps_free(file->cache);
     heap_caps_free(file);stream->descriptor.pointer=NULL;
 }
 FT_Error __real_FT_Stream_Open(FT_Stream,const char *);
@@ -125,7 +166,10 @@ FT_Error __wrap_FT_Stream_Open(FT_Stream stream,const char *name) {
     }
     font_stream_t *file=font_allocate(sizeof(*file));
     if(!file) {(void)close(fd);(void)pxa_esp_volumes_release(epoch);return FT_Err_Out_Of_Memory;}
-    *file=(font_stream_t){epoch,(uint32_t)metadata.st_size,0,fd};
+    *file=(font_stream_t){.epoch=epoch,.size=(uint32_t)metadata.st_size,.fd=fd};
+    /* Optional two-page cache: keep table and glyph reads local without
+     * copying a whole font. Epoch checks also apply to cache hits. */
+    file->cache=font_allocate(2u*FONT_CACHE_PAGE_BYTES);
     stream->descriptor.pointer=file;stream->pathname.pointer=(char *)name;
     stream->size=file->size;stream->pos=0;stream->base=NULL;
     stream->read=stream_read;stream->close=stream_close;

@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.20)
+project(pxa_indicator CXX)
+list(APPEND CMAKE_MODULE_PATH "${PXA_CMAKE_MODULE_DIR}")
+include(PxaGuest)
+include("${CMAKE_CURRENT_LIST_DIR}/../../sdk/Peripherals.cmake")
+pxa_add_app(pxa_main COMPONENT_ID main SOURCES main.cpp)
+target_link_libraries(pxa_main PRIVATE pxa::peripherals)

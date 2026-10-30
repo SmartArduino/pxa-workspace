@@ -14,11 +14,17 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static unsigned random_state=1,allocations;
+static unsigned random_state=1,allocations,read_calls;
 static int allocation_failures;
+static int reject_page_cache;
+ssize_t __real_read(int fd,void *buffer,size_t count);
+ssize_t __wrap_read(int fd,void *buffer,size_t count) {
+    ++read_calls;return __real_read(fd,buffer,count);
+}
 void *heap_caps_malloc(size_t size,unsigned caps) {
     (void)caps;assert(size<16384); /* Never copy the font into a resource buffer. */
     if(allocation_failures) {--allocation_failures;return NULL;}
+    if(reject_page_cache && size==8192)return NULL;
     void *p=malloc(size);if(p)++allocations;return p;
 }
 void *heap_caps_calloc(size_t n,size_t size,unsigned caps) {
@@ -61,7 +67,23 @@ int main(int argc,char **argv) {
     /* This uses the real FreeType parser and linker interposition, not a
      * mocked font factory or a direct call to the wrapper. */
     assert(!FT_New_Face(library,old_name,0,&face));
-    assert(allocations==baseline+2 && !FT_Set_Pixel_Sizes(face,0,16));
+    assert(allocations==baseline+3 && !FT_Set_Pixel_Sizes(face,0,16));
+    int reference=open(font,O_RDONLY);assert(reference>=0);
+    const unsigned long offsets[]={0,4089,4096,8190,16391,face->stream->size-7,face->stream->size};
+    for(size_t i=0;i<sizeof(offsets)/sizeof(offsets[0]);++i) {
+        uint8_t actual[64],expected[64];
+        unsigned long bytes=face->stream->size-offsets[i];if(bytes>sizeof(actual))bytes=sizeof(actual);
+        assert(face->stream->read(face->stream,offsets[i],actual,sizeof(actual))==bytes);
+        assert(pread(reference,expected,bytes,(off_t)offsets[i])==(ssize_t)bytes && !memcmp(actual,expected,bytes));
+    }
+    read_calls=0;
+    for(unsigned i=0;i<20;++i) {
+        uint8_t actual[16],expected[16];unsigned long at=i%2?12317:8211;
+        assert(face->stream->read(face->stream,at,actual,sizeof(actual))==sizeof(actual));
+        assert(pread(reference,expected,sizeof(expected),(off_t)at)==sizeof(expected));
+        assert(!memcmp(actual,expected,sizeof(actual)));
+    }
+    assert(read_calls<=2 && !close(reference));
     FT_UInt uncached=FT_Get_Char_Index(face,0x6c34);assert(uncached);
     assert(!FT_Load_Char(face,0x4e2d,FT_LOAD_RENDER) && face->glyph->bitmap.rows);
     assert(!pxa_esp_storage_drain_volume(epoch));
@@ -78,6 +100,14 @@ int main(int argc,char **argv) {
     assert(!pxa_esp_font_source_acquire(font,&source));
     assert(!FT_New_Face(library,pxa_esp_font_source_path(source),0,&face));
     assert(!FT_Set_Pixel_Sizes(face,0,20) && !FT_Load_Char(face,0x6c34,FT_LOAD_RENDER));
+    assert(!FT_Done_Face(face) && !pxa_esp_font_source_release(&source));
+    /* Caching is optional under memory pressure; parsing and glyph rendering
+     * must still work through the original epoch-bound file stream. */
+    assert(!pxa_esp_font_source_acquire(font,&source));
+    reject_page_cache=1;
+    assert(!FT_New_Face(library,pxa_esp_font_source_path(source),0,&face));
+    reject_page_cache=0;
+    assert(!FT_Set_Pixel_Sizes(face,0,20) && !FT_Load_Char(face,0x4e2d,FT_LOAD_RENDER));
     assert(!FT_Done_Face(face) && !pxa_esp_font_source_release(&source));
     /* Terminal links/special files are rejected without blocking or leaving
      * a physical-volume reference after FreeType reports an open failure. */

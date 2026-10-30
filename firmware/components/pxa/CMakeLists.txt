@@ -15,6 +15,9 @@ set(PXA_SRCS
     "src/services/pxa_esp_font_source.c"
     "src/services/pxa_esp_net.c"
     "src/services/pxa_esp_services.c"
+    "src/services/pxa_esp_storage_worker.c"
+    "src/services/pxa_esp_sensor.c"
+    "src/services/pxa_esp_haptics.c"
     "src/services/pxa_esp_fs_roots.c"
     "src/services/pxa_esp_volumes.c"
     "src/services/pxa_esp_image_blockdev.c"
@@ -33,6 +36,7 @@ set(PXA_SRCS
     "src/package/pxa_esp_resource_transfer.c"
     "src/package/pxa_esp_package_trust.c"
     "src/package/pxa_esp_installations.c"
+    "src/package/pxa_esp_publisher_directory.c"
     "src/package/pxa_esp_install_approval.c"
     "src/package/pxa_publisher_profile.c"
     "src/package/pxa_publisher_binding.c"
@@ -67,8 +71,17 @@ if("${PXA_BUILTIN_AUDIO_OUTPUT}" STREQUAL "")
 endif()
 if(PXA_BUILTIN_AUDIO_OUTPUT)
     list(APPEND PXA_SRCS
+        "src/services/pxa_audio_capture_input.cc"
         "src/services/pxa_audio_output.cc"
         "src/services/pxa_codec_memory.cc")
+endif()
+
+idf_build_get_property(PXA_PERIPHERALS_ENABLED PXA_ENABLE_PERIPHERALS)
+get_filename_component(PXA_PERIPHERALS_ROOT
+    "${CMAKE_CURRENT_LIST_DIR}/../../../extensions/peripherals" ABSOLUTE)
+if(PXA_PERIPHERALS_ENABLED)
+    list(APPEND PXA_SRCS "${PXA_PERIPHERALS_ROOT}/src/peripherals.c"
+        "src/services/pxa_esp_peripherals.c")
 endif()
 
 # Product builds retain the legacy app_pages shell unless they explicitly opt
@@ -196,6 +209,10 @@ if(PXA_VOICE_TRIGGER_ENABLED)
     target_include_directories(${COMPONENT_LIB} PUBLIC
         "${PXA_VOICE_TRIGGER_ROOT}/include")
     target_compile_definitions(${COMPONENT_LIB} PUBLIC PXA_ENABLE_VOICE_TRIGGER=1)
+endif()
+if(PXA_PERIPHERALS_ENABLED)
+    target_include_directories(${COMPONENT_LIB} PUBLIC "${PXA_PERIPHERALS_ROOT}/include")
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC PXA_ENABLE_PERIPHERALS=1)
 endif()
 # Device benchmarks select O3 for the S31 span kernel and Watcher's native
 # game renderer. Keep this local to the rasterizer and performance builds,

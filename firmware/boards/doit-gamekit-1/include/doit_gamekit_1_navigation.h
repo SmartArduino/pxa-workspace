@@ -176,6 +176,15 @@ public:
     lv_obj_t* focused() const { return group_ ? lv_group_get_focused(group_) : nullptr; }
     lv_indev_t* keypad() const { return keypad_; }
 
+    void SetInputActive(bool active) const {
+        // The shell discovers keypad groups before collecting controls. A
+        // pointer-only mode must not expose an empty group: restoring its
+        // bookmark would briefly focus a tile before Update clears it again.
+        auto* group = active ? group_ : nullptr;
+        if (keypad_ && lv_indev_get_group(keypad_) != group)
+            lv_indev_set_group(keypad_, group);
+    }
+
 private:
     void NormalizeFocus() {
         auto* object = focused();

@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <pthread.h>
 
 #include "pxa/audio.h"
 #include "pxa/assets.h"
@@ -21,6 +22,7 @@
 #include "pxa/posix/pxa_posix_storage.h"
 #include "pxa/scheduler.h"
 #include "pxa/sensor.h"
+#include "pxa/haptics.h"
 #include "pxa/storage.h"
 #include "pxa/ui.h"
 #include "pxa/window.h"
@@ -28,6 +30,9 @@
 #include "pxa_esp_net.h"
 #include "pxa_esp_fs_roots.h"
 #include "pxa_esp_app_storage.h"
+#if PXA_ENABLE_PERIPHERALS
+#include <pxa/pxa_peripherals.h>
+#endif
 #if PXA_ENABLE_VOICE_TRIGGER
 #include <pxa/pxa_voice_trigger.h>
 #endif
@@ -56,6 +61,10 @@ typedef struct {
 
     pxa_storage_service_t *storage;
     void *storage_workspace;
+    void *storage_async_workspace;
+    uint8_t storage_worker_active;
+    uint8_t storage_mutex_ready;
+    pthread_mutex_t storage_mutex;
     pxa_posix_storage_t *posix_storage;
     void *posix_storage_workspace;
     pxa_storage_backend_t storage_backend;
@@ -75,6 +84,12 @@ typedef struct {
 
     pxa_sensor_service_t *sensor;
     void *sensor_workspace;
+    pxa_haptics_service_t *haptics;
+    void *haptics_workspace;
+#if PXA_ENABLE_PERIPHERALS
+    pxa_peripherals_service_t *peripherals;
+    void *peripherals_workspace;
+#endif
 #if PXA_ENABLE_VOICE_TRIGGER
     pxa_vt_service_t *voice_trigger;
     void *voice_trigger_workspace;

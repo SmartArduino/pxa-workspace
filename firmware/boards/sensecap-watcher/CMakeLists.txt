@@ -5,11 +5,16 @@ idf_component_register(
         "src/watcher_io_expander.cc"
         "src/watcher_battery.cc"
         "src/watcher_audio.cc"
+        "src/watcher_storage.cc"
+        "src/watcher_rtc.cc"
+        "src/watcher_vision.cc"
+        "src/watcher_vision_reply.cc"
+        "vendor/sscma-spi/sscma_client_io_spi.c"
         "src/watcher_pxa_surface.cc"
         "src/watcher_lcd_io.cc"
         "src/watcher_rgb565_swap.S"
         "src/watcher_spd2010_touch.c"
-    INCLUDE_DIRS "include"
+    INCLUDE_DIRS "include" "vendor/sscma-spi"
     PRIV_REQUIRES
         78__esp-wifi-connect
         esp_adc
@@ -18,6 +23,11 @@ idf_component_register(
         esp_driver_i2s
         esp_driver_ledc
         esp_driver_spi
+        esp_driver_sdspi
+        fatfs
+        mbedtls
+        espressif__cjson
+        sdmmc
         esp_event
         esp_lcd
         esp_timer
@@ -33,6 +43,7 @@ idf_component_register(
         pxa
         pxa_board_api
         pxa_board_common
+        pxa_system_clock
         pxa_lvgl_memory
         pxadb
         pxa_system_reference_ui

@@ -47,7 +47,7 @@ def main():
         subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu11', '-Wall', '-Wextra', '-Werror',
                         *flags, '-DESP_PLATFORM=1', '-DCONFIG_LITTLEFS_FCNTL_GET_PATH=0',
                         *['-I' + str(path) for path in includes], *map(str, source), str(libpxa),
-                        str(work / 'freetype/libfreetyped.a'), '-Wl,--wrap=FT_Stream_Open',
+                        str(work / 'freetype/libfreetyped.a'), '-Wl,--wrap=FT_Stream_Open', '-Wl,--wrap=read',
                         '-pthread', '-lmbedcrypto', '-lm', '-o', str(binary)], check=True)
         fixture = work / 'fixture'
         fixture.mkdir()

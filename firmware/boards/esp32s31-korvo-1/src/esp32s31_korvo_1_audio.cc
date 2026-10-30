@@ -24,8 +24,8 @@ bool Esp32S31Korvo1Audio::Initialize(i2c_master_bus_handle_t i2c_bus) {
     channel_config.dma_desc_num = 3;
     channel_config.dma_frame_num = KORVO_AUDIO_SAMPLE_RATE / 50;
     channel_config.auto_clear = true;
-    // Only the DAC is opened below; do not allocate an unused microphone ring.
-    if (i2s_new_channel(&channel_config, &tx_channel_, nullptr) != ESP_OK) {
+    // RX is enabled only while a permitted Audio capture resource is open.
+    if (i2s_new_channel(&channel_config, &tx_channel_, &rx_channel_) != ESP_OK) {
         ESP_LOGE(kTag, "Cannot create I2S0 channels");
         return false;
     }
@@ -38,11 +38,12 @@ bool Esp32S31Korvo1Audio::Initialize(i2c_master_bus_handle_t i2c_bus) {
             .bclk = KORVO_AUDIO_BCLK,
             .ws = KORVO_AUDIO_WS,
             .dout = KORVO_AUDIO_DOUT,
-            .din = GPIO_NUM_NC,
+            .din = KORVO_AUDIO_DIN,
         },
     };
     const i2s_event_callbacks_t callbacks = {.on_sent = OnDmaSent};
     if (i2s_channel_init_std_mode(tx_channel_, &std_config) != ESP_OK ||
+        i2s_channel_init_std_mode(rx_channel_, &std_config) != ESP_OK ||
         i2s_channel_register_event_callback(tx_channel_, &callbacks, this) != ESP_OK ||
         i2s_channel_enable(tx_channel_) != ESP_OK) {
         ESP_LOGE(kTag, "Cannot initialize I2S0");
@@ -51,6 +52,7 @@ bool Esp32S31Korvo1Audio::Initialize(i2c_master_bus_handle_t i2c_bus) {
 
     audio_codec_i2s_cfg_t i2s_config = {
         .port = KORVO_AUDIO_I2S_PORT,
+        .rx_handle = rx_channel_,
         .tx_handle = tx_channel_,
     };
     data_if_ = audio_codec_new_i2s_data(&i2s_config);
@@ -86,6 +88,15 @@ bool Esp32S31Korvo1Audio::Initialize(i2c_master_bus_handle_t i2c_bus) {
     };
     speaker_ = esp_codec_dev_new(&device_config);
     if (speaker_ == nullptr) return false;
+    // Construct both control objects before opening the DAC: codec creation
+    // resets common registers. The ADC must never own the speaker PA pin.
+    codec_config.codec_mode = ESP_CODEC_DEV_WORK_MODE_ADC;
+    codec_config.pa_pin = GPIO_NUM_NC;
+    const auto* input_codec = es8389_codec_new(&codec_config);
+    esp_codec_dev_cfg_t input_device = {
+        .dev_type = ESP_CODEC_DEV_TYPE_IN, .codec_if = input_codec, .data_if = data_if_,
+    };
+    if (input_codec) microphone_ = esp_codec_dev_new(&input_device);
     esp_codec_dev_sample_info_t sample_info = {
         .bits_per_sample = 16,
         .channel = KORVO_AUDIO_CHANNELS,
@@ -99,7 +110,41 @@ bool Esp32S31Korvo1Audio::Initialize(i2c_master_bus_handle_t i2c_bus) {
             return static_cast<Esp32S31Korvo1Audio*>(context)->Write(pcm, samples);
         }, this, true)) return false;
     ESP_LOGI(kTag, "ES8389 speaker ready at %d Hz stereo", KORVO_AUDIO_SAMPLE_RATE);
+    if (!microphone_ || !capture_.Initialize(
+        [](void* context, bool enabled) {
+            return static_cast<Esp32S31Korvo1Audio*>(context)->SetCaptureEnabled(enabled);
+        }, [](void* context, int16_t* pcm, size_t samples) {
+            return static_cast<Esp32S31Korvo1Audio*>(context)->ReadCapture(pcm, samples);
+        }, this)) ESP_LOGW(kTag, "Continuing without microphone capture");
     return true;
+}
+
+bool Esp32S31Korvo1Audio::SetCaptureEnabled(bool enabled) {
+    if (!microphone_ || !mutex_) return false;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    int result;
+    if (!enabled) result = esp_codec_dev_close(microphone_);
+    else {
+        esp_codec_dev_sample_info_t info = {};
+        info.bits_per_sample = 16;
+        info.channel = 2;
+        info.sample_rate = KORVO_AUDIO_SAMPLE_RATE;
+        result = esp_codec_dev_open(microphone_, &info);
+        if (result == ESP_OK) result = esp_codec_dev_set_in_gain(microphone_, 24.0f);
+        if (result != ESP_OK) (void)esp_codec_dev_close(microphone_);
+    }
+    xSemaphoreGive(mutex_);
+    return result == ESP_OK;
+}
+
+int32_t Esp32S31Korvo1Audio::ReadCapture(int16_t* pcm, size_t samples) {
+    if (!pcm || !samples || samples > 320) return PXA_STATUS_INVALID_ARGUMENT;
+    size_t bytes = 0;
+    const auto error = i2s_channel_read(rx_channel_, capture_stereo_, samples * 4, &bytes, 40);
+    if (error != ESP_OK && error != ESP_ERR_TIMEOUT) return PXA_STATUS_IO_ERROR;
+    if (bytes > samples * 4 || bytes % 4) return PXA_STATUS_IO_ERROR;
+    for (size_t i = 0; i < bytes / 4; ++i) pcm[i] = capture_stereo_[i * 2];
+    return bytes ? int32_t(bytes / 4) : PXA_STATUS_WOULD_BLOCK;
 }
 
 void Esp32S31Korvo1Audio::SetVolume(uint8_t percent) {

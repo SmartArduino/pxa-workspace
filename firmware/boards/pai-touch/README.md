@@ -28,8 +28,13 @@ Behaviour measured on the device, which the link is built around:
   vendor reference firmware leaves it disabled too; the speaker is audible
   either way.
 - The coprocessor streams microphone Opus frames continuously, without flow
-  control. The link only drains them and ignores the contents, so receive
-  overflows during the post-wake backlog are reported at most once every 10 s.
+  control. Standard Audio capture exposes a bounded queue only while an
+  application owns its capture resource. Opening/closing flushes stale frames;
+  the nonblocking reader returns WouldBlock when empty. The installed JL701
+  emits one 60 ms SILK/Opus frame even when 20 ms was requested, so the Host
+  advertises the actual 60 ms wire format. Post-wake receive overflows are
+  reported at most once every 10 s. Frames are not written to storage by the
+  board driver.
 
 The two CST826 contacts are exposed as independent LVGL pointer devices, so PXA
 apps receive stable `pointer_id` values for simultaneous touches.

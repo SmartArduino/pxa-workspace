@@ -8,6 +8,7 @@
 #include "pxa_esp_private_copy.h"
 #include "pxa_esp_private_authority.h"
 #include "pxa_esp_volumes.h"
+#include "pxa_esp_publisher_directory.h"
 #include "pxa/posix/pxa_posix_fs.h"
 #include "pxa/openssl/pxa_openssl.h"
 #include "esp_heap_caps.h"
@@ -80,9 +81,11 @@ static int child(int parent,const char *name,int create) {
 }
 static pxa_status_t home_directory(pxa_esp_installations_t *owner,const char *locator,
     int create,int *parent,int *directory) {
-    char publisher[65];const char *slash=strchr(locator,'/');*parent=-1;*directory=-1;
-    if(!slash || slash-locator!=64 || strchr(slash+1,'/'))return PXA_STATUS_INVALID_ARGUMENT;
-    memcpy(publisher,locator,64);publisher[64]=0;
+    char publisher[65],physical[PXA_POSIX_APP_LOCATOR_BYTES];*parent=-1;*directory=-1;
+    pxa_status_t mapped=pxa_esp_publisher_map(owner->root,&owner->volume.id,"apps",locator,0,physical,sizeof(physical));
+    if(mapped!=PXA_STATUS_OK)return mapped;
+    const char *slash=strchr(physical,'/');
+    memcpy(publisher,physical,(size_t)(slash-physical));publisher[slash-physical]=0;
     int root=open(owner->root,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
     if(root<0)return io_error();
     int apps=child(root,"apps",create);pxa_status_t status=apps<0?io_error():PXA_STATUS_OK;
@@ -306,7 +309,10 @@ static pxa_status_t namespace_credit(transfer_t *move,uint64_t *credit) {
     int apps=child(root,"apps",0);int saved=errno;close(root);errno=saved;
     if(apps<0)return errno==ENOENT?PXA_STATUS_OK:io_error();
     *credit+=move->target->volume.allocation_unit;
-    char name[65];memcpy(name,move->locator,64);name[64]=0;
+    char physical[PXA_POSIX_APP_LOCATOR_BYTES];
+    pxa_status_t mapped=pxa_esp_publisher_map(move->target->root,&move->target->volume.id,"apps",move->locator,0,physical,sizeof(physical));
+    if(mapped!=PXA_STATUS_OK) {close(apps);return mapped;}
+    *strchr(physical,'/')=0;const char *name=physical;
     int publisher=child(apps,name,0);saved=errno;close(apps);errno=saved;
     if(publisher<0)return errno==ENOENT?PXA_STATUS_OK:io_error();
     *credit+=move->target->volume.allocation_unit;
@@ -375,9 +381,9 @@ static pxa_status_t reset_unpublished(transfer_t *move) {
     pxa_status_t status=pxa_posix_install_record_load_with_auth(move->target_directory,&move->target->volume.id,&auth,&move->checked.record);
     if(status==PXA_STATUS_OK && !same_record(move,&move->seed,&move->checked.record))return PXA_STATUS_DENIED;
     if(status!=PXA_STATUS_OK && status!=PXA_STATUS_NOT_FOUND)return status;
-    int n=snprintf(move->candidate.home,sizeof(move->candidate.home),"%s/apps/%s",move->target->root,move->locator);
-    if(n<0 || (size_t)n>=sizeof(move->candidate.home))return PXA_STATUS_LIMIT_EXCEEDED;
-    DIR *entries=opendir(move->candidate.home);if(!entries)return io_error();
+    pxa_status_t mapped=pxa_esp_publisher_path(move->target->volume.mount_epoch,"apps",move->locator,move->candidate.home,sizeof(move->candidate.home));
+    if(mapped!=PXA_STATUS_OK)return mapped;
+    int n;DIR *entries=opendir(move->candidate.home);if(!entries)return io_error();
     status=PXA_STATUS_OK;
     for(;;) {
         errno=0;struct dirent *entry=readdir(entries);
@@ -495,8 +501,8 @@ static pxa_status_t run_archive(transfer_t *move,pxa_posix_app_home_t *home) {
     /* An authenticated archive carries private-state authority, never code
      * execution authority. Use the same receipt/CAS handoff without making
      * an installer or a synthetic manifest for an absent package. */
-    int n=snprintf(move->candidate.home,sizeof(move->candidate.home),"%s/apps/%s",move->target->root,move->locator);
-    if(n<0 || (size_t)n>=sizeof(move->candidate.home))return PXA_STATUS_LIMIT_EXCEEDED;
+    pxa_status_t mapped=pxa_esp_publisher_path(move->target->volume.mount_epoch,"apps",move->locator,move->candidate.home,sizeof(move->candidate.home));
+    if(mapped!=PXA_STATUS_OK)return mapped;
     strcpy(move->candidate.locator,move->locator);move->candidate.record=move->projected;
     pxa_status_t status=available(move);if(status!=PXA_STATUS_OK)return status;
     if(move->receipt.transfer.phase<PXA_INSTALL_TRANSFER_SURRENDERED) {
@@ -620,7 +626,11 @@ static pxa_status_t require_bound_manual_media(transfer_t *move) {
      * root. Moving its record without first binding that root would silently
      * redirect assets to the destination. Keep that installation intact until
      * its media layout has been converted. */
-    char publisher[65];memcpy(publisher,move->locator,64);publisher[64]=0;
+    char publisher[PXA_POSIX_APP_LOCATOR_BYTES];
+    pxa_status_t mapped=pxa_esp_publisher_map(move->source->root,&move->source->volume.id,
+        "media",move->locator,0,publisher,sizeof(publisher));
+    if(mapped!=PXA_STATUS_OK)return mapped;
+    *strchr(publisher,'/')=0;
     const char *names[]={"media",publisher,move->original.record.app_id};
     int current=open(move->source->root,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
     if(current<0)return io_error();
@@ -735,8 +745,8 @@ pxa_status_t pxa_esp_app_transfer_resume(uint64_t target_epoch,const char *locat
     if(status==PXA_STATUS_OK)status=pxa_esp_installations_open(source_volume.mount_epoch,&move->source);
     if(status==PXA_STATUS_OK) {
         move->original.record=move->receipt.transfer.source;strcpy(move->original.locator,move->locator);
-        int n=snprintf(move->original.home,sizeof(move->original.home),"%s/apps/%s",move->source->root,move->locator);
-        if(n<0 || (size_t)n>=sizeof(move->original.home))return dispose(move,PXA_STATUS_LIMIT_EXCEEDED);
+        status=pxa_esp_publisher_path(move->source->volume.mount_epoch,"apps",move->locator,move->original.home,sizeof(move->original.home));
+        if(status!=PXA_STATUS_OK)return dispose(move,status);
         status=source_intent(move,move->receipt.transfer.phase<PXA_INSTALL_TRANSFER_SURRENDERED);
         if(status==PXA_STATUS_OK)status=persist_phase(move,&move->source_receipt,
             move->receipt.transfer.phase<PXA_INSTALL_TRANSFER_SURRENDERED?PXA_INSTALL_TRANSFER_COPYING:move->receipt.transfer.phase);
@@ -788,7 +798,12 @@ pxa_status_t pxa_esp_app_transfer_visit(uint64_t epoch,pxa_esp_app_transfer_visi
     for(;;) {
         errno=0;struct dirent *group=readdir(publishers);
         if(!group) {if(errno)status=io_error();break;}
-        if(!publisher_bytes(group->d_name,scan->publisher))continue;
+        char physical[PXA_POSIX_APP_LOCATOR_BYTES],logical[PXA_POSIX_APP_LOCATOR_BYTES],pxa_root[PXA_ESP_STORAGE_PATH_BYTES+8];
+        if(snprintf(physical,sizeof(physical),"%s/probe",group->d_name)>=(int)sizeof(physical))continue;
+        if(snprintf(pxa_root,sizeof(pxa_root),"%s/PXA",scan->mount)>=(int)sizeof(pxa_root))continue;
+        if(pxa_esp_publisher_map(pxa_root,&scan->volume.id,"apps",physical,1,logical,sizeof(logical))!=PXA_STATUS_OK)continue;
+        *strchr(logical,'/')=0;
+        if(!publisher_bytes(logical,scan->publisher))continue;
         publisher=child(apps,group->d_name,0);
         if(publisher<0) {if(errno==ENOTDIR || errno==ELOOP || errno==ENOENT)continue;status=io_error();break;}
         applications=directory_stream(publisher);if(!applications) {status=io_error();break;}

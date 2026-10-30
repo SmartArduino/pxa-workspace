@@ -26,5 +26,10 @@ int main(void) {
     assert(pxa_esp_media_relative_valid(managed) && pxa_esp_media_relative_managed(managed));
     managed[81]='B';assert(!pxa_esp_media_relative_valid(managed));managed[81]='b';
     managed[149]='X';assert(!pxa_esp_media_relative_valid(managed));
+    char friendly[256]="PXA/media/lucinhu-17982acd/pxa-doom/";
+    size_t prefix=strlen(friendly);memset(friendly+prefix,'b',64);strcpy(friendly+prefix+64,"/package");
+    assert(pxa_esp_media_relative_valid(friendly) && pxa_esp_media_relative_managed(friendly));
+    friendly[prefix]='G';assert(!pxa_esp_media_relative_valid(friendly));friendly[prefix]='b';
+    strcat(friendly,"/extra");assert(!pxa_esp_media_relative_valid(friendly));
     puts("PASS: media roots require publisher/app paths; AppKey-only roots rejected");
 }

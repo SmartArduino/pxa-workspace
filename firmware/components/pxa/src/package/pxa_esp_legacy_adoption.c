@@ -9,6 +9,7 @@
 #include "pxa_esp_private_copy.h"
 #include "pxa_esp_package_limits.h"
 #include "pxa_esp_volumes.h"
+#include "pxa_esp_publisher_directory.h"
 #include "pxa/posix/pxa_posix_fs.h"
 #include "pxa/openssl/pxa_openssl.h"
 #include "pxa/fs.h"
@@ -225,8 +226,8 @@ static adoption_t *allocate(uint64_t epoch,const char *locator,const pxa_esp_app
         size_t n=strnlen(locator,sizeof(a->home.locator));
         if(n>=sizeof(a->home.locator) || n<66 || locator[64]!='/') {*status=PXA_STATUS_INVALID_ARGUMENT;return a;}
         memcpy(a->home.locator,locator,n+1);
-        n=(size_t)snprintf(a->home.home,sizeof(a->home.home),"%s/apps/%s",a->owner->root,locator);
-        if(n>=sizeof(a->home.home)) {*status=PXA_STATUS_LIMIT_EXCEEDED;return a;}
+        *status=pxa_esp_publisher_path(epoch,"apps",locator,a->home.home,sizeof(a->home.home));
+        if(*status!=PXA_STATUS_OK)return a;
     }
     *status=PXA_STATUS_OK;return a;
 }
@@ -305,8 +306,15 @@ static pxa_status_t manifest_matches(adoption_t *a) {
         r->release_sequence!=(a->manifest->has_release_sequence?a->manifest->release_sequence:0)))status=PXA_STATUS_BAD_STATE;
     return status;
 }
+static pxa_status_t media_relative(adoption_t *a,char *out,size_t bytes) {
+    char absolute[PXA_POSIX_APP_PATH_BYTES];
+    pxa_status_t status=pxa_esp_publisher_path(a->media_epoch,"media",a->home.locator,absolute,sizeof(absolute));
+    if(status!=PXA_STATUS_OK)return status;
+    int n=snprintf(out,bytes,"%s",absolute+strlen(a->media_mount)+1);
+    return n<0 || (size_t)n>=bytes?PXA_STATUS_LIMIT_EXCEEDED:PXA_STATUS_OK;
+}
 static pxa_status_t locate_home(adoption_t *a,uint8_t create) {
-    int n=snprintf(a->scratch,sizeof(a->scratch),"PXA/apps/%s",a->home.locator);
+    int n=snprintf(a->scratch,sizeof(a->scratch),"%s",a->home.home+strlen(a->mount)+1);
     if(n<0 || (size_t)n>=sizeof(a->scratch))return PXA_STATUS_LIMIT_EXCEEDED;
     a->home_fd=walk(a->root,a->scratch,create);
     if(a->home_fd<0)return error();
@@ -381,8 +389,8 @@ static pxa_status_t preflight(adoption_t *a,uint8_t snapshot) {
         a->stage="preflight-media";
         int from=walk(a->media_root,a->source.media,0);if(from<0)return error();
         if(close(from))return error();
-        n=snprintf(a->scratch,sizeof(a->scratch),"PXA/media/%s",a->home.locator);
-        if(n<0 || (size_t)n>=sizeof(a->scratch))return PXA_STATUS_LIMIT_EXCEEDED;
+        status=media_relative(a,a->scratch,sizeof(a->scratch));
+        if(status!=PXA_STATUS_OK)return status;
         if(strcmp(a->source.media,a->scratch)) {
             int to=walk(a->media_root,a->scratch,0);
             if(to>=0) {close(to);return PXA_STATUS_BAD_STATE;}
@@ -441,9 +449,11 @@ static pxa_status_t admission(adoption_t *a,uint8_t reserve) {
      * journal-owned metadata on a nearly full source volume. */
     const char *tail[]={"","","/data","/data/0000000000000001","/data/0000000000000001/.pxa-policy"};
     char path[PXA_POSIX_APP_PATH_BYTES];
+    const char *relative_home=a->home.home+strlen(a->mount)+1;
+    const char *app_separator=strrchr(relative_home,'/');
     for(unsigned i=0;measured==PXA_STATUS_OK && i<5;++i) {
-        int n=i==0?snprintf(path,sizeof(path),"PXA/apps/%.64s",a->home.locator):
-            snprintf(path,sizeof(path),"PXA/apps/%s%s",a->home.locator,tail[i]);
+        int n=i==0?snprintf(path,sizeof(path),"%.*s",(int)(app_separator-relative_home),relative_home):
+            snprintf(path,sizeof(path),"%s%s",relative_home,tail[i]);
         if(n<0 || (size_t)n>=sizeof(path))return PXA_STATUS_LIMIT_EXCEEDED;
         measured=directory_credit(a,a->root,path,a->owner->volume.allocation_unit,&credit);
     }
@@ -451,7 +461,7 @@ static pxa_status_t admission(adoption_t *a,uint8_t reserve) {
         "data/0000000000000001/.pxa-directory-grants"};
     a->stage="admit-files";
     for(unsigned i=0;measured==PXA_STATUS_OK && i<5;++i) {
-        int n=snprintf(path,sizeof(path),"PXA/apps/%s/%s",a->home.locator,files[i]);
+        int n=snprintf(path,sizeof(path),"%s/%s",relative_home,files[i]);
         if(n<0 || (size_t)n>=sizeof(path))return PXA_STATUS_LIMIT_EXCEEDED;
         const uint64_t logical=i<2?16+PXA_INSTALL_TRANSFER_BYTES+a->receipt.context_size+32:
             i<4?PXA_POSIX_INSTALL_RECORD_SEALED_BYTES:1264;
@@ -460,7 +470,7 @@ static pxa_status_t admission(adoption_t *a,uint8_t reserve) {
     if(measured!=PXA_STATUS_OK)return measured;
     /* A retry resets policy entries before reimport. Their eventual space is
      * counted above; crediting them avoids charging it twice on recovery. */
-    int n=snprintf(path,sizeof(path),"PXA/apps/%s/data/0000000000000001/.pxa-policy",a->home.locator);
+    int n=snprintf(path,sizeof(path),"%s/data/0000000000000001/.pxa-policy",relative_home);
     if(n<0 || (size_t)n>=sizeof(path))return PXA_STATUS_LIMIT_EXCEEDED;
     int policy_fd=walk(a->root,path,0);
     a->stage="admit-policy";
@@ -492,8 +502,8 @@ static pxa_status_t admission(adoption_t *a,uint8_t reserve) {
         uint64_t existing=0;
         measured=directory_credit(a,a->media_root,"PXA",volume.allocation_unit,&existing);
         if(measured==PXA_STATUS_OK)measured=directory_credit(a,a->media_root,"PXA/media",volume.allocation_unit,&existing);
-        n=snprintf(path,sizeof(path),"PXA/media/%.64s",a->home.locator);
-        if(n<0 || (size_t)n>=sizeof(path))return PXA_STATUS_LIMIT_EXCEEDED;
+        status=media_relative(a,path,sizeof(path));if(status!=PXA_STATUS_OK)return status;
+        *strrchr(path,'/')=0;
         if(measured==PXA_STATUS_OK)measured=directory_credit(a,a->media_root,path,volume.allocation_unit,&existing);
         if(measured!=PXA_STATUS_OK)return measured;
         media-=existing;
@@ -685,8 +695,8 @@ static pxa_status_t run(adoption_t *a,pxa_posix_app_home_t *home) {
         status=authority(a,0);
         if(status==PXA_STATUS_OK)status=checkpoint(a,5);
         if(status==PXA_STATUS_OK && a->media_epoch) {
-            int n=snprintf(a->scratch,sizeof(a->scratch),"PXA/media/%s",a->home.locator);
-            if(n<0 || (size_t)n>=sizeof(a->scratch))return PXA_STATUS_LIMIT_EXCEEDED;
+            status=media_relative(a,a->scratch,sizeof(a->scratch));
+            if(status!=PXA_STATUS_OK)return status;
             if(strcmp(a->source.media,a->scratch)) {
                 const char *name;int target=parent(a,a->media_root,a->scratch,&name,1);
                 if(target<0)return error();
@@ -769,8 +779,7 @@ pxa_status_t pxa_esp_legacy_adoption_prepare(pxa_esp_legacy_source_t *source,uin
     }
     if(status==PXA_STATUS_OK)status=pxa_esp_installations_locator(r->publisher_root,r->app_id,a->home.locator,sizeof(a->home.locator));
     if(status==PXA_STATUS_OK) {
-        n=snprintf(a->home.home,sizeof(a->home.home),"%s/apps/%s",a->owner->root,a->home.locator);
-        if(n<0 || (size_t)n>=sizeof(a->home.home))status=PXA_STATUS_LIMIT_EXCEEDED;
+        status=pxa_esp_publisher_path(a->owner->volume.mount_epoch,"apps",a->home.locator,a->home.home,sizeof(a->home.home));
         snprintf(a->identity,sizeof(a->identity),"%s",a->home.locator);a->identity[64]=':';
     }
     if(status==PXA_STATUS_OK)status=bind_media(a);

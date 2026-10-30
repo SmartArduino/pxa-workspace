@@ -36,7 +36,10 @@ int main() {
         assert(pxadb::may_create_directory(path, false, true));
         assert(pxadb::protected_system_directory(path));
     }
-    for (const auto path : {"system", "systematic/pxa", "pxa-state/packages", "../system/pxa"})
+    assert(!pxadb::may_create_directory("system", false, false));
+    assert(pxadb::may_create_directory("system", false, true));
+    assert(!pxadb::protected_system_directory("system"));
+    for (const auto path : {"systematic/pxa", "pxa-state/packages", "../system/pxa"})
         assert(!pxadb::may_create_directory(path, false, true));
     assert(pxadb::may_create_directory("pxa-state/inbox/test", true, false));
 }

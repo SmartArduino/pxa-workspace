@@ -53,6 +53,13 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 0.5.3
+  espressif/dhara:
+    component_hash: 46b686fd0599aed21fee222c249744f05eed28d8e62446bcc83b6b50bcc390e0
+    dependencies: []
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.1.0
   espressif/esp_audio_codec:
     component_hash: 16e2880dbdd5a72264051f750f33a6e5a38fd25621c83e3a32a85a152d2d2643
     dependencies:
@@ -296,6 +303,20 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 1.6.59
+  espressif/spi_nand_flash:
+    component_hash: aa7bae693eee90b2e5e7cd63e67d41f5c30e61a501873b5c2d02838b1b9df6b8
+    dependencies:
+    - name: espressif/dhara
+      registry_url: https://components.espressif.com
+      require: private
+      version: 1.*
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.4.4
   espressif/tinyusb:
     component_hash: 16c8d774dab1f484d3e0c0f61105624d2424bbae864efd19818baf7b451b41e7
     dependencies:
@@ -372,6 +393,7 @@ direct_dependencies:
 - 78/esp_lcd_touch_cst92xx
 - espressif/button
 - espressif/cjson
+- espressif/dhara
 - espressif/esp_audio_codec
 - espressif/esp_codec_dev
 - espressif/esp_lcd_co5300
@@ -382,9 +404,10 @@ direct_dependencies:
 - espressif/esp_new_jpeg
 - espressif/esp_tinyusb
 - espressif/freetype
+- espressif/spi_nand_flash
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: e2a7245af93dd7b5db3986eb7f012b58b0b5ff2f7f47dd18bb074c359541feb6
+manifest_hash: 02c598cdd1898fc89a8a8e13feec34febc1df8c848bb674538bba8a1d33c1ce8
 target: esp32s31
 version: 3.0.0

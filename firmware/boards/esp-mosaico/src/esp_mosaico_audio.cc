@@ -46,7 +46,7 @@ bool EspMosaicoAudio::Initialize(i2c_master_bus_handle_t bus) {
     // each write leaves a partial buffer that can expire before its next fill.
     channel_config.dma_frame_num = kDmaFrames;
     channel_config.auto_clear = true;
-    if (!Check(i2s_new_channel(&channel_config, &tx_channel_, nullptr), "i2s_channel"))
+    if (!Check(i2s_new_channel(&channel_config, &tx_channel_, &rx_channel_), "i2s_channel"))
         return false;
     const i2s_std_config_t std_config = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(mosaico_board::kAudioSampleRate),
@@ -57,18 +57,19 @@ bool EspMosaicoAudio::Initialize(i2c_master_bus_handle_t bus) {
             .bclk = static_cast<gpio_num_t>(mosaico_board::kAudioBitClock),
             .ws = static_cast<gpio_num_t>(mosaico_board::kAudioWordSelect),
             .dout = static_cast<gpio_num_t>(mosaico_board::kAudioDataOut),
-            .din = GPIO_NUM_NC,
+            .din = static_cast<gpio_num_t>(mosaico_board::kAudioDataIn),
         },
     };
     const i2s_event_callbacks_t callbacks = {.on_sent = OnDmaSent};
     if (!Check(i2s_channel_init_std_mode(tx_channel_, &std_config), "i2s_format") ||
+        !Check(i2s_channel_init_std_mode(rx_channel_, &std_config), "i2s_input_format") ||
         !Check(i2s_channel_register_event_callback(tx_channel_, &callbacks, this), "i2s_callback") ||
         !Check(i2s_channel_enable(tx_channel_), "i2s_enable"))
         return false;
 
     audio_codec_i2s_cfg_t i2s_config = {
         .port = I2S_NUM_0,
-        .rx_handle = nullptr,
+        .rx_handle = rx_channel_,
         .tx_handle = tx_channel_,
     };
     const audio_codec_data_if_t* data_if = audio_codec_new_i2s_data(&i2s_config);
@@ -106,6 +107,16 @@ bool EspMosaicoAudio::Initialize(i2c_master_bus_handle_t bus) {
     };
     speaker_ = esp_codec_dev_new(&device_config);
     if (!Check(speaker_ ? ESP_OK : ESP_ERR_NO_MEM, "speaker_create")) return false;
+    // Creating either ES8311 control object resets common registers. Create
+    // both before enabling the DAC, then keep the paired ADC on demand.
+    // The ADC must never drive the speaker's PA pin.
+    codec_config.pa_pin = GPIO_NUM_NC;
+    codec_config.codec_mode = ESP_CODEC_DEV_WORK_MODE_ADC;
+    const auto* input_codec = es8311_codec_new(&codec_config);
+    esp_codec_dev_cfg_t input_device = {
+        .dev_type = ESP_CODEC_DEV_TYPE_IN, .codec_if = input_codec, .data_if = data_if,
+    };
+    if (input_codec) microphone_ = esp_codec_dev_new(&input_device);
     esp_codec_dev_sample_info_t sample_info = {
         .bits_per_sample = 16,
         .channel = 2,
@@ -145,7 +156,44 @@ bool EspMosaicoAudio::Initialize(i2c_master_bus_handle_t bus) {
     if (result == ESP_OK) result = esp_codec_dev_read_reg(speaker_, 0x44, &reference_reg);
     ESP_LOGI("mosaico_audio", "codec_boot reg31=0x%x reg32=0x%x reg44=0x%x read_status=%d",
         mute_reg, volume_reg, reference_reg, result);
+    if (!microphone_ || !capture_.Initialize(
+        [](void* context, bool enabled) {
+            return static_cast<EspMosaicoAudio*>(context)->SetCaptureEnabled(enabled);
+        }, [](void* context, int16_t* pcm, size_t samples) {
+            return static_cast<EspMosaicoAudio*>(context)->ReadCapture(pcm, samples);
+        }, this)) ESP_LOGW("mosaico_audio", "Continuing without microphone capture");
     return true;
+}
+
+bool EspMosaicoAudio::SetCaptureEnabled(bool enabled) {
+    if (!microphone_ || !control_mutex_) return false;
+    xSemaphoreTake(control_mutex_, portMAX_DELAY);
+    int result;
+    if (!enabled) result = esp_codec_dev_close(microphone_);
+    else if (stopped_.load()) result = ESP_ERR_INVALID_STATE;
+    else {
+        esp_codec_dev_sample_info_t info = {
+            .bits_per_sample = 16, .channel = 2, .channel_mask = 0,
+            .sample_rate = mosaico_board::kAudioSampleRate, .mclk_multiple = 256,
+        };
+        result = esp_codec_dev_open(microphone_, &info);
+        if (result == ESP_OK) result = esp_codec_dev_set_in_gain(microphone_, 24.0f);
+        if (result != ESP_OK) (void)esp_codec_dev_close(microphone_);
+    }
+    xSemaphoreGive(control_mutex_);
+    return result == ESP_OK;
+}
+
+int32_t EspMosaicoAudio::ReadCapture(int16_t* pcm, size_t samples) {
+    if (stopped_.load()) return PXA_STATUS_UNAVAILABLE;
+    if (!pcm || !samples || samples > 320) return PXA_STATUS_INVALID_ARGUMENT;
+    size_t bytes = 0;
+    const auto error = i2s_channel_read(rx_channel_, capture_stereo_, samples * 4, &bytes, 40);
+    if (error != ESP_OK && error != ESP_ERR_TIMEOUT) return PXA_STATUS_IO_ERROR;
+    if (bytes > samples * 4 || bytes % 4) return PXA_STATUS_IO_ERROR;
+    // ES8311 puts the mono ADC on its left I2S slot. Discard the other slot.
+    for (size_t i = 0; i < bytes / 4; ++i) pcm[i] = capture_stereo_[i * 2];
+    return bytes ? int32_t(bytes / 4) : PXA_STATUS_WOULD_BLOCK;
 }
 
 bool EspMosaicoAudio::SetVolume(uint8_t percent) {
@@ -219,6 +267,7 @@ bool EspMosaicoAudio::Write(const int16_t* pcm, size_t samples) {
 
 void EspMosaicoAudio::StopForShutdown() {
     stopped_ = true;
+    capture_.StopForShutdown();
     if (mutex_ == nullptr) return;
     // Drain any write/recovery already in progress before disabling the PA.
     // Future writes remain paced but cannot restart DMA or enable the PA.

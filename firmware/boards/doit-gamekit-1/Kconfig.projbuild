@@ -1,5 +1,22 @@
 menu "DOIT GameKit 1"
 
+config PXA_DOIT1_BATTERY_R37_KOHM
+    int "Battery divider upper resistor R37 (kohm)"
+    range 1 1000
+    default 100
+    help
+        Must match the physical resistor between BAT+ and GPIO49.
+        V0.8 uses 100 kohm. With R52=100 kohm, a full 4.2 V cell exceeds
+        the S31 ADC's approximately 2 V range. Replacing R37 with 120 kohm
+        and setting this to 120 keeps the full cell voltage in range.
+
+config PXA_DOIT1_BATTERY_R52_KOHM
+    int "Battery divider lower resistor R52 (kohm)"
+    range 1 1000
+    default 100
+    help
+        Must match the physical resistor between GPIO49 and ground.
+
 config PXA_DOIT1_TOUCH
     bool "FT6336U capacitive touch"
     default y

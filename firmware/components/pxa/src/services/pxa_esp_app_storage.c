@@ -5,6 +5,7 @@
 #include "pxa_esp_image_blockdev.h"
 #include "pxa_esp_volumes.h"
 #include "pxa_esp_record_seal.h"
+#include "pxa_esp_publisher_directory.h"
 #include "pxa/esp/pxa_esp_posix_shim.h"
 #include "esp_heap_caps.h"
 #include "esp_littlefs.h"
@@ -80,7 +81,7 @@ static pxa_status_t ready(pxa_esp_app_storage_t *storage) {
 pxa_status_t pxa_esp_app_storage_create(const pxa_posix_app_home_t *home,uint64_t epoch,
     uint64_t capacity,const pxa_install_plan_t *plan,pxa_esp_app_storage_t **output) {
     pxa_esp_app_storage_t *storage;pxa_volume_info_t info;pxa_status_t status;
-    char mount[PXA_ESP_STORAGE_PATH_BYTES];int n;
+    char expected_home[PXA_POSIX_APP_PATH_BYTES];
     if(!output)return PXA_STATUS_INVALID_ARGUMENT;
     *output=NULL;
     if(!home || !epoch || !memchr(home->record.app_id,0,sizeof(home->record.app_id)) ||
@@ -90,6 +91,11 @@ pxa_status_t pxa_esp_app_storage_create(const pxa_posix_app_home_t *home,uint64_
     if(!slash || slash==home->locator || slash-home->locator>64 || strchr(slash+1,'/') ||
         strcmp(slash+1,home->record.app_id) || !pxa_fs_scoped_path_is_valid(
             (pxa_bytes_t){(const uint8_t *)home->locator,strlen(home->locator)}))return PXA_STATUS_DENIED;
+    static const char hex[]="0123456789abcdef";
+    if(slash-home->locator!=64)return PXA_STATUS_DENIED;
+    for(unsigned i=0;i<32;++i)
+        if(home->locator[2*i]!=hex[home->record.publisher_root[i]>>4] ||
+            home->locator[2*i+1]!=hex[home->record.publisher_root[i]&15])return PXA_STATUS_DENIED;
     /* Maintenance also serves disabled/archived applications. The activation
      * owner checks execution policy before exposing a session to services. */
     status=pxa_esp_storage_volume(epoch,&info);if(status!=PXA_STATUS_OK)return status;
@@ -97,14 +103,14 @@ pxa_status_t pxa_esp_app_storage_create(const pxa_posix_app_home_t *home,uint64_
         return PXA_STATUS_UNAVAILABLE;
     if(!(info.capabilities&PXA_VOLUME_PRIVATE_NATIVE) &&
         (capacity<65536 || capacity>INT32_MAX || capacity%4096))return PXA_STATUS_INVALID_ARGUMENT;
-    status=pxa_esp_storage_volume_path(epoch,mount,sizeof(mount));if(status!=PXA_STATUS_OK)return status;
+    status=pxa_esp_publisher_path(epoch,"apps",home->locator,expected_home,sizeof(expected_home));if(status!=PXA_STATUS_OK)return status;
     storage=heap_caps_calloc(1,sizeof(*storage),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     if(!storage)storage=heap_caps_calloc(1,sizeof(*storage),MALLOC_CAP_8BIT);
     if(!storage)return PXA_STATUS_RESOURCE_LIMIT;
-    n=snprintf(storage->home,sizeof(storage->home),"%s/PXA/apps/%s",mount,home->locator);
-    if(n<0 || (size_t)n>=sizeof(storage->home) || strcmp(storage->home,home->home)) {
+    if(strlen(expected_home)>=sizeof(storage->home) || strcmp(expected_home,home->home)) {
         heap_caps_free(storage);return PXA_STATUS_DENIED;
     }
+    strcpy(storage->home,expected_home);
     status=pxa_posix_app_home_path(home,PXA_POSIX_APP_HOME_PRIVATE,storage->root,sizeof(storage->root));
     if(status!=PXA_STATUS_OK) {heap_caps_free(storage);return status;}
     storage->epoch=epoch;storage->capacity=capacity;storage->plan=plan;

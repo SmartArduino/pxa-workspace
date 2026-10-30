@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/boschsensortec/BMI270_SensorAPI",
+  "commit": "41129fcfe39c583ee5462d79195741945d51c1fe",
+  "license": "BSD-3-Clause",
+  "files_sha256": {
+    "LICENSE": "56df116398e0b72a12ae353d93002d29175583590283ced2c2510e3d8075546f",
+    "bmi2.c": "8d42ba3281b8448f674a4df616a7e176a259ad3c38c53b6d2c49bfdbdb0a82db",
+    "bmi2.h": "a86c53c480974a0c56e24d9d4e736445c61ebc07addec6d3eaceddb8a2c97cd3",
+    "bmi2_defs.h": "39c2cf19bfbf735cb0ed209efd975a731be50dff71b432b24a6a2625b2b14304",
+    "bmi270.c": "f6446867378bbcc90ea97ef6593555de8767ca20b799355c1b37c2cabb7b7b41",
+    "bmi270.h": "7979ec4c943e2825351bd9d3d267b63abc6f8314c1f13f1c37e95cabc3fc82c8"
+  }
+}

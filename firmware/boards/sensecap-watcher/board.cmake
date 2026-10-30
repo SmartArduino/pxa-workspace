@@ -2,3 +2,4 @@
 set(PXA_BOARD_TARGET "esp32s3")
 # ESP-IDF component exporting pxa_board.h for this board profile.
 set(PXA_BOARD_COMPONENT "sensecap-watcher")
+set(PXA_BOARD_ENABLE_PERIPHERALS ON)

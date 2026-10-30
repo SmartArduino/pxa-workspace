@@ -33,8 +33,9 @@ pxa_status_t pxa_esp_installations_media_path(const pxa_install_record_t *,char 
  * canonical publisher/App directory on one precise volume. Its digest must
  * be zero. Activation retains that mount and requires the directory to exist;
  * this does not turn manual assets into signed resources. */
-/* Fixed namespace derived from the signed publisher root, never a Guest path.
- * Human publisher aliases can be added by a separately authenticated policy. */
+/* Stable logical locator derived from the full signed publisher root, never
+ * a Guest path. A volume-local authenticated publisher directory maps it to
+ * the physical name without changing record authentication or app identity. */
 pxa_status_t pxa_esp_installations_locator(const uint8_t root[32],const char *app_id,char *,size_t);
 /* Budget the selected volume's allocation geometry, decoded files, directories,
  * durable control records, private image and caller's actual transfer peak.

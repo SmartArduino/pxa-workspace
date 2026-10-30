@@ -1,0 +1,62 @@
+{
+  "format": "pxa-package-source-0.1",
+  "id": "pxa-ext-camera-example",
+  "version": "0.1.3",
+  "release_sequence": 4,
+  "name": "Board Camera Example",
+  "description": "Permission-controlled JPEG capture and optional native inference through workspace peripherals 0.3.",
+  "min_sdk": [
+    2,
+    1
+  ],
+  "target_sdk": [
+    2,
+    1
+  ],
+  "compile_sdk": [
+    2,
+    1
+  ],
+  "build": {
+    "system": "cmake",
+    "source_dir": ".",
+    "linear_memory": {
+      "maximum_bytes": 2097152,
+      "pinned": true
+    }
+  },
+  "permissions": [
+    {
+      "name": "org.doit.peripherals",
+      "scope": "camera.jpeg",
+      "required": false
+    },
+    {
+      "name": "org.doit.peripherals",
+      "scope": "vision.inference",
+      "required": false
+    }
+  ],
+  "components": [
+    {
+      "id": "main",
+      "kind": "ui",
+      "cmake_target": "pxa_main",
+      "services": [
+        "ui",
+        "permission",
+        "clock",
+        "fs",
+        "log"
+      ],
+      "wasi": {
+        "version": "preview1",
+        "libc": "wasi-libc",
+        "features": [
+          "monotonic-clock",
+          "wall-clock"
+        ]
+      }
+    }
+  ]
+}

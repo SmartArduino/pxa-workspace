@@ -19,6 +19,7 @@
 #include "pxa_esp_volumes.h"
 #include "pxa/container.h"
 #include "mbedtls/md.h"
+#include "mbedtls/ssl.h"
 #include "pxa/pxa_host.h"
 #include "pxa/status.h"
 
@@ -128,6 +129,14 @@ static esp_err_t download_event(esp_http_client_event_t *event) {
 static int cancelled(const pxa_esp_store_job_t *job) {
     return __atomic_load_n(&job->cancelled,__ATOMIC_ACQUIRE);
 }
+static pxa_status_t transport_failure(esp_http_client_handle_t client,esp_err_t error) {
+    int tls_error=0,tls_flags=0;
+    if(client)(void)esp_http_client_get_and_clear_last_tls_error(client,&tls_error,&tls_flags);
+    ESP_LOGW("PxaStore","HTTPS connection failed: esp=%d tls=%d flags=%d",(int)error,tls_error,tls_flags);
+    if(!client || error==ESP_ERR_NO_MEM || tls_error==MBEDTLS_ERR_SSL_ALLOC_FAILED ||
+        tls_error==-MBEDTLS_ERR_SSL_ALLOC_FAILED)return PXA_STATUS_RESOURCE_LIMIT;
+    return PXA_STATUS_IO_ERROR;
+}
 static __attribute__((noinline)) pxa_status_t read_metadata(pxa_esp_store_job_t *job,const char *url,
     uint64_t expected_bytes,uint8_t cached,uint8_t *prefix,size_t *bytes) {
     FILE *file=NULL;esp_http_client_handle_t client=NULL;pxa_container_header_t header;
@@ -141,7 +150,8 @@ static __attribute__((noinline)) pxa_status_t read_metadata(pxa_esp_store_job_t 
         if(!suffix || snprintf(metadata_url,sizeof(metadata_url),"%.*s/install-metadata%s",
             (int)(suffix-url),url,suffix+9)>=(int)sizeof(metadata_url))return PXA_STATUS_INVALID_ARGUMENT;
         config.url=metadata_url;client=esp_http_client_init(&config);
-        if(!client || esp_http_client_open(client,0)!=ESP_OK)goto done;
+        esp_err_t opened=client?esp_http_client_open(client,0):ESP_ERR_NO_MEM;
+        if(opened!=ESP_OK) {status=transport_failure(client,opened);goto done;}
         int64_t length=esp_http_client_fetch_headers(client);
         if(esp_http_client_get_status_code(client)==404) {
             /* Older stores can serve the same bounded prefix from the
@@ -150,8 +160,10 @@ static __attribute__((noinline)) pxa_status_t read_metadata(pxa_esp_store_job_t 
             /* The metadata URL is no longer needed; reuse its buffer for the
              * bounded fallback range instead of growing this worker frame. */
             (void)snprintf(metadata_url,sizeof(metadata_url),"bytes=0-%u",(unsigned)(METADATA_MAX-1u));
-            if(!client || esp_http_client_set_header(client,"Range",metadata_url)!=ESP_OK ||
-                esp_http_client_open(client,0)!=ESP_OK)goto done;
+            if(!client) {status=transport_failure(NULL,ESP_ERR_NO_MEM);goto done;}
+            if(esp_http_client_set_header(client,"Range",metadata_url)!=ESP_OK)goto done;
+            opened=esp_http_client_open(client,0);
+            if(opened!=ESP_OK) {status=transport_failure(client,opened);goto done;}
             (void)esp_http_client_fetch_headers(client);
             int code=esp_http_client_get_status_code(client);
             if(code!=200 && code!=206)goto done;
@@ -222,7 +234,8 @@ static __attribute__((noinline)) pxa_status_t download_file(pxa_esp_store_job_t 
     esp_err_t fetched=client?esp_http_client_perform(client):ESP_FAIL;
     status=PXA_STATUS_IO_ERROR;
     if(cancelled(job)) {status=PXA_STATUS_CANCELLED;goto done;}
-    if(!client || fetched!=ESP_OK || esp_http_client_get_status_code(client)!=200 || sink.failed ||
+    if(!client || fetched!=ESP_OK) {status=transport_failure(client,fetched);goto done;}
+    if(esp_http_client_get_status_code(client)!=200 || sink.failed ||
         sink.received!=bytes || (sink.hash_enabled && (mbedtls_md_finish(&sink.sha,digest) || memcmp(digest,expected_digest,32))) ||
         fflush(sink.file) || fsync(fileno(sink.file)))goto done;
     int closed=fclose(sink.file);sink.file=NULL;

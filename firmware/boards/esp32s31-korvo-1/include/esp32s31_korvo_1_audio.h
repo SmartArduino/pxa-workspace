@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <pxa/pxa_audio_output.h>
+#include <pxa/pxa_audio_capture_input.h>
 
 #include <driver/i2c_master.h>
 #include <driver/i2s_std.h>
@@ -23,12 +24,18 @@ public:
 
 private:
     PxaAudioOutput output_;
+    PxaAudioCaptureInput capture_;
+    bool SetCaptureEnabled(bool enabled);
+    int32_t ReadCapture(int16_t* pcm, size_t samples);
     bool Write(const int16_t* pcm, size_t samples);
     static bool OnDmaSent(i2s_chan_handle_t, i2s_event_data_t*, void* context);
 
     i2s_chan_handle_t tx_channel_ = nullptr;
+    i2s_chan_handle_t rx_channel_ = nullptr;
     const audio_codec_data_if_t* data_if_ = nullptr;
     esp_codec_dev_handle_t speaker_ = nullptr;
+    esp_codec_dev_handle_t microphone_ = nullptr;
+    int16_t capture_stereo_[640] = {};
     SemaphoreHandle_t mutex_ = nullptr;
     /* Mono Host samples expanded to interleaved stereo for the codec. */
     int16_t stereo_[kMaxWriteSamples * 2] = {};

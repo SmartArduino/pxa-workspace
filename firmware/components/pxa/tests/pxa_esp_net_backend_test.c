@@ -21,10 +21,40 @@ static void checked_free(void *memory) {
     free(memory);
 }
 
+static void *checked_calloc(size_t count, size_t bytes) {
+    void *memory = calloc(count, bytes);
+    if (memory) { ++allocation_count; ++live_allocations; }
+    return memory;
+}
+
 #define ESP_PLATFORM 1
 #define free checked_free
+#define calloc checked_calloc
 #include "../src/services/pxa_esp_net.c"
 #undef free
+#undef calloc
+
+int xTaskCreate(void (*fn)(void *), const char *name, unsigned stack,
+    void *context, unsigned priority, TaskHandle_t *task) {
+    (void)fn; (void)name; (void)stack; (void)context; (void)priority; (void)task;
+    return 0; // Exercise native socket worker allocation failure and rollback.
+}
+esp_transport_handle_t esp_transport_tcp_init(void) { return NULL; }
+esp_transport_handle_t esp_transport_ssl_init(void) { return NULL; }
+void esp_transport_ssl_crt_bundle_attach(esp_transport_handle_t t,void (*attach)(void)) {(void)t;(void)attach;}
+int esp_transport_connect(esp_transport_handle_t t,const char *h,int p,int ms) {(void)t;(void)h;(void)p;(void)ms;return -1;}
+int esp_transport_write(esp_transport_handle_t t,const char *b,int n,int ms) {(void)t;(void)b;(void)n;(void)ms;return -1;}
+int esp_transport_poll_read(esp_transport_handle_t t,int ms) {(void)t;(void)ms;return -1;}
+int esp_transport_read(esp_transport_handle_t t,char *b,int n,int ms) {(void)t;(void)b;(void)n;(void)ms;return -1;}
+int esp_transport_close(esp_transport_handle_t t) {(void)t;return 0;}
+int esp_transport_destroy(esp_transport_handle_t t) {(void)t;return 0;}
+
+static esp_netif_t mock_netif;
+esp_netif_t *esp_netif_get_default_netif(void) { return &mock_netif; }
+bool esp_netif_is_netif_up(esp_netif_t *netif) { return netif->up != 0; }
+esp_err_t esp_netif_get_ip_info(esp_netif_t *netif, esp_netif_ip_info_t *out) {
+    out->ip.addr = netif->address; return ESP_OK;
+}
 
 void test_log(const char *tag, const char *format, ...) { (void)tag; (void)format; }
 void test_enter(void) { assert(critical_depth++ == 0); }
@@ -87,6 +117,7 @@ int esp_http_client_get_status_code(esp_http_client_handle_t c) { (void)c; retur
 void esp_http_client_cleanup(esp_http_client_handle_t c) { (void)c; ++mock_cleanups; }
 
 void vTaskDelay(TickType_t ticks) { (void)ticks; }
+void vTaskDelete(TaskHandle_t task) { (void)task; }
 void xTaskNotifyGive(TaskHandle_t task) {
     assert(task == g_net->task && critical_depth == 0);
     ++worker_notifications;
@@ -258,6 +289,12 @@ int main(void) {
     uint8_t bytes[8]; size_t size;
     assert(pxa_esp_net_backend(&backend, notified, &notifications));
     assert(allocation_count == 0 && task_count == 0);
+    uint32_t connectivity = 99;
+    assert(backend.connectivity(NULL, &connectivity) == PXA_STATUS_OK && connectivity == PXA_NET_CONNECTIVITY_OFFLINE);
+    mock_netif.up = 1;
+    assert(backend.connectivity(NULL, &connectivity) == PXA_STATUS_OK && connectivity == PXA_NET_CONNECTIVITY_OFFLINE);
+    mock_netif.address = 1;
+    assert(backend.connectivity(NULL, &connectivity) == PXA_STATUS_OK && connectivity == PXA_NET_CONNECTIVITY_ONLINE);
     request.struct_size = sizeof(request);
     request.method = PXA_NET_METHOD_GET;
     request.abi_minor = 1;
@@ -307,6 +344,14 @@ int main(void) {
     pxa_esp_net_snapshot(&snapshot);
     assert(snapshot.active_slots == 0 && snapshot.slot_storage_bytes == sizeof(g_net->slots));
     test_stream(&backend);
+    pxa_socket_request_t socket_request = {0};
+    socket_request.host = (pxa_bytes_t){(const uint8_t *)"test.invalid", 12};
+    socket_request.port = 443; socket_request.tls = 1;
+    socket_request.buffer_bytes = 512; socket_request.connect_timeout_ms = 100;
+    void *socket = (void *)1;
+    size_t live_before_socket = live_allocations;
+    assert(backend.open_socket(NULL, &socket_request, &socket) == PXA_STATUS_RESOURCE_LIMIT);
+    assert(socket == NULL && esp_socket_workers == 0 && live_allocations == live_before_socket);
     checked_free(g_net); g_net = NULL;
     assert(live_allocations == 0);
     return 0;

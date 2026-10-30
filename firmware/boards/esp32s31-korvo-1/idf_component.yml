@@ -9,4 +9,8 @@ dependencies:
   espressif/esp_lv_decoder: ^0.4.3
   espressif/esp_lvgl_port: ^2.9.0
   espressif/freetype: ^2.14.3~1
+  espressif/led_strip: ~2.5.4
+  # Apache-2.0 sensor/SCCB drivers; direct CAM avoids the V4L2/esp_video stack.
+  espressif/esp_cam_sensor: "2.6.0"
+  espressif/esp_sccb_intf: "1.0.0"
   lvgl/lvgl: ^9.6.0~1

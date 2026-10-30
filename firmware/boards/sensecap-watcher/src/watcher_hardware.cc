@@ -27,6 +27,8 @@
 #include <pxa/pxa_host.h>
 #include <pxa_board_api.h>
 #include <pxa_board_common/display_completion.h>
+#include <pxa_board_common/rgb_port.h>
+#include <pxa_board_common/i2c_port.h>
 #include <pxsys/reference_lvgl.h>
 #include <pxsys/standard_system.h>
 #include <pxsys/system_status.h>
@@ -156,11 +158,19 @@ esp_err_t DeletePowerKeyDriver(button_driver_t* driver) {
 }
 }  // namespace
 
+void WatcherInitializeRtc(i2c_master_bus_handle_t bus);
+bool WatcherInitializeVision();
+
 bool SensecapWatcherHardware::Initialize() {
     boot_time_us_ = esp_timer_get_time();
     if (!InitializeI2c()) return false;
     if (!InitializePower()) return false;
     if (!InitializeRgbLed()) ESP_LOGW(kTag, "Continuing with the RGB LED on");
+    // J5 Grove shares I2C0 with internal devices. Expose transactions only at
+    // external addresses; never let an app reconfigure pins, rails or codecs.
+    const uint8_t internal_addresses[] = {0x13, 0x14, 0x18, WATCHER_IO_EXPANDER_ADDRESS, 0x30, 0x51};
+    if (!pxa_board_i2c_port_initialize(i2c_bus_, 2, "grove.i2c", internal_addresses, sizeof(internal_addresses)))
+        ESP_LOGW(kTag, "Grove application interface unavailable");
     if (!InitializeDisplay()) return false;
     if (!lvgl_port_lock(1000)) return false;
     lv_lock();
@@ -168,6 +178,11 @@ bool SensecapWatcherHardware::Initialize() {
     lv_unlock();
     lvgl_port_unlock();
     ShowInitialFrame();
+    if (InitializeSharedSpi()) {
+        if (!InitializeSd()) ESP_LOGW(kTag, "Continuing without SD storage");
+        if (!WatcherInitializeVision()) ESP_LOGW(kTag, "Continuing without vision extension");
+    } else ESP_LOGW(kTag, "Continuing without SD and vision");
+    WatcherInitializeRtc(i2c_bus_);
     if (!InitializeTouch()) ESP_LOGW(kTag, "Continuing without touch input");
     if (!InitializeBattery()) ESP_LOGW(kTag, "Continuing without battery data");
     if (!InitializeInputs()) ESP_LOGW(kTag, "Continuing without wheel input");
@@ -281,7 +296,11 @@ bool SensecapWatcherHardware::InitializeRgbLed() {
     }
     if (led_strip_clear(rgb_led_) != ESP_OK) return false;
     vTaskDelay(pdMS_TO_TICKS(10));
-    return true;
+    return pxa_board_rgb_port_initialize(rgb_led_, [](void* context, unsigned r, unsigned g, unsigned b) {
+        auto strip = static_cast<led_strip_handle_t>(context);
+        return led_strip_set_pixel(strip, 0, r, g, b) == ESP_OK &&
+               led_strip_refresh(strip) == ESP_OK;
+    });
 }
 
 bool SensecapWatcherHardware::InitializeDisplay() {
@@ -1710,6 +1729,7 @@ bool SensecapWatcherHardware::RequestPowerOff() {
 
 void SensecapWatcherHardware::PowerOff() {
     (void)pxa_host_prepare_shutdown(1200);
+    audio_.StopCaptureForShutdown();
     (void)pxa_system_clock_save();
     ESP_LOGI(kTag, "Releasing the power latch");
     ledc_set_duty(LEDC_LOW_SPEED_MODE, WATCHER_LCD_BACKLIGHT_CHANNEL, 0);

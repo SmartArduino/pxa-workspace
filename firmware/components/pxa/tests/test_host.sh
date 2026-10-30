@@ -15,6 +15,7 @@ python3 "$tests_dir/test_native_file_ui.py"
 python3 "$tests_dir/test_legacy_catalog.py"
 python3 "$tests_dir/test_graceful_stop.py"
 python3 "$tests_dir/test_stop_cleanup.py"
+bash "$tests_dir/test_storage_worker.sh"
 
 cc_flags=(-std=c99 -Wall -Wextra -Wpedantic -Werror)
 cxx_flags=(-std=c++17 -Wall -Wextra -Werror)
@@ -167,15 +168,20 @@ build_and_run fs_roots -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   "-DCONFIG_PXA_MOUNT_POINT=\"$build_dir/scoped\"" '-DCONFIG_PXA_STATE_ROOT="state"' \
   "${adapter_includes[@]}" -pthread "$tests_dir/pxa_esp_fs_roots_test.c" \
   "$component_dir/src/services/pxa_esp_volumes.c" \
+  "$component_dir/src/package/pxa_esp_publisher_directory.c" \
   "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_volume.c" \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_scoped_fs.c" \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_file_browser.c" \
   "$libpxa_build/libpxa.a" -lcrypto -lmbedcrypto -lm
+build_and_run publisher_directory "${adapter_includes[@]}" -I"$pxa_system_dir/libpxa/adapters/tests" \
+  "$tests_dir/pxa_esp_publisher_directory_test.c" "$component_dir/src/package/pxa_esp_publisher_directory.c" \
+  "$libpxa_build/libpxa.a" -lcrypto
 build_and_run app_storage -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   -DLFS_NO_DEBUG -DLFS_NO_WARN -DLFS_NO_ERROR \
   "${adapter_includes[@]}" -I"$littlefs_dir" -I"$pxa_system_dir/libpxa/adapters/tests" -pthread \
   "$tests_dir/pxa_esp_app_storage_test.c" "$component_dir/src/services/pxa_esp_app_storage.c" \
+  "$component_dir/src/package/pxa_esp_publisher_directory.c" \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_app_home.c" \
   "$component_dir/src/services/pxa_esp_image_blockdev.c" "$component_dir/src/services/pxa_esp_volumes.c" \
   "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" \
@@ -185,6 +191,7 @@ cc "${cc_flags[@]}" -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   '-DCONFIG_PXA_STORAGE_PARTITION_LABEL="forbidden-primary"' \
   "${adapter_includes[@]}" -I"$pxa_system_dir/libpxa/adapters/tests" -pthread \
   "$tests_dir/pxa_esp_installations_test.c" "$component_dir/src/package/pxa_esp_installations.c" \
+  "$component_dir/src/package/pxa_esp_publisher_directory.c" \
   "$component_dir/src/package/pxa_esp_resource_transfer.c" \
   "$component_dir/src/services/pxa_esp_volumes.c" \
   "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" \
@@ -208,6 +215,7 @@ cc "${cc_flags[@]}" -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   '-DCONFIG_PXA_STORAGE_PARTITION_LABEL="forbidden-primary"' \
   "${adapter_includes[@]}" -I"$pxa_system_dir/libpxa/adapters/tests" -pthread \
   "$tests_dir/pxa_esp_${migration}_test.c" "${adoption_sources[@]}" "$component_dir/src/package/pxa_esp_installations.c" \
+  "$component_dir/src/package/pxa_esp_publisher_directory.c" \
   "$component_dir/src/services/pxa_esp_volumes.c" \
   "$component_dir/src/services/pxa_esp_app_storage.c" \
   "$component_dir/src/services/pxa_esp_image_blockdev.c" \

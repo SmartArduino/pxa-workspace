@@ -67,6 +67,9 @@ esp_err_t esp_http_client_perform(esp_http_client_handle_t c) {
 }
 esp_err_t esp_http_client_set_header(esp_http_client_handle_t c,const char *key,const char *value) {(void)c;assert(!strcmp(key,"Range") && !strcmp(value,"bytes=0-16663"));return ESP_OK;}
 int esp_http_client_get_status_code(esp_http_client_handle_t c) {(void)c;return old_server && is_metadata && strstr(http.url,"/install-metadata?")?404:200;}
+esp_err_t esp_http_client_get_and_clear_last_tls_error(esp_http_client_handle_t c,int *error,int *flags) {
+    (void)c;*error=0;*flags=0;return ESP_OK;
+}
 void esp_http_client_cleanup(esp_http_client_handle_t c) {(void)c;assert(http_live);http_live=false;}
 pxa_status_t pxa_esp_volumes_retain(uint64_t epoch) {assert(epoch==2 || epoch==3);++retained[epoch];return PXA_STATUS_OK;}
 pxa_status_t pxa_esp_volumes_release(uint64_t epoch) {assert((epoch==2 || epoch==3) && retained[epoch]);--retained[epoch];return PXA_STATUS_OK;}

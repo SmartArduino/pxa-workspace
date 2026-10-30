@@ -20,3 +20,6 @@ trap 'rm -rf -- "$build_dir"' EXIT
   -I"$project_dir/deps/pxa-system/libpxa/include" \
   "$tests_dir/lcd_io_test.cc" -o "$build_dir/lcd_io_test"
 "$build_dir/lcd_io_test"
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  -I"$tests_dir/../include" "$tests_dir/rtc_calendar_test.cc" -o "$build_dir/rtc_calendar_test"
+"$build_dir/rtc_calendar_test"

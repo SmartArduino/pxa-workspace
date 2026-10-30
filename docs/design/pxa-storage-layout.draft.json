@@ -12,7 +12,7 @@
   },
   "templates": {
     "volume_identity": "/PXA/volume.{0,1}.pxv",
-    "application_home": "/PXA/apps/{publisher_root_hex}/{app_id}",
+    "application_home": "/PXA/apps/{publisher_directory}/{app_id}",
     "install_record": "{home}/install.{0,1}.pxi",
     "package": "{home}/package",
     "private_data": "{home}/data/{data_generation_hex16}",
@@ -20,9 +20,9 @@
     "private_image": "{private_data}/private.lfs",
     "offline_container": "/PXA/cache/store/.store-{token_hex8}.pxa",
     "offline_descriptor": "{offline_container}.meta",
-    "manual_media": "/PXA/media/{publisher_root_hex}/{app_id}",
+    "manual_media": "/PXA/media/{publisher_directory}/{app_id}",
     "system_fonts": "/PXA/system/fonts",
-    "managed_media": "/PXA/media/{publisher_root_hex}/{app_id}/{resource_manifest_sha256}/package",
+    "managed_media": "/PXA/media/{publisher_directory}/{app_id}/{resource_manifest_sha256}/package",
     "transfer_receipt": "{home}/.transfer.{0,1}.pxm",
     "source_transfer": "/PXA/apps/.transfers/{transfer_id_hex32}",
     "retired_source": "{source_transfer}/source"
@@ -91,5 +91,12 @@
     "metadata": "Verify both signed metadata before confirmation and transfers",
     "admission": "Atomic selected-volume reservation, shared-volume phased peak accounting",
     "resource_cache_supported": false
+  },
+  "publisher_directory": {
+    "preferred": "Verified signer profile handle; stable after first allocation",
+    "collision": "Append and extend signing-root fingerprint; never take over an occupied directory",
+    "binding": "Volume-local .publisher.pxi authenticates volume, purpose, full signing root and name",
+    "logical_locator": "Full publisher_root_hex/app_id remains the install-record authentication binding",
+    "migration": "Marker commit before atomic rename; existing shared media renamed only during cold startup"
   }
 }

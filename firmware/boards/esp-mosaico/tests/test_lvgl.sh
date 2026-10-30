@@ -2,16 +2,17 @@
 set -euo pipefail
 tests_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_dir="$(cd "$tests_dir/../../../.." && pwd)"
+build_dir=${PXA_TEST_ARTIFACT_DIR:-"$project_dir/local/artifacts/mosaico-lvgl/$(date +%Y%m%d-%H%M%S)"}
+mkdir -p "$build_dir"
 if [[ "${1:-}" == --gestures ]]; then
-  gesture_build="$project_dir/build/tests/mosaico-lvgl-gestures"
+  gesture_build="$build_dir/gesture-build"
   cmake -S "$tests_dir/lvgl_host" -B "$gesture_build" -DCMAKE_BUILD_TYPE=Release
-  cmake --build "$gesture_build" --target mosaico_test --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
+  cmake --build "$gesture_build" --target mosaico_test mosaico_direct_refresh_test --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
   SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$gesture_build/mosaico_test"
+  SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$gesture_build/mosaico_direct_refresh_test"
   exit
 fi
 sim_build="${1:-$project_dir/build/simulator/esp-mosaico}"
-build_dir="$(mktemp -d "${TMPDIR:-/tmp}/mosaico-lvgl.XXXXXX")"
-trap 'rm -rf -- "$build_dir"' EXIT
 python3 - "$tests_dir" "$sim_build" "$build_dir" <<'PY'
 import os, re, shlex, subprocess, sys
 from pathlib import Path
@@ -23,10 +24,12 @@ for name in ('CXX_DEFINES', 'CXX_INCLUDES', 'CXX_FLAGS'):
 arguments = [a for a in arguments if a != '-DNDEBUG']
 libraries = shlex.split(subprocess.check_output(
     ['pkg-config', '--libs', 'sdl2', 'freetype2', 'libpng'], text=True))
-subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++17', *arguments,
-    '-Wall', '-Wextra', '-Werror', '-I'+str(tests/'../include'),
-    str(tests/'lvgl_partial_test.cc'), str(simulator/'lvgl/liblvgl.a'),
-    *libraries, '-lm', '-o', str(build/'test')], check=True)
-subprocess.run([str(build/'test')],
-    env={**os.environ, 'SDL_VIDEODRIVER':'dummy', 'SDL_AUDIODRIVER':'dummy'}, check=True)
+for source in ('lvgl_partial_test.cc', 'lvgl_direct_refresh_test.cc'):
+    binary=build/Path(source).stem
+    subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++17', *arguments,
+        '-Wall', '-Wextra', '-Werror', '-I'+str(tests/'../include'),
+        str(tests/source), str(simulator/'lvgl/liblvgl.a'),
+        *libraries, '-lm', '-o', str(binary)], check=True)
+    subprocess.run([str(binary)],
+        env={**os.environ, 'SDL_VIDEODRIVER':'dummy', 'SDL_AUDIODRIVER':'dummy'}, check=True)
 PY

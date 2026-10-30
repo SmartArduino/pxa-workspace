@@ -1,0 +1,21 @@
+menu "ESP-Mosaico peripherals"
+
+config PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT
+    bool "Send contiguous output rows directly from PSRAM"
+    default y
+    help
+        Reuse aligned, immutable scanout rows as SPI DMA input, as on
+        DOIT GameKit 1. Narrow strided windows retain internal staging.
+        Disable to use the original two internal staging buffers throughout.
+
+config PXA_MOSAICO_NAND_FORMAT_IF_MOUNT_FAILED
+    bool "Automatically initialize onboard NAND without a filesystem"
+    default y
+    help
+        On startup, probe the onboard NAND and create a Dhara-backed FAT
+        filesystem when FatFS reports FR_NO_FILESYSTEM. This erases existing
+        content not recognized as a FAT filesystem. Valid filesystems mount
+        directly. I/O failures and other probe errors do not trigger a format.
+        Disable this option to preserve unrecognized NAND content.
+
+endmenu

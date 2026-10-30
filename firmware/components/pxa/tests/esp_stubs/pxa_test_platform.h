@@ -99,6 +99,7 @@ void vQueueDelete(QueueHandle_t);
 unsigned uxQueueMessagesWaiting(QueueHandle_t);
 unsigned uxQueueSpacesAvailable(QueueHandle_t);
 void vTaskDelete(TaskHandle_t);
+int xTaskCreate(void (*)(void *), const char *, unsigned, void *, unsigned, TaskHandle_t *);
 int xTaskCreateWithCaps(void (*)(void *), const char *, unsigned, void *,
                         unsigned, TaskHandle_t *, unsigned);
 int64_t esp_timer_get_time(void);

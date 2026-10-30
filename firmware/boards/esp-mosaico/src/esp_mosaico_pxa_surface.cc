@@ -1,4 +1,5 @@
 #include "esp_mosaico_pxa_surface.h"
+#include "esp_mosaico_refresh.h"
 
 #include <algorithm>
 #include <atomic>
@@ -137,13 +138,20 @@ void Raster(void*) {
 void Presenter(void*) {
     for (;;) {
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        // GuestMapped apps submit pixels and native text in adjacent calls.
+        // Let that short burst finish before taking the UI lock, so one frame
+        // is composed with its matching alpha plane instead of twice.
+        vTaskDelay(1);
+        (void)ulTaskNotifyTake(pdTRUE, 0);
         // Startup builds the reference UI under this lock. Wait for the owner
         // instead of reporting an expected timeout every 100 ms. Notifications
         // coalesce while blocked, so the newest surface is presented next.
         while (esp_lv_adapter_lock(-1) != ESP_OK) vTaskDelay(1);
         lv_lock();
         const bool presented = g_direct_presenter != nullptr &&
-                               g_direct_presenter(g_direct_context);
+            mosaico_board::PresentAndAcknowledgeRefresh(g_display, []() {
+                return g_direct_presenter(g_direct_context);
+            });
         if (presented) {
             g_has_last_present_area = ResolvePresentArea(&g_last_present_area);
         } else {
@@ -264,10 +272,39 @@ bool Install(lv_display_t* display, DirectPresenter presenter, void* context) {
     return true;
 }
 
+static bool OpaqueOutsideSurface(const pxa_esp_surface_ui_alpha_plane_t& plane,
+                                 const lv_area_t& surface) {
+    // A letterboxed Surface can replace an ordinary LVGL refresh only when
+    // its retained Canvas completely paints the matte. Check the actual alpha
+    // bytes under this frame lease; transparent host content keeps its fallback.
+    if (!plane.visible || plane.opacity != 255 || plane.x != 0 || plane.y != 0 ||
+        plane.width != mosaico_board::kWidth || plane.height != mosaico_board::kHeight)
+        return false;
+    const auto opaque = [&](int y, int first, int end) {
+        const uint8_t* alpha = plane.alpha + y * plane.alpha_stride_bytes + first;
+        int count = end - first;
+        while (count >= 4) {
+            uint32_t word;
+            std::memcpy(&word, alpha, sizeof(word));
+            if (word != UINT32_MAX) return false;
+            alpha += 4; count -= 4;
+        }
+        while (count-- > 0) if (*alpha++ != 255) return false;
+        return true;
+    };
+    for (int y = 0; y < mosaico_board::kHeight; ++y) {
+        if (y < surface.y1 || y > surface.y2) {
+            if (!opaque(y, 0, mosaico_board::kWidth)) return false;
+        } else if (!opaque(y, 0, surface.x1) ||
+                   !opaque(y, surface.x2 + 1, mosaico_board::kWidth)) return false;
+    }
+    return true;
+}
+
 bool DirectFrameEligible(const pxa_esp_surface_frame_t& frame) {
     if (!frame.visible || frame.pixels == nullptr || frame.width == 0 ||
         frame.height == 0 || frame.format != PXA_SURFACE_FORMAT_RGB565 ||
-        frame.x != 0 || frame.y != 0 || frame.opaque_ui_region_count != 0 ||
+        frame.opaque_ui_region_count != 0 ||
         frame.stride_bytes < frame.width * sizeof(uint16_t) ||
         frame.stride_bytes % sizeof(uint16_t) != 0)
         return false;
@@ -283,8 +320,20 @@ bool DirectFrameEligible(const pxa_esp_surface_frame_t& frame) {
     }
     const uint8_t scale = pxa_surface_fit_scale(
         frame.width, frame.height, mosaico_board::kWidth, mosaico_board::kHeight);
-    return scale != 0 && frame.width * scale == mosaico_board::kWidth &&
-        frame.height * scale == mosaico_board::kHeight;
+    if (!scale) return false;
+    const int width = frame.width * scale, height = frame.height * scale;
+    int x = frame.x, y = frame.y;
+    if (x == 0 && y == 0 &&
+        (width < mosaico_board::kWidth || height < mosaico_board::kHeight)) {
+        x = (mosaico_board::kWidth - width) / 2;
+        y = (mosaico_board::kHeight - height) / 2;
+    }
+    if (x < 0 || y < 0 || x > mosaico_board::kWidth - width ||
+        y > mosaico_board::kHeight - height) return false;
+    if (width == mosaico_board::kWidth && height == mosaico_board::kHeight) return true;
+    const lv_area_t surface = {x, y, x + width - 1, y + height - 1};
+    return (!frame.suppress_guest_alpha && OpaqueOutsideSurface(frame.ui_alpha_plane, surface)) ||
+        OpaqueOutsideSurface(frame.system_alpha_plane, surface);
 }
 
 static bool CopyNativeAreaWithPpa(const lv_area_t& area, const uint8_t* source,
@@ -331,7 +380,11 @@ bool CopyUiSnapshot(const lv_area_t& dirty, const uint8_t* pixels, uint8_t* snap
 }
 
 bool TryAcceleratedDirectFrame(const pxa_esp_surface_frame_t& frame, uint8_t* pixels) {
-    if (!g_ppa_srm || !pixels || !DirectFrameEligible(frame)) return false;
+    // The full-row SRM copy needs a complete native source. Letterboxed
+    // surfaces use the CPU compositor and their opaque Canvas matte instead.
+    if (!g_ppa_srm || !pixels || frame.x || frame.y ||
+        frame.width != mosaico_board::kWidth || frame.height != mosaico_board::kHeight ||
+        !DirectFrameEligible(frame)) return false;
     const uint8_t scale = pxa_surface_fit_scale(frame.width, frame.height,
         mosaico_board::kWidth, mosaico_board::kHeight);
     // SRM upscaling on S31 changes edge colors (82,468 differing pixels in
@@ -350,6 +403,49 @@ bool TryAcceleratedDirectFrame(const pxa_esp_surface_frame_t& frame, uint8_t* pi
 uint32_t RasterTimeUs() { return g_raster_us.load(std::memory_order_relaxed); }
 
 uint32_t AcceleratedFillCount() { return g_ppa_fills.load(std::memory_order_relaxed); }
+
+// Integer expansion and wire byte conversion share one sequential pass. The
+// constant scale removes per-pixel division/modulo on S31; paired source reads
+// also halve the loop overhead. memcpy preserves padded/unaligned row support.
+template <int Scale, bool Panel>
+static void ExpandRgb565Row(const uint8_t* source, uint16_t* output,
+                           int32_t first, int32_t count) {
+    static_assert(Scale == 2 || Scale == 4);
+    if (first % Scale != 0) {
+        uint16_t value;
+        std::memcpy(&value, source + (first / Scale) * 2, 2);
+        value = PixelOrder565<Panel>(value);
+        const int32_t head = std::min<int32_t>(Scale - first % Scale, count);
+        std::fill_n(output, head, value);
+        first += head;
+        output += head;
+        count -= head;
+    }
+    source += (first / Scale) * 2;
+    for (; count >= 2 * Scale; count -= 2 * Scale) {
+        uint32_t pair;
+        std::memcpy(&pair, source, 4);
+        if constexpr (Panel)
+            pair = ((pair & 0x00ff00ffu) << 8) | ((pair & 0xff00ff00u) >> 8);
+        const uint32_t low = (pair & 0xffffu) * 0x00010001u;
+        const uint32_t high = (pair >> 16) * 0x00010001u;
+        std::memcpy(output, &low, 4);
+        if constexpr (Scale == 4) std::memcpy(output + 2, &low, 4);
+        std::memcpy(output + Scale, &high, 4);
+        if constexpr (Scale == 4) std::memcpy(output + Scale + 2, &high, 4);
+        source += 4;
+        output += 2 * Scale;
+    }
+    while (count > 0) {
+        uint16_t value;
+        std::memcpy(&value, source, 2);
+        const int32_t tail = std::min<int32_t>(Scale, count);
+        std::fill_n(output, tail, PixelOrder565<Panel>(value));
+        source += 2;
+        output += tail;
+        count -= tail;
+    }
+}
 
 template <bool Panel>
 uint64_t ComposeFrameImpl(const pxa_esp_surface_frame_t& frame,
@@ -402,6 +498,16 @@ uint64_t ComposeFrameImpl(const pxa_esp_surface_frame_t& frame,
             }
             const uint8_t* source = frame.pixels +
                 (pixel_y - origin_y) / scale * frame.stride_bytes;
+            if (scale == 2) {
+                ExpandRgb565Row<2, Panel>(source, row + left - area->x1,
+                                          left - origin_x, right - left);
+                continue;
+            }
+            if (scale == 4) {
+                ExpandRgb565Row<4, Panel>(source, row + left - area->x1,
+                                          left - origin_x, right - left);
+                continue;
+            }
             int32_t pixel_x = left;
             if (scale == 1) {
                 for (; pixel_x + 1 < right; pixel_x += 2) {

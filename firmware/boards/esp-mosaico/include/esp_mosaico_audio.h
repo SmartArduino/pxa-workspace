@@ -10,6 +10,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <pxa/pxa_audio_output.h>
+#include <pxa/pxa_audio_capture_input.h>
 #include "esp_mosaico_audio_transfer.h"
 
 class EspMosaicoAudio {
@@ -25,14 +26,20 @@ private:
     bool Write(const int16_t* pcm, size_t samples);
     bool Check(int result, const char* stage);
     bool RestartOutput();
+    bool SetCaptureEnabled(bool enabled);
+    int32_t ReadCapture(int16_t* pcm, size_t samples);
     static bool OnDmaSent(i2s_chan_handle_t, i2s_event_data_t*, void* context);
 
     PxaAudioOutput output_;
+    PxaAudioCaptureInput capture_;
     i2s_chan_handle_t tx_channel_ = nullptr;
+    i2s_chan_handle_t rx_channel_ = nullptr;
     esp_codec_dev_handle_t speaker_ = nullptr;
+    esp_codec_dev_handle_t microphone_ = nullptr;
     SemaphoreHandle_t mutex_ = nullptr;
     SemaphoreHandle_t control_mutex_ = nullptr;
     int16_t stereo_[kMaxWriteSamples * 2] = {};
+    int16_t capture_stereo_[320 * 2] = {};
     std::atomic<uint8_t> volume_{70};
     const char* init_stage_ = "not_started";
     int init_error_ = 0;

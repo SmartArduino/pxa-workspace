@@ -16,3 +16,6 @@ CONFIG_LV_USE_FONT_PLACEHOLDER=y
 # These are pointer-table capacities; filesystem buffers allocate on demand.
 CONFIG_VFS_MAX_COUNT=20
 CONFIG_LITTLEFS_MAX_PARTITIONS=10
+
+# Use the reviewed runtime archive set consistently, including upgraded S3 builds.
+CONFIG_LIBC_PICOLIBC=y

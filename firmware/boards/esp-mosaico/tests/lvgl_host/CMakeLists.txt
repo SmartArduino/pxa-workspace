@@ -21,3 +21,9 @@ target_include_directories(mosaico_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../..
 target_compile_features(mosaico_test PRIVATE cxx_std_17)
 target_compile_options(mosaico_test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_link_libraries(mosaico_test PRIVATE lvgl m)
+
+add_executable(mosaico_direct_refresh_test "${CMAKE_CURRENT_LIST_DIR}/../lvgl_direct_refresh_test.cc")
+target_include_directories(mosaico_direct_refresh_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../include")
+target_compile_features(mosaico_direct_refresh_test PRIVATE cxx_std_17)
+target_compile_options(mosaico_direct_refresh_test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_link_libraries(mosaico_direct_refresh_test PRIVATE lvgl m)

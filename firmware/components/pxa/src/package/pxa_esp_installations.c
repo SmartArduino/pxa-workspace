@@ -7,6 +7,7 @@
 #include "pxa_esp_transfer_receipt.h"
 #include "pxa_esp_package_trust.h"
 #include "pxa_esp_record_seal.h"
+#include "pxa_esp_publisher_directory.h"
 #include "pxa_esp_volumes.h"
 #include "pxa/posix/pxa_posix_fs.h"
 #include "esp_heap_caps.h"
@@ -64,8 +65,8 @@ static pxa_status_t visible(pxa_esp_installations_t *owner,const char *locator) 
     if(!locator || !pxa_fs_scoped_path_is_valid((pxa_bytes_t){(const uint8_t *)locator,strlen(locator)}))
         return PXA_STATUS_INVALID_ARGUMENT;
     char path[PXA_POSIX_APP_PATH_BYTES];
-    int n=snprintf(path,sizeof(path),"%s/apps/%s",owner->root,locator);
-    if(n<0 || (size_t)n>=sizeof(path))return PXA_STATUS_LIMIT_EXCEEDED;
+    pxa_status_t mapped=pxa_esp_publisher_path(owner->volume.mount_epoch,"apps",locator,path,sizeof(path));
+    if(mapped!=PXA_STATUS_OK)return mapped;
     int directory=open(path,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
     if(directory<0)return errno==ENOENT?PXA_STATUS_OK:PXA_STATUS_DENIED;
     const char *names[]={PXA_ESP_TRANSFER_SLOT_0,PXA_ESP_TRANSFER_SLOT_1,
@@ -110,6 +111,10 @@ static pxa_status_t prepare_home(void *context,const pxa_posix_app_home_t *home)
     pxa_status_t closed=pxa_esp_app_storage_close(&owner->preparing_storage);
     return status==PXA_STATUS_OK?closed:status;
 }
+static pxa_status_t map_locator(void *context,const char *locator,uint8_t reverse,char *out,size_t bytes) {
+    pxa_esp_installations_t *owner=context;
+    return pxa_esp_publisher_map(owner->root,&owner->volume.id,"apps",locator,reverse,out,bytes);
+}
 pxa_status_t pxa_esp_installations_open(uint64_t epoch,pxa_esp_installations_t **output) {
     if(!output || !epoch)return PXA_STATUS_INVALID_ARGUMENT;
     *output=NULL;pxa_status_t status=pxa_esp_volumes_retain(epoch);
@@ -124,6 +129,7 @@ pxa_status_t pxa_esp_installations_open(uint64_t epoch,pxa_esp_installations_t *
         else memcpy(owner->root+length,"/PXA",sizeof("/PXA"));
     }
     owner->config.root=owner->root;owner->config.volume_id=owner->volume.id;
+    owner->config.locator_context=owner;owner->config.map_locator=map_locator;
     if(status==PXA_STATUS_OK)status=pxa_esp_package_installer_profile(&owner->config.installer,&owner->trust);
     if(status==PXA_STATUS_OK) {
         owner->config.installer.space_context=owner;owner->config.installer.check_space=check_space;
@@ -186,21 +192,27 @@ pxa_status_t pxa_esp_installations_locator(const uint8_t publisher[32],const cha
     out[64]='/';memcpy(out+65,app,length+1);return PXA_STATUS_OK;
 }
 pxa_status_t pxa_esp_installations_media_path(const pxa_install_record_t *record,char *out,size_t capacity) {
-    static const char hex[]="0123456789abcdef";char locator[PXA_POSIX_APP_LOCATOR_BYTES],digest[65];
+    static const char hex[]="0123456789abcdef";char locator[PXA_POSIX_APP_LOCATOR_BYTES],digest[65],physical[PXA_POSIX_APP_PATH_BYTES],mount[PXA_ESP_STORAGE_PATH_BYTES];
     if(!record || !out || !capacity)return PXA_STATUS_INVALID_ARGUMENT;
     out[0]=0;
     if(!(record->flags&PXA_INSTALL_RECORD_HAS_MEDIA))return PXA_STATUS_DENIED;
     pxa_status_t status=pxa_esp_installations_locator(record->publisher_root,record->app_id,locator,sizeof(locator));
     if(status!=PXA_STATUS_OK)return status;
+    pxa_volume_info_t volume;
+    status=pxa_esp_storage_find_volume(&record->media_volume,&volume);
+    if(status==PXA_STATUS_OK)status=pxa_esp_publisher_path(volume.mount_epoch,"media",locator,physical,sizeof(physical));
+    if(status==PXA_STATUS_OK)status=pxa_esp_storage_volume_path(volume.mount_epoch,mount,sizeof(mount));
+    if(status!=PXA_STATUS_OK)return status;
+    const char *relative=physical+strlen(mount)+1;
     if(!(record->flags&PXA_INSTALL_RECORD_MANAGED_MEDIA)) {
         if(memcmp(record->media_set_sha256,(uint8_t[32]){0},32))return PXA_STATUS_DENIED;
-        int n=snprintf(out,capacity,"PXA/media/%s",locator);
+        int n=snprintf(out,capacity,"%s",relative);
         return n<0 || (size_t)n>=capacity?PXA_STATUS_LIMIT_EXCEEDED:PXA_STATUS_OK;
     }
     if(!memcmp(record->media_set_sha256,(uint8_t[32]){0},32))return PXA_STATUS_DENIED;
     for(unsigned i=0;i<32;++i) {digest[i*2]=hex[record->media_set_sha256[i]>>4];digest[i*2+1]=hex[record->media_set_sha256[i]&15];}
     digest[64]=0;
-    int n=snprintf(out,capacity,"PXA/media/%s/%s/package",locator,digest);
+    int n=snprintf(out,capacity,"%s/%s/package",relative,digest);
     return n<0 || (size_t)n>=capacity?PXA_STATUS_LIMIT_EXCEEDED:PXA_STATUS_OK;
 }
 /* Walk every generation ancestor without links, including read-only loads.
@@ -308,7 +320,10 @@ static __attribute__((noinline)) pxa_status_t verify_manual_media(pxa_esp_instal
     status=pxa_esp_installations_close(&owner->media_owner);
     if(status==PXA_STATUS_OK)status=pxa_esp_installations_open(volume->mount_epoch,&owner->media_owner);
     if(status!=PXA_STATUS_OK)return status;
-    memcpy(publisher,relative+10,64);publisher[64]=0;
+    const char *separator=strchr(relative+10,'/');
+    if(!separator || separator==relative+10 || separator-(relative+10)>64)return PXA_STATUS_DENIED;
+    size_t publisher_bytes=(size_t)(separator-(relative+10));
+    memcpy(publisher,relative+10,publisher_bytes);publisher[publisher_bytes]=0;
     const char *names[]={"media",publisher,record->app_id};
     int directory=open(owner->media_owner->root,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
     if(directory<0)status=PXA_STATUS_UNAVAILABLE;

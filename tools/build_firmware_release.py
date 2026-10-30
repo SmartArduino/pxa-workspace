@@ -153,6 +153,15 @@ def build_board(args, name: str, version: str) -> dict:
                 '**Mosaico migration: this layout has a 5 MiB application partition and storage at 0x510000. '
                 'Do not write this app image onto the old 4 MiB layout: it would overwrite existing data. '
                 'Back up private app data, saves and settings before provisioning and restoring the new layout.**\n\n')
+        elif name == 'esp32s31-korvo-1' and storage['offset'] == 0x700000:
+            migration = (
+                '**旧版 Korvo 升级：应用分区为 0x6f0000 字节，数据分区从 0x700000 开始。'
+                '不能向旧版 4 MiB 应用布局直接刷写本版 app，否则会覆盖旧数据。'
+                '先导出应用私有数据、存档和设置，再完整迁移并按原签名身份恢复。**\n\n'
+                if language == 'zh-CN' else
+                '**Korvo migration: the application partition is 0x6f0000 bytes and storage starts at 0x700000. '
+                'Do not write this app image onto the old 4 MiB app layout: it would overwrite existing data. '
+                'Export private data, saves and settings before full provisioning, then restore under the original signing identity.**\n\n')
         text = (f'# PXA {version} / {name}\n\n'
                 + ('合并固件用于首次安装，会重写存储分区并清除已有应用、存档和设置。包含系统字体与商城，勿用于保留数据的升级。\n\n'
                    if language == 'zh-CN' else

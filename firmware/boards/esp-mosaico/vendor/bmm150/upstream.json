@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/boschsensortec/BMM150_SensorAPI",
+  "commit": "0dce0617873cda1f6d51f6b7b961fdc2641e0c7c",
+  "license": "BSD-3-Clause",
+  "files_sha256": {
+    "LICENSE": "8c966978a9f67992e824d0b76381eab42f240c0049881f7bf2b46c2c093191aa",
+    "bmm150.c": "477270b71a7c7b47acf47a21a7bc0b972bdf8deb021a6597b44b6cf2a3f1e926",
+    "bmm150.h": "8ab084b4d7217b3b99b3da552b313b19f0556ae3612d7cfcc0ec6bcef44e1494",
+    "bmm150_defs.h": "4a5058a7461b7b0f788f28cf7a4fc633a4cb73b4df8b3cafb7b8eb910ea80a24"
+  }
+}

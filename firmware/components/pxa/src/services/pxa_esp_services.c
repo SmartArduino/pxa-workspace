@@ -1,5 +1,7 @@
 #include "pxa/image/codecs.h"
 #include "pxa_esp_services.h"
+#include "pxa/pxa_esp_sensor.h"
+#include "pxa/pxa_esp_haptics.h"
 
 #if defined(ESP_PLATFORM)
 
@@ -26,6 +28,7 @@
 #include "pxa_esp_audio.h"
 #include "pxa_esp_assets.h"
 #include "pxa_esp_resource_memory.h"
+#include "pxa_esp_storage_worker.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "pxa/pxa_esp_surface.h"
@@ -462,36 +465,44 @@ static pxa_status_t ensure_storage(pxa_esp_services_t *services) {
 static pxa_status_t lazy_storage_get(void *context, pxa_bytes_t key,
     uint8_t *output, size_t capacity, size_t *size) {
     pxa_esp_services_t *services = context;
+    pthread_mutex_lock(&services->storage_mutex);
     pxa_status_t status = ensure_storage(services);
-    if (status != PXA_STATUS_OK) return status;
-    return services->loaded_storage_backend.get(
+    if (status == PXA_STATUS_OK) status = services->loaded_storage_backend.get(
         services->loaded_storage_backend.context, key, output, capacity, size);
+    pthread_mutex_unlock(&services->storage_mutex);
+    return status;
 }
 
 static pxa_status_t lazy_storage_set(void *context, pxa_bytes_t key,
                                      pxa_bytes_t value) {
     pxa_esp_services_t *services = context;
+    pthread_mutex_lock(&services->storage_mutex);
     pxa_status_t status = ensure_storage(services);
-    if (status != PXA_STATUS_OK) return status;
-    return services->loaded_storage_backend.set(
+    if (status == PXA_STATUS_OK) status = services->loaded_storage_backend.set(
         services->loaded_storage_backend.context, key, value);
+    pthread_mutex_unlock(&services->storage_mutex);
+    return status;
 }
 
 static pxa_status_t lazy_storage_remove(void *context, pxa_bytes_t key) {
     pxa_esp_services_t *services = context;
+    pthread_mutex_lock(&services->storage_mutex);
     pxa_status_t status = ensure_storage(services);
-    if (status != PXA_STATUS_OK) return status;
-    return services->loaded_storage_backend.remove(
+    if (status == PXA_STATUS_OK) status = services->loaded_storage_backend.remove(
         services->loaded_storage_backend.context, key);
+    pthread_mutex_unlock(&services->storage_mutex);
+    return status;
 }
 
 static pxa_status_t lazy_storage_list(void *context, pxa_bytes_t cursor,
     pxa_storage_emit_key_fn emit, void *emit_context) {
     pxa_esp_services_t *services = context;
+    pthread_mutex_lock(&services->storage_mutex);
     pxa_status_t status = ensure_storage(services);
-    if (status != PXA_STATUS_OK) return status;
-    return services->loaded_storage_backend.list(
+    if (status == PXA_STATUS_OK) status = services->loaded_storage_backend.list(
         services->loaded_storage_backend.context, cursor, emit, emit_context);
+    pthread_mutex_unlock(&services->storage_mutex);
+    return status;
 }
 
 static pxa_status_t initialize_storage(
@@ -529,8 +540,17 @@ static pxa_status_t initialize_storage(
         config.root_path = owned_root;
     }
     services->storage_config = config;
+    if (pthread_mutex_init(&services->storage_mutex, NULL) != 0)
+        return fail(result, "initialize-kv-mutex", PXA_STATUS_RESOURCE_LIMIT, PXA_ESP_SERVICES_ISSUE_NONE);
+    services->storage_mutex_ready = 1;
     services->storage_allocate = host->allocate;
     services->storage_allocator_context = host->allocator_context;
+    /* The activation arena belongs to the runtime owner. Reserve memory here;
+     * lazy disk initialization can then run entirely on the storage worker. */
+    workspace_size = pxa_posix_storage_workspace_size(&config);
+    status = allocate_workspace(host, workspace_size,
+        &services->posix_storage_workspace, result, "allocate-kv-backend");
+    if (status != PXA_STATUS_OK) return status;
     services->storage_backend.struct_size = sizeof(services->storage_backend);
     services->storage_backend.context = services;
     services->storage_backend.get = lazy_storage_get;
@@ -549,6 +569,19 @@ static pxa_status_t initialize_storage(
     status = pxa_storage_service_init(
         services->storage_workspace, workspace_size, host->runtime,
         &service_config, &services->storage);
+    if (status == PXA_STATUS_OK) {
+        workspace_size = pxa_storage_service_async_workspace_size(4);
+        status = allocate_workspace(host, workspace_size,
+            &services->storage_async_workspace, result, "allocate-storage-jobs");
+    }
+    if (status == PXA_STATUS_OK) {
+        status = pxa_esp_storage_worker_begin(host->assets_notify, host->assets_notify_context);
+        if (status == PXA_STATUS_OK) services->storage_worker_active = 1;
+    }
+    if (status == PXA_STATUS_OK)
+        status = pxa_storage_service_enable_async(services->storage,
+            services->storage_async_workspace, workspace_size, 4,
+            pxa_esp_storage_worker_submit, NULL);
     return status == PXA_STATUS_OK
                ? status
                : fail(result, "initialize-storage-service", status,
@@ -627,11 +660,13 @@ static pxa_status_t initialize_bounded_services(
     memset(&sensor_config, 0, sizeof(sensor_config));
     sensor_config.struct_size = sizeof(sensor_config);
     sensor_config.max_subscriptions = 8;
-    sensor_config.max_subscriptions_per_component = 4;
+    /* A board can expose motion, temperature and two magnetic vectors. */
+    sensor_config.max_subscriptions_per_component = 8;
     sensor_config.subscribe = empty_sensor_subscribe;
     sensor_config.read = empty_sensor_read;
     sensor_config.unsubscribe = empty_sensor_unsubscribe;
     sensor_config.permissions = services->permission;
+    pxa_esp_sensor_configure(&sensor_config);
     workspace_size = pxa_sensor_service_workspace_size(&sensor_config);
     status = allocate_workspace(host, workspace_size,
                                 &services->sensor_workspace, result,
@@ -644,6 +679,14 @@ static pxa_status_t initialize_bounded_services(
         return fail(result, "initialize-sensor-service", status,
                     PXA_ESP_SERVICES_ISSUE_NONE);
     }
+    workspace_size = pxa_haptics_service_workspace_size();
+    status = allocate_workspace(host, workspace_size, &services->haptics_workspace,
+        result, "allocate-haptics-service");
+    if (status == PXA_STATUS_OK)
+        status = pxa_haptics_service_init(services->haptics_workspace, workspace_size,
+            host->runtime, services->permission, pxa_esp_haptics_backend(), &services->haptics);
+    if (status != PXA_STATUS_OK)
+        return fail(result, "initialize-haptics-service", status, PXA_ESP_SERVICES_ISSUE_NONE);
 
     memset(&device_config, 0, sizeof(device_config));
     device_config.struct_size = sizeof(device_config);
@@ -1081,6 +1124,11 @@ static pxa_status_t register_services(
                  "register-scheduler-service");
     PXA_REGISTER(pxa_sensor_service_register(services->sensor),
                  "register-sensor-service");
+    PXA_REGISTER(pxa_haptics_service_register(services->haptics), "register-haptics-service");
+#if PXA_ENABLE_PERIPHERALS
+    if (services->peripherals)
+        PXA_REGISTER(pxa_peripherals_service_register(services->peripherals), "register-peripherals");
+#endif
     PXA_REGISTER(pxa_device_service_register(services->device),
                  "register-device-service");
     PXA_REGISTER(pxa_net_service_register(services->net),
@@ -1119,6 +1167,15 @@ pxa_status_t pxa_esp_services_initialize(
     }
     pxa_esp_services_destroy(services);
     status = initialize_permission(services, config, result);
+#if PXA_ENABLE_PERIPHERALS
+    if (status == PXA_STATUS_OK && pxa_esp_peripherals_backend()) {
+        size_t size = pxa_peripherals_service_workspace_size();
+        status = allocate_workspace(config, size, &services->peripherals_workspace, result, "allocate-peripherals");
+        if (status == PXA_STATUS_OK)
+            status = pxa_peripherals_service_init(services->peripherals_workspace, size,
+                config->runtime, services->permission, pxa_esp_peripherals_backend(), &services->peripherals);
+    }
+#endif
 #if PXA_ENABLE_VOICE_TRIGGER
     if (status == PXA_STATUS_OK && pxa_esp_voice_trigger_backend()) {
         size_t size = pxa_vt_service_workspace_size();
@@ -1152,6 +1209,9 @@ pxa_status_t pxa_esp_services_initialize(
 
 void pxa_esp_services_destroy(pxa_esp_services_t *services) {
     if (services == NULL) return;
+    /* Backend/arena pointers remain alive until every committed KV operation
+     * is durable. The runtime may already be gone: no completion is polled. */
+    if (services->storage_worker_active) pxa_esp_storage_worker_end();
 #if PXA_ENABLE_VOICE_TRIGGER
     pxa_vt_service_deinit(services->voice_trigger);
 #endif
@@ -1163,6 +1223,7 @@ void pxa_esp_services_destroy(pxa_esp_services_t *services) {
     if (services->posix_storage != NULL) {
         pxa_posix_storage_deinit(services->posix_storage);
     }
+    if (services->storage_mutex_ready) pthread_mutex_destroy(&services->storage_mutex);
     if (services->posix_fs != NULL) {
         pxa_posix_fs_deinit(services->posix_fs);
     }

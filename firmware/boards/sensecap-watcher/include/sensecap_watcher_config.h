@@ -6,7 +6,7 @@
 #include <driver/ledc.h>
 
 // General I2C bus: PCA9555 IO expander, ES8311 speaker codec and the PCF8563
-// RTC (unused by the PXA system).
+// RTC (retained UTC source for the PXA system clock).
 #define WATCHER_I2C_PORT I2C_NUM_0
 #define WATCHER_I2C_SDA GPIO_NUM_47
 #define WATCHER_I2C_SCL GPIO_NUM_48
@@ -39,6 +39,13 @@
 #define WATCHER_IO_PWR_BAT_ADC WATCHER_IO_PIN(15)  // P1.7
 
 #define WATCHER_IO_INPUT_MASK (UINT16_C(0x00FF) | WATCHER_IO_PWR_BAT_DET)
+
+#define WATCHER_SD_HOST SPI2_HOST
+#define WATCHER_SD_CLK GPIO_NUM_4
+#define WATCHER_SD_MOSI GPIO_NUM_5
+#define WATCHER_SD_MISO GPIO_NUM_6
+#define WATCHER_SD_CS GPIO_NUM_46
+#define WATCHER_AI_SPI_CS GPIO_NUM_21
 // Power rails brought up once the system rail is latched.
 #define WATCHER_IO_POWER_UP_MASK                                             \
     (WATCHER_IO_PWR_SDCARD | WATCHER_IO_PWR_LCD | WATCHER_IO_PWR_SYSTEM |    \

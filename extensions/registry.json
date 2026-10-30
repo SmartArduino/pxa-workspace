@@ -6,10 +6,25 @@
       "name": "org.doit.voice-trigger",
       "service_id": 33025,
       "resource_type": 33025,
-      "version": [0, 1],
+      "version": [
+        0,
+        1
+      ],
       "identity": "cd3479d1-53f1-47bc-a8cc-54873b706cb2",
       "permission": "org.doit.voice-trigger",
       "scope": "system.default"
+    },
+    {
+      "name": "org.doit.peripherals",
+      "service_id": 33026,
+      "resource_type": 33026,
+      "version": [
+        0,
+        3
+      ],
+      "identity": "26531fa8-55a1-446a-b917-316c58b06582",
+      "permission": "org.doit.peripherals",
+      "scope": "exact logical port name"
     }
   ]
 }

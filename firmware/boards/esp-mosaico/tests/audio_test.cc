@@ -17,6 +17,7 @@ std::atomic<int> pa{0};
 std::atomic<bool> fail_write{false}, fail_reads{false};
 std::mutex io_lock;
 std::condition_variable io_changed;
+bool speaker_open = false;
 bool block_write = false, write_entered = false, release_write = false;
 bool block_preload = false, preload_entered = false, release_preload = false;
 
@@ -44,8 +45,8 @@ void vTaskDelay(TickType_t ticks) { delay_ms += ticks; }
 int gpio_set_level(gpio_num_t, int level) { pa = level; return ESP_OK; }
 int gpio_get_level(gpio_num_t) { return pa; }
 int gpio_config(const gpio_config_t*) { return ESP_OK; }
-int i2s_new_channel(const i2s_chan_config_t*, i2s_chan_handle_t* output, void*) {
-    *output = reinterpret_cast<void*>(1); return ESP_OK;
+int i2s_new_channel(const i2s_chan_config_t*, i2s_chan_handle_t* output, i2s_chan_handle_t* input) {
+    *output = reinterpret_cast<void*>(1); *input = reinterpret_cast<void*>(2); return ESP_OK;
 }
 int i2s_channel_init_std_mode(i2s_chan_handle_t, const i2s_std_config_t*) { return ESP_OK; }
 int i2s_channel_register_event_callback(i2s_chan_handle_t, const i2s_event_callbacks_t*, void*) { return ESP_OK; }
@@ -78,15 +79,33 @@ const audio_codec_gpio_if_t* audio_codec_new_gpio() { static audio_codec_gpio_if
 const audio_codec_ctrl_if_t* audio_codec_new_i2c_ctrl(const audio_codec_i2c_cfg_t*) {
     static audio_codec_ctrl_if_t control; return &control;
 }
-const audio_codec_if_t* es8311_codec_new(const es8311_codec_cfg_t*) { static audio_codec_if_t codec; return &codec; }
-esp_codec_dev_handle_t esp_codec_dev_new(const esp_codec_dev_cfg_t*) { return reinterpret_cast<void*>(1); }
-int esp_codec_dev_open(esp_codec_dev_handle_t, const esp_codec_dev_sample_info_t*) { return ESP_OK; }
+const audio_codec_if_t* es8311_codec_new(const es8311_codec_cfg_t* config) {
+    static audio_codec_if_t codec;
+    if (config->codec_mode == ESP_CODEC_DEV_WORK_MODE_DAC) speaker_open = false;
+    else { assert(!speaker_open); assert(config->pa_pin == GPIO_NUM_NC); }
+    return &codec;
+}
+esp_codec_dev_handle_t esp_codec_dev_new(const esp_codec_dev_cfg_t* config) {
+    return reinterpret_cast<void*>(config->dev_type == ESP_CODEC_DEV_TYPE_OUT ? 1 : 2);
+}
+int esp_codec_dev_open(esp_codec_dev_handle_t device, const esp_codec_dev_sample_info_t*) {
+    if (device == reinterpret_cast<void*>(1)) speaker_open = true;
+    return ESP_OK;
+}
 int esp_codec_dev_set_out_mute(esp_codec_dev_handle_t, bool) { return ESP_OK; }
 int esp_codec_dev_set_out_vol(esp_codec_dev_handle_t, int) { return ESP_OK; }
 int esp_codec_dev_read_reg(esp_codec_dev_handle_t, int, int* output) {
     ++reads; *output = 0; return fail_reads ? ESP_FAIL : ESP_OK;
 }
 int esp_codec_dev_write(esp_codec_dev_handle_t, void*, size_t) { return ESP_OK; }
+int esp_codec_dev_close(esp_codec_dev_handle_t) { return ESP_OK; }
+int esp_codec_dev_set_in_gain(esp_codec_dev_handle_t, float) { return ESP_OK; }
+int i2s_channel_read(i2s_chan_handle_t, void* buffer, size_t size, size_t* bytes, unsigned timeout) {
+    assert(timeout == 40); *bytes = size;
+    auto* pcm = static_cast<int16_t*>(buffer);
+    for (size_t i = 0; i < size/sizeof(int16_t); i += 2) { pcm[i] = 100; pcm[i+1] = -200; }
+    return ESP_OK;
+}
 const char* esp_err_to_name(int) { return "test"; }
 
 int main() {
@@ -98,6 +117,11 @@ int main() {
     for (int i = 0; i < 10; ++i) audio.PublishDiagnostics();
     assert(reads == 3); // UI diagnostics cannot perform slow/failing codec I2C.
     assert(PxaAudioOutput::active->Emit(pcm, 320));
+    assert(PxaAudioCaptureInput::active->Enable(true));
+    assert(PxaAudioCaptureInput::active->ReadPcm(pcm, 320) == 320);
+    for (const auto sample : pcm) assert(sample == 100);
+    assert(pa == 1);
+    assert(PxaAudioCaptureInput::active->Enable(false));
     audio.StopForShutdown();
     assert(pa == 0 && disables == 1);
     const unsigned previous_writes = writes, previous_delays = delay_ms;

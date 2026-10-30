@@ -148,6 +148,58 @@ void TestDirectEligibility() {
     g_has_frame = false;
 }
 
+void TestLetterboxedDirectComposition() {
+    using namespace mosaico_pxa_surface;
+    const lv_area_t full = {0, 0, 479, 479};
+    std::vector<uint16_t> colors(488 * 480);
+    std::vector<uint8_t> alpha(492 * 480);
+    for (size_t i = 0; i < colors.size(); ++i) colors[i] = i * 71;
+    for (int mode = 0; mode < 3; ++mode) {
+        const int width = mode == 1 ? 224 : 446, height = mode == 1 ? 180 : 346;
+        const int scale = mode == 1 ? 2 : 1, stride = width + 2;
+        const int x = (480 - width * scale) / 2, y = (480 - height * scale) / 2;
+        std::vector<uint16_t> source(stride * height);
+        for (size_t i = 0; i < source.size(); ++i) source[i] = i * 37;
+        PrepareFrame(source.data(), width, height, stride * 2);
+        if (mode != 2) { g_frame.x = x; g_frame.y = y; }
+        std::fill(alpha.begin(), alpha.end(), 255);
+        for (int py = y; py < y + height * scale; ++py)
+            std::fill(alpha.begin() + py * 492 + x,
+                      alpha.begin() + py * 492 + x + width * scale, 0);
+        g_frame.ui_alpha_plane = {colors.data(), alpha.data(), 976, 492, 0, 0, 480, 480, 255, 1, 17};
+        assert(DirectFrameEligible(g_frame));
+        std::vector<uint16_t> actual(480 * 480, 0xa55a), other(actual.size(), 0x5aa5);
+        ComposeFrame(g_frame, &full, reinterpret_cast<uint8_t*>(actual.data()));
+        ComposeFrame(g_frame, &full, reinterpret_cast<uint8_t*>(other.data()));
+        assert(actual == other); // Every output pixel is defined, including the matte.
+        for (int py = 0; py < 480; ++py) for (int px = 0; px < 480; ++px) {
+            const bool in = px >= x && px < x + width * scale && py >= y && py < y + height * scale;
+            const uint16_t expected = in ? source[(py - y) / scale * stride + (px - x) / scale] : colors[py * 488 + px];
+            assert(actual[py * 480 + px] == __builtin_bswap16(expected));
+        }
+        const unsigned calls = g_ppa_calls;
+        assert(!TryAcceleratedDirectFrame(g_frame, reinterpret_cast<uint8_t*>(actual.data())));
+        assert(calls == g_ppa_calls); // A partial source must never enter full-row DMA.
+        alpha[1] = 254;
+        assert(!DirectFrameEligible(g_frame));
+        alpha[1] = 255;
+        g_frame.ui_alpha_plane.opacity = 254;
+        assert(!DirectFrameEligible(g_frame));
+        g_frame.ui_alpha_plane.opacity = 255;
+        g_frame.suppress_guest_alpha = true;
+        assert(!DirectFrameEligible(g_frame));
+        g_frame.system_alpha_plane = g_frame.ui_alpha_plane;
+        assert(DirectFrameEligible(g_frame));
+        g_frame.opaque_ui_region_count = 1;
+        assert(!DirectFrameEligible(g_frame));
+        g_frame.opaque_ui_region_count = 0;
+        g_frame.system_alpha_plane.alpha = nullptr;
+        assert(!DirectFrameEligible(g_frame));
+    }
+    g_has_frame = false;
+    puts("Mosaico letterbox: opaque matte coverage, offset/centered 1x/2x composition, all pixels defined, no partial-source DMA and trusted fallback passed");
+}
+
 void TestOptimizedComposition() {
     const lv_area_t areas[] = {{0, 0, 479, 479}, {203, 209, 218, 222},
                                {0, 0, 6, 8}, {473, 471, 479, 479}};
@@ -378,6 +430,92 @@ void TestNativeSnapshots() {
     assert(mosaico_board::CopyRefreshArea(full, first.data() + 1, second.data() + 1, true));
     assert(mosaico_board::CopyRefreshArea(full, second.data() + 1, restored.data() + 1, true));
     assert(std::memcmp(first.data() + 1, restored.data() + 1, first.size() - 1) == 0);
+}
+
+void TestFrameDamage() {
+    using mosaico_board::FrameDamage;
+    constexpr size_t bytes = 480 * 480 * 2;
+    std::vector<uint8_t> old_frame(bytes + 2, 0x37), new_frame = old_frame;
+    // The helper accepts unaligned rows without aliasing typed pixel storage.
+    auto* previous = old_frame.data() + 1;
+    auto* next = new_frame.data() + 1;
+    lv_area_t damage{};
+    assert(mosaico_board::FindFrameDamage(previous, next, &damage) == FrameDamage::Unchanged);
+    assert(mosaico_board::ValidDisplayArea(damage));
+    for (int y : {0, 1, 15, 16, 203, 478, 479}) {
+        for (int x : {0, 1, 2, 3, 201, 202, 478, 479}) {
+            next[(y * 480 + x) * 2] ^= 0x81;
+            const auto immutable = new_frame;
+            assert(mosaico_board::FindFrameDamage(previous, next, &damage) == FrameDamage::Changed);
+            assert(damage.x1 == (x & ~3) && damage.x2 == (x | 3));
+            assert(damage.y1 == (y & ~1) && damage.y2 == (y | 1));
+            assert(immutable == new_frame);
+            next[(y * 480 + x) * 2] ^= 0x81;
+        }
+    }
+    const lv_area_t overlay{201, 0, 278, 15};
+    next[207 * 2] ^= 0x51;
+    assert(mosaico_board::FindFrameDamage(previous, next, &damage, &overlay) == FrameDamage::Unchanged);
+    next[200 * 2] ^= 0x51;
+    assert(mosaico_board::FindFrameDamage(previous, next, &damage, &overlay) == FrameDamage::Changed);
+    assert(damage.x1 == 200 && damage.x2 == 203);
+    // Disabling diagnostics must include and erase their old pixels.
+    assert(mosaico_board::FindFrameDamage(previous, next, &damage) == FrameDamage::Changed);
+    assert(damage.x2 >= 207);
+    auto panel = old_frame;
+    for (int y = damage.y1; y <= damage.y2; ++y)
+        std::memcpy(panel.data() + 1 + (y * 480 + damage.x1) * 2,
+                    next + (y * 480 + damage.x1) * 2, (damage.x2 - damage.x1 + 1) * 2);
+    assert(panel == new_frame);
+    const lv_area_t invalid{-1, 0, 10, 15};
+    assert(mosaico_board::FindFrameDamage(previous, next, &damage, &invalid) == FrameDamage::Unavailable);
+    assert(mosaico_board::FindFrameDamage(nullptr, next, &damage) == FrameDamage::Unavailable);
+    assert(mosaico_board::FindFrameDamage(previous, nullptr, &damage) == FrameDamage::Unavailable);
+}
+
+void TestContiguousDma() {
+    using mosaico_board::DirectTransferResult;
+    const size_t stride = mosaico_board::kWidth * 2;
+    std::vector<uint8_t> memory(stride * mosaico_board::kHeight + 64);
+    auto* aligned = reinterpret_cast<uint8_t*>((reinterpret_cast<uintptr_t>(memory.data()) + 63) & ~uintptr_t(63));
+    for (size_t i = 0; i < stride * mosaico_board::kHeight; ++i) aligned[i] = i * 37;
+    const auto before = memory;
+    for (const lv_area_t area : {lv_area_t{0, 0, 479, 479}, lv_area_t{0, 40, 479, 45}}) {
+        for (int failure : {-1, 0, 1, 2}) {
+            const uint8_t* source = aligned + area.y1 * stride;
+            int waits = 0, submits = 0;
+            const uint8_t* pending = nullptr;
+            const auto result = mosaico_board::TransferContiguousRows(area, source, stride,
+                [&]() {
+                    const bool completed = waits++ != failure;
+                    if (completed) pending = nullptr;
+                    return completed;
+                },
+                [&](const uint8_t* pixels, size_t bytes) {
+                    assert(pixels == source && pending == nullptr);
+                    assert(bytes == size_t(area.y2 - area.y1 + 1) * stride);
+                    ++submits; pending = pixels;
+                    return failure != 2; // A partial submission can still own the span.
+                });
+            assert(result == (failure == -1 ? DirectTransferResult::Completed : DirectTransferResult::Failed));
+            assert(submits == (failure == 0 ? 0 : 1));
+            assert((pending != nullptr) == (failure == 1 || failure == 2));
+            assert(memory == before); // Includes guards and byte order, on failure too.
+        }
+    }
+    for (const lv_area_t area : {lv_area_t{4, 40, 31, 45}, lv_area_t{-4, 0, 479, 5}}) {
+        assert(mosaico_board::TransferContiguousRows(area, aligned, stride,
+            []() { assert(false); return true; },
+            [](const uint8_t*, size_t) { assert(false); return true; }) == DirectTransferResult::Ineligible);
+    }
+    const lv_area_t full = {0, 0, 479, 479};
+    for (auto* source : {aligned + 1, static_cast<uint8_t*>(nullptr)})
+        assert(mosaico_board::TransferContiguousRows(full, source, stride,
+            []() { assert(false); return true; },
+            [](const uint8_t*, size_t) { assert(false); return true; }) == DirectTransferResult::Ineligible);
+    assert(mosaico_board::TransferContiguousRows(full, aligned, stride + 64,
+        []() { assert(false); return true; },
+        [](const uint8_t*, size_t) { assert(false); return true; }) == DirectTransferResult::Ineligible);
 }
 
 void TestTransferPipeline() {
@@ -617,9 +755,9 @@ void TestBatteryMonitor() {
             output[offset] = value & 255;
             output[offset + 1] = value >> 8;
         };
-        if (reg == 0x08) {
-            assert(size == 6);
-            word(0, voltage); word(2, status); word(4, static_cast<uint16_t>(current));
+        if (reg == 0x06) {
+            assert(size == 8);
+            word(0, 2981); word(2, voltage); word(4, status); word(6, static_cast<uint16_t>(current));
         } else {
             assert(reg == 0x2c && size == 2);
             word(0, percent);
@@ -629,11 +767,13 @@ void TestBatteryMonitor() {
     assert(!battery.Get().valid);
     battery.Poll(0, read);
     assert(reads == 2 && battery.Get().valid && battery.Get().percent == 67 && battery.Get().charging);
+    assert(battery.Get().voltage_mv == 3900 && battery.Get().current_ma == 80);
+    assert(battery.Get().temperature_valid && battery.Get().temperature_milli_celsius == 24950);
     battery.Poll(1999, read);
     assert(reads == 2);
     current = -80;
     battery.Poll(2000, read);
-    assert(battery.Get().valid && !battery.Get().charging);
+    assert(battery.Get().valid && !battery.Get().charging && battery.Get().current_ma == -80);
     current = 0;
     battery.Poll(4000, read);
     assert(!battery.Get().charging);
@@ -1271,11 +1411,14 @@ int main() {
     g_has_frame = false;
     TestAreaAlignment();
     TestDirectEligibility();
+    TestLetterboxedDirectComposition();
     TestOptimizedComposition();
     TestPpaDirectAndFallback();
     TestPpaAlphaComposition();
     TestNativeComposition();
     TestNativeSnapshots();
+    TestFrameDamage();
+    TestContiguousDma();
     TestTransferPipeline();
     TestRefreshBatch();
     TestPipelinedSnapshot();

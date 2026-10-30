@@ -3,6 +3,7 @@
 #include "pxa_esp_resource_transfer.h"
 #include "pxa_esp_package_trust.h"
 #include "pxa_esp_record_seal.h"
+#include "pxa_esp_publisher_directory.h"
 #include "pxa_esp_volumes.h"
 #include "esp_vfs_fat.h"
 #include "pxa/openssl/pxa_openssl.h"
@@ -123,6 +124,10 @@ int main(int argc,char **argv) {
     assert(!pxa_esp_installations_install(owner,source1,locator,&approved,0,digest,&plan,NULL,NULL,&result,&home));
     assert(home.record.generation==1 && !strncmp(home.home,sd,strlen(sd)) && prepare_calls==1);
     assert(!pxa_esp_storage_release_plan(&plan));
+    char namespace_root[768];path(namespace_root,sizeof(namespace_root),sd,"PXA");
+    assert(!pxa_esp_publisher_bind(namespace_root,&info.id,"apps",approved.publisher_root,"lucinhu"));
+    assert(!pxa_esp_installations_lookup(owner,locator,&home));
+    assert(strstr(home.home,"/apps/lucinhu/volume-test") && !strcmp(home.locator,locator));
     unsigned discovered=0;size_t invalid;
     assert(!pxa_esp_installations_visit(owner,count_home,&discovered,&invalid) && discovered==1 && !invalid);
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home) && prepare_calls==1);
@@ -184,6 +189,21 @@ int main(int argc,char **argv) {
     approved.install_id[0]=2;approved.data_generation=1;
     assert(!pxa_openssl_sha256(manifest->encoded.data,manifest->encoded.size,approved.media_set_sha256));
     assert(!pxa_esp_storage_volume(usb_epoch,&info));approved.media_volume=info.id;
+    /* Each volume reserves names independently: USB owns the plain handle,
+     * while SD already has a different publisher using that same handle. */
+    char source_media[256],target_media[256],media_payload[768];struct stat source_payload;
+    path(namespace_root,sizeof(namespace_root),usb,"PXA");
+    assert(!pxa_esp_publisher_bind(namespace_root,&info.id,"media",approved.publisher_root,"lucinhu"));
+    assert(!pxa_esp_installations_media_path(&approved,source_media,sizeof(source_media)));
+    assert(!strncmp(source_media,"PXA/media/lucinhu/volume-test/",sizeof("PXA/media/lucinhu/volume-test/")-1));
+    assert(!pxa_esp_storage_volume(selected_epoch,&info));
+    uint8_t other_publisher[32];memcpy(other_publisher,approved.publisher_root,32);other_publisher[0]^=1;
+    path(namespace_root,sizeof(namespace_root),sd,"PXA");
+    assert(!pxa_esp_publisher_bind(namespace_root,&info.id,"media",other_publisher,"lucinhu"));
+    assert(!pxa_esp_publisher_bind(namespace_root,&info.id,"media",approved.publisher_root,"lucinhu"));
+    pxa_install_record_t target_record=approved;target_record.media_volume=info.id;
+    assert(!pxa_esp_installations_media_path(&target_record,target_media,sizeof(target_media)));
+    assert(!strncmp(target_media,"PXA/media/lucinhu-",sizeof("PXA/media/lucinhu-")-1) && strcmp(source_media,target_media));
     assert(!pxa_esp_installations_plan(media_owner,manifest,0,0,&plan) && !pxa_esp_storage_reserve_plan(&plan));
     char small_root[1];result.root=small_root;result.root_capacity=sizeof(small_root);
     assert(pxa_esp_installations_install_resources(media_owner,&approved,resources,&plan,&result)==PXA_STATUS_RESOURCE_LIMIT);
@@ -193,6 +213,8 @@ int main(int argc,char **argv) {
     assert(!pxa_esp_installations_install_resources(media_owner,&approved,resources,&plan,&result));
     assert(!pxa_esp_storage_release_plan(&plan));
     assert(!pxa_esp_installations_verify_resources(media_owner,&approved,&result));
+    assert(snprintf(media_payload,sizeof(media_payload),"%s/%s/pak0.pak",usb,source_media)<(int)sizeof(media_payload));
+    assert(!stat(media_payload,&source_payload));
     pxa_install_record_t wrong=approved;wrong.media_set_sha256[0]^=1;
     assert(pxa_esp_installations_verify_resources(media_owner,&wrong,&result)!=PXA_STATUS_OK);
     assert(!pxa_esp_installations_inspect(owner,with_resources,&result) && manifest->resource_manifest_sha256);
@@ -227,18 +249,25 @@ int main(int argc,char **argv) {
     assert(!memcmp(home.record.install_id,before_move.install_id,16) && !memcmp(home.record.manifest_sha256,before_move.manifest_sha256,32));
     assert(!memcmp(home.record.media_set_sha256,before_move.media_set_sha256,32) && !stat(saved_file,&st) && st.st_size==8);
     assert(!pxa_esp_storage_volume(selected_epoch,&info) && !memcmp(home.record.media_volume.bytes,info.id.bytes,16));
+    assert(snprintf(media_payload,sizeof(media_payload),"%s/%s/pak0.pak",sd,target_media)<(int)sizeof(media_payload));
+    assert(!stat(media_payload,&st) && st.st_size==source_payload.st_size);
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home) && home.record.generation==2);
     assert(pxa_esp_resource_transfer_begin_approved(selected_epoch,usb_epoch,selected_epoch,locator,&move_approval,&home)==PXA_STATUS_BAD_STATE);
     /* Returning reuses the previously verified immutable generation; neither
      * a fresh code copy nor a private-image reservation is required. */
     assert(!pxa_esp_resource_transfer_plan(selected_epoch,usb_epoch,locator,2,&move_approval,&source_media_epoch,&plan));
-    assert(source_media_epoch==selected_epoch && plan.volumes[0].bytes<UINT64_C(128)*1024);
+    assert(source_media_epoch==selected_epoch && plan.volume_count==1 &&
+        plan.volumes[0].bytes<UINT64_C(128)*1024);
     assert(!pxa_esp_resource_transfer_begin_approved(selected_epoch,source_media_epoch,usb_epoch,locator,&move_approval,&home));
     assert(home.record.generation==3 && home.record.data_generation==1 && !stat(saved_file,&st));
+    assert(snprintf(media_payload,sizeof(media_payload),"%s/%s/pak0.pak",usb,source_media)<(int)sizeof(media_payload));
+    assert(!stat(media_payload,&st) && st.st_ino==source_payload.st_ino && st.st_mtime==source_payload.st_mtime);
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home) && home.record.generation==3);
     /* A present but damaged destination never becomes a successful reuse. */
     char media_relative[256],damaged_file[768];
-    assert(!pxa_esp_installations_media_path(&home.record,media_relative,sizeof(media_relative)));
+    target_record=home.record;target_record.media_volume=info.id;
+    assert(!pxa_esp_installations_media_path(&target_record,media_relative,sizeof(media_relative)));
+    assert(!strcmp(media_relative,target_media));
     assert(snprintf(damaged_file,sizeof(damaged_file),"%s/%s/pak0.pak",sd,media_relative)<(int)sizeof(damaged_file));
     file=open(damaged_file,O_RDWR);assert(file>=0);char initial=0;
     assert(read(file,&initial,1)==1 && lseek(file,0,SEEK_SET)==0 && write(file,"?",1)==1 && !fsync(file) && !close(file));

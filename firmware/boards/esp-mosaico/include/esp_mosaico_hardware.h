@@ -58,6 +58,7 @@ private:
     static void OnTe(void* context);
     bool InitializeTouch();
     bool InitializeButton();
+    bool InitializeBootButton();
     bool InitializeWifi();
     void UpdateInteractivity();
     void ProcessControls();
@@ -93,6 +94,8 @@ private:
                                     void* context);
 
     std::optional<mosaico_board::HardwareConfig> hardware_;
+    uint16_t hardware_revision_ = 0;
+    bool usb_console_ready_ = false;
     i2c_master_bus_handle_t i2c_bus_ = nullptr;
     i2c_master_dev_handle_t battery_device_ = nullptr;
     EspMosaicoBattery battery_;
@@ -119,10 +122,17 @@ private:
     std::atomic<uint32_t> touch_errors_{0};
     std::atomic<int> touch_last_status_{ESP_OK};
     button_handle_t button_ = nullptr;
+    button_handle_t boot_button_ = nullptr;
     lv_display_t* display_ = nullptr;
     pxsys_standard_system_t* system_ = nullptr;
     pxsys_reference_lvgl_t* reference_ui_ = nullptr;
     SemaphoreHandle_t transfer_done_ = nullptr;
+    std::atomic<uint32_t> direct_dma_transfers_{0};
+    std::atomic<uint32_t> staged_dma_transfers_{0};
+    std::atomic<uint32_t> damage_scan_us_{0};
+    std::atomic<uint32_t> partial_frames_{0};
+    std::atomic<uint32_t> identical_frames_{0};
+    std::atomic<uint32_t> last_transfer_pixels_{0};
     SemaphoreHandle_t te_ready_ = nullptr;
     std::atomic<uint32_t> te_edges_{0};
     std::atomic<uint32_t> te_timestamp_us_{0};
@@ -204,6 +214,7 @@ private:
     std::atomic<uint8_t> idle_dim_percent_{20};
     std::atomic<bool> home_pending_{false};
     std::atomic<bool> back_pending_{false};
+    std::atomic<bool> boot_pending_{false};
     std::atomic<bool> provisioning_pending_{false};
     std::atomic<bool> power_menu_pending_{false};
     std::atomic<int8_t> power_action_{-1};

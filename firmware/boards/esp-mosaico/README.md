@@ -16,6 +16,13 @@ LVGL lifecycle, display buffers, rounding and synchronization use
 continue to use their existing adapter. The shared integration acquires the
 selected board's display lock before creating the system UI.
 
+TLS record and certificate allocations use PSRAM
+(`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y`). Store installation opens a separate
+HTTPS connection after the catalog/detail request; restricting both TLS
+connections to internal SRAM can exhaust the DMA heap during the handshake.
+Certificate verification remains enabled. Existing local sdkconfig files must
+select the same allocation strategy when upgrading this board configuration.
+
 ## Hardware
 
 The first 16 bits of `ESP_EFUSE_USER_DATA` select the hardware revision.
@@ -32,9 +39,15 @@ GPIOs are driven. No eFuse is written by this firmware.
   One retained 480-row PSRAM draw buffer uses LVGL DIRECT rendering with
   4-column / 2-row-aligned dirty areas. Its capacity equals the previous two
   240-row scratch buffers; it eliminates their copy into a separate producer.
-  A dedicated flush task feeds two 16-row internal DMA buffers, never the
-  PSRAM draw buffer directly. LVGL renders its retained UI frame while
-  SPI reads the immutable snapshot; band copies overlap DMA. Completed scanout is converted to
+  A dedicated flush task sends aligned, contiguous snapshot rows directly
+  from PSRAM using the same SPI DMA mode as DOIT GameKit 1. The LCD IO driver
+  splits large writes at the SPI transaction limit and signals the final chunk.
+  Narrow strided windows retain two 16-row internal staging buffers;
+  `PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT=n` uses that path throughout.
+  LVGL renders its retained UI frame while SPI reads the immutable snapshot.
+  Snapshot exchange, UI copying and idle diagnostics wait for pending DMA,
+  including recovery from a timeout; a failed direct transfer is not retried
+  through staging while it can still own its source. Completed scanout is converted to
   screenshot RGB565 only on request, avoiding an extra full-frame write.
   The two staging buffers together retain the original 32-row SRAM footprint.
   Row copies respect LVGL's draw-buffer stride. DMA completion waits are bounded;
@@ -81,7 +94,11 @@ GPIOs are driven. No eFuse is written by this firmware.
   Continuous nonzero Host output without any nonzero DMA progress for 22
   writes (about 440 ms, beyond the six-block preroll) also restarts the channel;
   idle silence and normal short effects do not trigger this check.
-  Microphone capture is not exposed.
+  Microphone capture uses the standard Audio capture API: 16 kHz mono,
+  20 ms raw Opus frames, encoded on a dedicated worker with a four-packet queue.
+  ADC capture opens on demand; revocation/closure stops delivery and closes it.
+  Playback and capture use separate ES8311 DAC/ADC control objects and shared
+  full-duplex I²S (DOUT52, DIN40). Encoding uses the shared Device audio budget.
   Five-second `mosaico_audio` diagnostics show initialization/stopped status,
   logical volume, PA pin readback, successful writes, nonzero PCM blocks,
   interval peak and write errors, without codec I2C reads. A separate music
@@ -115,6 +132,167 @@ GPIOs are driven. No eFuse is written by this firmware.
 - PXA Surface: 1× / 2× / 4× integer scaling and RGB565 / premultiplied ARGB composition,
   preserving opaque trusted UI and both alpha overlays. Frame capture reads the
   completed scanout buffer, converting its wire byte order to RGB565LE on demand.
+
+### Onboard NAND, motion sensors and vibration
+
+The extra GD5F1GM7UEYIGR is a 1-Gbit (128-MiB raw) SPI NAND, separate from
+the boot NOR flash. SPI3 uses CLK 20, MOSI 21, MISO 22, CS 23, HOLD/IO3 24
+and WP/IO2 25, in QIO mode at 20 MHz. Initialization first holds GPIO24/25
+high and uses single-line SPI to read the chip ID and enable/verify the Quad
+Enable bit while preserving the other configuration bits. Only then are IO2/IO3
+routed to SPI3. This also works after a warm restart with QE already enabled.
+The bootstrap follows the Apache-2.0 ESP-Mosaico BSP; its source revision and
+license are retained under `vendor/esp-mosaico-bsp/`.
+The LCD keeps SPI2. The pinned
+`espressif/spi_nand_flash 1.4.4` (Apache-2.0) and `espressif/dhara 1.1.0`
+(ISC) provide ECC handling, bad-block management and wear leveling below
+ESP-IDF's FAT block-device mount. Usable space is smaller than raw capacity.
+Their upstream license files remain in the managed component packages.
+
+The NAND mounts at `/pxa/nand`, alongside the existing `/pxa` LittleFS volume,
+and appears as **NAND storage** in PXA's volume list and installation picker.
+It supports applications, private data through PXA's FAT image backend, and
+resources. Successful registration selects it as the default app-media volume.
+Its fixed device identity includes the MCU MAC and onboard wiring identity;
+the persistent volume UUID remains in the filesystem. An unavailable NAND
+does not prevent startup with internal storage.
+
+Private key/value reads and writes run on a bounded Host storage worker. The
+runtime owns request admission and completion; the worker receives copied
+keys/values and serializes the existing durable snapshot backend. A successful
+save still means the disk write completed. Activation shutdown drains accepted
+operations before releasing the backend or private filesystem, so gameplay
+checkpoints do not require synchronous NAND writes on the Guest event loop.
+
+Startup automatically initializes a FAT filesystem when a read-only probe
+returns `FR_NO_FILESYSTEM`. This is enabled by default through **ESP-Mosaico
+peripherals → Automatically initialize onboard NAND without a filesystem**
+(`CONFIG_PXA_MOSAICO_NAND_FORMAT_IF_MOUNT_FAILED`). Existing valid FAT volumes
+mount directly. I/O failures and other probe errors leave the NAND unavailable
+for that boot and do not trigger formatting. If the probe cannot detach, its
+FatFS/BDL resources remain owned until reboot.
+Disable the setting to preserve content that PXA does not recognize as FAT;
+automatic initialization erases that content rather than migrating it.
+Board defaults enable BDL and FAT sectors up to 4096 bytes, long filenames
+and 16 file locks; merge those settings into older local sdkconfigs.
+Failed SPI cleanup retains ownership; a repeated initialization attempt first
+finishes that cleanup before creating a new bus/device. A failed FAT unmount
+retains its live BDL and prevents reinitialization until reboot.
+
+BMI270 at I2C address `0x69` exposes `motion.acceleration` (X/Y/Z, micrometres/s²),
+`motion.angular-velocity` (X/Y/Z, microradians/s) and `imu-temperature` (millidegrees C).
+The IMU uses ±4 g and ±2000 degrees/s at 100 Hz. Temperature is the chip's
+die temperature. Both motion channels are converted by the board Provider
+before Sensor delivery: device `(X,Y,Z) = (chip Y,-chip X,chip Z)`.
+With the panel in its normal orientation, device +X points toward the top
+edge, +Y toward the left edge and +Z out of the screen. This is a right-handed
+frame; the same proper rotation applies to acceleration and angular velocity.
+Screen-up stationary acceleration is approximately +9.81 m/s² on Z;
+screen-down is approximately -9.81 m/s². Angular velocity follows the right-hand
+rule, so counterclockwise rotation viewed from the screen side is positive Z.
+UI pixel Y increasing downward does not change this physical coordinate frame.
+Applications must not add ESP-MOSAICO-specific mounting compensation.
+Two independently detected BMM150s at `0x11` and `0x12`
+expose `magnetic-field.0` and `magnetic-field.1` in nanotesla at 10 Hz, using
+Bosch's factory trim compensation (integer output has 1-microtesla steps).
+Magnetometer axes remain in each chip's native frame;
+these values are not a calibrated compass heading. The motor can affect
+magnetic readings. Missing or failed chips are omitted from enumeration.
+
+Applications discover channels through Sensor service 8 and subscribe with
+`sensor.read` permission scoped to the exact semantic name. Minimum periods
+are 10 ms for motion and 100 ms for temperature/magnetometers; maximum is
+60 s. The Host polls only while subscribed, including native main-loop apps.
+The IMU and each magnetometer enter standby after their last subscription
+closes. I2C failures and invalid compensation results produce no sample.
+The original Bosch SensorAPI files are vendored unchanged under `vendor/`,
+with BSD-3-Clause licenses, source commits and per-file SHA-256 manifests.
+
+The GPIO8 motor has bounded on/off control: `EspMosaicoVibrate(duration_ms)`
+accepts 0–1000 ms; zero stops immediately, and a new pulse replaces the old
+deadline. Initialization, lock and orderly shutdown leave the motor off.
+Applications use standard **Haptics service 23** through `ctx.haptics()`, with
+`haptics.play` permission scoped to `device.default`. Capabilities advertise
+binary vibration and a 1000 ms maximum; only amplitude 1000 is supported. The
+exclusive actuator handle stops on closure, revocation, foreground loss and
+application exit. The board deadline timer remains independent of Guest code.
+See the [standard Haptics contract](../../../deps/pxa-system/spec/draft/haptics.md).
+
+The BQ27220 cache also exposes Sensor channels `battery-voltage` (microvolts),
+`battery-current` (signed microamperes, positive charging) and
+`battery-temperature` (millidegrees C). These sample every 2 s; Host reads only
+cached snapshots, never the I²C bus. Invalid/stale readings produce no sample.
+All eight sensor channels may be subscribed concurrently. The fuel gauge is
+read only; no unseal, profile update or calibration writes are performed.
+
+### Mainboard controls and general expansion
+
+BOOT (GPIO61, active low) acts as Back while awake/unlocked and wakes the screen
+while asleep/locked. It uses the same trusted navigation path as other board
+controls. AI remains GPIO7. The status LED exists only on revision 1.0 (GPIO3,
+active low) and is exposed as logical `board.status-led` on that revision.
+
+The optional [peripherals extension](../../../extensions/peripherals/README.md)
+provides the following logical ports. Applications enumerate names and use
+`org.doit.peripherals` permission scoped to the selected name; they do not pass
+ESP32 GPIO numbers to the Host.
+
+| Logical port | Board connection / behavior |
+|---|---|
+| `left.slot`, `right.slot` | Read-only cached EEPROM identity/CRC and an exclusive slot claim |
+| `expansion.i2c` | SDA0/SCL1, 10–400 kHz, 7-bit address, asynchronous transactions up to 256 bytes each way |
+| `right.uart` | UART1 on TX58/RX59, 1200–921600 baud, 8N1; available only after USB console redirection succeeds |
+| `left.gpio1`…`left.gpio12` | GPIO53,48,13,12,14,4,55,19,18,17,16,15; input or logical output |
+| `right.gpio1`…`right.gpio7` | GPIO46,47,11,10,39,5,38; input or logical output |
+| `board.status-led` | Revision 1.0 only; 0=off, 1=on |
+
+Revision 1.0 shares the mainboard I²C bus; its onboard touch, codec, motion,
+magnetometer and gauge addresses are reserved. Revisions 1.1/1.2 use independent
+I²C1 for expansion. EEPROM addresses 0x50/0x51 are always reserved. Board-owned
+LCD/NAND/audio/power/sensor/USB pins are excluded from generic GPIO. In
+particular right-side I²S pins and left-side USJ pins 33/34 stay reserved.
+UART0 ROM boot output can still appear on pins58/59 before USB initialization.
+
+A component may claim multiple GPIOs on the same side; that side is exclusive
+against other components. Claiming a GPIO/UART/slot suspends that side's module
+scanner. Closing the last claim safely resets outputs and restores the slot
+selector (left GPIO14 low, right GPIO39 high) before probing resumes. I²C device
+addresses are exclusive. Transfer timeouts include wire time at the selected
+clock rate (at most 485 ms for a maximum-size 10 kHz transaction). On revision
+1.0, an atomic external transaction occupies the shared bus for its duration;
+keep transfers short when touch/motion latency matters. Cleanup retains
+ownership on native driver errors. Once peripheral shutdown starts, GPIO/UART
+I/O and new I²C transfers return Unavailable immediately. Worker notifications are drained
+before task deletion; late close/cancel callbacks cannot wake a deleted task.
+
+Module presence is debounced across three 250 ms probes; EEPROM metadata is
+revalidated every 2 s while unclaimed. Reads are split into short 16-byte chunks
+so mainboard traffic can interleave on revision 1.0. Descriptor, manufacturing
+and parameter CRCs are checked; the Host never writes the EEPROM. Cached
+presence/valid/claimed/unknown/error flags distinguish unavailable information
+from a valid module. A transient EEPROM device-creation failure is retried
+at 2 s intervals. Bus probe errors restart debounce; three consecutive healthy
+probes are required to confirm presence/absence and recover the cached state.
+Failed native opens retain their pins/address while worker-side rollback runs;
+retries return Busy until that cleanup and slot-selector restoration finish.
+GPIO/I²C/UART driver preparation runs on the expansion worker. Host callbacks
+only reserve metadata or read cached status, so a slow driver setup does not
+hold the Host's resource mutex or event loop. An OPEN response is delivered
+only after preparation succeeds. Pending opens remain bound to their permission
+and are cancelled on revocation, foreground loss or application exit.
+
+The worker sleeps until the next 250 ms module-scan deadline while discovery
+is needed, retries incomplete cleanup at 20 ms, and waits for notifications
+without a periodic timeout when both slots are claimed and no work remains.
+Queued opens, transfers, closes and shutdown wake it immediately. This reduces
+idle worker wakeups; device power consumption still requires measurement.
+Module-specific camera and accessory functionality is not
+part of this generic port layer.
+
+Run `tests/test_peripherals.sh` for sanitizer-enabled hardware-emulation tests.
+Logs and generated binaries belong under `local/artifacts/`.
+Hardware references: [Espressif user guide](https://docs.espressif.com/projects/esp-dev-kits/zh_CN/latest/esp32s31/esp-mosaico/user_guide.html)
+and [CoreBoard V1.2 schematic](https://dl.espressif.com/AE/Mosaico/SCH_SCH_ESP-Mosaico_CoreBoard_V1_2_1_2026-09-24.pdf).
 
 ## Diagnostics and GameRender
 
@@ -152,7 +330,9 @@ overlay intersections. Opaque trusted regions, missing overlay snapshots,
 offsets, smaller surfaces and premultiplied ARGB frames use LVGL composition.
 
 A raster task at priority 4 on core 1 and its helper on core 0 draw outside
-LVGL's UI lock. The presenter at priority 5 on core 1 acquires only completed
+LVGL's UI lock. The guest runtime runs on core 0, independently of the UI and
+presenter on core 1. The presenter coalesces adjacent pixel/text submissions
+for one scheduler tick before acquiring the UI lock. It acquires only completed
 frames, allowing PPA conversion of one frame to overlap CPU rasterization of
 the next. The existing three application buffers preserve immutable PPA
 input; two-buffer applications safely wait for a released lease. A global
@@ -169,11 +349,25 @@ neighbour copies: SRM upscaling changed edge colors on this S31, so it is
 not used for pixel art. LVGL primitives stay on the software drawing backend. Driver cache
 synchronization completes before CPU/scanout reads. Allocation/operation
 failures fall back to the CPU path: native composition byte-swaps pixel pairs;
-2x/4x expansion writes pixel pairs and copies repeated rows.
+2x/4x expansion uses fixed-scale paired reads/writes, combining byte swapping
+with replication without per-pixel division, then copies repeated rows.
 RGB565 frames with transparent system/guest overlays first use the fast
 base copy/scale path, then blend clipped overlay intersections, skipping zero
 alpha and directly storing opaque colors. Hidden planes skip blending. Opaque
 trusted regions and ARGB game surfaces retain the generic compositor.
+After DMA has released the old snapshot, complete direct frames are compared
+in panel byte order. Only the aligned changed window is sent; identical frames
+use one minimal window for normal completion. Snapshots remain complete for
+capture and later UI restoration. Diagnostics are painted into each new snapshot
+and merge their own changed region, including when the overlay is disabled.
+The direct presenter resolves layout and acknowledges LVGL invalidations only
+after a complete eligible frame has been queued. The same gate runs at refresh
+start if LVGL obtains the lock first. This prevents an additional full software
+redraw of the same game/alpha frame. Failed presentation retains ordinary LVGL
+refreshes; acknowledging a frame does not cancel subsequent animation updates.
+The pinned LVGL's internal invalidation-queue operation is isolated in
+`esp_mosaico_refresh.h` and covered
+by the real-LVGL refresh tests; check this adapter when upgrading LVGL.
 UI-only refreshes over eligible fullscreen games prepare one complete game plus
 alpha frame per LVGL refresh and exchange scanout buffers, avoiding the full
 producer restore and snapshot copies for Back indicators, status bars and
@@ -227,6 +421,11 @@ of SRAM task storage compared with the former two-worker configuration. Full dir
 frames instead exchange producer/scanout buffers,
 eliminating the 460,800-byte snapshot copy. The first partial UI refresh after
 a direct frame restores the retained UI frame before LVGL draws new patches.
+Letterboxed RGB565 surfaces can also use direct composition when an immutable
+full-screen Canvas plane is fully opaque outside the surface. The compositor
+checks the matte's alpha coverage under the frame lease; missing, translucent
+or suppressed coverage and opaque host regions retain the LVGL fallback.
+Partial sources use CPU composition and never enter the full-frame PPA copy.
 The worker transfers that snapshot while LVGL renders the next frame.
 The final UI flush queues its retained source to the existing core-0 worker.
 That worker converts the snapshot, calls `flush_ready`, publishes source

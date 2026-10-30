@@ -58,6 +58,8 @@ public:
     bool PollPowerKey(bool* pressed);
 
 private:
+    bool InitializeSharedSpi();
+    bool InitializeSd();
     static constexpr uint8_t kDebugPointers = 5;
     static constexpr int kTouchMaxPointers = CONFIG_ESP_LCD_TOUCH_MAX_POINTS;
 

@@ -57,6 +57,11 @@ typedef struct {
 bool pxa_board_register(const pxa_board_port_t* port);
 const pxa_board_port_t* pxa_board_current(void);
 
+/* Read before starting Wi-Fi. Missing or invalid settings default to enabled.
+ * Save explicit switch/provisioning requests before changing the radio state. */
+bool pxa_board_wifi_get_enabled(void);
+bool pxa_board_wifi_set_enabled(bool enabled);
+
 /* Shared NVS-backed diagnostics preference used by every board port. */
 bool pxa_board_performance_get(pxsys_reference_performance_option_t option);
 bool pxa_board_performance_set(pxsys_reference_performance_option_t option,

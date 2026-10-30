@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pxadb-gui"
-version = "0.5.0"
+version = "0.6.0"
 description = "Desktop GUI for PXADB devices and the product simulator"
 requires-python = ">=3.10"
 # pxadb is resolved from the workspace or an editable install of tools/pxadb;

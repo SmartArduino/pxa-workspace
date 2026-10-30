@@ -33,6 +33,7 @@ int xQueueReceive(QueueHandle_t, void*, uint32_t);
 void xQueueReset(QueueHandle_t);
 void vQueueDelete(QueueHandle_t);
 SemaphoreHandle_t xSemaphoreCreateMutex();
+SemaphoreHandle_t xSemaphoreCreateBinary();
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t*);
 int xSemaphoreTake(SemaphoreHandle_t, uint32_t);
 void xSemaphoreGive(SemaphoreHandle_t);

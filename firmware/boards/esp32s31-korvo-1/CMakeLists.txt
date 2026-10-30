@@ -5,6 +5,8 @@ idf_component_register(
         "src/esp32s31_korvo_1_hardware.cc"
         "src/esp32s31_korvo_1_pxa_surface.cc"
         "src/esp32s31_korvo_1_audio.cc"
+        "src/esp32s31_korvo_1_storage.cc"
+        "src/esp32s31_korvo_1_vision.cc"
         "src/korvo_lvgl_accel.c"
     INCLUDE_DIRS "include"
     PRIV_REQUIRES
@@ -14,6 +16,11 @@ idf_component_register(
         esp_driver_i2c
         esp_driver_i2s
         esp_driver_ppa
+        esp_driver_sdmmc
+        esp_driver_cam
+        esp_mm
+        fatfs
+        sdmmc
         esp_event
         esp_lcd
         esp_netif
@@ -24,6 +31,9 @@ idf_component_register(
         espressif__esp_lv_decoder
         espressif__esp_lvgl_port
         espressif__button
+        espressif__led_strip
+        espressif__esp_cam_sensor
+        espressif__esp_sccb_intf
         joltwallet__littlefs
         lvgl
         pxa
@@ -32,6 +42,11 @@ idf_component_register(
         pxa_board_common
         pxa_system_reference_ui
         pxa_system_standard)
+
+# led_strip 2.5 uses heap declarations formerly provided by aggregate drivers.
+idf_component_get_property(_korvo_led_lib espressif__led_strip COMPONENT_LIB)
+target_link_libraries(${_korvo_led_lib} PRIVATE idf::heap)
+target_compile_options(${_korvo_led_lib} PRIVATE -include esp_heap_caps.h)
 
 option(PXA_KORVO_TOUCH_TRACE "Log physical touch reports and edges for device verification" OFF)
 option(PXA_KORVO_LVGL_PIE "Use exact Core1 PIE ARGB8888 to RGB565 block blending" OFF)

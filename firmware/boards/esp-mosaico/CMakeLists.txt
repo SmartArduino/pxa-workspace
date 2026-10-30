@@ -4,8 +4,16 @@ idf_component_register(
         "src/esp_mosaico_diagnostics.cc"
         "src/esp_mosaico_hardware.cc"
         "src/esp_mosaico_audio.cc"
+        "src/esp_mosaico_storage.cc"
+        "src/esp_mosaico_sensors.cc"
+        "src/esp_mosaico_haptics.cc"
+        "src/esp_mosaico_peripherals.cc"
+        "vendor/bmi270/bmi2.c"
+        "vendor/bmi270/bmi270.c"
+        "vendor/bmm150/bmm150.c"
         "src/esp_mosaico_pxa_surface.cc"
     INCLUDE_DIRS "include"
+    PRIV_INCLUDE_DIRS "vendor/bmi270" "vendor/bmm150"
     PRIV_REQUIRES
         78__esp-wifi-connect
         78__esp_lcd_touch_cst92xx
@@ -16,6 +24,11 @@ idf_component_register(
         esp_driver_ledc
         esp_driver_ppa
         esp_driver_spi
+        esp_driver_uart
+        esp_blockdev
+        fatfs
+        espressif__spi_nand_flash
+        joltwallet__littlefs
         esp_lcd
         esp_netif
         esp_timer

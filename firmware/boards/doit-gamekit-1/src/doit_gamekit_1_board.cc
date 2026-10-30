@@ -1,5 +1,6 @@
 #include "pxa_board.h"
 #include "doit_gamekit_1_audio.h"
+#include "doit_gamekit_1_battery.h"
 #include "doit_gamekit_1_config.h"
 #include "doit_gamekit_1_input.h"
 #include "doit_gamekit_1_navigation.h"
@@ -39,6 +40,7 @@
 #include <diskio_sdmmc.h>
 #include <pxa_board_api.h>
 #include <pxa_board_common/ledc_backlight.h>
+#include <pxa_board_common/rgb_port.h>
 #include <pxa_board_common/boot_screen.h>
 #include <pxa_board_common/lcd_render_trace.h>
 #include <pxadb/pxadb_service.h>
@@ -114,6 +116,7 @@ private:
     bool CreateRemotePointer(uint8_t id);
     bool InitializeSd();
     bool InitializeWifi();
+    void ProvisionWifi();
     void PollInput();
     void ReportController(uint32_t buttons, uint32_t now);
     void Back();
@@ -128,6 +131,7 @@ private:
     static void Flush(lv_display_t*, const lv_area_t*, uint8_t*);
 
     DoitGamekit1Audio audio_;
+    DoitGamekit1Battery battery_;
     std::atomic<bool> audio_ready_{false}, wifi_ready_{false};
     std::atomic<bool> sntp_ready_{false};
     std::atomic<bool> wifi_enabled_{true};
@@ -201,6 +205,15 @@ private:
 };
 
 bool Gamekit::Initialize() {
+    // V0.8 schematic, sheet 1: GPIO47 sinks LED2 through R47 to 3.3 V.
+    // Reserve the physical line for this logical indicator; it is no longer L.
+    gpio_config_t indicator_config{};
+    indicator_config.pin_bit_mask = UINT64_C(1) << 47;
+    indicator_config.mode = GPIO_MODE_OUTPUT;
+    if (gpio_set_level(GPIO_NUM_47, 1) != ESP_OK || gpio_config(&indicator_config) != ESP_OK ||
+        !pxa_board_binary_indicator_initialize(nullptr, [](void*, bool on) {
+            return gpio_set_level(GPIO_NUM_47, on ? 0 : 1) == ESP_OK;
+        })) ESP_LOGW(kTag, "Status indicator application interface unavailable");
     if (!InitializeDisplay()) return false;
     ShowInitialFrame();
     if (!InitializeButtons()) return false;
@@ -208,6 +221,19 @@ bool Gamekit::Initialize() {
     touch_ready_ = InitializeTouch();
     if (!touch_ready_) ESP_LOGW(kTag, "FT6336U unavailable; button navigation remains active");
 #endif
+    if (xTaskCreate([](void* context) {
+            auto* self = static_cast<Gamekit*>(context);
+            if (!self->battery_.Initialize(CONFIG_PXA_DOIT1_BATTERY_R37_KOHM,
+                                            CONFIG_PXA_DOIT1_BATTERY_R52_KOHM)) {
+                vTaskDelete(nullptr);
+                return;
+            }
+            for (;;) {
+                self->battery_.Poll(uint32_t(esp_timer_get_time() / 1000));
+                vTaskDelay(pdMS_TO_TICKS(2000));
+            }
+        }, "gamekit_battery", 3072, this, 1, nullptr) != pdPASS)
+        ESP_LOGW(kTag, "Battery worker unavailable");
     // Own the LVGL clock and timer loop for the custom SPI display. The
     // monotonic clock also keeps input timestamps and idle policy in one domain.
     if (xTaskCreatePinnedToCore([](void* context) {
@@ -646,6 +672,7 @@ bool Gamekit::CreateRemotePointer(uint8_t id) {
         portENTER_CRITICAL(&self->remote_lock_);
         const auto sample = self->remote_samples_.Read(id, more);
         portEXIT_CRITICAL(&self->remote_lock_);
+        if (sample.pressed) self->touch_mode_ = true;
         if (sample.cancel) lv_indev_wait_release(device);
         data->point = {sample.x, sample.y};
         data->timestamp = lv_tick_get();
@@ -891,10 +918,7 @@ void Gamekit::PollInput() {
     if (action.toggle_pointer) force_pointer_ = !force_pointer_;
     if (action.volume_delta)
         SetVolume(uint8_t(std::clamp(int(audio_.volume()) + action.volume_delta, 0, 100)));
-    if (action.provision_wifi && wifi_ready_) {
-        wifi_enabled_.store(true);
-        WifiManager::GetInstance().StartConfigAp();
-    }
+    if (action.provision_wifi) ProvisionWifi();
     if (action.back || action.recents || action.home) {
         // A system key can change pages while A/B/START is still held. Drop
         // the old gesture and wait for release before delivering to the new UI.
@@ -954,6 +978,7 @@ void Gamekit::PollInput() {
 }
 
 lv_obj_t* Gamekit::NavigationScope() const {
+    navigation_.SetInputActive(!touch_mode_ && !force_pointer_);
     // Native modal chrome takes priority over the runtime-managed PXA IME.
     auto* scope = ui_ ? pxsys_reference_lvgl_key_navigation_scope(ui_) : nullptr;
     return navigation_.ResolveScope(scope ? scope :
@@ -1084,6 +1109,7 @@ bool Gamekit::ConfigureDiagnostics() {
 }
 
 bool Gamekit::InitializeWifi() {
+    wifi_enabled_.store(pxa_board_wifi_get_enabled());
     auto& wifi = WifiManager::GetInstance();
     wifi.SetEventCallback([this](WifiEvent event, const std::string&) {
         if (event == WifiEvent::Connected && sntp_ready_) (void)esp_netif_sntp_start();
@@ -1096,17 +1122,27 @@ bool Gamekit::InitializeWifi() {
     time.start = false;
     time.wait_for_sync = false;
     sntp_ready_ = esp_netif_sntp_init(&time) == ESP_OK;
-    wifi.StartStation();
+    if (wifi_enabled_.load()) wifi.StartStation();
+    ESP_LOGI(kTag, "Wi-Fi startup switch: %s", wifi_enabled_.load() ? "on" : "off (NVS)");
     return true;
 }
 
 bool Gamekit::SetWifi(bool enabled) {
     if (!wifi_ready_) return false;
+    if (!pxa_board_wifi_set_enabled(enabled)) return false;
     wifi_enabled_.store(enabled);
     auto& wifi = WifiManager::GetInstance();
     if (enabled) wifi.StartStation();
     else { wifi.StopConfigAp(); wifi.StopStation(); }
+    PublishStatus();
     return true;
+}
+
+void Gamekit::ProvisionWifi() {
+    if (!wifi_ready_ || !pxa_board_wifi_set_enabled(true)) return;
+    wifi_enabled_.store(true);
+    WifiManager::GetInstance().StartConfigAp();
+    PublishStatus();
 }
 
 void Gamekit::AttachSystem(pxsys_standard_system_t* system, pxsys_reference_lvgl_t* ui) {
@@ -1147,6 +1183,9 @@ void Gamekit::PublishStatus() {
     }
     pxsys_system_status_snapshot_t status;
     pxsys_system_status_snapshot_init(&status);
+    const auto battery = battery_.Get();
+    status.battery_valid = battery.valid;
+    status.battery_percent = battery.percent;
     status.volume_supported = audio_ready_;
     status.volume_percent = audio_.volume();
     status.brightness_supported = 1;

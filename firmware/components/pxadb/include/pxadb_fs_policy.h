@@ -59,7 +59,8 @@ constexpr bool protected_system_directory(std::string_view path) {
 // Replacement, removal and uploads still use the stricter write policy.
 constexpr bool may_create_directory(std::string_view path, bool writable,
                                     bool system_unlocked) {
-    return writable || (system_unlocked && protected_system_directory(path));
+    return writable || (system_unlocked &&
+                        (path == "system" || protected_system_directory(path)));
 }
 }
 

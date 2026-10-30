@@ -123,6 +123,49 @@ bool ExchangeRefreshFrame(const Area& area, uint8_t*& frame, uint8_t*& snapshot)
     return true;
 }
 
+enum class FrameDamage { Unavailable, Unchanged, Changed };
+
+// Compare two complete, immutable panel-order snapshots. The caller fences DMA
+// before reading the previous one. A diagnostic overlay can be excluded because
+// the flush worker redraws it in the new snapshot and merges its own damage.
+template <typename Area>
+FrameDamage FindFrameDamage(const uint8_t* previous, const uint8_t* next,
+                           Area* area, const Area* excluded = nullptr) {
+    if (!previous || !next || !area || (excluded && !ValidDisplayArea(*excluded)))
+        return FrameDamage::Unavailable;
+    int left = kWidth, right = -1, top = kHeight, bottom = -1;
+    for (int y = 0; y < kHeight; ++y) {
+        const bool exclude_row = excluded && y >= excluded->y1 && y <= excluded->y2;
+        const size_t row = size_t(y) * kWidth * sizeof(uint16_t);
+        for (int x = 0; x < kWidth; x += 2) {
+            uint32_t before, after;
+            std::memcpy(&before, previous + row + x * sizeof(uint16_t), 4);
+            std::memcpy(&after, next + row + x * sizeof(uint16_t), 4);
+            uint32_t difference = before ^ after;
+            if (!difference) continue;
+            if (exclude_row) {
+                if (x >= excluded->x1 && x <= excluded->x2) difference &= 0xffff0000u;
+                if (x + 1 >= excluded->x1 && x + 1 <= excluded->x2) difference &= 0x0000ffffu;
+                if (!difference) continue;
+            }
+            left = std::min(left, x + ((difference & 0xffffu) ? 0 : 1));
+            right = std::max(right, x + ((difference >> 16) ? 1 : 0));
+            top = std::min(top, y);
+            bottom = y;
+        }
+    }
+    if (right < 0) {
+        // Retain normal frame completion/TE ownership without retransmitting
+        // a visually identical full frame. This is one minimal aligned window.
+        *area = {0, 0, 3, 1};
+        return FrameDamage::Unchanged;
+    }
+    *area = {static_cast<decltype(area->x1)>(left), static_cast<decltype(area->y1)>(top),
+             static_cast<decltype(area->x2)>(right), static_cast<decltype(area->y2)>(bottom)};
+    RoundDisplayArea(area);
+    return FrameDamage::Changed;
+}
+
 inline void CaptureScanoutRgb565(const uint8_t* snapshot, uint16_t* pixels) {
     const auto* source = reinterpret_cast<const uint16_t*>(snapshot);
     for (size_t i = 0; i < kWidth * kHeight; ++i)
@@ -178,6 +221,23 @@ TransferPlan<Area> PlanTransfer(Area dirty, uint32_t period_us, uint32_t blank_u
     dirty.x2 = kWidth - 1;
     return {dirty, ScanFollowDelayUs(dirty.y1, active), static_cast<uint32_t>(
             period + static_cast<uint64_t>(dirty.y2) * active / kHeight - guard), 0, false};
+}
+
+enum class DirectTransferResult { Ineligible, Completed, Failed };
+
+// The LCD IO driver splits a contiguous span at the SPI transaction limit and
+// signals completion only for its final chunk. No internal bounce copy is needed.
+// A failed wait/submit must not fall back: DMA can still own the source span.
+template <typename Area, typename Wait, typename Submit>
+DirectTransferResult TransferContiguousRows(const Area& area, const uint8_t* pixels,
+                                            uint32_t stride, Wait wait, Submit submit) {
+    if (!ValidDisplayArea(area) || !pixels || area.x1 != 0 || area.x2 != kWidth - 1 ||
+        stride != kWidth * sizeof(uint16_t) ||
+        reinterpret_cast<uintptr_t>(pixels) % 64 != 0)
+        return DirectTransferResult::Ineligible;
+    if (!wait() || !submit(pixels, size_t(area.y2 - area.y1 + 1) * stride))
+        return DirectTransferResult::Failed;
+    return wait() ? DirectTransferResult::Completed : DirectTransferResult::Failed;
 }
 
 // At most one band is in flight. Copy into the other buffer while DMA reads

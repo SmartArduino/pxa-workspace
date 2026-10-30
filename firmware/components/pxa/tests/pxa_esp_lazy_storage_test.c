@@ -14,6 +14,17 @@ static const char *test_state_root;
 #define CONFIG_PXA_STATE_ROOT test_state_root
 #include "../src/services/pxa_esp_services.c"
 static const char *session_root;
+static int storage_worker_active;
+pxa_status_t pxa_esp_storage_worker_begin(void (*notify)(void *), void *context) {
+    (void)notify; (void)context; assert(!storage_worker_active);
+    storage_worker_active = 1; return PXA_STATUS_OK;
+}
+pxa_status_t pxa_esp_storage_worker_submit(void *context, pxa_storage_work_fn work, void *job) {
+    (void)context; (void)work; (void)job;
+    assert(!"fixture calls the backend directly, not the async service");
+    return PXA_STATUS_WOULD_BLOCK;
+}
+void pxa_esp_storage_worker_end(void) { assert(storage_worker_active); storage_worker_active = 0; }
 static pxa_status_t session_status=PXA_STATUS_OK;
 static unsigned session_calls;
 pxa_status_t pxa_esp_app_storage_permissions(pxa_esp_app_storage_t *session,pxa_permission_store_t *store) {
@@ -102,6 +113,8 @@ void pxa_esp_audio_backend(pxa_audio_backend_t *output) {
 }
 
 void pxa_esp_audio_reset_sessions(void) {}
+const pxa_haptics_backend_t *pxa_esp_haptics_backend(void) { return NULL; }
+void pxa_esp_sensor_configure(pxa_sensor_config_t *config) { (void)config; }
 
 void pxa_esp_surface_backend(pxa_surface_backend_t *output) {
     memset(output, 0, sizeof(*output));
@@ -256,20 +269,22 @@ int main(void) {
     host.work_epoch = 1;
     assert(initialize_storage(&services, &host, &result) == PXA_STATUS_OK);
     assert(access(path, F_OK) == 0);
-    assert(services.posix_storage_workspace == NULL);
+    assert(services.posix_storage_workspace != NULL && services.posix_storage == NULL);
     assert(initialize_scheduler(&services, &host, &result) == PXA_STATUS_OK);
-    assert(services.posix_storage_workspace == NULL && services.scheduler_store == NULL);
+    assert(services.posix_storage == NULL && services.scheduler_store == NULL);
     assert(!pxa_scheduler_has_pending(services.scheduler));
     count = allocation_count;
     fail_workspace = 1;
-    assert(lazy_storage_set(&services, key, value) == PXA_STATUS_RESOURCE_LIMIT);
-    assert(allocation_count == count && services.posix_storage == NULL);
+    /* Backend initialization on the worker never allocates through the
+     * runtime owner's activation arena, even on first use. */
+    assert(lazy_storage_set(&services, key, value) == PXA_STATUS_OK);
+    assert(allocation_count == count && services.posix_storage != NULL);
     fail_workspace = 0;
     assert(lazy_storage_set(&services, key, value) == PXA_STATUS_OK);
-    assert(allocation_count == count + 1 && services.posix_storage != NULL);
+    assert(allocation_count == count && services.posix_storage != NULL);
     assert(lazy_storage_get(&services, key, bytes, sizeof(bytes), &size) == PXA_STATUS_OK);
     assert(size == 5 && memcmp(bytes, "saved", 5) == 0);
-    assert(allocation_count == count + 1);
+    assert(allocation_count == count);
     pxa_esp_services_destroy(&services); release_workspaces();
     assert(initialize_storage(&services, &host, &result) == PXA_STATUS_OK);
     assert(services.posix_storage == NULL);
