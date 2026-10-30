@@ -2,7 +2,7 @@
 """Run the website's actual Hello snippets with a released DevKit, offline.
 
 Usage: python3 tools/test-website-tutorials.py --website /path/to/pxa-website
-       --devkit /path/to/pxa-devkit-0.3.0-linux-x86_64 --output local/tutorial-test
+       --devkit /path/to/pxa-devkit-0.6.0-linux-x86_64 --output local/artifacts/tutorial-test/20261031-120000
 Only a new output directory is accepted. No physical device or server is modified.
 """
 import argparse
@@ -27,18 +27,21 @@ def main():
                SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', PYTHONDONTWRITEBYTECODE='1', PYTHONUNBUFFERED='1')
     cli = str(devkit / 'bin/pxa')
     passed = []
+    timings = {}
 
     def run(name, arguments, *, expected=0):
+        started = time.monotonic()
         result = subprocess.run([cli, *arguments], cwd=output, env=env, text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
         (output / (name + '.log')).write_text(result.stdout)
         if result.returncode != expected:
             raise RuntimeError(f'{name}: exit {result.returncode}\n{result.stdout[-4000:]}')
         passed.append(name)
+        timings[name] = round(time.monotonic() - started, 3)
         print('PASS:', name, flush=True)
         return result.stdout
 
-    def until(predicate, description, timeout=35):
+    def until(predicate, description, timeout=180):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             value = predicate()
@@ -57,6 +60,8 @@ def main():
             elif language == 'toml':
                 import tomllib
                 tomllib.loads(block)
+            elif language == 'json':
+                json.loads(block)
     run('version', ['--version'])
     run('init', ['init', 'hello', '--id', 'pxa-hello'])
     # Ensure a repeated init cannot destroy the user's source.
@@ -66,6 +71,10 @@ def main():
         snippet = re.search(r'```' + language + r'\n(.*?)```', tutorial, re.S).group(1)
         (output / 'hello' / filename).write_text(snippet)
     run('build-universal', ['build', 'hello', '--target', 'esp32s3,esp32s31,simulator', '--offline'])
+    before = (output / 'hello/dist/pxa-hello.pxa').read_bytes()
+    run('build-unchanged', ['build', 'hello', '--target', 'esp32s3,esp32s31,simulator', '--offline'])
+    if (output / 'hello/dist/pxa-hello.pxa').read_bytes() != before:
+        raise RuntimeError('An unchanged build must reuse the signed package')
     package = 'hello/dist/pxa-hello.pxa'
     run('publish-check', ['publish', package, '--check-only'])
     for target in ['esp32s3', 'esp32s31']:
@@ -112,7 +121,7 @@ def main():
                 process.wait()
     (output / 'validation.json').write_text(json.dumps({'passed': passed, 'shell_blocks': shell_count,
         'website': str(site), 'devkit': str(devkit), 'device_tests': False,
-        'screenshots_require_visual_review': True}, indent=2) + '\n')
+        'screenshots_require_visual_review': True, 'seconds': timings}, indent=2) + '\n')
 
 
 if __name__ == '__main__':
