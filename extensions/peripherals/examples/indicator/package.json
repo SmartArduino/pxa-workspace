@@ -1,8 +1,8 @@
 {
   "format": "pxa-package-source-0.1",
   "id": "pxa-ext-indicator-example",
-  "version": "0.1.3",
-  "release_sequence": 4,
+  "version": "0.1.4",
+  "release_sequence": 5,
   "name": "Board Indicator Example",
   "description": "Optional workspace peripherals extension: negotiated identity, scoped permission and RGB resource cleanup.",
   "min_sdk": [
@@ -40,7 +40,9 @@
       "cmake_target": "pxa_main",
       "services": [
         "ui",
-        "permission"
+        "permission",
+        "window",
+        "log"
       ],
       "wasi": {
         "version": "preview1",

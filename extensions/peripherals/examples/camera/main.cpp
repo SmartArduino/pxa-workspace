@@ -110,6 +110,9 @@ struct CameraApp {
     pxa::Result<void> on_start(pxa::Context& ctx, std::span<const std::byte> config) {
         context = &ctx; return environment.initialize(config);
     }
+    void on_foreground(pxa::Context& ctx) {
+        (void)ctx.window().fullscreen(pxa::WindowBarMode::hidden, pxa::WindowBarMode::hidden);
+    }
     pxa::Result<bool> on_event(pxa::Context&, const pxa::Event& event) {
         auto result = environment.update(event); pump(); return result;
     }
@@ -121,7 +124,7 @@ struct CameraApp {
             Button("Read inference").on_click([this]{capture(PXA_VISION_JSON);}),
             Text(status).font(Font::caption).fill(),
             Text("Local only; no model changes.").font(Font::caption).fill()
-        ).gap(8_dp).padding(8_dp).fill()).fill());
+        ).gap(4_dp).padding(8_dp).fill()).fill());
     }
 };
 PXA_APPLICATION(CameraApp)

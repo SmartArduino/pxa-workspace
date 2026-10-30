@@ -48,7 +48,10 @@ struct IndicatorApp {
         context = &ctx; return environment.initialize(config);
     }
     pxa::Result<bool> on_event(pxa::Context&, const pxa::Event& event) { return environment.update(event); }
-    void on_foreground(pxa::Context& context) { begin(context); }
+    void on_foreground(pxa::Context& context) {
+        (void)context.window().fullscreen(pxa::WindowBarMode::hidden, pxa::WindowBarMode::hidden);
+        begin(context);
+    }
     void on_background(pxa::Context&) { port.reset(); permission.reset(); starting = false; status.set("Paused; indicator released"); }
     void on_stop(pxa::StopReason) { port.reset(); permission.reset(); }
     void color(uint8_t r, uint8_t g, uint8_t b) {
@@ -61,12 +64,12 @@ struct IndicatorApp {
     auto view() {
         return SafeArea(environment.display(), Scroll(Column(Text("Board indicator").font(Font::caption),
             Button("Connect").on_click([this]{request_enabled = true; begin(*context);}),
-            When(rgb, [this]{ return Row(Button("Red").on_click([this]{color(24,0,0);}),
-                Button("Green").on_click([this]{color(0,24,0);}), Button("Blue").on_click([this]{color(0,0,24);})).gap(8_dp); },
+            When(rgb, [this]{ return Row(Button("R").on_click([this]{color(24,0,0);}),
+                Button("G").on_click([this]{color(0,24,0);}), Button("B").on_click([this]{color(0,0,24);})).gap(8_dp); },
                 []{return Text("On / off indicator");}),
             Row(Button("On").on_click([this]{color(24,24,24);}), Button("Off").on_click([this]{color(0,0,0);})).gap(8_dp),
             Text(status).font(Font::caption).fill()
-        ).gap(8_dp).padding(8_dp).fill()).fill());
+        ).gap(4_dp).padding(8_dp).fill()).fill());
     }
 };
 PXA_APPLICATION(IndicatorApp)
