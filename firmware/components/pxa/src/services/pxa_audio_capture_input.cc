@@ -16,7 +16,9 @@
 namespace {
 constexpr size_t kFrameSamples = 320;
 constexpr unsigned kPacketCount = 4;
-constexpr size_t kStackBytes = 16384;
+// The native Opus encoder uses a deep stack even at complexity zero. Keep it
+// on budgeted PSRAM rather than consuming the Host's internal SRAM stack.
+constexpr size_t kStackBytes = 65536;
 struct Packet {
     uint32_t generation;
     uint16_t size;
@@ -145,7 +147,11 @@ void PxaAudioCaptureInput::Task(void* context) {
         if (requested && !shutdown && !fault) state->busy.store(true, std::memory_order_release);
         portEXIT_CRITICAL(&state->lock);
         if (!requested || shutdown || fault || requested != active) {
-            if (encoder) { esp_opus_enc_close(encoder); encoder = nullptr; }
+            if (encoder) {
+                esp_opus_enc_close(encoder); encoder = nullptr;
+                ESP_LOGI("PxaCapture", "Encoder stopped; worker minimum free stack=%u bytes",
+                         static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+            }
             if (input_open) { (void)state->control(state->context, false); input_open = false; }
             active = 0; filled = 0;
             if (!requested || shutdown || fault) {
