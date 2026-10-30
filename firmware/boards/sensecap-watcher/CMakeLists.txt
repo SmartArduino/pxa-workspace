@@ -29,6 +29,7 @@ idf_component_register(
         espressif__cjson
         sdmmc
         esp_event
+        esp_netif
         esp_lcd
         esp_timer
         espressif__button
