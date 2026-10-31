@@ -2,7 +2,7 @@
 """Run the website's actual Hello snippets with a released DevKit, offline.
 
 Usage: python3 tools/test-website-tutorials.py --website /path/to/pxa-website
-       --devkit /path/to/pxa-devkit-0.6.0-linux-x86_64 --output local/artifacts/tutorial-test/20261031-120000
+       --devkit /path/to/pxa-devkit-0.7.0-linux-x86_64 --output local/artifacts/tutorial-test/20261031-120000
 Only a new output directory is accepted. No physical device or server is modified.
 """
 import argparse
@@ -95,9 +95,14 @@ def main():
                           'debug selector')
             selector = match.group(1)
             def capture(name):
-                result = subprocess.run([cli, 'device', 'screenshot', str(output / (name + '.png')),
-                                         '--simulator', selector], cwd=output, env=env,
-                                        capture_output=True, timeout=8)
+                try:
+                    result = subprocess.run([cli, 'device', 'screenshot', str(output / (name + '.png')),
+                                             '--simulator', selector], cwd=output, env=env,
+                                            capture_output=True, timeout=30)
+                except subprocess.TimeoutExpired:
+                    # The bridge can be announced before its first frame is
+                    # ready, especially while another target is compiling.
+                    return False
                 return result.returncode == 0
             until(lambda: capture('debug-before'), 'first displayed frame')
             run('debug-info', ['device', 'info', '--simulator', selector])
