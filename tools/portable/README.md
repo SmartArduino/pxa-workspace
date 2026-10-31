@@ -12,7 +12,7 @@
 
 ```sh
 docker load --input pxa-devkit-container-0.7.0-linux-amd64.tar.gz
-docker tag localhost/pxa-devkit:0.7.0-linux-amd64 pxa-devkit:0.7.0-linux-amd64
+docker tag docker.io/library/pxa-devkit:0.7.0-linux-amd64 pxa-devkit:0.7.0-linux-amd64
 python pxa-host-tools-0.7.0/pxa_container.py --workspace . -- init hello
 python pxa-host-tools-0.7.0/pxa_container.py --workspace . -- \
   build hello --offline --target esp32s3 --output hello-output
@@ -28,7 +28,7 @@ python pxa-host-tools-0.7.0/verify_manifest.py host-tools-0.7.0.json --public-ke
 
 它先通过 OpenSSL 验证清单签名，再流式检查两个归档的大小和 SHA-256，失败时返回非零。需安装本机 OpenSSL，路径不在 PATH 时加 `--openssl /path/to/openssl`；Windows 也可在 WSL 中执行验证。包内公钥副本方便查阅，不能作为首次下载的独立信任来源。验证成功后再载入镜像与运行工具。
 
-归档由 Podman 导出，载入后的镜像名称带 `localhost/` 前缀。上面的 `docker tag` 为包装器添加默认名称，Docker 和 Podman 都应执行；该操作只增加名称，不复制镜像层。使用 Podman 时，将两个 `docker` 命令换为 `podman`，并给包装器添加 `--engine podman`。
+归档由 Podman 导出，归档中使用完整镜像名 `docker.io/library/pxa-devkit:0.7.0-linux-amd64`。上面的 `docker tag` 为包装器添加默认名称，Docker 和 Podman 都应执行；该操作只增加名称，不复制镜像层。使用 Podman 时，将两个 `docker` 命令换为 `podman`，并给包装器添加 `--engine podman`。
 
 Windows PowerShell 可将长命令写在一行，或用反引号续行；上面的反斜杠续行用于 POSIX shell。`--workspace` 是包含应用及共享 `common/` 的父目录，命令内路径相对于该目录。带空格路径可用引号。容器使用 SDL dummy，图像写到宿主机，可直接打开 `hello.png`；它不会自动弹出桌面窗口。
 

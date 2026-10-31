@@ -52,6 +52,17 @@ class PackageTransferTest(unittest.TestCase):
         with self.assertRaisesRegex(pxadb.PxaDbError, "USB-to-UART"):
             pxadb.fetch_package_stream(client, pathlib.Path("unused"), "unused", 2, "usb")
 
+    def test_disabled_legacy_rejected_before_any_device_mutation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = fixtures.PackageStorageTest.container(pathlib.Path(folder))
+            client = mock.Mock(device_info="package_stream=2;package_legacy=0")
+            with self.assertRaisesRegex(pxadb.PxaDbError, "legacy Container 0.1 support is disabled"):
+                pxadb.check_container_features(client, source)
+            client.request.assert_not_called()
+            for capabilities in ("package_stream=2;package_legacy=1", ""):
+                client.device_info = capabilities
+                pxadb.check_container_features(client, source)
+
     def test_new_codec_rejected_before_any_device_mutation(self):
         with tempfile.TemporaryDirectory() as folder:
             source = fixtures.PackageStorageTest.container(pathlib.Path(folder))

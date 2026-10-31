@@ -11,6 +11,15 @@ menu "PXA Development Apps"
             Enable the PXA Draft 0.1 Core and signed Package platform.
 
     if PXA_ENABLED
+        config PXA_ENABLE_LEGACY_CONTAINER
+            bool "Accept legacy Container 0.1 packages"
+            default n
+            help
+                Include the old STORE/LZ4 container installer. Disabled builds
+                accept indexed Container 0.2 only. Previously installed apps
+                and private data remain usable. This is an installation-format
+                switch, not a permission or signature-verification bypass.
+
         config PXA_STORAGE_PARTITION_LABEL
             string "PXA storage partition label"
             default "assets"

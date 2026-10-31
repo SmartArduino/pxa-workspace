@@ -1,3 +1,4 @@
+#include "pxa/container.h"
 #include "pxadb/pxadb_service.h"
 #include "pxadb_fs_policy.h"
 #include "pxadb_bulk.h"
@@ -1605,9 +1606,10 @@ void SendHello(unsigned long sequence) {
         "";
 #endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;max_fast=3840;package_stream=2;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
+             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;max_fast=3840;package_stream=2;package_legacy=%u;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
              kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability, kGrayCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
+             static_cast<unsigned>(PXA_ENABLE_LEGACY_CONTAINER),
              CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version,
              transport_info);
     SendFrame(sequence, "OK", payload);

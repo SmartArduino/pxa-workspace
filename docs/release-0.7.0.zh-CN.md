@@ -27,8 +27,11 @@
   传输结束、失败和超时均释放临时状态，客户端按设备能力选择支持的协议。
 - 同一局域网内可显式选择临时 HTTP 下载，包签名及传输摘要仍须校验；临时服务
   和 Wi-Fi 省电策略在结束或失败时恢复。此方式不是 USB 高速模式。
-- 新固件继续接受 Container 0.1 的 STORE/LZ4 包。旧固件不支持 Container 0.2，
-  商城按 Host 能力筛选应用包及绑定资源，避免下发不支持的容器。
+- 旧 Container 0.1 的安装兼容由 `PXA_ENABLE_LEGACY_CONTAINER` 控制，默认关闭。
+  ESP-IDF 可开启 `CONFIG_PXA_ENABLE_LEGACY_CONTAINER=y`；原生 Host 构建使用
+  `-DPXA_ENABLE_LEGACY_CONTAINER=ON`。该开关不影响已经安装的应用和存档。
+  默认发行只接受 Container 0.2，PXADB 在上传前拒绝旧包，商城 0.7 目录仅下发新版容器。
+  开启兼容的自定义固件可通过 PXADB 安装旧包；旧固件继续使用旧版商城目录。
 - 新 SDK 默认生成新版包。确需面向旧固件时，打包脚本可显式设置
   `PXA_CONTAINER_STREAM=0`，或底层容器工具使用 `--legacy`；默认使用旧版 LZ4。
   已发布的历史应用和固定版本工具链保持原内容，不追溯重打包。

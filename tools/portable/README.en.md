@@ -4,10 +4,10 @@
 
 The native DevKit 0.7.0 binary release supports Linux x86_64 with glibc 2.39+. This companion uses the same DevKit inside a Linux amd64 container for builds/signing/headless simulation, and runs the Python PXADB client on the host for USB serial access. USB passthrough is unnecessary.
 
-Load the verified container archive with `docker load --input pxa-devkit-container-0.7.0-linux-amd64.tar.gz`. The exported image is named `localhost/pxa-devkit:0.7.0-linux-amd64`; add the wrapper's default name before running it. This adds a name without copying image layers. With Python 3.11+:
+Load the verified container archive with `docker load --input pxa-devkit-container-0.7.0-linux-amd64.tar.gz`. The Docker archive names the image `docker.io/library/pxa-devkit:0.7.0-linux-amd64`; add the wrapper's default name before running it. This adds a name without copying image layers. With Python 3.11+:
 
 ```sh
-docker tag localhost/pxa-devkit:0.7.0-linux-amd64 pxa-devkit:0.7.0-linux-amd64
+docker tag docker.io/library/pxa-devkit:0.7.0-linux-amd64 pxa-devkit:0.7.0-linux-amd64
 python pxa-host-tools-0.7.0/pxa_container.py --workspace . -- init hello
 python pxa-host-tools-0.7.0/pxa_container.py --workspace . -- build hello --offline --target esp32s3 --output hello-output
 python pxa-host-tools-0.7.0/pxa_container.py --workspace . -- run hello --offline --duration-ms 1500 --screenshot hello.png

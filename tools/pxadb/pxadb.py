@@ -1572,12 +1572,19 @@ def begin_file_upload(client: PxaDbClient, command: str, timeout: float) -> list
 
 
 def check_container_features(client: PxaDbClient, source: pathlib.Path) -> None:
-    if not stream_container_prefix(source):
+    if not source.is_file():
         return
     with source.open("rb") as file:
         header = file.read(64)
-    codec, bits = struct.unpack_from("<HH", header, 12)
+    if len(header) != 64 or header[:4] != b"PXAC":
+        return
     properties = info_properties(client.device_info)
+    minor = struct.unpack_from("<H", header, 6)[0]
+    if minor == 1 and properties.get("package_legacy", "1") == "0":
+        raise PxaDbError("legacy Container 0.1 support is disabled on this firmware; rebuild the app with the current SDK or enable CONFIG_PXA_ENABLE_LEGACY_CONTAINER")
+    if minor != 2:
+        return
+    codec, bits = struct.unpack_from("<HH", header, 12)
     if properties.get("package_stream") != "2":
         raise PxaDbError("Container 0.2 requires newer firmware; update firmware or rebuild with --legacy (PXA_CONTAINER_STREAM=0)")
     codecs = properties.get("package_codecs", "0,1").split(",")

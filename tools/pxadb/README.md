@@ -58,7 +58,13 @@ so this adds no decompression to app launch or resource reads. New application
 and resource builds default to Container 0.2 with independent DEFLATE blocks
 of 4096 decoded bytes. Older firmware needs an explicit compatibility build:
 `PXA_CONTAINER_STREAM=0` with `package_app.sh`, or `--legacy` with either
-Python container/resource builder. That profile defaults to Container 0.1/LZ4.
+Python container/resource builder. That profile defaults to Container 0.1/LZ4. Current firmware disables that legacy
+installer by default and advertises `package_legacy=0`; PXADB rejects legacy files
+before uploading. To explicitly retain it in a custom firmware, enable
+`CONFIG_PXA_ENABLE_LEGACY_CONTAINER=y` (native Host CMake:
+`-DPXA_ENABLE_LEGACY_CONTAINER=ON`). The C macro defaults to zero. Previously
+installed directories and private data remain usable; the standard 0.7 catalog
+lists only Container 0.2 releases even on a custom compatibility build.
 
 `PXA_CONTAINER_CHUNK_SIZE=16384` or `32768` can improve compression at the cost
 of more RAM. The default 4096-byte profile reuses the installer's existing

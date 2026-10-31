@@ -108,10 +108,12 @@ build_and_run install_space \
   -I"$pxa_system_dir/libpxa/include" \
   -I"$pxa_system_dir/libpxa/adapters/include" \
   "$tests_dir/pxa_install_space_test.c"
-build_and_run store_download -DESP_PLATFORM=1 \
+for legacy_container in 0 1; do
+build_and_run "store_download_$legacy_container" -DESP_PLATFORM=1 -DPXA_ENABLE_LEGACY_CONTAINER="$legacy_container" \
   "-DCONFIG_PXA_MOUNT_POINT=\"$build_dir/store-download\"" \
   "${adapter_includes[@]}" "$tests_dir/pxa_esp_store_download_test.c" \
   "$pxa_system_dir/libpxa/src/package/container.c" "$pxa_system_dir/libpxa/src/core/wire.c" -lmbedcrypto
+done
 build_and_run store_cache -DESP_PLATFORM=1 \
   "${adapter_includes[@]}" "$tests_dir/pxa_esp_store_cache_test.c" \
   "$component_dir/src/package/pxa_esp_store_cache.c" \

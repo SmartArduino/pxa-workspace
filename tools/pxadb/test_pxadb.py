@@ -1251,7 +1251,7 @@ class PackageStorageTest(unittest.TestCase):
             body += record(17, record(1, path) + record(2, struct.pack("<Q", size)))
         manifest = b"PXAM" + struct.pack("<HHI", 0, 7, len(body)) + body
         header = bytearray(64)
-        struct.pack_into("<4sH", header, 0, b"PXAC", 0)
+        struct.pack_into("<4sHH", header, 0, b"PXAC", 0, 1)
         struct.pack_into("<H", header, 8, 64)
         struct.pack_into("<I", header, 16, len(manifest))
         source = root / "test.pxa"
@@ -1293,7 +1293,7 @@ class PackageStorageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = self.container(pathlib.Path(directory))
             upload, install = pxadb.package_storage_required(source)
-            peer = mock.Mock()
+            peer = mock.Mock(device_info="")
             peer.request.return_value = [pxadb.Frame(1, "OK", f"storage_free={upload + install - 1}")]
             fs = mock.Mock(client=peer)
             with self.assertRaisesRegex(pxadb.PxaDbError, "Upload has not started"):
@@ -1307,7 +1307,7 @@ class PackageStorageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = self.container(pathlib.Path(directory))
             required = sum(pxadb.package_storage_required(source))
-            peer = mock.Mock()
+            peer = mock.Mock(device_info="")
             fs = pxadb.NormalFsClient(peer)
             for info in (f"storage_free={required}", "target=esp32s3"):
                 peer.request.return_value = [pxadb.Frame(1, "OK", info)]
@@ -1331,7 +1331,7 @@ class PackageStorageTest(unittest.TestCase):
             (package / "signature.pxs").write_bytes(bytes(108))
             (package / "asset").write_bytes(bytes(100000))
             upload, install = pxadb.package_storage_required(package)
-            peer = mock.Mock()
+            peer = mock.Mock(device_info="")
             fs = pxadb.NormalFsClient(peer)
             peer.request.return_value = [pxadb.Frame(1, "OK",
                 f"storage_free={upload + 128 * 1024};package_directory_adopt=1")]

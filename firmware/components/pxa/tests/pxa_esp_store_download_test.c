@@ -118,7 +118,7 @@ void pxa_host_container_stream_close(pxa_host_container_stream_t *s) {
 }
 pxa_status_t pxa_esp_package_store_prepare_install(const uint8_t *prefix,size_t bytes,uint64_t total,uint64_t transfer,uint8_t download_only,
     const uint8_t root[32],const char *app,pxa_esp_package_preview_t *preview,pxa_esp_install_approval_t *placement) {
-    assert(bytes==metadata_size && total==body_size && (transfer==0 || transfer==total || (pxa_read_u16(prefix+6)==2 && transfer==metadata_size+96)));
+    assert(bytes==metadata_size && total==body_size && (transfer==0 || transfer==total || (pxa_read_u16(prefix+6)==2 && transfer==metadata_size+pxa_read_u32(prefix+56))));
     assert(!memcmp(prefix,body,bytes) && !strcmp(app,"pxa-store-test"));
     if(bad_metadata || (root && root[0]))return PXA_STATUS_DENIED;
     if(low_space)return PXA_STATUS_QUOTA_EXCEEDED;
@@ -131,7 +131,7 @@ pxa_status_t pxa_esp_package_store_prepare_resources(pxa_esp_install_approval_t 
     const uint8_t *prefix,size_t bytes,uint64_t total,uint64_t transfer) {
     assert(with_resources && placement->requires_resources && !http_live && !placement->plan.reserved);
     if(bad_resources)return PXA_STATUS_DENIED;
-    if(prefix)assert(bytes==metadata_size && total==resource_size && (transfer==resource_size || (pxa_read_u16(prefix+6)==2 && transfer==metadata_size+96)) && !memcmp(prefix,resource_body,bytes));
+    if(prefix)assert(bytes==metadata_size && total==resource_size && (transfer==resource_size || (pxa_read_u16(prefix+6)==2 && transfer==metadata_size+pxa_read_u32(prefix+56))) && !memcmp(prefix,resource_body,bytes));
     else {assert(!bytes && !total && !transfer);if(!reuse_resources)return PXA_STATUS_UNAVAILABLE;}
     placement->resource_container_bytes=total;placement->media_count=1;placement->media_selected=0;
     placement->media_choices[0].volume.mount_epoch=3;placement->media_choices[0].reuse=reuse_resources;
@@ -175,7 +175,13 @@ int main(void) {
     memcpy(body,"PXAC",4);pxa_write_u16(body+6,1);pxa_write_u16(body+8,64);pxa_write_u16(body+14,12);
     pxa_write_u32(body+16,12);pxa_write_u32(body+20,108);pxa_write_u32(body+24,108);
     pxa_write_u64(body+32,body_size-metadata_size);pxa_write_u64(body+48,body_size);pxa_write_u32(body+60,pxa_container_crc32(body,60));
-    pxa_esp_store_job_t value=job(0);low_space=true;pxa_esp_store_worker(&value);
+    pxa_esp_store_job_t value;
+#if !PXA_ENABLE_LEGACY_CONTAINER
+    value=job(0);pxa_esp_store_worker(&value);
+    assert(value.status!=PXA_STATUS_OK && !transfers && !confirmations && !exists(&value));
+    pxa_write_u16(body+6,2);pxa_write_u32(body+60,pxa_container_crc32(body,60));
+#endif
+    value=job(0);low_space=true;pxa_esp_store_worker(&value);
     assert(value.status==PXA_STATUS_QUOTA_EXCEEDED && !transfers && !confirmations && !exists(&value));low_space=false;
     value=job(0);short_metadata=true;pxa_esp_store_worker(&value);assert(value.status!=PXA_STATUS_OK && !transfers);short_metadata=false;
     value=job(0);bad_metadata=true;pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_DENIED && !transfers);bad_metadata=false;
@@ -214,6 +220,8 @@ int main(void) {
     value=job(1);before=transfers;pxa_esp_store_worker(&value);
     assert(value.status==PXA_STATUS_UNSUPPORTED && !exists(&value) && transfers==before);
     with_resources=false;
+    assert(stream_begins==stream_closes);
+    stream_begins=stream_closes=stream_finishes=0;
     for(unsigned i=0;i<2;++i) {
         uint8_t *b=i?resource_body:body;size_t n=i?resource_size:body_size;
         pxa_write_u16(b+6,2);pxa_write_u32(b+56,96);pxa_write_u64(b+32,n-metadata_size-96);
