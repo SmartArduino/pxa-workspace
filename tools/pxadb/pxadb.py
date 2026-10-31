@@ -470,12 +470,25 @@ class PxaDbClient:
             raise PxaDbError("binary upload owns the connection; finish or cancel it before sending commands")
         request_timeout = self.timeout if timeout is None else timeout
         deadline = time.monotonic() + request_timeout
-        sequence = self._next_sequence()
-        self._write_command(sequence, command)
-        if getattr(self, "binary_transport", None) is not None:
-            return self._collect_binary_frames(sequence, terminal_kinds, command,
-                                               deadline)
-        return self._collect_serial_frames(sequence, terminal_kinds, command, deadline)
+        while True:
+            sequence = self._next_sequence()
+            self._write_command(sequence, command)
+            try:
+                if getattr(self, "binary_transport", None) is not None:
+                    return self._collect_binary_frames(sequence, terminal_kinds, command,
+                                                       deadline)
+                return self._collect_serial_frames(sequence, terminal_kinds, command, deadline)
+            except PxaDbRejectedError as error:
+                # The firmware rejects this command before dispatch while a
+                # previous connection's transfer namespace is being cleaned.
+                # A fresh sequence is safe here; never replay a timed-out
+                # command or extend the caller's original deadline.
+                remaining = deadline - time.monotonic()
+                if str(error) != "package_cleanup_pending" or remaining <= 0:
+                    raise
+                time.sleep(min(.1, remaining))
+                if time.monotonic() >= deadline:
+                    raise
 
     def _collect_serial_frames(self, sequence: int, terminal_kinds: set[str],
                                command: str, deadline: float) -> list[Frame]:
@@ -1555,14 +1568,7 @@ def stream_container_prefix(source: pathlib.Path) -> int:
 
 def begin_file_upload(client: PxaDbClient, command: str, timeout: float) -> list[Frame]:
     """Wait for deferred cleanup to release its namespace before creating one."""
-    deadline = time.monotonic() + max(timeout, 30)
-    while True:
-        try:
-            return client.request_until(command, {"READY", "OK"}, timeout=timeout)
-        except PxaDbRejectedError as error:
-            if str(error) != "package_cleanup_pending" or time.monotonic() >= deadline:
-                raise
-            time.sleep(.1)
+    return client.request_until(command, {"READY", "OK"}, timeout=max(timeout, 30))
 
 
 def check_container_features(client: PxaDbClient, source: pathlib.Path) -> None:

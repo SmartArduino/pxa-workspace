@@ -14,15 +14,36 @@ import test_pxadb as fixtures
 
 class PackageTransferTest(unittest.TestCase):
     def test_pending_cleanup_retries_without_masking_storage_errors(self):
-        client = mock.Mock()
+        client = object.__new__(pxadb.PxaDbClient)
+        client.timeout, client.sequence = 30, 0
+        client._write_command = mock.Mock()
+        client._collect_serial_frames = mock.Mock()
         ready = [pxadb.Frame(1, "READY", "5")]
-        client.request_until.side_effect = [pxadb.PxaDbRejectedError("package_cleanup_pending"), ready]
-        with mock.patch.object(pxadb.time, "sleep"):
+        client._collect_serial_frames.side_effect = [pxadb.PxaDbRejectedError("package_cleanup_pending"), ready]
+        with mock.patch.object(pxadb.time, "sleep"), mock.patch.object(pxadb.time, "monotonic", return_value=10):
             self.assertEqual(pxadb.begin_file_upload(client, "FSPUT path 5 hash", 30), ready)
-        self.assertEqual(client.request_until.call_count, 2)
-        client.request_until.side_effect = pxadb.PxaDbRejectedError("insufficient_storage")
+        self.assertEqual(client._write_command.call_args_list,
+                         [mock.call(1, "FSPUT path 5 hash"), mock.call(2, "FSPUT path 5 hash")])
+        self.assertEqual([call.args[-1] for call in client._collect_serial_frames.call_args_list], [40, 40])
+        client._collect_serial_frames.side_effect = pxadb.PxaDbRejectedError("insufficient_storage")
         with self.assertRaisesRegex(pxadb.PxaDbError, "insufficient_storage"):
             pxadb.begin_file_upload(client, "FSPUT path 5 hash", 30)
+
+    def test_package_run_cleanup_wait_is_bounded_and_timeouts_are_not_replayed(self):
+        client = object.__new__(pxadb.PxaDbClient)
+        client.timeout, client.sequence = 30, 0
+        client._write_command = mock.Mock()
+        client._collect_serial_frames = mock.Mock(side_effect=pxadb.PxaDbRejectedError("package_cleanup_pending"))
+        with mock.patch.object(pxadb.time, "monotonic", side_effect=[10, 11]), mock.patch.object(pxadb.time, "sleep") as sleep:
+            with self.assertRaisesRegex(pxadb.PxaDbRejectedError, "package_cleanup_pending"):
+                client.request("PACKAGE run hello", timeout=.5)
+            sleep.assert_not_called()
+        self.assertEqual(client._write_command.call_count, 1)
+        client._write_command.reset_mock()
+        client._collect_serial_frames.side_effect = pxadb.PxaDbError("timed out")
+        with self.assertRaisesRegex(pxadb.PxaDbError, "timed out"):
+            client.request("PACKAGE run hello")
+        self.assertEqual(client._write_command.call_count, 1)
     def test_native_usb_auto_stays_on_usb_and_bridge_cannot_force_usb(self):
         client = mock.Mock(device_info="transport=usb-jtag;fs_fast=1;stream_fetch=1")
         self.assertFalse(pxadb.fetch_package_stream(client, pathlib.Path("unused"), "unused", 2, "auto"))

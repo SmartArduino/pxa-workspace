@@ -1053,7 +1053,7 @@ static pxa_status_t host_store_install_control(
         if (message->payload.size != 0) return PXA_STATUS_INVALID_ARGUMENT;
         pxa_write_u16(capabilities, PXA_STORE_INSTALL_SERVICE_MAJOR);
         pxa_write_u16(capabilities + 2, PXA_STORE_INSTALL_SERVICE_MINOR);
-        pxa_write_u32(capabilities + 4, PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT);
+        pxa_write_u32(capabilities + 4, PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT | PXA_STORE_CAP_INDEXED_CONTAINER);
         pxa_write_u64(capabilities + 8, PXA_STORE_DOWNLOAD_MAX_BYTES);
         return store_complete_now(runtime, component, message, capabilities, sizeof(capabilities));
     }
@@ -2980,7 +2980,7 @@ static pxa_status_t reset_runtime(uint16_t max_components) {
     operations.service_id = PXA_STORE_INSTALL_SERVICE_ID;
     operations.major = PXA_STORE_INSTALL_SERVICE_MAJOR;
     operations.minor = PXA_STORE_INSTALL_SERVICE_MINOR;
-    operations.features = PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT;
+    operations.features = PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT | PXA_STORE_CAP_INDEXED_CONTAINER;
     operations.control = host_store_install_control;
     status = pxa_service_register(g_host.activation.runtime, &operations);
     if (status != PXA_STATUS_OK) goto failed;
@@ -3521,7 +3521,7 @@ static int start_verified(const char *identity) {
             }
 #endif
             if (service_capabilities[index].service == PXA_STORE_INSTALL_SERVICE_ID)
-                service_capabilities[index].features = PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT;
+                service_capabilities[index].features = PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT | PXA_STORE_CAP_INDEXED_CONTAINER;
             if (service_capabilities[index].service == PXA_CLOCK_SERVICE_ID)
                 service_capabilities[index].features = PXA_CLOCK_FEATURE_TIMING;
             if (service_capabilities[index].service == PXA_ASSETS_SERVICE_ID)
