@@ -5,10 +5,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* Host-only backing device for a private LittleFS image on another volume.
+/* Fixed-file backing device for a private LittleFS image on another volume.
  * The caller authenticates the app home and opens the regular image with
  * no-follow semantics. Its size is fixed, fully allocated and durable before
- * handing it off; this adapter never formats, resizes or reopens by pathname.
+ * handing it off; this variant never formats, resizes or reopens by pathname.
  * Exclusive FD ownership, including its native cursor, transfers on success.
  * Do not retain duplicates sharing that cursor. LittleFS borrows this device
  * (release callback is NULL); its caller always closes the owner after a
@@ -24,6 +24,21 @@ pxa_status_t pxa_esp_image_blockdev_close(esp_blockdev_handle_t *owner);
  * format the file. */
 pxa_status_t pxa_esp_image_blockdev_prepare(int new_fd,uint64_t mount_epoch,
     uint64_t capacity_bytes);
+/* Sparse images keep the same logical LittleFS geometry but allocate fixed-size
+ * 64-KiB extents only when programmed. Directory fd ownership transfers on a
+ * successful take. Missing extents read as erased bytes; malformed existing
+ * extents fail closed. Allocation callbacks account for other volume owners. */
+#define PXA_ESP_IMAGE_EXTENT_BYTES UINT64_C(65536)
+#define PXA_ESP_IMAGE_INITIAL_BYTES (PXA_ESP_IMAGE_EXTENT_BYTES+UINT64_C(4096))
+typedef struct {
+    void *context;
+    pxa_status_t (*reserve)(void *context,uint64_t bytes);
+    void (*release)(void *context);
+} pxa_esp_image_allocation_t;
+pxa_status_t pxa_esp_image_blockdev_prepare_sparse(int directory_fd,uint64_t mount_epoch,
+    uint64_t capacity_bytes);
+pxa_status_t pxa_esp_image_blockdev_take_sparse(int directory_fd,uint64_t mount_epoch,
+    const pxa_esp_image_allocation_t *allocation,esp_blockdev_handle_t *output);
 #ifdef __cplusplus
 }
 #endif

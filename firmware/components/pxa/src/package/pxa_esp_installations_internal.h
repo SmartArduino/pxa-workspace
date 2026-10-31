@@ -17,8 +17,8 @@ struct pxa_esp_installations {
     char resource_root[PXA_POSIX_APP_PATH_BYTES];
     char resource_package[PXA_POSIX_APP_PATH_BYTES];
     uint8_t resource_verified;
+    uint8_t resource_loaded;
 };
-uint64_t pxa_esp_installations_private_capacity(void);
 /* Receipt-owned archive transfer: private backend and local control records,
  * with no executable package or fabricated manifest. */
 pxa_status_t pxa_esp_installations_plan_archive(pxa_esp_installations_t *,uint8_t,pxa_install_plan_t *);

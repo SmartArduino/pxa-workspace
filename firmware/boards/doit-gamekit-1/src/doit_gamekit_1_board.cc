@@ -221,8 +221,18 @@ bool Gamekit::Initialize() {
     touch_ready_ = InitializeTouch();
     if (!touch_ready_) ESP_LOGW(kTag, "FT6336U unavailable; button navigation remains active");
 #endif
-    if (xTaskCreate([](void* context) {
+    // S31 ADC conversions and Wi-Fi PHY temperature reads nest the RTC and
+    // analog register spinlocks in opposite orders. Run both on the Wi-Fi
+    // core so their interrupt-masked critical sections cannot overlap across
+    // cores (otherwise even a background battery sample can deadlock Wi-Fi).
+#if CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_1
+    constexpr BaseType_t battery_core = 1;
+#else
+    constexpr BaseType_t battery_core = 0;
+#endif
+    if (xTaskCreatePinnedToCore([](void* context) {
             auto* self = static_cast<Gamekit*>(context);
+            ESP_LOGI(kTag, "Battery worker started, core=%d", xPortGetCoreID());
             if (!self->battery_.Initialize(CONFIG_PXA_DOIT1_BATTERY_R37_KOHM,
                                             CONFIG_PXA_DOIT1_BATTERY_R52_KOHM)) {
                 vTaskDelete(nullptr);
@@ -232,7 +242,7 @@ bool Gamekit::Initialize() {
                 self->battery_.Poll(uint32_t(esp_timer_get_time() / 1000));
                 vTaskDelay(pdMS_TO_TICKS(2000));
             }
-        }, "gamekit_battery", 3072, this, 1, nullptr) != pdPASS)
+        }, "gamekit_battery", 3072, this, 1, nullptr, battery_core) != pdPASS)
         ESP_LOGW(kTag, "Battery worker unavailable");
     // Own the LVGL clock and timer loop for the custom SPI display. The
     // monotonic clock also keeps input timestamps and idle policy in one domain.

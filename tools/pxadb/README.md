@@ -37,7 +37,58 @@ reconnection, the 30-second idle timeout, or reboot. Explicit `package stage`
 retains a fully verified source until installed or removed. See
 [receive lifetime and storage](../../docs/pxadb2.md#firmware-receive-lifetime-and-storage).
 
-Serial uploads select a chunk size from the detected USB device: 256 bytes for
+Streamable PXA 0.2 containers can be received and expanded directly on a selected
+installation volume, then committed by renaming the verified directory:
+
+```sh
+pxadb volumes --port /dev/ttyACM0
+pxadb package install app.pxa --volume sd --via auto --yes --port /dev/ttyACM0
+```
+
+`--volume` accepts `sd`, `internal`, or a listed mount epoch. With `--via auto`,
+native USB devices use their existing USB connection and negotiated binary mode;
+USB-to-UART devices attempt LAN, then fall back to the cable after cleanup.
+Use `--via wifi` to require LAN, `--via usb` to require native USB, or
+`--via serial` to use the selected cable. A USB-to-UART bridge cannot be changed
+into native USB by software. These choices do not change USB descriptors or
+expose the device filesystem as a USB disk. The host
+serves only this file to the device's IP on a random, short-lived URL. All
+signature and content checks remain mandatory. Runtime accesses ordinary files,
+so this adds no decompression to app launch or resource reads. New application
+and resource builds default to Container 0.2 with independent DEFLATE blocks
+of 4096 decoded bytes. Older firmware needs an explicit compatibility build:
+`PXA_CONTAINER_STREAM=0` with `package_app.sh`, or `--legacy` with either
+Python container/resource builder. That profile defaults to Container 0.1/LZ4.
+
+`PXA_CONTAINER_CHUNK_SIZE=16384` or `32768` can improve compression at the cost
+of more RAM. The default 4096-byte profile reuses the installer's existing
+32 KiB I/O workspace for the authenticated-index cache, compressed input,
+decoded output and DEFLATE state; it needs no additional block/state allocations
+after prefix verification. Manifest/trust, filesystem and transport memory are
+separate costs. Large-block spill buffers are reserved before receiving payload;
+allocation failure aborts and cleans the candidate without replacing the installed
+app. The receiver cannot shrink a signed package's block size during transfer.
+Memory exhaustion is reported as `insufficient_memory`; the client cleans up
+and suggests closing apps or rebuilding with 4096-byte blocks. An automatic
+LAN transfer does not retry over serial when installation memory is exhausted.
+`pxadb` checks advertised format/codec/block support before staging, including
+on devices without storage telemetry. Transport frame negotiation is independent
+of the package's decoded block size.
+
+With `fs_fast=1`, a single `FSFAST` negotiation replaces per-batch admission.
+Each checked binary frame gets one acknowledgement. The device chooses a
+256–3840-byte chunk using current free/largest heap space; a one-frame window
+keeps the complete frame within the hardware receive ring. Set
+`PXADB_TRANSFER_CHUNK=512` to request a smaller cap, or `PXADB_FAST=0` to compare
+the older bulk protocol. Buffers are released and command mode restored on
+completion, validation failure, cancellation, reconnect, or 10 seconds of
+inactivity. A truncated frame drains to a zero delimiter before text is parsed;
+the client sends that delimiter automatically during cancellation and HELLO.
+
+Without `fs_fast`, firmware advertising `fs_bulk_cobs=1` uses checked binary batches up to its
+`max_bulk` limit (currently 2048 bytes), with an admission handshake before each
+batch. Set `PXADB_BULK=0` to compare the legacy path. Legacy serial uploads select
+a chunk size from the detected USB device: 256 bytes for
 Espressif USB Serial/JTAG, or 512 bytes with paced writes for USB-to-UART
 bridges. Unknown ports keep the conservative 64-byte default. Set
 `PXADB_UART_UPLOAD_CHUNK` to override the chunk size if needed. UART boards
@@ -60,8 +111,12 @@ and the binary transport keeps its existing frame integrity checks.
 
 Large-file verification has a separate deadline based on 128 KiB/s plus
 30 seconds, capped at 15 minutes; ordinary data chunks still use a short ACK
-deadline. An explicitly longer `--timeout` is respected. UART HELLO reports
-`uart_rx_buffer` and `uart_rx_fifo_threshold`: the software ring and the
+deadline. Local package installs, explicit staging, and Wi-Fi streaming also
+use the manifest's **decoded** file sizes, so highly compressed packages receive
+enough time. Install/stage verification waits at least 60 seconds. An explicitly
+longer `--timeout` is respected for these operations.
+
+UART HELLO reports `uart_rx_buffer` and `uart_rx_fifo_threshold`: the software ring and the
 hardware FIFO interrupt watermark solve different receive-latency limits.
 
 Firmware with the `memory` capability provides an on-demand diagnostic

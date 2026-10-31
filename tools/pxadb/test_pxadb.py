@@ -17,6 +17,86 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import pxadb
 
 
+class BulkUploadTest(unittest.TestCase):
+    def test_progress_callback_cannot_insert_text_into_binary_data(self):
+        client = fake_client([])
+        client.fast_upload_active = True
+        with self.assertRaisesRegex(pxadb.PxaDbError, "owns the connection"):
+            client.request("INFO")
+        self.assertEqual(client.serial.writes, [])
+
+    def test_fast_negotiation_and_single_frame_ack(self):
+        client = fake_client([encoded_frame(1, "OK", "chunk=512;timeout_ms=10000;window=1"),
+                              encoded_frame(2, "OK", "")])
+        self.assertEqual(client.start_fast_upload(2048), 512)
+        self.assertEqual(client.send_fast_upload(17, b"a\0b", 2)[-1].kind, "OK")
+        raw = struct.pack("<4sIQI", b"PXD1", 2, 17, 3) + b"a\0b"
+        self.assertEqual(client.serial.writes[1], pxadb.encode_bulk(raw + struct.pack("<I", zlib.crc32(raw))))
+        self.assertFalse(client.fast_upload_active)
+        client.cancel_fast_upload()
+        self.assertEqual(len(client.serial.writes), 2)
+
+    def test_fast_negotiation_failure_can_cancel_uncertain_peer_state(self):
+        client = fake_client([encoded_frame(1, "OK", "chunk=4096;window=1"),
+                              encoded_frame(2, "OK", "aborted")])
+        with self.assertRaisesRegex(pxadb.PxaDbError, "negotiation"):
+            client.start_fast_upload(2048)
+        client.cancel_fast_upload()
+        self.assertEqual(client.serial.writes[1], b"\0\0")
+        self.assertIn(b"FSABORT", client.serial.writes[2])
+
+    def test_interrupted_fast_put_restores_command_mode(self):
+        client = fake_client([encoded_frame(1, "READY", "512"),
+                              encoded_frame(2, "OK", "chunk=256;window=1"),
+                              encoded_frame(3, "OK", "aborted")])
+        client.device_info = "fs_fast=1;fs_bulk_cobs=1;max_bulk=2048;fs_offset=1"
+        with tempfile.TemporaryDirectory() as folder:
+            source = pathlib.Path(folder) / "data"; source.write_bytes(bytes(512))
+            with mock.patch.object(client, "send_fast_upload", side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    pxadb.NormalFsClient(client).put(source, "data", progress=lambda *_: None)
+        self.assertIn(b"\0\0", client.serial.writes)
+        self.assertIn(b"FSABORT", client.serial.writes[-1])
+
+    def test_encoding_known_vectors_and_all_byte_values(self):
+        for raw, encoded in [(b"", b"\x01\x00"), (b"\x00", b"\x01\x01\x00"),
+                             (b"abc", b"\x04abc\x00"), (b"a\x00b", b"\x02a\x02b\x00")]:
+            self.assertEqual(pxadb.encode_bulk(raw), encoded)
+        for raw in [bytes(range(256)) * 64, b"a" * 254, b"a" * 255, b"\0" * 16384]:
+            encoded = pxadb.encode_bulk(raw)
+            self.assertEqual(encoded[-1], 0)
+            self.assertNotIn(0, encoded[:-1])
+            decoded = bytearray(); at = 0
+            while at < len(encoded) - 1:
+                code = encoded[at]; at += 1
+                decoded.extend(encoded[at:at + code - 1]); at += code - 1
+                if code < 255 and at < len(encoded) - 1: decoded.append(0)
+            self.assertEqual(bytes(decoded), raw)
+            self.assertLessEqual(len(encoded), len(raw) + len(raw) // 254 + 2)
+
+    def test_admission_precedes_raw_bytes_and_completion_keeps_sequence(self):
+        client = fake_client([encoded_frame(1, "CONTINUE", "4"),
+                              encoded_frame(98, "OK", "unrelated"), encoded_frame(1, "READY", "7")])
+        self.assertEqual(client.send_bulk_upload(3, b"a\0b\n", 2)[-1].payload, "7")
+        self.assertTrue(client.serial.writes[0].startswith(b"PXADB1 1 FSBULK 3 4 "))
+        self.assertEqual(client.serial.writes[1], pxadb.encode_bulk(b"a\0b\n"))
+        self.assertEqual(client.pending_frames[0].sequence, 98)
+
+    def test_rejected_admission_sends_no_file_bytes(self):
+        client = fake_client([encoded_frame(1, "ERR", "offset_mismatch")])
+        with self.assertRaisesRegex(pxadb.PxaDbRejectedError, "offset_mismatch"):
+            client.send_bulk_upload(0, b"secret", 2)
+        self.assertEqual(client.serial.writes[-1], b"\0")
+        self.assertEqual(len(client.serial.writes), 2)
+
+    def test_bad_admission_and_crc_failure_resynchronize(self):
+        for frames in [[encoded_frame(1, "CONTINUE", "9")],
+                       [encoded_frame(1, "CONTINUE", "3"), encoded_frame(1, "ERR", "chunk_checksum_mismatch")]]:
+            client = fake_client(frames)
+            with self.assertRaises(pxadb.PxaDbError): client.send_bulk_upload(0, b"abc", 2)
+            self.assertEqual(client.serial.writes[-1], b"\0")
+
+
 class UsbRuntimeGuardTest(unittest.TestCase):
     def test_usb_parent_is_held_read_only_and_missing_devices_are_optional(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1189,6 +1269,25 @@ class PackageStorageTest(unittest.TestCase):
             self.assertGreater(install, 1200000)
             self.assertEqual(upload, 5 * 4096 +
                              ((source.stat().st_size + 4031) // 4032) * 4096)
+
+    def test_streaming_admission_only_reserves_index_beside_decoded_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = self.container(pathlib.Path(directory))
+            raw = bytearray(source.read_bytes())
+            struct.pack_into("<H", raw, 6, 2); struct.pack_into("<I", raw, 56, 48 * 40)
+            struct.pack_into("<HH", raw, 12, 1, 12)
+            source.write_bytes(raw + bytes(400000))
+            upload, install = pxadb.package_storage_required(source)
+            peer = mock.Mock(device_info="package_stream=2")
+            peer.request.return_value = [pxadb.Frame(1, "OK", f"storage_free={install + 32768};package_receive=1")]
+            fs = mock.Mock(client=peer)
+            pxadb.check_package_storage(fs, source)
+            pxadb._stage_package_files(fs, source, "pxa-storage-test", 10, True)
+            fs.put.assert_called_once_with(source, "pxa-state/inbox/.receiving-pxa-storage-test", stream_install=True)
+            peer.device_info = "package_stream=1"
+            with self.assertRaisesRegex(pxadb.PxaDbError, "newer firmware"):
+                pxadb.check_package_storage(fs, source)
+            self.assertGreater(upload, 32768)
 
     def test_install_space_shortage_fails_before_any_filesystem_mutation(self):
         with tempfile.TemporaryDirectory() as directory:

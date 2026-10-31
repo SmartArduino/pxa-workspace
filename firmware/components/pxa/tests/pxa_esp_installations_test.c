@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "pxa_esp_installations.h"
+#include "pxa_esp_installations_internal.h"
 #include "pxa_esp_resource_transfer.h"
 #include "pxa_esp_package_trust.h"
 #include "pxa_esp_record_seal.h"
@@ -118,6 +119,12 @@ int main(int argc,char **argv) {
     assert(!pxa_openssl_sha256(manifest->encoded.data,manifest->encoded.size,digest));
     pxa_install_plan_t plan;
     assert(!pxa_esp_installations_plan(owner,manifest,0,1,&plan) && plan.app_mount_epoch==selected_epoch);
+    pxa_install_plan_t prepared,existing;
+    assert(!pxa_esp_installations_plan_prepared(owner,manifest,1,&prepared));
+    assert(!pxa_esp_installations_plan_prepared(owner,manifest,0,&existing));
+    assert(prepared.app_mount_epoch==selected_epoch && prepared.volume_count==1);
+    assert(prepared.volumes[0].bytes<plan.volumes[0].bytes);
+    assert(prepared.volumes[0].bytes>=existing.volumes[0].bytes+pxa_esp_installations_private_initial_bytes());
     assert(!pxa_esp_storage_reserve_plan(&plan));
     assert(pxa_esp_installations_install(owner,source2,locator,&approved,0,digest,&plan,NULL,NULL,&result,&home)==PXA_STATUS_DENIED);
     assert(!prepare_calls); /* Same identity, different signed permissions/release. */
@@ -225,6 +232,19 @@ int main(int argc,char **argv) {
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home));
     pxa_esp_app_storage_t *active_storage=NULL;
     assert(!pxa_esp_installations_storage(owner,&home,&active_storage) && !pxa_esp_app_storage_close(&active_storage));
+    /* Activation loads signed resource metadata without reading payloads.
+     * That lightweight load must never authorize later full verification. */
+    assert(!pxa_esp_installations_close(&owner->media_owner));
+    file=open(media_payload,O_RDWR);assert(file>=0);char saved_resource_byte=0;
+    assert(read(file,&saved_resource_byte,1)==1 && lseek(file,0,SEEK_SET)==0);
+    char damaged_resource_byte=saved_resource_byte^1;
+    assert(write(file,&damaged_resource_byte,1)==1 && !close(file));
+    assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home));
+    assert(owner->media_owner->resource_loaded && !owner->media_owner->resource_verified);
+    assert(pxa_esp_installations_verify_resources(media_owner,&home.record,&result)==PXA_STATUS_DENIED);
+    assert(pxa_esp_installations_verify_media(owner,&home.record)==PXA_STATUS_DENIED);
+    file=open(media_payload,O_WRONLY);assert(file>=0 && write(file,&saved_resource_byte,1)==1 && !close(file));
+    assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home));
     /* Resource relocation copies to a third volume, changes only the exact
      * approved local record, and preserves private bytes/code/permissions. */
     pxa_install_record_t before_move=home.record,move_approval;

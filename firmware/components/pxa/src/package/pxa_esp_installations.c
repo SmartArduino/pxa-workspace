@@ -43,10 +43,16 @@ static void *external_allocate(size_t bytes) {
 }
 uint64_t pxa_esp_installations_private_capacity(void) {
     /* Two copies for atomic FS replacement, two KV slots plus compaction and
-     * bounded metadata headroom. The image consumes disk, not this much RAM. */
+     * bounded metadata headroom. This is logical capacity; sparse backing
+     * materializes only the extents actually programmed by LittleFS. */
     uint64_t bytes=UINT64_C(2)*CONFIG_PXA_PRIVATE_FS_QUOTA_BYTES+
         UINT64_C(4)*CONFIG_PXA_PRIVATE_KV_QUOTA_BYTES+65536;
     return (bytes+4095)&~UINT64_C(4095);
+}
+uint64_t pxa_esp_installations_private_initial_bytes(void) {
+    /* Logical quotas retain replacement headroom; only one 64-KiB extent and
+     * its descriptor are materialized for an empty private filesystem. */
+    return UINT64_C(65536)+4096;
 }
 static pxa_status_t authenticated_tag(void *context,pxa_bytes_t purpose,pxa_bytes_t binding,
     pxa_bytes_t body,uint8_t tag[32]) {
@@ -258,10 +264,20 @@ static pxa_status_t resource_options(pxa_esp_installations_t *owner,const pxa_in
     config->expected_package_kind=PXA_PACKAGE_KIND_RESOURCES;
     return PXA_STATUS_OK;
 }
+static int owned_stream_source(pxa_esp_installations_t *owner,const char *source) {
+    size_t root_bytes=strlen(owner->config.root);
+    static const char prefix[]="/cache/store/.stream-";
+    if(!source || strncmp(source,owner->config.root,root_bytes) ||
+        strncmp(source+root_bytes,prefix,sizeof(prefix)-1))return 0;
+    const char *name=source+root_bytes+sizeof(prefix)-1;
+    if(strlen(name)!=8)return 0;
+    for(size_t i=0;i<8;++i)if(!((name[i]>='0' && name[i]<='9') || (name[i]>='a' && name[i]<='f')))return 0;
+    return 1;
+}
 static pxa_status_t resources_operation(pxa_esp_installations_t *owner,const pxa_install_record_t *record,
-    const char *source,const pxa_install_plan_t *plan,pxa_posix_installer_result_t *result) {
+    const char *source,const pxa_install_plan_t *plan,pxa_posix_installer_result_t *result,int metadata_only) {
     if(!owner || !record || !result)return PXA_STATUS_INVALID_ARGUMENT;
-    owner->resource_verified=0;
+    owner->resource_verified=0;owner->resource_loaded=0;
     if(source) {
         if(!plan || (plan->app_mount_epoch!=owner->volume.mount_epoch &&
             plan->media_mount_epoch!=owner->volume.mount_epoch))return PXA_STATUS_INVALID_ARGUMENT;
@@ -279,8 +295,12 @@ static pxa_status_t resources_operation(pxa_esp_installations_t *owner,const pxa
         pxa_posix_installer_identity_t identity={{record->publisher_root,32},
             {(const uint8_t *)record->app_id,strlen(record->app_id)}};
         owner->plan=plan;
-        if(source)status=pxa_posix_installer_install_for_identity(installer,source,&identity,result,NULL);
-        else status=pxa_posix_installer_verify_source(installer,owner->resource_package,result);
+        if(source)status=owned_stream_source(owner,source)
+            ?pxa_posix_installer_adopt_directory(installer,source,&identity,result,NULL)
+            :pxa_posix_installer_install_for_identity(installer,source,&identity,result,NULL);
+        else status=metadata_only
+            ?pxa_posix_installer_read_signed_manifest(installer,owner->resource_package,result)
+            :pxa_posix_installer_verify_source(installer,owner->resource_package,result);
         owner->plan=NULL;
         if(status==PXA_STATUS_OK) {
             const pxa_package_manifest_t *manifest=*result->manifest;
@@ -290,17 +310,19 @@ static pxa_status_t resources_operation(pxa_esp_installations_t *owner,const pxa
         }
     }
     if(installer)pxa_posix_installer_deinit(installer);
-    if(status==PXA_STATUS_OK)owner->resource_verified=1;
+    if(status==PXA_STATUS_OK) {
+        owner->resource_loaded=1;owner->resource_verified=!metadata_only;
+    }
     return status;
 }
 pxa_status_t pxa_esp_installations_install_resources(pxa_esp_installations_t *owner,
     const pxa_install_record_t *record,const char *source,const pxa_install_plan_t *plan,pxa_posix_installer_result_t *result) {
     if(!source)return PXA_STATUS_INVALID_ARGUMENT;
-    return resources_operation(owner,record,source,plan,result);
+    return resources_operation(owner,record,source,plan,result,0);
 }
 pxa_status_t pxa_esp_installations_verify_resources(pxa_esp_installations_t *owner,
     const pxa_install_record_t *record,pxa_posix_installer_result_t *result) {
-    return resources_operation(owner,record,NULL,NULL,result);
+    return resources_operation(owner,record,NULL,NULL,result,0);
 }
 typedef struct {
     pxa_posix_installer_result_t result;
@@ -337,7 +359,7 @@ static __attribute__((noinline)) pxa_status_t verify_manual_media(pxa_esp_instal
     if(status!=PXA_STATUS_OK)(void)pxa_esp_installations_close(&owner->media_owner);
     return status;
 }
-pxa_status_t pxa_esp_installations_verify_media(void *context,const pxa_install_record_t *record) {
+static pxa_status_t check_media(void *context,const pxa_install_record_t *record,int metadata_only) {
     pxa_esp_installations_t *owner=context;pxa_volume_info_t volume;
     if(!owner || !record)return PXA_STATUS_INVALID_ARGUMENT;
     pxa_status_t status=pxa_esp_storage_find_volume(&record->media_volume,&volume);
@@ -349,7 +371,8 @@ pxa_status_t pxa_esp_installations_verify_media(void *context,const pxa_install_
     status=pxa_esp_installations_media_path(record,check->path,sizeof(check->path));
     if(status!=PXA_STATUS_OK)goto done;
     if(owner->media_owner && owner->media_owner->volume.mount_epoch==volume.mount_epoch &&
-        owner->media_owner->resource_verified && strlen(owner->media_owner->resource_package)>strlen(check->path) &&
+        (owner->media_owner->resource_verified || (metadata_only && owner->media_owner->resource_loaded)) &&
+        strlen(owner->media_owner->resource_package)>strlen(check->path) &&
         !strcmp(owner->media_owner->resource_package+strlen(owner->media_owner->resource_package)-strlen(check->path),check->path))goto done;
     status=pxa_esp_installations_close(&owner->media_owner);if(status!=PXA_STATUS_OK)goto done;
     status=pxa_esp_installations_open(volume.mount_epoch,&owner->media_owner);if(status!=PXA_STATUS_OK)goto done;
@@ -384,10 +407,16 @@ pxa_status_t pxa_esp_installations_verify_media(void *context,const pxa_install_
     if(!check->workspace) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
     check->result=(pxa_posix_installer_result_t){sizeof(check->result),check->workspace,bytes,
         check->encoded,offset,&check->manifest,check->path,sizeof(check->path)};
-    status=pxa_esp_installations_verify_resources(owner->media_owner,record,&check->result);
+    status=resources_operation(owner->media_owner,record,NULL,NULL,&check->result,metadata_only);
 done:
     if(status!=PXA_STATUS_OK)(void)pxa_esp_installations_close(&owner->media_owner);
     heap_caps_free(check->workspace);heap_caps_free(check->encoded);heap_caps_free(check);return status;
+}
+pxa_status_t pxa_esp_installations_verify_media(void *context,const pxa_install_record_t *record) {
+    return check_media(context,record,0);
+}
+static pxa_status_t load_media(void *context,const pxa_install_record_t *record) {
+    return check_media(context,record,1);
 }
 static pxa_status_t add_file(const pxa_volume_info_t *volume,uint64_t size,uint64_t *total) {
     uint64_t rounded;pxa_status_t status=pxa_install_file_allocation(volume,size,&rounded);
@@ -396,7 +425,7 @@ static pxa_status_t add_file(const pxa_volume_info_t *volume,uint64_t size,uint6
     *total+=rounded;return PXA_STATUS_OK;
 }
 static pxa_status_t plan_contents(pxa_esp_installations_t *owner,
-    const pxa_package_manifest_t *manifest,uint64_t transfer,uint8_t new_private,pxa_install_plan_t *output) {
+    const pxa_package_manifest_t *manifest,uint64_t transfer,uint8_t new_private,uint8_t prepared,pxa_install_plan_t *output) {
     if(!output)return PXA_STATUS_INVALID_ARGUMENT;
     memset(output,0,sizeof(*output));pxa_status_t status=available(owner);pxa_volume_info_t volume;
     if(status==PXA_STATUS_OK)status=pxa_esp_storage_refresh_volume(owner->volume.mount_epoch);
@@ -404,15 +433,16 @@ static pxa_status_t plan_contents(pxa_esp_installations_t *owner,
     if(status!=PXA_STATUS_OK)return status;
     uint64_t bytes=0,directories=manifest?16:8;
     for(uint16_t i=0;manifest && i<manifest->file_count;++i) {
-        status=add_file(&volume,manifest->files[i].size,&bytes);if(status!=PXA_STATUS_OK)return status;
+        if(!prepared)status=add_file(&volume,manifest->files[i].size,&bytes);
+        if(status!=PXA_STATUS_OK)return status;
         for(size_t j=0;j<manifest->files[i].path.size;++j)if(manifest->files[i].path.data[j]=='/')++directories;
     }
-    if(manifest) {
+    if(manifest && !prepared) {
         status=add_file(&volume,manifest->encoded.size,&bytes);
         if(status==PXA_STATUS_OK)status=add_file(&volume,PXA_POSIX_INSTALLER_SIGNATURE_ENVELOPE_BYTES,&bytes);
     }
     if(status==PXA_STATUS_OK && new_private && !(volume.capabilities&PXA_VOLUME_PRIVATE_NATIVE))
-        status=add_file(&volume,pxa_esp_installations_private_capacity(),&bytes);
+        status=add_file(&volume,pxa_esp_installations_private_initial_bytes(),&bytes);
     if(status!=PXA_STATUS_OK)return status;
     uint64_t metadata=directories*volume.allocation_unit;
     if(bytes>UINT64_MAX-metadata)return PXA_STATUS_LIMIT_EXCEEDED;
@@ -423,11 +453,16 @@ static pxa_status_t plan_contents(pxa_esp_installations_t *owner,
 pxa_status_t pxa_esp_installations_plan(pxa_esp_installations_t *owner,
     const pxa_package_manifest_t *manifest,uint64_t transfer,uint8_t new_private,pxa_install_plan_t *output) {
     if(!manifest)return PXA_STATUS_INVALID_ARGUMENT;
-    return plan_contents(owner,manifest,transfer,new_private,output);
+    return plan_contents(owner,manifest,transfer,new_private,0,output);
+}
+pxa_status_t pxa_esp_installations_plan_prepared(pxa_esp_installations_t *owner,
+    const pxa_package_manifest_t *manifest,uint8_t new_private,pxa_install_plan_t *output) {
+    if(!manifest)return PXA_STATUS_INVALID_ARGUMENT;
+    return plan_contents(owner,manifest,0,new_private,1,output);
 }
 pxa_status_t pxa_esp_installations_plan_archive(pxa_esp_installations_t *owner,
     uint8_t new_private,pxa_install_plan_t *output) {
-    return plan_contents(owner,NULL,0,new_private,output);
+    return plan_contents(owner,NULL,0,new_private,0,output);
 }
 pxa_status_t pxa_esp_installations_install(pxa_esp_installations_t *owner,const char *source,
     const char *locator,const pxa_install_record_t *approved,uint64_t generation,
@@ -444,7 +479,11 @@ pxa_status_t pxa_esp_installations_install(pxa_esp_installations_t *owner,const 
     if(status!=PXA_STATUS_OK || !locator || strcmp(expected_locator,locator))return PXA_STATUS_DENIED;
     owner->plan=plan;owner->config.media_ready=media?media:pxa_esp_installations_verify_media;owner->config.media_context=media?context:owner;
     owner->config.approved_manifest_sha256=digest;
+    /* Only our private download cache transfers ownership. Ordinary file
+     * manager installs retain their source and keep the copying semantics. */
+    owner->config.adopt_source_directory=owned_stream_source(owner,source);
     status=pxa_posix_app_store_install(&owner->config,locator,source,generation,approved,result,home);
+    owner->config.adopt_source_directory=0;
     owner->plan=NULL;owner->config.approved_manifest_sha256=NULL;
     owner->config.media_ready=NULL;owner->config.media_context=NULL;return status;
 }
@@ -452,7 +491,7 @@ pxa_status_t pxa_esp_installations_load(pxa_esp_installations_t *owner,const cha
     pxa_posix_media_ready_fn media,void *context,pxa_posix_installer_result_t *result,pxa_posix_app_home_t *home) {
     pxa_status_t status=available(owner);if(status!=PXA_STATUS_OK)return status;
     status=visible(owner,locator);if(status!=PXA_STATUS_OK)return status;
-    owner->config.media_ready=media?media:pxa_esp_installations_verify_media;owner->config.media_context=media?context:owner;
+    owner->config.media_ready=media?media:load_media;owner->config.media_context=media?context:owner;
     status=pxa_posix_app_store_recover(&owner->config,locator,result,home);
     owner->config.media_ready=NULL;owner->config.media_context=NULL;return status;
 }

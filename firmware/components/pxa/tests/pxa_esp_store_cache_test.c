@@ -3,12 +3,16 @@
 #include "pxa_esp_record_seal.h"
 #include "pxa_esp_volumes.h"
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <openssl/hmac.h>
+pxa_status_t pxa_posix_fs_remove_tree(const char *path) {
+    return !rmdir(path) || !unlink(path) || errno==ENOENT?PXA_STATUS_OK:PXA_STATUS_IO_ERROR;
+}
 static char mounts[2][256];
 static unsigned references[2];
 static int unavailable,key_unavailable;
@@ -80,7 +84,9 @@ int main(void) {
     assert(pxa_esp_store_cache_remove(&foreign)==PXA_STATUS_OK);
     pxa_esp_store_download_entry_t orphan=entry;strcpy(orphan.filename,".store-87654321.pxa");pack(&orphan,path);
     pxa_esp_store_cache_load(found,8);assert(!access(path,F_OK)); /* Discovery cannot delete a publishing transfer. */
-    pxa_esp_store_cache_cleanup();pxa_esp_store_cache_load(found,8);assert(!access(metadata,F_OK) && access(path,F_OK) && found[0].epoch==2);
+    char partial[400];snprintf(partial,sizeof(partial),"%s/PXA/cache/store/.stream-12345678",mounts[1]);
+    assert(!mkdir(partial,0700));pxa_esp_store_cache_load(found,8);assert(!access(partial,F_OK));
+    pxa_esp_store_cache_cleanup();assert(access(partial,F_OK)!=0);pxa_esp_store_cache_load(found,8);assert(!access(metadata,F_OK) && access(path,F_OK) && found[0].epoch==2);
     char token[20];pack(&orphan,path);assert(pxa_esp_store_cache_adopt(path,entry.owner,token,sizeof(token))==PXA_STATUS_OK);
     assert(!strcmp(token,orphan.filename));pxa_esp_store_cache_load(found,8);assert(found[1].filename[0]);
     assert(pxa_esp_store_cache_remove(&orphan)==PXA_STATUS_OK);

@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "pxa_esp_app_storage.h"
+#include "pxa_esp_image_blockdev.h"
 #include "pxa_esp_volumes.h"
 #include "pxa_esp_record_seal.h"
 #include "pxa_esp_publisher_directory.h"
@@ -195,7 +196,7 @@ int main(void) {
     config.allocation_unit=32768;config.max_file_bytes=INT32_MAX;config.query_space=capacity;
     config.capabilities=PXA_VOLUME_READ|PXA_VOLUME_WRITE|PXA_VOLUME_RANDOM_READ|PXA_VOLUME_INSTALLABLE|PXA_VOLUME_CASE_INSENSITIVE;
     assert(!pxa_esp_storage_register_volume(&config,&epoch));make_home(temporary,epoch,"quake",&home);
-    snprintf(image,sizeof(image),"%s/private/private.lfs",home.home);
+    snprintf(image,sizeof(image),"%s/private/private.blocks/b00000000",home.home);
     snprintf(pending,sizeof(pending),"%s/private/private.pending.lfs",home.home);
     foreign=home;strcpy(foreign.home,"/different-volume/home");
     assert(pxa_esp_app_storage_create(&foreign,epoch,131072,NULL,&storage)==PXA_STATUS_DENIED);
@@ -210,7 +211,7 @@ int main(void) {
     free_bytes=4*1024*1024;
     fail_mount=1;
     assert(pxa_esp_app_storage_root(storage,&root)==PXA_STATUS_IO_ERROR && !root && !mounted);
-    assert(formats==1 && !stat(image,&st) && st.st_size==131072);
+    assert(formats==1 && !stat(image,&st) && st.st_size==65536);
     assert(!pxa_esp_storage_volume(epoch,&info) && !info.reserved_bytes);
     fail_mount=2;
     assert(pxa_esp_app_storage_root(storage,&root)==PXA_STATUS_RESOURCE_LIMIT && !root && !mounted && formats==1);
@@ -222,6 +223,28 @@ int main(void) {
     assert(!pxa_esp_app_storage_close(&storage));
     assert(!pxa_esp_app_storage_create(&home,epoch,131072,NULL,&storage));
     assert(!pxa_esp_app_storage_root(storage,&root) && formats==1);
+    read_save("Save.sav","upper");read_save("save.sav","lower");
+    assert(!pxa_esp_app_storage_close(&storage));
+    /* Reconstruct an old fully allocated image from these exact LFS bytes.
+     * Existing images remain authoritative even if a sparse directory also
+     * exists; no conversion, reformat or lost case-distinct save on reopen. */
+    char legacy[768],extent[768];uint8_t copy[4096];
+    snprintf(legacy,sizeof(legacy),"%s/private/private.lfs",home.home);
+    int old=open(legacy,O_CREAT|O_EXCL|O_RDWR,0600);assert(old>=0);
+    assert(!pxa_esp_image_blockdev_prepare(old,epoch,131072));
+    for(unsigned block=0;block<2;++block) {
+        snprintf(extent,sizeof(extent),"%s/private/private.blocks/b%08x",home.home,block);
+        int source=open(extent,O_RDONLY);
+        if(source<0) {assert(errno==ENOENT);continue;}
+        for(unsigned offset=0;offset<65536;offset+=sizeof(copy)) {
+            assert(read(source,copy,sizeof(copy))==sizeof(copy));
+            assert(pwrite(old,copy,sizeof(copy),(off_t)block*65536+offset)==sizeof(copy));
+        }
+        assert(!close(source));
+    }
+    assert(!fsync(old) && !close(old));strcpy(image,legacy);
+    assert(!pxa_esp_app_storage_create(&home,epoch,131072,NULL,&storage));
+    assert(!pxa_esp_app_storage_existing_root(storage,&root) && formats==1);
     read_save("Save.sav","upper");read_save("save.sav","lower");
     assert(!pxa_esp_app_storage_close(&storage));
     /* An admitted install uses its existing lease, even after staged files

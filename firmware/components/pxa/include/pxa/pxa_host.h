@@ -196,6 +196,9 @@ bool pxa_host_request_install_package_file(const char *source_path);
 bool pxa_host_install_package_file_for_identity(const char *,const uint8_t[32],const char *);
 /* Epoch 0 uses the Host default placement, retaining an existing app volume. */
 int32_t pxa_host_install_package_file_on_volume(const char *,uint64_t mount_epoch);
+/* Physical private-image capacity reserved for a new app on a FAT volume. */
+/* Initial physical private-storage estimate; logical save quota is separate. */
+uint64_t pxa_host_package_private_capacity(void);
 int32_t pxa_host_move_package_volume(const char *identity,uint64_t target_epoch,bool resume);
 /* Queue native system placement UI; independent of any Guest lifetime. */
 bool pxa_host_request_move_package(const char *identity);

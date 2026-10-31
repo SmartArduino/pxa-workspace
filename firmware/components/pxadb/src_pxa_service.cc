@@ -1,5 +1,6 @@
 #include "pxadb/pxadb_service.h"
 #include "pxadb_fs_policy.h"
+#include "pxadb_bulk.h"
 
 #include <algorithm>
 #include <atomic>
@@ -37,6 +38,7 @@ extern "C" unsigned pxadb_uart_rx_buffer_capacity(void);
 #include <esp_log.h>
 #include <esp_littlefs.h>
 #include <esp_mac.h>
+#include <esp_netif.h>
 #include <esp_private/log_lock.h>
 #include <esp_rom_crc.h>
 #include <esp_system.h>
@@ -55,6 +57,7 @@ extern "C" unsigned pxadb_uart_rx_buffer_capacity(void);
 
 #if CONFIG_PXA_ENABLED
 #include "pxa/pxa_host.h"
+#include "pxa/pxa_container_stream.h"
 #include "pxa/pxa_esp_surface.h"
 #include "pxa/pxa_esp_storage.h"
 #include "pxa/posix/pxa_posix_fs.h"
@@ -108,6 +111,27 @@ EXT_RAM_BSS_ATTR uint8_t s_fs_read_buffer[kFsDataChunkSize * kFsReadWindowChunks
 // is the main throughput lever on UART links. Device-to-host FSGET frames
 // stay at kFsDataChunkSize because they share the 320-byte frame payload.
 constexpr size_t kFsUploadChunkSize = 1024;
+// A complete encoded batch fits both the 4 KiB UART and USB driver rings.
+// This bounds loss even if another task delays us; never assume USB applies
+// backpressure (the IDF RX ISR drops bytes when its software ring is full).
+constexpr size_t kFsBulkSize = 2 * 1024;
+constexpr size_t kFsBulkEncodedSize = kFsBulkSize + kFsBulkSize / 254 + 1;
+struct BulkUpload {
+    uint8_t* bytes = nullptr;
+    size_t used = 0, expected = 0;
+    size_t capacity = 0;
+    unsigned long sequence = 0;
+    uint32_t crc = 0;
+    uint64_t last_us = 0;
+    bool draining = false;
+    bool fast = false;
+};
+BulkUpload s_bulk;
+
+void ResetBulkUpload() {
+    free(s_bulk.bytes);
+    s_bulk = {};
+}
 #if CONFIG_PXA_ENABLED
 constexpr size_t kPxaPackageListCapacity = 64;
 #endif
@@ -203,8 +227,14 @@ bool TransportTxDone() {
 }
 
 int TransportRead(uint8_t* buffer, size_t length, uint32_t timeout_ms) {
-    return uart_read_bytes(kTransportPort, buffer, length,
-                           pdMS_TO_TICKS(timeout_ms));
+    if (!length) return 0;
+    // uart_read_bytes waits for the requested length, even when a complete
+    // short command is already buffered. Block for the first byte only, then
+    // drain what's available without adding a timeout to every round trip.
+    const int first = uart_read_bytes(kTransportPort, buffer, 1, pdMS_TO_TICKS(timeout_ms));
+    if (first <= 0 || length == 1) return first;
+    const int rest = uart_read_bytes(kTransportPort, buffer + 1, length - 1, 0);
+    return 1 + std::max(rest, 0);
 }
 #elif CONFIG_PXADB_TRANSPORT_USB_CDC
 constexpr uint32_t kTransportReadPollMs = 5;
@@ -246,7 +276,7 @@ esp_err_t TransportStart() {
     if (!usb_serial_jtag_is_driver_installed()) {
         usb_serial_jtag_driver_config_t config = {
             .tx_buffer_size = kUsbBufferSize,
-            .rx_buffer_size = kUsbBufferSize,
+            .rx_buffer_size = 4096,
         };
         const esp_err_t err = usb_serial_jtag_driver_install(&config);
         if (err != ESP_OK) return err;
@@ -279,7 +309,12 @@ struct LogScratch {
 };
 
 struct FileUpload {
+#if CONFIG_PXA_ENABLED
+    pxa_host_container_stream_t* stream = nullptr;
+    uint64_t stream_epoch = 0;
+#endif
     FILE* file = nullptr;
+    char* io_buffer = nullptr;
     size_t total = 0;
     size_t remaining = 0;
     char destination[kFsAbsolutePathLength] = {};
@@ -425,12 +460,25 @@ bool IsSafeIdentity(const char* identity) {
     return true;
 }
 
+bool FileUploadActive() {
+#if CONFIG_PXA_ENABLED
+    if (s_file_upload.stream) return true;
+#endif
+    return s_file_upload.file != nullptr;
+}
+
 void AbortFileUpload() {
+    ResetBulkUpload();
+#if CONFIG_PXA_ENABLED
+    pxa_host_container_stream_close(s_file_upload.stream);
+    s_file_upload.stream = nullptr;
+#endif
     if (s_file_upload.file != nullptr) {
         fclose(s_file_upload.file);
         s_file_upload.file = nullptr;
     }
     if (s_file_upload.temporary[0] != '\0') unlink(s_file_upload.temporary);
+    free(s_file_upload.io_buffer);
     s_file_upload = {};
 }
 
@@ -450,8 +498,8 @@ bool PackageTransfersReady(const char* command) {
     if (!s_package_cleanup_pending.load()) return true;
     /* Drain the old session before accepting a new transport namespace.
      * Otherwise deferred cleanup could erase newly uploaded receiving files. */
-    if (strcmp(command,"PACKAGE") && strcmp(command,"FSPUT") &&
-        strcmp(command,"FSDATA") && strcmp(command,"FSDATA2") &&
+    if (strcmp(command,"PACKAGE") && strcmp(command,"FSPUT") && strcmp(command,"FSINSTALL") &&
+        strcmp(command,"FSDATA") && strcmp(command,"FSDATA2") && strcmp(command,"FSBULK") && strcmp(command,"FSFAST") && strcmp(command,"FSFETCH") &&
         strcmp(command,"FSMKDIR") && strcmp(command,"FSMOVE") &&
         strcmp(command,"FSCOPY") && strcmp(command,"FSRM") && strcmp(command,"FSRMTREE"))
         return true;
@@ -864,6 +912,15 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
         SendFrame(sequence, "ERR", "file_open_failed");
         return;
     }
+    if (external && size) {
+        // This is optional write coalescing, never a fixed RAM reservation.
+        const size_t budget=heap_caps_get_free_size(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)/16;
+        const size_t buffer_size=std::min<size_t>(size,std::min<size_t>(64*1024,budget));
+        s_file_upload.io_buffer=static_cast<char*>(heap_caps_malloc(buffer_size,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+        if (s_file_upload.io_buffer && setvbuf(s_file_upload.file,s_file_upload.io_buffer,_IOFBF,buffer_size)) {
+            free(s_file_upload.io_buffer);s_file_upload.io_buffer=nullptr;
+        }
+    }
     snprintf(s_file_upload.destination, sizeof(s_file_upload.destination), "%s", path);
     s_file_upload.total = static_cast<size_t>(size);
     s_file_upload.remaining = static_cast<size_t>(size);
@@ -898,9 +955,239 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
     SendFsUploadReady(sequence);
 }
 
+#if CONFIG_PXA_ENABLED
+void StartFsStream(unsigned long sequence, const char* encoded_path,
+                   const char* size_text, const char* expected_sha256,const char* epoch_text=nullptr) {
+    char relative[kFsPathLength] = {}, path[kFsAbsolutePathLength] = {};
+    char* end = nullptr;
+    errno=0;unsigned long size = size_text?strtoul(size_text,&end,10):0;
+    if(errno || !size_text || size_text[0]=='-' || end==size_text || *end) {
+        SendFrame(sequence,"ERR","invalid_stream_upload");return;
+    }
+    uint64_t epoch=0;
+    if(epoch_text) {
+        errno=0;epoch=strtoull(epoch_text,&end,10);
+        if(errno || !epoch || epoch_text[0]=='-' || end==epoch_text || *end) {
+            SendFrame(sequence,"ERR","invalid_stream_volume");return;
+        }
+    }
+    constexpr char prefix[] = "pxa-state/inbox/.receiving-";
+    if (size < 64 || !IsSha256Hex(expected_sha256) ||
+        !DecodeFsPath(encoded_path, relative, sizeof(relative), path, sizeof(path)) ||
+        (epoch ? !pxa_host_container_stream_volume_path(epoch,path) :
+            (strncmp(relative,prefix,sizeof(prefix)-1) || !IsSafeIdentity(relative+sizeof(prefix)-1)))) {
+        SendFrame(sequence, "ERR", "invalid_stream_upload"); return;
+    }
+    if (s_file_upload.stream && s_file_upload.total == size && s_file_upload.stream_epoch==epoch &&
+        !strcmp(s_file_upload.destination,path) && !strcmp(s_file_upload.expected_sha256,expected_sha256)) {
+        if(!s_file_upload.remaining)SendFrame(sequence,"OK","");else SendFsUploadReady(sequence);
+        return;
+    }
+    AbortFileUpload();
+    uint8_t digest[32];
+    for (size_t i=0;i<32;++i) {char hex[3]={expected_sha256[i*2],expected_sha256[i*2+1],0};digest[i]=strtoul(hex,nullptr,16);}
+    pxa_status_t status=epoch?pxa_host_container_stream_begin_volume(epoch,path,size,digest,&s_file_upload.stream):
+        pxa_host_container_stream_begin(path,size,digest,&s_file_upload.stream);
+    if (status!=PXA_STATUS_OK) {
+        SendFrame(sequence,"ERR",status==PXA_STATUS_RESOURCE_LIMIT?"insufficient_memory":"stream_open_failed");return;
+    }
+    s_file_upload.total=s_file_upload.remaining=size;
+    s_file_upload.stream_epoch=epoch;
+    snprintf(s_file_upload.destination,sizeof(s_file_upload.destination),"%s",path);
+    snprintf(s_file_upload.expected_sha256,sizeof(s_file_upload.expected_sha256),"%s",expected_sha256);
+    SendFsUploadReady(sequence);
+}
+void FetchFsStream(unsigned long sequence,const char* encoded_url) {
+    if(!s_file_upload.stream || s_file_upload.remaining!=s_file_upload.total) {
+        SendFrame(sequence,"ERR","stream_fetch_not_ready");return;
+    }
+    char url[768]={};size_t bytes=0;
+    if(!encoded_url || mbedtls_base64_decode(reinterpret_cast<uint8_t*>(url),sizeof(url)-1,&bytes,
+        reinterpret_cast<const uint8_t*>(encoded_url),strlen(encoded_url)) ||
+        memchr(url,0,bytes) || memchr(url,'\r',bytes) || memchr(url,'\n',bytes)) {
+        SendFrame(sequence,"ERR","invalid_fetch_url");return;
+    }
+    const pxa_status_t status=pxa_host_container_stream_fetch(s_file_upload.stream,url);
+    if(status==PXA_STATUS_OK)s_file_upload.remaining=0;
+    if(status!=PXA_STATUS_OK || !s_file_upload.stream_epoch)AbortFileUpload();
+    SendFrame(sequence,status==PXA_STATUS_OK?"OK":"ERR",status==PXA_STATUS_OK?"":
+        status==PXA_STATUS_RESOURCE_LIMIT?"insufficient_memory":"stream_fetch_failed");
+}
+#endif
+
+// Called only after the complete batch has been received and checked. Flash
+// writes therefore cannot stall the receiver in the middle of this batch.
+void CommitFsUploadBytes(unsigned long sequence, const uint8_t* bytes, size_t length) {
+#if CONFIG_PXA_ENABLED
+    if (s_file_upload.stream) {
+        pxa_status_t status=pxa_host_container_stream_feed(s_file_upload.stream,bytes,length);
+        if (status==PXA_STATUS_OK) {
+            s_file_upload.remaining-=length;
+            if (s_file_upload.remaining) {SendFsUploadReady(sequence);return;}
+            status=pxa_host_container_stream_finish(s_file_upload.stream);
+        }
+        if(status!=PXA_STATUS_OK || !s_file_upload.stream_epoch)AbortFileUpload();
+        SendFrame(sequence,status==PXA_STATUS_OK?"OK":"ERR",status==PXA_STATUS_OK?"":
+            status==PXA_STATUS_RESOURCE_LIMIT?"insufficient_memory":"stream_verification_failed");
+        return;
+    }
+#endif
+    errno = 0;
+    if (fwrite(bytes, 1, length, s_file_upload.file) != length) {
+        const int write_error = errno;
+        AbortFileUpload();
+        char reason[64];
+        snprintf(reason,sizeof(reason),"file_write_failed;errno=%d",write_error);
+        SendFrame(sequence, "ERR", reason);
+        return;
+    }
+    s_file_upload.remaining -= length;
+    if (s_file_upload.remaining != 0) {
+        SendFsUploadReady(sequence);
+        return;
+    }
+    const bool refresh_pxa_inbox = s_file_upload.refresh_pxa_inbox;
+    const bool has_expected_sha256 = s_file_upload.has_expected_sha256;
+    char expected_sha256[sizeof(s_file_upload.expected_sha256)] = {};
+    snprintf(expected_sha256, sizeof(expected_sha256), "%s", s_file_upload.expected_sha256);
+    char temporary[sizeof(s_file_upload.temporary)] = {};
+    snprintf(temporary, sizeof(temporary), "%s", s_file_upload.temporary);
+    const int close_error = fclose(s_file_upload.file);
+    s_file_upload.file = nullptr;
+    free(s_file_upload.io_buffer);s_file_upload.io_buffer=nullptr;
+    if (close_error) {
+        AbortFileUpload();
+        SendFrame(sequence, "ERR", "file_close_failed");
+        return;
+    }
+    if (has_expected_sha256 && !FileMatchesSha256(temporary, expected_sha256)) {
+        AbortFileUpload();
+        SendFrame(sequence, "ERR", "checksum_mismatch");
+        return;
+    }
+    const bool renamed = rename(s_file_upload.temporary, s_file_upload.destination) == 0;
+    if (!renamed) {
+        AbortFileUpload();
+        SendFrame(sequence, "ERR", "file_commit_failed");
+        return;
+    }
+    s_file_upload = {};
+    // Answer before refreshing: the inbox scan verifies signatures and can
+    // take seconds, which must not delay the upload acknowledgement.
+    SendFrame(sequence, "OK", "");
+    if (refresh_pxa_inbox) RefreshPxaInboxAfterFsMutation();
+}
+// Two-phase admission: clients send no binary bytes before CONTINUE. All
+// bytes until the zero delimiter belong to this batch, never to the command
+// parser. Timed-out/oversized batches drain through that delimiter as well.
+void StartFsBulk(unsigned long sequence, const char* offset_text,
+                 const char* size_text, const char* crc_text) {
+    if (!FileUploadActive()) { SendFrame(sequence, "ERR", "no_upload_in_progress"); return; }
+    char *end = nullptr;
+    if (!offset_text || !size_text || !crc_text || strlen(crc_text) != 8) {
+        SendFrame(sequence, "ERR", "invalid_file_chunk"); return;
+    }
+    const unsigned long offset = strtoul(offset_text, &end, 10);
+    if (end == offset_text || *end || offset != s_file_upload.total - s_file_upload.remaining) {
+        SendFrame(sequence, "ERR", "offset_mismatch"); return;
+    }
+    const unsigned long size = strtoul(size_text, &end, 10);
+    if (end == size_text || *end || !size || size > kFsBulkSize || size > s_file_upload.remaining) {
+        SendFrame(sequence, "ERR", "invalid_file_chunk"); return;
+    }
+    for (unsigned i = 0; i < 8; ++i) {
+        const char c = crc_text[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+            SendFrame(sequence, "ERR", "invalid_chunk_checksum"); return;
+        }
+    }
+    ResetBulkUpload();
+    s_bulk.bytes = static_cast<uint8_t*>(heap_caps_malloc(kFsBulkEncodedSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!s_bulk.bytes) { SendFrame(sequence, "ERR", "bulk_no_memory"); return; }
+    s_bulk.expected = size;
+    s_bulk.capacity = kFsBulkEncodedSize;
+    s_bulk.sequence = sequence;
+    s_bulk.crc = static_cast<uint32_t>(strtoul(crc_text, nullptr, 16));
+    s_bulk.last_us = esp_timer_get_time();
+    char accepted[24]; snprintf(accepted, sizeof(accepted), "%lu", size);
+    if (!SendFrame(sequence, "CONTINUE", accepted)) ResetBulkUpload();
+}
+
+void StartFsFast(unsigned long sequence, const char* requested) {
+    char* end=nullptr;
+    const unsigned long wanted=requested?strtoul(requested,&end,10):0;
+    if(!FileUploadActive() || !s_file_upload.remaining || !requested || end==requested || *end ||
+       wanted<256 || wanted>65536) {SendFrame(sequence,"ERR","invalid_fast_request");return;}
+    ResetBulkUpload();
+    // Prefer PSRAM. Fall back to a small internal buffer on devices without it.
+    for(unsigned caps : {MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT, MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT}) {
+        size_t chunk=fast_chunk_limit(wanted,heap_caps_get_free_size(caps),heap_caps_get_largest_free_block(caps));
+        for(;chunk>=256;chunk=chunk>512?chunk/2:256) {
+            const size_t raw=chunk+24, capacity=raw+raw/254+1;
+            auto* buffer=static_cast<uint8_t*>(heap_caps_malloc(capacity,caps));
+            if(!buffer) {if(chunk==256)break;continue;}
+            s_bulk.bytes=buffer;s_bulk.capacity=capacity;s_bulk.expected=chunk;s_bulk.fast=true;
+            s_bulk.sequence=sequence;s_bulk.last_us=esp_timer_get_time();
+            char answer[64];snprintf(answer,sizeof(answer),"chunk=%u;timeout_ms=10000;window=1",unsigned(chunk));
+            if(!SendFrame(sequence,"OK",answer))AbortFileUpload();
+            return;
+        }
+    }
+    SendFrame(sequence,"ERR","bulk_no_memory");
+}
+
+size_t ConsumeFsBulk(const uint8_t* input, size_t available) {
+    if (!s_bulk.bytes && !s_bulk.draining) return 0;
+    s_bulk.last_us = esp_timer_get_time();
+    s_last_control_activity_us.store(s_bulk.last_us, std::memory_order_relaxed);
+    const auto* end = static_cast<const uint8_t*>(memchr(input, 0, available));
+    const size_t amount = end ? static_cast<size_t>(end - input) : available;
+    if (s_bulk.bytes && amount <= s_bulk.capacity - s_bulk.used) {
+        memcpy(s_bulk.bytes + s_bulk.used, input, amount);
+        s_bulk.used += amount;
+    } else s_bulk.draining = true;
+    if (!end) return amount;
+    // Detach before commit: a failed write/abort must not free this buffer twice.
+    const BulkUpload batch = s_bulk;
+    s_bulk = {};
+    if(batch.fast) {
+        // Empty delimiter cancels even between frames. Two delimiters also
+        // recover a truncated/oversized frame before the next text command.
+        if(!batch.used && !batch.draining) {
+            free(batch.bytes);AbortFileUpload();return amount+1;
+        }
+        uint32_t sequence=uint32_t(batch.sequence);uint64_t offset=0;size_t length=0;
+        size_t decoded=batch.draining?0:decode_bulk_size(batch.bytes,batch.used,batch.expected+24);
+        bool valid=parse_fast(batch.bytes,decoded,batch.expected,&sequence,&offset,&length);
+        const char* error="invalid_file_chunk";
+        if(valid) {
+            uint32_t crc=0;
+            for(unsigned i=0;i<4;++i)crc|=uint32_t(batch.bytes[decoded-4+i])<<(i*8);
+            if(esp_rom_crc32_le(0,batch.bytes,decoded-4)!=crc) {valid=false;error="chunk_checksum_mismatch";}
+            else if(!FileUploadActive() || offset!=s_file_upload.total-s_file_upload.remaining ||
+                    length>s_file_upload.remaining) {valid=false;error="offset_mismatch";}
+        }
+        if(!valid) {AbortFileUpload();SendFrame(sequence,"ERR",error);}
+        else CommitFsUploadBytes(sequence,batch.bytes+20,length);
+        if(valid && FileUploadActive() && s_file_upload.remaining) {
+            s_bulk=batch;s_bulk.used=0;s_bulk.last_us=esp_timer_get_time();
+        } else free(batch.bytes);
+        return amount+1;
+    }
+    if (batch.draining || !decode_bulk(batch.bytes, batch.used, batch.expected)) {
+        ESP_LOGW(kTag, "Bulk frame rejected: encoded=%u expected=%u draining=%u",
+                 static_cast<unsigned>(batch.used), static_cast<unsigned>(batch.expected), batch.draining);
+        SendFrame(batch.sequence, "ERR", "invalid_file_chunk");
+    } else if (esp_rom_crc32_le(0, batch.bytes, batch.expected) != batch.crc)
+        SendFrame(batch.sequence, "ERR", "chunk_checksum_mismatch");
+    else CommitFsUploadBytes(batch.sequence, batch.bytes, batch.expected);
+    free(batch.bytes);
+    return amount + 1;
+}
+
 void WriteFsUpload(unsigned long sequence, const char* offset_text,
                    const char* encoded_data, const char* checksum = nullptr) {
-    if (s_file_upload.file == nullptr) {
+    if (!FileUploadActive()) {
         SendFrame(sequence, "ERR", "no_upload_in_progress");
         return;
     }
@@ -958,44 +1245,7 @@ void WriteFsUpload(unsigned long sequence, const char* offset_text,
         SendFrame(sequence, "ERR", "chunk_checksum_mismatch");
         return;
     }
-    errno = 0;
-    if (fwrite(bytes, 1, length, s_file_upload.file) != length) {
-        const int write_error = errno;
-        AbortFileUpload();
-        char reason[64];
-        snprintf(reason,sizeof(reason),"file_write_failed;errno=%d",write_error);
-        SendFrame(sequence, "ERR", reason);
-        return;
-    }
-    s_file_upload.remaining -= length;
-    if (s_file_upload.remaining != 0) {
-        SendFsUploadReady(sequence);
-        return;
-    }
-    const bool refresh_pxa_inbox = s_file_upload.refresh_pxa_inbox;
-    const bool has_expected_sha256 = s_file_upload.has_expected_sha256;
-    char expected_sha256[sizeof(s_file_upload.expected_sha256)] = {};
-    snprintf(expected_sha256, sizeof(expected_sha256), "%s", s_file_upload.expected_sha256);
-    char temporary[sizeof(s_file_upload.temporary)] = {};
-    snprintf(temporary, sizeof(temporary), "%s", s_file_upload.temporary);
-    fclose(s_file_upload.file);
-    s_file_upload.file = nullptr;
-    if (has_expected_sha256 && !FileMatchesSha256(temporary, expected_sha256)) {
-        AbortFileUpload();
-        SendFrame(sequence, "ERR", "checksum_mismatch");
-        return;
-    }
-    const bool renamed = rename(s_file_upload.temporary, s_file_upload.destination) == 0;
-    if (!renamed) {
-        AbortFileUpload();
-        SendFrame(sequence, "ERR", "file_commit_failed");
-        return;
-    }
-    s_file_upload = {};
-    // Answer before refreshing: the inbox scan verifies signatures and can
-    // take seconds, which must not delay the upload acknowledgement.
-    SendFrame(sequence, "OK", "");
-    if (refresh_pxa_inbox) RefreshPxaInboxAfterFsMutation();
+    CommitFsUploadBytes(sequence, bytes, length);
 }
 
 void MakeFsDirectory(unsigned long sequence, const char* encoded_path) {
@@ -1043,7 +1293,7 @@ void MoveExternalFile(unsigned long sequence, const char* encoded_source,
     }
     if (errno != ENOENT) { SendFrame(sequence, "ERR", "destination_stat_failed"); return; }
     if(copy) {
-        if(s_file_upload.file!=nullptr) {SendFrame(sequence,"ERR","file_upload_active");return;}
+        if(FileUploadActive()) {SendFrame(sequence,"ERR","file_upload_active");return;}
         if(!strcmp(source,destination_volume) || !strcmp(destination,destination_volume)) {
             SendFrame(sequence,"ERR","reserved_transfer_path");return;
         }
@@ -1313,12 +1563,16 @@ int PxaLogVprintf(const char* format, va_list arguments) {
 void SendHello(unsigned long sequence) {
     const esp_app_desc_t* app = esp_app_get_description();
     // Keep complete capability and version fields without enlarging log records.
-    char payload[512] = {};
+    char payload[768] = {};
     char transport_info[72] = {};
 #if CONFIG_PXADB_TRANSPORT_UART
     snprintf(transport_info, sizeof(transport_info),
-             ";uart_rx_buffer=%u;uart_rx_fifo_threshold=%d",
+             ";transport=uart;uart_rx_buffer=%u;uart_rx_fifo_threshold=%d",
              pxadb_uart_rx_buffer_capacity(), kTransportRxFifoThreshold);
+#elif CONFIG_PXADB_TRANSPORT_USB_CDC
+    snprintf(transport_info,sizeof(transport_info),";transport=usb-cdc");
+#else
+    snprintf(transport_info,sizeof(transport_info),";transport=usb-jtag");
 #endif
     const char* kTestCapabilities =
 #if CONFIG_PXADB_TEST_CONTROL
@@ -1351,7 +1605,7 @@ void SendHello(unsigned long sequence) {
         "";
 #endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;target=%s;serial=%s;version=%s%s",
+             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;max_fast=3840;package_stream=2;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
              kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability, kGrayCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
              CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version,
@@ -1375,7 +1629,7 @@ void SendInfo(unsigned long sequence) {
 #if CONFIG_PXA_ENABLED
     const size_t capability_offset = strlen(payload);
     snprintf(payload + capability_offset, sizeof(payload) - capability_offset,
-             ";package_directory_adopt=1;package_receive=1;board=%s;pxa_version=%s;pxa_core=%u.%u",
+             ";package_directory_adopt=1;package_receive=1;package_stream=2;board=%s;pxa_version=%s;pxa_core=%u.%u",
              PXA_FIRMWARE_BOARD, PXA_VERSION_STRING,
              static_cast<unsigned>(PXA_CORE_VERSION_MAJOR),
              static_cast<unsigned>(PXA_CORE_VERSION_MINOR));
@@ -2109,16 +2363,29 @@ void HandleVolumes(unsigned long sequence) {
         (void)pxa_esp_storage_refresh_volume(volume.mount_epoch);
         (void)pxa_esp_storage_volume(volume.mount_epoch,&volume);
         (void)pxa_esp_storage_volume_path(volume.mount_epoch,path,sizeof(path));
+        const size_t root_length=strlen(kPxaMountPoint);
+        const char *relative=!strcmp(path,kPxaMountPoint)?".":
+            (!strncmp(path,kPxaMountPoint,root_length) && path[root_length]=='/'?path+root_length+1:"");
         snprintf(payload,sizeof(payload),"epoch=%" PRIu64 ";capabilities=%" PRIu64
-            ";free=%" PRIu64 ";known=%u;ambiguous=%u;path=%s;name=%s",
+            ";free=%" PRIu64 ";known=%u;ambiguous=%u;path=%s;name=%s;relative=%s;state=%u;unit=%u;private_bytes=%" PRIu64,
             volume.mount_epoch,volume.capabilities,volume.free_bytes,
-            unsigned(volume.space_known),unsigned(volume.ambiguous),path,volume.name);
+            unsigned(volume.space_known),unsigned(volume.ambiguous),path,volume.name,relative,
+            unsigned(volume.state),unsigned(volume.allocation_unit),pxa_host_package_private_capacity());
         if(!SendFrame(sequence,"DATA",payload)) {heap_caps_free(volumes);return;}
     }
     heap_caps_free(volumes);SendFrame(sequence,"OK","");
 #else
     SendFrame(sequence,"ERR","pxa_disabled");
 #endif
+}
+void SendNetworkInfo(unsigned long sequence) {
+    esp_netif_t *netif=esp_netif_get_default_netif();esp_netif_ip_info_t info={};
+    if(!netif || !esp_netif_is_netif_up(netif) || esp_netif_get_ip_info(netif,&info)!=ESP_OK || !info.ip.addr) {
+        SendFrame(sequence,"ERR","network_unavailable");return;
+    }
+    char payload[96];snprintf(payload,sizeof(payload),"ipv4=" IPSTR ";netmask=" IPSTR,
+        IP2STR(&info.ip),IP2STR(&info.netmask));
+    SendFrame(sequence,"OK",payload);
 }
 void HandlePackageInstallVolume(unsigned long sequence,const char* epoch_text,const char* source_text) {
 #if CONFIG_PXA_ENABLED
@@ -2128,7 +2395,12 @@ void HandlePackageInstallVolume(unsigned long sequence,const char* epoch_text,co
         !DecodeFsPath(source_text,relative,sizeof(relative),source,sizeof(source))) {
         SendFrame(sequence,"ERR","invalid_install_placement");return;
     }
+    const bool owned=s_file_upload.stream && s_file_upload.stream_epoch;
+    if(owned && (s_file_upload.remaining || s_file_upload.stream_epoch!=epoch || strcmp(source,s_file_upload.destination))) {
+        SendFrame(sequence,"ERR","stream_install_not_ready");return;
+    }
     const int32_t status=pxa_host_install_package_file_on_volume(source,uint64_t(epoch));
+    if(owned)AbortFileUpload();
     char payload[64]={};snprintf(payload,sizeof(payload),"install_status=%" PRId32,status);
     SendFrame(sequence,status==0?"OK":"ERR",payload);
 #else
@@ -2508,6 +2780,14 @@ void HandleCommand(char* line) {
     } else if (strcmp(command, "FSABORT") == 0) {
         AbortTransfers();
         SendFrame(sequence, "OK", "aborted");
+#if CONFIG_PXA_ENABLED
+    } else if (strcmp(command, "FSINSTALL") == 0 && argument && second_argument && third_argument) {
+        StartFsStream(sequence, argument, second_argument, third_argument,argument_count>3?arguments[3]:nullptr);
+    } else if (strcmp(command,"FSFETCH")==0 && argument) {
+        FetchFsStream(sequence,argument);
+#endif
+    } else if (strcmp(command,"NETINFO")==0) {
+        SendNetworkInfo(sequence);
     } else if (strcmp(command, "FSPUT") == 0 && argument != nullptr && second_argument != nullptr) {
         StartFsUpload(sequence, argument, second_argument, third_argument);
     } else if (strcmp(command, "FSDATA") == 0 && argument != nullptr) {
@@ -2517,6 +2797,10 @@ void HandleCommand(char* line) {
             WriteFsUpload(sequence, argument, third_argument, second_argument);
         else
             SendFrame(sequence, "ERR", "invalid_file_chunk");
+    } else if (strcmp(command, "FSBULK") == 0) {
+        StartFsBulk(sequence, argument, second_argument, third_argument);
+    } else if (strcmp(command, "FSFAST") == 0) {
+        StartFsFast(sequence, argument);
     } else if (strcmp(command, "FSMKDIR") == 0 && argument != nullptr) {
         MakeFsDirectory(sequence, argument);
     } else if (strcmp(command, "FSMOVE") == 0 && argument != nullptr && second_argument != nullptr) {
@@ -2796,10 +3080,17 @@ void PxadbTask(void*) {
     char command[kMaxCommandLength] = {};
     size_t command_length = 0;
     bool discarding_command = false;
-    uint8_t input[128] = {};
+    uint8_t input[512] = {};
     while (s_running.load()) {
         const int received = TransportRead(input, sizeof(input), kTransportReadPollMs);
         if (received <= 0) {
+            if (s_bulk.bytes && static_cast<uint64_t>(esp_timer_get_time()) - s_bulk.last_us > 10000000u) {
+                const unsigned long sequence = s_bulk.sequence;
+                const bool partial=s_bulk.used!=0;
+                if(s_bulk.fast) {AbortFileUpload();s_bulk.draining=partial;}
+                else {free(s_bulk.bytes);s_bulk.bytes=nullptr;s_bulk.draining=true;}
+                SendFrame(sequence, "ERR", "bulk_timeout");
+            }
             SendPendingLogs();
             TryDiscardPackageTransfers();
             const uint64_t now_us = static_cast<uint64_t>(esp_timer_get_time());
@@ -2818,12 +3109,20 @@ void PxadbTask(void*) {
             continue;
         }
         for (int index = 0; index < received; ++index) {
+            const size_t consumed = ConsumeFsBulk(input + index, received - index);
+            if (consumed) { index += static_cast<int>(consumed) - 1; continue; }
+            // Zero is the bulk resynchronization delimiter, never command text.
+            if (input[index] == 0) { command_length = 0; discarding_command = false; continue; }
             const char character = static_cast<char>(input[index]);
             if (character == '\r') continue;
             if (character == '\n') {
                 if (!discarding_command && command_length > 0) {
                     command[command_length] = '\0';
                     HandleCommand(command);
+                    // Time spent downloading/verifying a package is active
+                    // work. Give the host a full idle window after the reply.
+                    s_last_control_activity_us.store(
+                        static_cast<uint64_t>(esp_timer_get_time()), std::memory_order_relaxed);
                 }
                 command_length = 0;
                 discarding_command = false;
@@ -2836,8 +3135,9 @@ void PxadbTask(void*) {
                 discarding_command = true;
             }
         }
-        SendPendingLogs();
+        if (!s_bulk.bytes && !s_bulk.draining) SendPendingLogs();
     }
+    ResetBulkUpload();
     if (s_control_session_active.exchange(false)) {
 #if CONFIG_PXADB_TEST_CONTROL
         QueueSessionCancel();

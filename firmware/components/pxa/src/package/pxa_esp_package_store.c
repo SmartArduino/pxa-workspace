@@ -15,6 +15,7 @@
 #include "pxa_esp_fs_roots.h"
 #include "pxa_esp_package_policy.h"
 #include "pxa/pxa_esp_storage.h"
+#include "pxa/pxa_container_stream.h"
 
 #if defined(ESP_PLATFORM)
 #include "sdkconfig.h"
@@ -2494,11 +2495,16 @@ pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *source,uin
     pxa_posix_app_home_t home;pxa_install_plan_t plan={0};pxa_volume_info_t volume;
     char root[PXA_ESP_PACKAGE_MAX_PATH],identity[PXA_ESP_PACKAGE_MAX_IDENTITY],locator[PXA_POSIX_APP_LOCATOR_BYTES];
     uint8_t publisher[32],digest[32];char app_id[65];uint64_t expected=0,source_epoch=0;pxa_status_t status;
-    int legacy_update=0,created_entry=0;
+    int legacy_update=0,created_entry=0,prepared=0;
     char *resource_result_root=NULL;
     if(!store_is_initialized() || !source || (expected_root && !expected_app))return PXA_STATUS_INVALID_ARGUMENT;
     status=retain_source_volume(source,&source_epoch);if(status!=PXA_STATUS_OK)return status;
-    if(!is_regular_file(source)) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_INVALID_ARGUMENT;}
+    if(!is_regular_file(source)) {
+        struct stat info;
+        prepared=epoch && epoch==source_epoch && pxa_host_container_stream_volume_path(epoch,source) &&
+            lstat(source,&info)==0 && S_ISDIR(info.st_mode);
+        if(!prepared) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_INVALID_ARGUMENT;}
+    }
     if(!take_lock(g_store->transaction_lock)) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
     if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
     status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
@@ -2521,7 +2527,8 @@ pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *source,uin
         approved.media_volume=volume.id;memcpy(approved.publisher_root,publisher,32);
         memcpy(approved.media_set_sha256,digest,32);strcpy(approved.app_id,app_id);
         status=pxa_esp_installations_open(epoch,&owner);
-        if(status==PXA_STATUS_OK)status=pxa_esp_installations_plan(owner,manifest,0,0,&plan);
+        if(status==PXA_STATUS_OK)status=prepared?pxa_esp_installations_plan_prepared(owner,manifest,0,&plan):
+            pxa_esp_installations_plan(owner,manifest,0,0,&plan);
         if(status==PXA_STATUS_OK)status=pxa_esp_storage_reserve_plan(&plan);
         if(status==PXA_STATUS_OK)status=pxa_esp_installations_install_resources(owner,&approved,source,&plan,&result);
         goto done;
@@ -2555,7 +2562,9 @@ pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *source,uin
         do {esp_fill_random(approved.install_id,16);} while(!memcmp(approved.install_id,(uint8_t[16]){0},16));
     }
     status=bind_prepared_media(manifest,epoch,&approved);if(status!=PXA_STATUS_OK)goto done;
-    status=pxa_esp_installations_plan(owner,manifest,0,!expected,&plan);if(status!=PXA_STATUS_OK)goto done;
+    status=prepared?pxa_esp_installations_plan_prepared(owner,manifest,!expected,&plan):
+        pxa_esp_installations_plan(owner,manifest,0,!expected,&plan);
+    if(status!=PXA_STATUS_OK)goto done;
     status=pxa_esp_storage_reserve_plan(&plan);if(status!=PXA_STATUS_OK)goto done;
     status=pxa_esp_installations_install(owner,source,locator,&approved,expected,digest,&plan,NULL,NULL,&result,&home);
     if(status==PXA_STATUS_OK) {
@@ -2599,8 +2608,8 @@ pxa_status_t pxa_esp_package_store_open_storage(const char *identity,pxa_esp_app
     epoch=entry->mount_epoch;generation=entry->install_generation;
     memcpy(install_id,entry->install_id,16);memcpy(manifest_hash,entry->manifest_sha256,32);
     snprintf(locator,sizeof(locator),"%s",entry->storage_key);
-    /* Bulk verification uses the activation's own PSRAM buffers. Catalog
-     * readers never wait for payload hashing or a private-image mount. */
+    /* Activation authenticates metadata without rescanning committed files.
+     * Catalog readers never wait for recovery or a private-image mount. */
     release_lock(g_store->metadata_lock);
     status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
     status=pxa_esp_installations_open(epoch,&owner);if(status!=PXA_STATUS_OK)goto done;
@@ -2763,7 +2772,7 @@ pxa_status_t pxa_esp_package_store_prepare_install(const uint8_t *prefix,size_t 
     approval->download_only=!!download_only;
     status=pxa_container_header_parse((pxa_bytes_t){prefix,PXA_CONTAINER_HEADER_BYTES},total,&header);
     if(status!=PXA_STATUS_OK)return status;
-    if(header.payload_offset!=bytes)return PXA_STATUS_DENIED;
+    if(header.index_offset!=bytes)return PXA_STATUS_DENIED;
     if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
     if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
     status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
@@ -2876,7 +2885,7 @@ pxa_status_t pxa_esp_package_store_prepare_resources(pxa_esp_install_approval_t 
     status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
     if(prefix) {
         status=pxa_container_header_parse((pxa_bytes_t){prefix,bytes<PXA_CONTAINER_HEADER_BYTES?bytes:PXA_CONTAINER_HEADER_BYTES},total,&header);
-        if(status!=PXA_STATUS_OK || header.payload_offset!=bytes) {status=PXA_STATUS_DENIED;goto done;}
+        if(status!=PXA_STATUS_OK || header.index_offset!=bytes) {status=PXA_STATUS_DENIED;goto done;}
         if(!manifest_workspace_for_encoded(prefix+header.manifest_offset,header.manifest_size,&limits,&workspace) ||
             !ensure_encoded_capacity(header.manifest_size) || !ensure_manifest_workspace_capacity(workspace)) {
             status=PXA_STATUS_RESOURCE_LIMIT;goto done;
@@ -3040,8 +3049,8 @@ static pxa_status_t file_signed_prefix(pxa_esp_file_install_t *file,uint8_t *pre
         status=pxa_container_header_parse((pxa_bytes_t){prefix,have},*total,&header);
         if(status!=PXA_STATUS_OK)goto done;
         if(header.manifest_size>PXA_ESP_SIGNED_MANIFEST_MAX_BYTES ||
-            header.payload_offset>limit || header.payload_offset<=have) {status=PXA_STATUS_LIMIT_EXCEEDED;goto done;}
-        need=(size_t)header.payload_offset;
+            header.index_offset>limit || header.index_offset<=have) {status=PXA_STATUS_LIMIT_EXCEEDED;goto done;}
+        need=(size_t)header.index_offset;
     }
     *bytes=have;status=PXA_STATUS_OK;
 done:
@@ -3054,7 +3063,7 @@ static pxa_status_t file_resource_choices(pxa_esp_file_install_t *file,const uin
     pxa_esp_install_approval_t *approval=&file->placement;
     pxa_esp_installations_t *owner=NULL;pxa_volume_info_t *volumes=NULL;
     pxa_status_t status=pxa_container_header_parse((pxa_bytes_t){prefix,PXA_CONTAINER_HEADER_BYTES},total,&header);
-    if(status!=PXA_STATUS_OK || header.payload_offset!=bytes)return PXA_STATUS_DENIED;
+    if(status!=PXA_STATUS_OK || header.index_offset!=bytes)return PXA_STATUS_DENIED;
     if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
     if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
     status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;

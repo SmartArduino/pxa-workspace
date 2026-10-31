@@ -35,6 +35,8 @@ set(PXA_SRCS
     "src/package/pxa_esp_legacy_adoption.c"
     "src/package/pxa_esp_resource_transfer.c"
     "src/package/pxa_esp_package_trust.c"
+    "src/package/pxa_esp_container_stream.c"
+    "src/package/pxa_esp_container_fetch.c"
     "src/package/pxa_esp_installations.c"
     "src/package/pxa_esp_publisher_directory.c"
     "src/package/pxa_esp_install_approval.c"
@@ -152,6 +154,7 @@ set(PXA_PRIV_REQUIRES
     mbedtls
     espressif__esp_audio_codec
     esp_http_client
+    esp_wifi
     tcp_transport
     esp_netif
     esp_hw_support

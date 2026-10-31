@@ -1,0 +1,14 @@
+{
+  "format": "pxa-package-source-0.1",
+  "id": "pxa-sparse-storage-probe",
+  "version": "1.0.0",
+  "release_sequence": 1,
+  "name": "Sparse storage probe",
+  "description": "Device fixture for private extent growth, replacement and cold persistence",
+  "build": {
+    "system": "cmake",
+    "native_stack_checks": true,
+    "linear_memory": {"maximum_bytes": 131072, "pinned": false}
+  },
+  "components": [{"id": "main", "kind": "ui", "wasi": {"version": "preview1", "libc": "wasi-libc", "features": []}, "services": ["log", "fs"]}]
+}

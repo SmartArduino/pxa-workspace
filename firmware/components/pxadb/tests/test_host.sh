@@ -7,6 +7,10 @@ build_dir="$(mktemp -d "${TMPDIR:-/tmp}/pxadb-jpeg-test.XXXXXX")"
 trap 'rm -rf -- "$build_dir"' EXIT
 python3 "$tests_dir/test_package_cleanup.py"
 python3 "$tests_dir/test_fs_remove.py"
+"${CXX:-c++}" -std=c++17 -O1 -Wall -Wextra -Werror \
+  -fsanitize=address,undefined -fno-omit-frame-pointer \
+  -I"$component_dir/include" "$tests_dir/bulk_test.cc" -o "$build_dir/bulk_test"
+"$build_dir/bulk_test"
 "${CXX:-c++}" -std=c++17 -O3 -Wall -Wextra -Werror -pthread \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   -DCONFIG_PXADB_JPEG_PSRAM_WORKSPACE=1 \

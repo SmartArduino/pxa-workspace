@@ -52,6 +52,9 @@ build_and_run main_loop \
   "${adapter_includes[@]}" "$tests_dir/pxa_host_main_loop_test.c"
 build_and_run window_metrics \
   "${adapter_includes[@]}" "$tests_dir/pxa_host_window_metrics_test.c"
+build_and_run container_fetch \
+  "${adapter_includes[@]}" "$tests_dir/pxa_esp_container_fetch_test.c" \
+  "$component_dir/src/package/pxa_esp_container_fetch.c"
 
 build_and_run activation_arena \
   -I"$component_dir/src/runtime" \
@@ -135,7 +138,9 @@ littlefs_dir="$project_dir/firmware/managed_components/joltwallet__littlefs/src/
 build_and_run private_image -DLFS_NO_DEBUG -DLFS_NO_WARN -DLFS_NO_ERROR \
   "${adapter_includes[@]}" -I"$littlefs_dir" -pthread \
   "$tests_dir/pxa_esp_image_blockdev_test.c" "$component_dir/src/services/pxa_esp_image_blockdev.c" \
-  "$littlefs_dir/lfs.c" "$littlefs_dir/lfs_util.c"
+  "$littlefs_dir/lfs.c" "$littlefs_dir/lfs_util.c" \
+  "$pxa_system_dir/libpxa/src/package/container.c" "$pxa_system_dir/libpxa/src/core/wire.c" \
+  -Wl,--wrap=write -Wl,--wrap=fsync
 
 libpxa_build="$build_dir/libpxa"
 cmake -S "$pxa_system_dir/libpxa" -B "$libpxa_build" \
@@ -187,6 +192,7 @@ build_and_run app_storage -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   "$pxa_system_dir/libpxa/adapters/esp/pxa_esp_posix_shim.c" \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_volume.c" \
   "$littlefs_dir/lfs.c" "$littlefs_dir/lfs_util.c" "$libpxa_build/libpxa.a" -lcrypto -lmbedcrypto -lm
+cc "${cc_flags[@]}" -Wno-error -c "$pxa_system_dir/libpxa/adapters/image/vendor/miniz.c" -o "$build_dir/miniz.o"
 cc "${cc_flags[@]}" -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   '-DCONFIG_PXA_STORAGE_PARTITION_LABEL="forbidden-primary"' \
   "${adapter_includes[@]}" -I"$pxa_system_dir/libpxa/adapters/tests" -pthread \
@@ -202,7 +208,7 @@ cc "${cc_flags[@]}" -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_app_home.c" \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_install_record.c" \
   "$pxa_system_dir/libpxa/adapters/openssl/pxa_openssl.c" \
-  "$libpxa_build/libpxa.a" -llz4 -lcrypto -lmbedcrypto -lm -o "$build_dir/installations"
+  "$build_dir/miniz.o" "$libpxa_build/libpxa.a" -llz4 -lcrypto -lmbedcrypto -lm -o "$build_dir/installations"
 python3 "$tests_dir/test_installations.py" "$build_dir/installations" "$pxa_system_dir"
 
 for migration in app_transfer legacy_adoption; do
@@ -230,7 +236,7 @@ cc "${cc_flags[@]}" -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_app_home.c" \
   "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_install_record.c" \
   "$pxa_system_dir/libpxa/adapters/openssl/pxa_openssl.c" \
-  "$libpxa_build/libpxa.a" -llz4 -lcrypto -lmbedcrypto -lm -o "$build_dir/$migration"
+  "$build_dir/miniz.o" "$libpxa_build/libpxa.a" -llz4 -lcrypto -lmbedcrypto -lm -o "$build_dir/$migration"
 python3 "$tests_dir/test_installations.py" "$build_dir/$migration" "$pxa_system_dir"
 done
 

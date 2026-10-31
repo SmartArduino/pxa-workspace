@@ -18,6 +18,7 @@
 #include "pxa_esp_ime.h"
 #include "pxa_esp_package_icon.h"
 #include "pxa_esp_package_store.h"
+#include "pxa_esp_installations.h"
 #include "pxa_esp_resource_memory.h"
 #include "pxa_esp_ui_shell.h"
 
@@ -190,6 +191,7 @@ int32_t pxa_host_install_package_file_on_volume(const char *source,uint64_t epoc
     if(status==PXA_STATUS_OK)notify_catalog_changed();
     return status;
 }
+uint64_t pxa_host_package_private_capacity(void) {return pxa_esp_installations_private_initial_bytes();}
 int32_t pxa_host_move_package_volume(const char *identity,uint64_t epoch,bool resume) {
     return pxa_host_move_package_volume_with_progress(identity,epoch,resume,NULL,NULL);
 }

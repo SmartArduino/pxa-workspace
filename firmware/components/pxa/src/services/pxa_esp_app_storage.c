@@ -25,7 +25,7 @@
 #endif
 
 struct pxa_esp_app_storage {
-    uint64_t epoch,capacity,reserved_bytes,data_generation,media_epoch;
+    uint64_t epoch,capacity,reserved_bytes,growth_reserved,data_generation,media_epoch;
     const pxa_install_plan_t *plan;
     esp_blockdev_handle_t image;
     uint8_t native_private,mounted,alias_bound,home_bound,ready;
@@ -46,6 +46,7 @@ pxa_status_t pxa_esp_app_storage_bind_media(pxa_esp_app_storage_t *storage,uint6
     return status;
 }
 static const char image_name[]="private.lfs",pending_name[]="private.pending.lfs";
+static const char sparse_name[]="private.blocks",sparse_pending[]="private.pending.blocks";
 static const uint8_t permission_purpose[]="pxa.permission.allow.v1";
 static pxa_status_t authority_identity(pxa_esp_app_storage_t *storage,const pxa_install_record_t *record) {
     static const char hex[]="0123456789abcdef";
@@ -132,7 +133,7 @@ static pxa_status_t reserve_image(pxa_esp_app_storage_t *storage) {
             pxa_install_plan_validate(pxa_esp_volumes_registry(),storage->plan):PXA_STATUS_DENIED;
         if(status==PXA_STATUS_OK) {
             status=pxa_esp_storage_volume(storage->epoch,&info);
-            if(status==PXA_STATUS_OK)status=pxa_install_file_allocation(&info,storage->capacity,&bytes);
+            if(status==PXA_STATUS_OK)status=pxa_install_file_allocation(&info,PXA_ESP_IMAGE_INITIAL_BYTES,&bytes);
             if(status==PXA_STATUS_OK) {
                 uint64_t headroom=(uint64_t)info.allocation_unit*3+4096;
                 if(bytes>UINT64_MAX-headroom)status=PXA_STATUS_LIMIT_EXCEEDED;
@@ -148,7 +149,7 @@ static pxa_status_t reserve_image(pxa_esp_app_storage_t *storage) {
     }
     status=pxa_esp_storage_refresh_volume(storage->epoch);
     if(status==PXA_STATUS_OK)status=pxa_esp_storage_volume(storage->epoch,&info);
-    if(status==PXA_STATUS_OK)status=pxa_install_file_allocation(&info,storage->capacity,&bytes);
+    if(status==PXA_STATUS_OK)status=pxa_install_file_allocation(&info,PXA_ESP_IMAGE_INITIAL_BYTES,&bytes);
     /* Cover the private directory, inactive FAT/LittleFS metadata and an I/O
      * failure's cleanup. This is physical admission, not a logical save quota. */
     if(status==PXA_STATUS_OK) {
@@ -170,6 +171,58 @@ static void release_image(pxa_esp_app_storage_t *storage) {
     pxa_esp_volumes_unlock();
 }
 
+static pxa_status_t reserve_extent(void *context,uint64_t size) {
+    pxa_esp_app_storage_t *storage=context;pxa_volume_info_t info;uint64_t bytes=0;
+    if(storage->growth_reserved)return PXA_STATUS_BUSY;
+    pxa_esp_volumes_lock();
+    pxa_status_t status=pxa_esp_storage_refresh_volume(storage->epoch);
+    if(status==PXA_STATUS_OK)status=pxa_esp_storage_volume(storage->epoch,&info);
+    if(status==PXA_STATUS_OK)status=pxa_install_file_allocation(&info,size,&bytes);
+    if(status==PXA_STATUS_OK && bytes>UINT64_MAX-(uint64_t)info.allocation_unit*3-4096)
+        status=PXA_STATUS_LIMIT_EXCEEDED;
+    if(status==PXA_STATUS_OK) {
+        bytes+=(uint64_t)info.allocation_unit*3+4096;
+        status=pxa_volume_reserve(pxa_esp_volumes_registry(),storage->epoch,bytes);
+        if(status==PXA_STATUS_OK)storage->growth_reserved=bytes;
+    }
+    pxa_esp_volumes_unlock();return status;
+}
+static void release_extent(void *context) {
+    pxa_esp_app_storage_t *storage=context;
+    pxa_esp_volumes_lock();
+    (void)pxa_volume_release(pxa_esp_volumes_registry(),storage->epoch,storage->growth_reserved);
+    storage->growth_reserved=0;(void)pxa_esp_storage_refresh_volume(storage->epoch);
+    pxa_esp_volumes_unlock();
+}
+static pxa_status_t take_sparse(pxa_esp_app_storage_t *storage,int directory) {
+    const pxa_esp_image_allocation_t allocation={storage,reserve_extent,release_extent};
+    pxa_status_t status=pxa_esp_image_blockdev_take_sparse(directory,storage->epoch,&allocation,&storage->image);
+    if(status!=PXA_STATUS_OK)pxa_esp_close(directory);
+    return status;
+}
+static pxa_status_t discard_pending_blocks(int directory) {
+    int fd=pxa_esp_openat(directory,sparse_pending,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
+    if(fd<0)return errno==ENOENT?PXA_STATUS_OK:io_error();
+    int copy=pxa_esp_dup(fd);
+    if(copy<0) {pxa_esp_close(fd);return io_error();}
+    DIR *scan=pxa_esp_fdopendir(copy);struct dirent *entry;pxa_status_t status=PXA_STATUS_OK;
+    if(!scan) {pxa_esp_close(copy);pxa_esp_close(fd);return io_error();}
+    errno=0;
+    while((entry=readdir(scan))) {
+        if(!strcmp(entry->d_name,".") || !strcmp(entry->d_name,".."))continue;
+        /* Only remove our unpublished flat backing store; never follow a
+         * directory/link supplied by removable media during recovery. */
+        struct stat st;
+        if(pxa_esp_fstatat(fd,entry->d_name,&st,AT_SYMLINK_NOFOLLOW) ||
+           !S_ISREG(st.st_mode) || st.st_nlink>1) {status=PXA_STATUS_DENIED;break;}
+        if(pxa_esp_unlinkat(fd,entry->d_name,0)) {status=io_error();break;}
+        errno=0;
+    }
+    if(errno && status==PXA_STATUS_OK)status=io_error();
+    closedir(scan);pxa_esp_close(fd);
+    if(status==PXA_STATUS_OK && pxa_esp_unlinkat(directory,sparse_pending,AT_REMOVEDIR))status=io_error();
+    return status;
+}
 static pxa_status_t open_or_prepare_image(pxa_esp_app_storage_t *storage,int directory) {
     int file=pxa_esp_openat(directory,image_name,O_RDWR|O_CLOEXEC|O_NOFOLLOW);
     pxa_status_t status;
@@ -179,6 +232,9 @@ static pxa_status_t open_or_prepare_image(pxa_esp_app_storage_t *storage,int dir
         return status;
     }
     if(errno!=ENOENT)return io_error();
+    file=pxa_esp_openat(directory,sparse_name,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
+    if(file>=0)return take_sparse(storage,file);
+    if(errno!=ENOENT)return io_error();
     /* Do not hide retained legacy data behind a newly formatted image. */
     int scan=pxa_esp_dup(directory);
     if(scan<0)return io_error();
@@ -186,7 +242,8 @@ static pxa_status_t open_or_prepare_image(pxa_esp_app_storage_t *storage,int dir
     if(!stream) {pxa_esp_close(scan);return io_error();}
     errno=0;
     while((entry=readdir(stream))) {
-        if(!strcmp(entry->d_name,".") || !strcmp(entry->d_name,"..") || !strcmp(entry->d_name,pending_name))continue;
+        if(!strcmp(entry->d_name,".") || !strcmp(entry->d_name,"..") || !strcmp(entry->d_name,pending_name) ||
+           !strcmp(entry->d_name,sparse_pending))continue;
         closedir(stream);return PXA_STATUS_BAD_STATE;
     }
     int failure=errno;
@@ -196,28 +253,30 @@ static pxa_status_t open_or_prepare_image(pxa_esp_app_storage_t *storage,int dir
     /* A previous uncommitted initialization is disposable. The final image
      * is never truncated, reformatted or replaced by this path. */
     if(pxa_esp_unlinkat(directory,pending_name,0)!=0 && errno!=ENOENT)return io_error();
-    file=pxa_esp_openat(directory,pending_name,O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
+    status=discard_pending_blocks(directory);if(status!=PXA_STATUS_OK)return status;
+    if(pxa_esp_mkdirat(directory,sparse_pending,0700))return io_error();
+    file=pxa_esp_openat(directory,sparse_pending,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
     if(file<0)return io_error();
-    status=pxa_esp_image_blockdev_prepare(file,storage->epoch,storage->capacity);
-    if(status==PXA_STATUS_OK)status=pxa_esp_image_blockdev_take(file,storage->epoch,&storage->image);
-    if(!storage->image)pxa_esp_close(file);
+    status=pxa_esp_image_blockdev_prepare_sparse(file,storage->epoch,storage->capacity);
+    if(status==PXA_STATUS_OK)status=take_sparse(storage,file);
+    else pxa_esp_close(file);
     if(status==PXA_STATUS_OK && esp_littlefs_format_blockdev(storage->image)!=ESP_OK)status=PXA_STATUS_IO_ERROR;
     if(storage->image) {
         pxa_status_t closed=pxa_esp_image_blockdev_close(&storage->image);
         if(status==PXA_STATUS_OK)status=closed;
     }
-    if(status!=PXA_STATUS_OK) {pxa_esp_unlinkat(directory,pending_name,0);return status;}
+    if(status!=PXA_STATUS_OK) {discard_pending_blocks(directory);return status;}
     /* FAT keeps directory-entry state in an open FIL: close before rename. */
     struct stat metadata;
     if(pxa_esp_fstatat(directory,image_name,&metadata,AT_SYMLINK_NOFOLLOW)==0)return PXA_STATUS_BUSY;
     if(errno!=ENOENT)return io_error();
-    if(pxa_esp_renameat(directory,pending_name,directory,image_name)!=0)return io_error();
+    if(pxa_esp_fstatat(directory,sparse_name,&metadata,AT_SYMLINK_NOFOLLOW)==0)return PXA_STATUS_BUSY;
+    if(errno!=ENOENT)return io_error();
+    if(pxa_esp_renameat(directory,sparse_pending,directory,sparse_name)!=0)return io_error();
     if(pxa_esp_fsync(directory)!=0)return io_error();
-    file=pxa_esp_openat(directory,image_name,O_RDWR|O_CLOEXEC|O_NOFOLLOW);
+    file=pxa_esp_openat(directory,sparse_name,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
     if(file<0)return io_error();
-    status=pxa_esp_image_blockdev_take(file,storage->epoch,&storage->image);
-    if(status!=PXA_STATUS_OK)pxa_esp_close(file);
-    return status;
+    return take_sparse(storage,file);
 }
 
 pxa_status_t pxa_esp_app_storage_existing_root(pxa_esp_app_storage_t *storage,const char **output) {
@@ -228,8 +287,12 @@ pxa_status_t pxa_esp_app_storage_existing_root(pxa_esp_app_storage_t *storage,co
     if(directory<0)return errno==ENOENT?PXA_STATUS_NOT_FOUND:io_error();
     if(!storage->native_private) {
         struct stat metadata;
-        if(pxa_esp_fstatat(directory,image_name,&metadata,AT_SYMLINK_NOFOLLOW)!=0)
-            status=errno==ENOENT?PXA_STATUS_NOT_FOUND:io_error();
+        if(pxa_esp_fstatat(directory,image_name,&metadata,AT_SYMLINK_NOFOLLOW)!=0) {
+            if(errno!=ENOENT)status=io_error();
+            else if(pxa_esp_fstatat(directory,sparse_name,&metadata,AT_SYMLINK_NOFOLLOW))
+                status=errno==ENOENT?PXA_STATUS_NOT_FOUND:io_error();
+            else if(!S_ISDIR(metadata.st_mode))status=PXA_STATUS_DENIED;
+        }
         else if(!S_ISREG(metadata.st_mode) || metadata.st_nlink>1)status=PXA_STATUS_DENIED;
     }
     if(pxa_esp_close(directory)!=0 && status==PXA_STATUS_OK)status=io_error();

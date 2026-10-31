@@ -5,15 +5,20 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
+import http.server
+import ipaddress
 import json
 import os
 import pathlib
+import secrets
 import socket
 import shlex
 import struct
 import subprocess
 import sys
+import threading
 import time
 import zlib
 from dataclasses import dataclass
@@ -35,6 +40,26 @@ BINARY_COMMAND = 1
 BINARY_RESPONSE = 2
 BINARY_UPLOAD_DATA = 3
 BINARY_MAX_PAYLOAD = 1024 * 1024
+
+
+def encode_bulk(data: bytes) -> bytes:
+    """COBS body and zero delimiter; at most one overhead byte per 254 bytes."""
+    output = bytearray(b"\x00")
+    code_index = 0
+    code = 1
+    for value in data:
+        if value:
+            output.append(value)
+            code += 1
+            if code != 255:
+                continue
+        output[code_index] = code
+        code_index = len(output)
+        output.append(0)
+        code = 1
+    output[code_index] = code
+    output.append(0)
+    return bytes(output)
 
 
 class PxaDbError(RuntimeError):
@@ -321,6 +346,11 @@ class PxaDbClient:
         # Closing is best-effort: after a device reboot the port can vanish
         # mid-call, and pyserial then raises termios.error (which is not an
         # OSError) from tcflush or close itself.
+        if getattr(self, "fast_upload_active", False):
+            try:
+                self.cancel_fast_upload(timeout=.5)
+            except Exception:
+                pass
         if self.log_subscribed:
             try:
                 self.unsubscribe_logs()
@@ -436,6 +466,8 @@ class PxaDbClient:
     def request_until(
         self, command: str, terminal_kinds: set[str], timeout: float | None = None
     ) -> list[Frame]:
+        if getattr(self, "fast_upload_active", False) and not command.startswith("FSFAST "):
+            raise PxaDbError("binary upload owns the connection; finish or cancel it before sending commands")
         request_timeout = self.timeout if timeout is None else timeout
         deadline = time.monotonic() + request_timeout
         sequence = self._next_sequence()
@@ -443,6 +475,10 @@ class PxaDbClient:
         if getattr(self, "binary_transport", None) is not None:
             return self._collect_binary_frames(sequence, terminal_kinds, command,
                                                deadline)
+        return self._collect_serial_frames(sequence, terminal_kinds, command, deadline)
+
+    def _collect_serial_frames(self, sequence: int, terminal_kinds: set[str],
+                               command: str, deadline: float) -> list[Frame]:
         frames: list[Frame] = []
         # ESP32-S31 CDC can leave the final deploy response pending after flash
         # writes until the next OUT packet. Keep the connection active while
@@ -517,6 +553,40 @@ class PxaDbClient:
             frames.append(frame)
         raise PxaDbError(f"PXADB2 peer did not respond to {operation.split(' ', 1)[0]}")
 
+    def _write_bulk_bytes(self, payload: bytes) -> None:
+        offset = 0
+        deadline = time.monotonic() + max(self.timeout, 10.0)
+        while offset < len(payload):
+            written = self.serial.write(payload[offset:])
+            if written:
+                offset += written
+            elif time.monotonic() >= deadline:
+                raise PxaDbError("bulk serial write timed out")
+            else:
+                time.sleep(0.001)
+
+    def send_bulk_upload(self, offset: int, payload: bytes,
+                         timeout: float) -> list[Frame]:
+        sequence = self._next_sequence()
+        command = f"FSBULK {offset} {len(payload)} {zlib.crc32(payload) & 0xffffffff:08x}"
+        self._write_command(sequence, command)
+        try:
+            accepted = self._collect_serial_frames(sequence, {"CONTINUE"}, command,
+                                                   time.monotonic() + 10.0)
+            if accepted[-1].payload != str(len(payload)):
+                raise PxaDbError("invalid bulk admission size")
+            self._write_bulk_bytes(encode_bulk(payload))
+            return self._collect_serial_frames(sequence, {"READY", "OK"}, command,
+                                               time.monotonic() + timeout)
+        except Exception:
+            # Terminate a partial COBS body before any text command. Never let
+            # recovery commands become file bytes or binary bytes become commands.
+            try:
+                self._write_bulk_bytes(b"\x00")
+            except Exception:
+                pass
+            raise
+
     def send_binary_upload(self, offset: int, payload: bytes) -> list[Frame]:
         if self.binary_transport is None:
             raise PxaDbError("binary upload requires a PXADB2 transport")
@@ -526,6 +596,37 @@ class PxaDbClient:
         )
         return self._collect_binary_frames(sequence, {"READY", "OK"},
                                            "UPLOAD_DATA", time.monotonic() + 30.0)
+
+    def start_fast_upload(self, requested: int) -> int:
+        # Mark before sending: a lost admission ACK may leave the peer in data mode.
+        self.fast_upload_active = True
+        answer = info_properties(self.request(f"FSFAST {requested}")[-1].payload)
+        try:
+            chunk = int(answer["chunk"])
+            if not 256 <= chunk <= min(requested, 3840) or answer.get("window") != "1":
+                raise ValueError()
+        except (KeyError, ValueError) as error:
+            raise PxaDbError("invalid fast transfer negotiation") from error
+        return chunk
+
+    def cancel_fast_upload(self, timeout: float = 40) -> None:
+        if not getattr(self, "fast_upload_active", False):
+            return
+        self.fast_upload_active = False
+        # First delimiter terminates a partial frame; second cancels at a frame
+        # boundary. FSABORT confirms normal command mode and releases storage.
+        self._write_bulk_bytes(b"\x00\x00")
+        self.request("FSABORT", timeout=timeout)
+
+    def send_fast_upload(self, offset: int, payload: bytes, timeout: float) -> list[Frame]:
+        sequence = self._next_sequence()
+        raw = struct.pack("<4sIQI", b"PXD1", sequence, offset, len(payload)) + payload
+        self._write_bulk_bytes(encode_bulk(raw + struct.pack("<I", zlib.crc32(raw) & 0xffffffff)))
+        result = self._collect_serial_frames(sequence, {"READY", "OK"}, "FSFAST",
+                                             time.monotonic() + timeout)
+        if result[-1].kind == "OK":
+            self.fast_upload_active = False
+        return result
 
     def request(self, command: str, timeout: float | None = None) -> list[Frame]:
         return self.request_until(command, {"OK"}, timeout)
@@ -542,6 +643,10 @@ class PxaDbClient:
                 if getattr(self, "binary_transport", None) is not None and self.tcp_token:
                     self.request("AUTH " + self.tcp_token, timeout=attempt_timeout)
                     self.tcp_token = ""
+                if getattr(self, "binary_transport", None) is None:
+                    # Cancel an interrupted bulk body before restarting the text
+                    # session. Legacy firmware ignores the empty/NUL line.
+                    self._write_bulk_bytes(b"\x00\n")
                 frames = self.request("HELLO", timeout=attempt_timeout)
                 self.device_info = frames[-1].payload
                 self._hello_completed = True
@@ -872,6 +977,24 @@ def manifest_records(data: bytes) -> Iterable[tuple[int, bytes]]:
         offset += size
 
 
+def package_verification_timeout(source: pathlib.Path) -> float:
+    """Budget decoded-file verification, even for a tiny compressed archive."""
+    total = 0
+    for tag, value in manifest_records(read_package_manifest(source)[12:]):
+        if tag != 17:
+            continue
+        size = None
+        for field, data in manifest_records(value):
+            if field == 2:
+                if size is not None or len(data) != 8:
+                    raise PxaDbError("invalid file size in package manifest")
+                size = struct.unpack("<Q", data)[0]
+        if size is None:
+            raise PxaDbError("missing file size in package manifest")
+        total += size
+    return max(60.0, file_verification_timeout(total))
+
+
 def package_manifest_identity(source: pathlib.Path) -> str:
     """Read the package ID from bounded manifest metadata, before uploading."""
     identity = None
@@ -1118,18 +1241,60 @@ class NormalFsClient:
         raise last_error
 
     def put(self, source: pathlib.Path, remote_path: str,
-            progress: Callable[[int, int], None] | None = None) -> None:
+            progress: Callable[[int, int], None] | None = None, *, stream_install: bool = False,
+            stream_volume: int | None = None) -> None:
+        try:
+            self._put(source, remote_path, progress, stream_install=stream_install, stream_volume=stream_volume)
+        except PxaDbRejectedError as error:
+            if str(error) == "insufficient_memory":
+                raise PxaDbError("insufficient installation memory; close other apps or rebuild with --chunk-size 4096") from error
+            raise
+        finally:
+            if getattr(self.client, "fast_upload_active", False):
+                pending_error = sys.exc_info()[0] is not None
+                try:
+                    self.client.cancel_fast_upload()
+                except Exception:
+                    if not pending_error:
+                        raise
+
+    def _put(self, source: pathlib.Path, remote_path: str,
+             progress: Callable[[int, int], None] | None = None, *, stream_install: bool = False,
+             stream_volume: int | None = None) -> None:
+        if stream_volume is not None and (not stream_install or stream_volume <= 0):
+            raise PxaDbError("stream volume requires a positive mount epoch and streamed installation")
         total = source.stat().st_size
         digest = file_sha256(source)
         properties = info_properties(self.client.device_info)
+        if stream_install:
+            check_container_features(self.client, source)
         offset_transfer = properties.get("fs_offset") == "1"
         chunk_crc32 = offset_transfer and properties.get("fs_chunk_crc32") == "1"
         binary_transfer = getattr(self.client, "binary_transport", None) is not None
+        bulk_transfer = (not binary_transfer and properties.get("fs_bulk_cobs") == "1"
+                         and os.environ.get("PXADB_BULK", "1") != "0")
+        fast_transfer = (bulk_transfer and properties.get("fs_fast") == "1"
+                         and os.environ.get("PXADB_FAST", "1") != "0")
+        try:
+            offered_fast = min(3840, int(properties.get("max_fast", "2048")))
+            requested_fast = int(os.environ.get("PXADB_TRANSFER_CHUNK", str(offered_fast)))
+            if not 256 <= requested_fast <= 3840 or offered_fast < 256:
+                raise ValueError()
+            requested_fast = min(offered_fast, requested_fast)
+        except ValueError as error:
+            raise PxaDbError("PXADB_TRANSFER_CHUNK must be between 256 and 3840") from error
         try:
             chunk_size = int(properties.get("max_chunk", "192"))
         except ValueError:
             chunk_size = 192
-        if binary_transfer:
+        if bulk_transfer:
+            try:
+                chunk_size = min(16 * 1024, int(properties.get("max_bulk", "0")))
+            except ValueError:
+                chunk_size = 0
+            if chunk_size <= 0:
+                raise PxaDbError("invalid bulk transfer capability")
+        elif binary_transfer:
             chunk_size = min(64 * 1024, chunk_size)
         else:
             upload_profile = getattr(self.client, "upload_profile", "unknown")
@@ -1168,9 +1333,9 @@ class NormalFsClient:
             nonlocal recoveries
             while True:
                 try:
-                    frames = self.client.request_until(
-                        f"FSPUT {client_encode_path(remote_path)} {total} {digest}",
-                        {"READY", "OK"},
+                    frames = begin_file_upload(self.client,
+                        f"{'FSINSTALL' if stream_install else 'FSPUT'} {client_encode_path(remote_path)} {total} {digest}" +
+                        (f" {stream_volume}" if stream_volume is not None else ""),
                         timeout=verify_timeout,
                     )
                     return frames[-1]
@@ -1186,6 +1351,17 @@ class NormalFsClient:
             print(f"uploading {source} -> PXA storage/{remote_path} ({total} bytes)",
                   file=sys.stderr, flush=True)
         terminal = begin_upload()
+        if fast_transfer and terminal.kind == "READY":
+            try:
+                chunk_size = self.client.start_fast_upload(requested_fast)
+                print(f"binary transfer: {properties.get('transport', 'serial')}, chunk={chunk_size}, window=1",
+                      file=sys.stderr, flush=True)
+            except PxaDbRejectedError as error:
+                if str(error) != "bulk_no_memory":
+                    raise
+                self.client.fast_upload_active = False
+                fast_transfer = bulk_transfer = False
+                chunk_size = 256
         with source.open("rb") as input_file:
             while terminal.kind == "READY":
                 try:
@@ -1199,11 +1375,17 @@ class NormalFsClient:
                 chunk = input_file.read(min(chunk_size, remaining))
                 if not chunk:
                     raise PxaDbError("device requested more data than the source contains")
-                encoded = base64.b64encode(chunk).decode("ascii")
                 try:
-                    if binary_transfer:
+                    if fast_transfer:
+                        frames = self.client.send_fast_upload(offset, chunk,
+                            verify_timeout if len(chunk) == remaining else 10.0)
+                    elif bulk_transfer:
+                        frames = self.client.send_bulk_upload(offset, chunk,
+                            verify_timeout if len(chunk) == remaining else 10.0)
+                    elif binary_transfer:
                         frames = self.client.send_binary_upload(offset, chunk)
                     else:
+                        encoded = base64.b64encode(chunk).decode("ascii")
                         if chunk_crc32:
                             checksum = zlib.crc32(chunk) & 0xffffffff
                             command = f"FSDATA2 {offset} {checksum:08x} {encoded}"
@@ -1217,9 +1399,12 @@ class NormalFsClient:
                     terminal = frames[-1]
                 except PxaDbError as error:
                     reason = str(error)
+                    if fast_transfer:
+                        self.client.cancel_fast_upload()
+                        fast_transfer = False
                     if isinstance(error, PxaDbRejectedError) and reason not in {
                         "invalid_offset", "offset_mismatch", "invalid_file_chunk",
-                        "chunk_checksum_mismatch", "invalid_chunk_checksum"
+                        "chunk_checksum_mismatch", "invalid_chunk_checksum", "bulk_timeout", "bulk_no_memory"
                     }:
                         raise
                     # Count failures without meaningful confirmed progress.
@@ -1231,6 +1416,11 @@ class NormalFsClient:
                     recoveries += 1
                     if recoveries >= 3:
                         raise
+                    if bulk_transfer:
+                        # A noisy UART or constrained device keeps the legacy
+                        # checked path as a bounded recovery option.
+                        bulk_transfer = False
+                        chunk_size = 256
                     if not binary_transfer and (reason == "invalid_file_chunk" or
                                                 not isinstance(error, PxaDbRejectedError)):
                         # Corrupted lines or lost replies suggest smaller UART
@@ -1353,6 +1543,44 @@ def fs_remove_tree(client: NormalFsClient, path: str, timeout: float) -> None:
         pass
 
 
+def stream_container_prefix(source: pathlib.Path) -> int:
+    if not source.is_file():
+        return 0
+    with source.open("rb") as stream:
+        header = stream.read(64)
+    if len(header) != 64 or header[:4] != b"PXAC" or struct.unpack_from("<H", header, 6)[0] != 2:
+        return 0
+    return 64 + struct.unpack_from("<I", header, 16)[0] + 216 + struct.unpack_from("<I", header, 56)[0]
+
+
+def begin_file_upload(client: PxaDbClient, command: str, timeout: float) -> list[Frame]:
+    """Wait for deferred cleanup to release its namespace before creating one."""
+    deadline = time.monotonic() + max(timeout, 30)
+    while True:
+        try:
+            return client.request_until(command, {"READY", "OK"}, timeout=timeout)
+        except PxaDbRejectedError as error:
+            if str(error) != "package_cleanup_pending" or time.monotonic() >= deadline:
+                raise
+            time.sleep(.1)
+
+
+def check_container_features(client: PxaDbClient, source: pathlib.Path) -> None:
+    if not stream_container_prefix(source):
+        return
+    with source.open("rb") as file:
+        header = file.read(64)
+    codec, bits = struct.unpack_from("<HH", header, 12)
+    properties = info_properties(client.device_info)
+    if properties.get("package_stream") != "2":
+        raise PxaDbError("Container 0.2 requires newer firmware; update firmware or rebuild with --legacy (PXA_CONTAINER_STREAM=0)")
+    codecs = properties.get("package_codecs", "0,1").split(",")
+    if str(codec) not in codecs:
+        raise PxaDbError(f"device does not support package codec {codec}; update firmware or rebuild with --codec lz4")
+    if bits not in (12, 14, 15) or (1 << bits) > int(properties.get("package_max_block", "32768")):
+        raise PxaDbError("package block exceeds device limit; rebuild with --chunk-size 4096")
+
+
 def package_storage_required(source: pathlib.Path) -> tuple[int, int]:
     """Estimate peak LittleFS usage: staged input plus a new installed tree.
 
@@ -1400,6 +1628,9 @@ def package_storage_required(source: pathlib.Path) -> tuple[int, int]:
 
 
 def check_package_storage(client: NormalFsClient, source: pathlib.Path) -> dict[str, str]:
+    # Format/codec checks also apply to hosts without storage telemetry, and
+    # must run before creating or deleting any receiving candidate.
+    check_container_features(client.client, source)
     frames = client.client.request("INFO")
     properties = {}
     for frame in frames:
@@ -1415,6 +1646,11 @@ def check_package_storage(client: NormalFsClient, source: pathlib.Path) -> dict[
     except ValueError as error:
         raise PxaDbError("invalid device storage information") from error
     upload, install = package_storage_required(source)
+    stream_prefix = stream_container_prefix(source)
+    if stream_prefix:
+        if info_properties(client.client.device_info).get("package_stream") != "2":
+            raise PxaDbError("this device needs newer firmware for streamable PXA packages; use a legacy package")
+        upload = ((stream_prefix + 4031) // 4032 + 3) * 4096
     if source.is_dir() and properties.get("package_directory_adopt") == "1":
         # Firmware adopts an inbox directory by rename. Its decoded payload
         # is already included in upload; only commit/compaction headroom is
@@ -1447,7 +1683,8 @@ def stage_package_files(client: "NormalFsClient", source: pathlib.Path,
     try:
         _stage_package_files(client, source, identity, timeout, receiving)
         if receiving and publish:
-            client.client.request(f"PACKAGE publish {identity}", timeout=max(timeout, 60.0))
+            client.client.request(f"PACKAGE publish {identity}",
+                                  timeout=max(timeout, package_verification_timeout(source)))
     except BaseException:
         # Also handles Ctrl-C. A disconnected capable host removes its reserved
         # candidates on session timeout/cold start; cleanup here is best-effort.
@@ -1490,7 +1727,11 @@ def _stage_package_files(client: "NormalFsClient", source: pathlib.Path,
             fs_remove(client, remote, timeout)
         except Exception:
             pass
-        client.put(source, remote)
+        streaming = receiving and stream_container_prefix(source) and info_properties(client.client.device_info).get("package_stream") == "2"
+        if streaming:
+            client.put(source, root, stream_install=True)
+        else:
+            client.put(source, remote)
         return
     # A prior single-file upload uses the same identity with a .pxa
     # suffix. Remove it before publishing a directory package so inbox
@@ -1530,6 +1771,189 @@ def stage_package(source: pathlib.Path, identity: str, port: str | None,
         client.close()
 
 
+@contextlib.contextmanager
+def package_http_source(source: pathlib.Path, device_ip: str):
+    """Expose one file to one device for this transfer, with a random URL.
+
+    Bind only the interface routing to the device. No directory listing or
+    arbitrary path access, and close active responses when cancelled.
+    """
+    address = ipaddress.IPv4Address(device_ip)
+    if address.is_unspecified or address.is_multicast:
+        raise PxaDbError("invalid device network address")
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
+        route.connect((str(address), 9))  # Route lookup; sends no datagram.
+        local_ip = route.getsockname()[0]
+    endpoint = "/" + secrets.token_urlsafe(24) + ".pxa"
+    active: set[socket.socket] = set()
+    lock = threading.Lock()
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(15)
+            with lock:
+                active.add(self.connection)
+
+        def finish(self):
+            try:
+                super().finish()
+            finally:
+                with lock:
+                    active.discard(self.connection)
+
+        def log_message(self, *_args):
+            pass  # Do not log the capability URL.
+
+        def do_GET(self):
+            if self.client_address[0] != str(address) or self.path != endpoint:
+                self.send_error(404)
+                return
+            try:
+                with source.open("rb") as file:
+                    remaining = os.fstat(file.fileno()).st_size
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Length", str(remaining))
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    while remaining:
+                        data = file.read(min(65536, remaining))
+                        if not data:
+                            break
+                        self.wfile.write(data)
+                        remaining -= len(data)
+            except OSError:
+                pass  # Disconnect/cancellation is reported by the device.
+            finally:
+                self.close_connection = True
+
+    server = http.server.ThreadingHTTPServer((local_ip, 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": .05}, daemon=True)
+    worker.start()
+    try:
+        yield f"http://{local_ip}:{server.server_address[1]}{endpoint}"
+    finally:
+        server.shutdown()
+        with lock:
+            for connection in active:
+                try:
+                    connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+        server.server_close()
+        worker.join(timeout=2)
+
+
+def fetch_package_stream(client: PxaDbClient, source: pathlib.Path, remote: str,
+                         epoch: int, via: str) -> bool:
+    properties = info_properties(client.device_info)
+    native_usb = properties.get("transport") in {"usb-cdc", "usb-jtag"}
+    if via == "usb" and not native_usb:
+        raise PxaDbError("selected device uses a USB-to-UART bridge; native USB transfer is unavailable")
+    if via in {"serial", "usb"} or (via == "auto" and native_usb and properties.get("fs_fast") == "1"):
+        return False
+    if info_properties(client.device_info).get("stream_fetch") != "1":
+        if via == "wifi":
+            raise PxaDbError("device firmware does not support Wi-Fi package transfer")
+        return False
+    begun = False
+    try:
+        network = info_properties(client.request("NETINFO")[-1].payload)
+        with package_http_source(source, network["ipv4"]) as url:
+            total = source.stat().st_size
+            frames = begin_file_upload(client,
+                f"FSINSTALL {client_encode_path(remote)} {total} {file_sha256(source)} {epoch}",
+                timeout=max(client.timeout, 30))
+            begun = True
+            if frames[-1].kind != "OK":
+                print("transferring package over local Wi-Fi", file=sys.stderr, flush=True)
+                client.request("FSFETCH " + client_encode_path(url),
+                               timeout=max(120, client.timeout, file_verification_timeout(total),
+                                           package_verification_timeout(source)))
+        return True
+    except (PxaDbError, OSError, ValueError, KeyError) as error:
+        if begun:
+            # The HTTP source is closed before resynchronizing the serial
+            # control channel. Never start a second writer over a live fetch.
+            client.request("FSABORT", timeout=40)
+        if isinstance(error, PxaDbRejectedError) and str(error) == "insufficient_memory":
+            raise PxaDbError("insufficient installation memory; close other apps or rebuild with --chunk-size 4096") from error
+        if via == "wifi":
+            raise PxaDbError(f"Wi-Fi package transfer failed: {error}") from error
+        print(f"Wi-Fi transfer unavailable ({error}); using serial", file=sys.stderr, flush=True)
+        return False
+
+
+def device_volumes(client: PxaDbClient) -> list[dict[str, str]]:
+    return [info_properties(frame.payload) for frame in client.request("VOLUMES") if frame.kind == "DATA"]
+
+
+def select_install_volume(client: PxaDbClient, selector: str) -> dict[str, str]:
+    candidates = []
+    for volume in device_volumes(client):
+        caps = int(volume.get("capabilities", "0"))
+        if caps & 67 != 67 or volume.get("state") != "2" or volume.get("ambiguous") != "0":
+            continue
+        if not volume.get("relative"):
+            continue
+        if (selector == "sd" and caps & 4) or (selector == "internal" and not caps & 4) or selector == volume["epoch"]:
+            candidates.append(volume)
+    if len(candidates) != 1:
+        raise PxaDbError("select exactly one writable install volume using 'pxadb volumes' and --volume EPOCH")
+    return candidates[0]
+
+
+def stage_package_on_volume(client: PxaDbClient, source: pathlib.Path, selector: str,
+                            via: str = "auto") -> tuple[int, str, str]:
+    prefix = stream_container_prefix(source)
+    if not prefix:
+        raise PxaDbError("direct volume installation requires a streamable PXA 0.2 file (PXA_CONTAINER_STREAM=1)")
+    if info_properties(client.device_info).get("package_stream_volume") != "1":
+        raise PxaDbError("direct volume installation requires newer device firmware")
+    check_container_features(client, source)
+    volume = select_install_volume(client, selector)
+    epoch = int(volume["epoch"])
+    unit = max(4096, int(volume.get("unit", "4096")))
+    required = ((prefix + unit - 1) // unit + 18) * unit + 128 * 1024
+    manifest = read_package_manifest(source)
+    for tag, value in manifest_records(manifest[12:]):
+        if tag == 17:
+            for field, data in manifest_records(value):
+                if field == 2 and len(data) == 8:
+                    required += ((struct.unpack("<Q", data)[0] + unit - 1) // unit + 1) * unit
+                elif field == 1:
+                    required += data.count(b"/") * unit
+    if not int(volume["capabilities"]) & 128:
+        required += int(volume.get("private_bytes", "0"))
+    if int(volume.get("known", "0")) & 2 and int(volume["free"]) < required:
+        raise PxaDbError(f"insufficient device storage on selected volume: needs about {required} bytes")
+    relative = volume["relative"]
+    remote = ("" if relative == "." else relative + "/") + "PXA/cache/store/.stream-" + secrets.token_hex(4)
+    try:
+        fetched = fetch_package_stream(client, source, remote, epoch, via)
+        if not fetched:
+            NormalFsClient(client).put(source, remote, stream_install=True, stream_volume=epoch)
+        native = info_properties(client.device_info).get("transport", "").startswith("usb-")
+        return epoch, remote, "wifi" if fetched else "usb" if native else "serial"
+    except BaseException:
+        try:
+            client.request("FSABORT", timeout=40)
+        except Exception:
+            pass
+        raise
+
+
+def command_volumes(arguments: argparse.Namespace) -> int:
+    with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
+                     arguments.timeout, arguments.logcat) as client:
+        for volume in device_volumes(client):
+            print(f"{volume['epoch']}\t{volume.get('name', '')}\t{volume.get('path', '')}\tfree={volume.get('free', '?')}")
+    return 0
+
+
 def command_package_stage(arguments: argparse.Namespace) -> int:
     source, identity = package_source(arguments.directory, arguments.identity)
     stage_package(source, identity, arguments.port, arguments.timeout,
@@ -1558,7 +1982,7 @@ def clear_staged_source(client: PxaDbClient, identity: str) -> None:
 
 
 def command_package_install(arguments: argparse.Namespace) -> int:
-    def deploy(client: PxaDbClient, identity: str) -> None:
+    def approve_replacement(client: PxaDbClient, identity: str) -> None:
         packages = client.request("PACKAGES")
         installed = any(
             frame.kind == "PKG"
@@ -1576,21 +2000,49 @@ def command_package_install(arguments: argparse.Namespace) -> int:
             )
             if answer.strip().lower() not in {"y", "yes"}:
                 raise PxaDbError("installation cancelled")
+
+    def deploy(client: PxaDbClient, identity: str, timeout: float = 60.0) -> None:
+        approve_replacement(client, identity)
         client.request(f"PACKAGE deploy {identity}",
-                       timeout=max(arguments.timeout, 60.0))
+                       timeout=max(arguments.timeout, timeout))
 
     source = pathlib.Path(arguments.package)
+    if arguments.via in {"wifi", "usb"} and not arguments.volume:
+        raise PxaDbError(f"--via {arguments.via} requires --volume sd, internal, or a mount epoch")
+    if arguments.volume and not source.is_file():
+        raise PxaDbError("--volume requires a local streamable .pxa file")
     if source.is_dir() or source.is_file():
         local_package, identity = package_source(arguments.package, arguments.identity)
-        deploy_timeout = max(arguments.timeout, 60.0)
-        with open_client(resolve_pxadb_port(arguments.port, deploy_timeout),
-                         deploy_timeout, arguments.logcat) as client:
+        deploy_timeout = max(arguments.timeout, package_verification_timeout(local_package))
+        # A slow SD verification must not extend device discovery or ordinary
+        # control requests. Only the commit receives the decoded-size budget.
+        control_timeout = max(arguments.timeout, 60.0)
+        with open_client(resolve_pxadb_port(arguments.port, control_timeout),
+                         control_timeout, arguments.logcat) as client:
+            if arguments.volume:
+                approve_replacement(client, identity)
+                try:
+                    print(f"receiving and unpacking: {identity}", file=sys.stderr, flush=True)
+                    epoch, remote, _ = stage_package_on_volume(
+                        client, local_package, arguments.volume, arguments.via)
+                    print(f"verifying and installing: {identity}", file=sys.stderr, flush=True)
+                    client.request(f"PACKAGE install-volume {epoch} {client_encode_path(remote)}",
+                                   timeout=deploy_timeout)
+                finally:
+                    # Release the candidate and its volume lease on every exit,
+                    # including cancellation before the installation commit.
+                    try:
+                        client.request("FSABORT", timeout=40)
+                    except Exception:
+                        pass
+                print(f"installed: {identity}")
+                return 0
             try:
                 print(f"staging: {identity}", file=sys.stderr, flush=True)
                 stage_package_files(NormalFsClient(client), local_package, identity,
                                     arguments.timeout, publish=False)
                 print(f"verifying and installing: {identity}", file=sys.stderr, flush=True)
-                deploy(client, identity)
+                deploy(client, identity, deploy_timeout)
             finally:
                 clear_staged_source(client, identity)
         print(f"installed: {identity}")
@@ -2052,6 +2504,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_connection_arguments(info)
     info.set_defaults(handler=command_info)
 
+    volumes = subcommands.add_parser("volumes", help="list device installation volumes and mount epochs")
+    add_connection_arguments(volumes)
+    volumes.set_defaults(handler=command_volumes)
+
     perf = subcommands.add_parser("perf", help="read presentation FPS without scanning storage")
     add_connection_arguments(perf)
     perf.set_defaults(handler=command_perf)
@@ -2187,6 +2643,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--yes", action="store_true",
         help="confirm replacement or downgrade without an interactive prompt"
     )
+    install.add_argument("--volume", help="receive directly on sd, internal, or a mount epoch (PXA 0.2)")
+    install.add_argument("--via", choices=("auto", "serial", "usb", "wifi"), default="auto",
+                         help="data transport with --volume; auto prefers native USB, otherwise Wi-Fi then cable")
     install.set_defaults(handler=command_package_install)
     package_run = package_commands.add_parser(
         "run", help="launch an installed package on a device or product simulator"

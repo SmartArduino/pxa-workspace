@@ -5,6 +5,8 @@
 #include "pxa_esp_store_download.h"
 #include "pxa_esp_store_cache.h"
 #include "pxa/container.h"
+#include "pxa/pxa_container_stream.h"
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -83,9 +85,40 @@ pxa_status_t pxa_esp_storage_release_plan(pxa_install_plan_t *plan) {
 pxa_status_t pxa_esp_store_cache_path(uint64_t epoch,const char *name,char *out,size_t bytes) {
     assert(epoch==2 || epoch==3);assert(snprintf(out,bytes,"%s%s/PXA/cache/store/%s",CONFIG_PXA_MOUNT_POINT,epoch==3?"/third":"",name)<(int)bytes);return PXA_STATUS_OK;
 }
+/* The real parser/decoder is covered by SDK signed-container tests. These
+ * transport doubles check routing, admission, cancellation and ownership. */
+struct pxa_host_container_stream {char *path;size_t expected,received;uint8_t digest[32];int has_digest,finished;mbedtls_md_context_t hash;};
+static unsigned stream_begins,stream_finishes,stream_closes;
+static bool stream_reject;
+pxa_status_t pxa_posix_fs_remove_tree(const char *path) {
+    if(!rmdir(path))return PXA_STATUS_OK;
+    return errno==ENOENT?PXA_STATUS_NOT_FOUND:PXA_STATUS_IO_ERROR;
+}
+pxa_status_t pxa_host_container_stream_begin(const char *path,uint64_t bytes,const uint8_t *digest,pxa_host_container_stream_t **out) {
+    *out=NULL;assert(!mkdir(path,0700));
+    pxa_host_container_stream_t *s=calloc(1,sizeof(*s));assert(s);
+    s->path=strdup(path);s->expected=bytes;s->has_digest=digest!=NULL;if(digest)memcpy(s->digest,digest,32);
+    mbedtls_md_init(&s->hash);assert(!mbedtls_md_setup(&s->hash,mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),0));
+    assert(!mbedtls_md_starts(&s->hash));*out=s;++stream_begins;return PXA_STATUS_OK;
+}
+pxa_status_t pxa_host_container_stream_feed(pxa_host_container_stream_t *s,const uint8_t *data,size_t size) {
+    if(stream_reject)return PXA_STATUS_DENIED;
+    assert(size<=s->expected-s->received);s->received+=size;
+    assert(!mbedtls_md_update(&s->hash,data,size));return PXA_STATUS_OK;
+}
+pxa_status_t pxa_host_container_stream_finish(pxa_host_container_stream_t *s) {
+    uint8_t digest[32];assert(s->received==s->expected);assert(!mbedtls_md_finish(&s->hash,digest));
+    if(s->has_digest && memcmp(s->digest,digest,32))return PXA_STATUS_DENIED;
+    s->finished=1;++stream_finishes;return PXA_STATUS_OK;
+}
+void pxa_host_container_stream_close(pxa_host_container_stream_t *s) {
+    if(!s)return;
+    if(!s->finished)assert(!rmdir(s->path));
+    mbedtls_md_free(&s->hash);free(s->path);free(s);++stream_closes;
+}
 pxa_status_t pxa_esp_package_store_prepare_install(const uint8_t *prefix,size_t bytes,uint64_t total,uint64_t transfer,uint8_t download_only,
     const uint8_t root[32],const char *app,pxa_esp_package_preview_t *preview,pxa_esp_install_approval_t *placement) {
-    assert(bytes==metadata_size && total==body_size && (transfer==0 || transfer==total));
+    assert(bytes==metadata_size && total==body_size && (transfer==0 || transfer==total || (pxa_read_u16(prefix+6)==2 && transfer==metadata_size+96)));
     assert(!memcmp(prefix,body,bytes) && !strcmp(app,"pxa-store-test"));
     if(bad_metadata || (root && root[0]))return PXA_STATUS_DENIED;
     if(low_space)return PXA_STATUS_QUOTA_EXCEEDED;
@@ -98,7 +131,7 @@ pxa_status_t pxa_esp_package_store_prepare_resources(pxa_esp_install_approval_t 
     const uint8_t *prefix,size_t bytes,uint64_t total,uint64_t transfer) {
     assert(with_resources && placement->requires_resources && !http_live && !placement->plan.reserved);
     if(bad_resources)return PXA_STATUS_DENIED;
-    if(prefix)assert(bytes==metadata_size && total==resource_size && transfer==resource_size && !memcmp(prefix,resource_body,bytes));
+    if(prefix)assert(bytes==metadata_size && total==resource_size && (transfer==resource_size || (pxa_read_u16(prefix+6)==2 && transfer==metadata_size+96)) && !memcmp(prefix,resource_body,bytes));
     else {assert(!bytes && !total && !transfer);if(!reuse_resources)return PXA_STATUS_UNAVAILABLE;}
     placement->resource_container_bytes=total;placement->media_count=1;placement->media_selected=0;
     placement->media_choices[0].volume.mount_epoch=3;placement->media_choices[0].reuse=reuse_resources;
@@ -107,8 +140,9 @@ pxa_status_t pxa_esp_package_store_prepare_resources(pxa_esp_install_approval_t 
 pxa_status_t pxa_esp_package_store_commit_resources(const char *path,pxa_esp_install_approval_t *placement) {
     struct stat info;
     assert(with_resources && !reuse_resources && !http_live && placement->plan.reserved);
-    assert(retained[2] && retained[3] && strstr(path,"/third/PXA/cache/store/.store-") && !stat(path,&info));
-    assert((uint64_t)info.st_size==resource_size);++resource_commits;
+    assert(retained[2] && retained[3] && (strstr(path,"/third/PXA/cache/store/.store-") || strstr(path,"/third/PXA/cache/store/.stream-")) && !stat(path,&info));
+    assert(S_ISDIR(info.st_mode) || (uint64_t)info.st_size==resource_size);++resource_commits;
+    if(!resource_commit_fail && S_ISDIR(info.st_mode))assert(!rmdir(path));
     return resource_commit_fail?PXA_STATUS_DENIED:PXA_STATUS_OK;
 }
 pxa_status_t pxa_esp_package_store_reserve_install(pxa_esp_install_approval_t *placement,size_t index) {
@@ -117,7 +151,7 @@ pxa_status_t pxa_esp_package_store_reserve_install(pxa_esp_install_approval_t *p
 }
 pxa_status_t pxa_esp_package_store_commit_install(const char *path,pxa_esp_install_approval_t *placement) {
     assert(approve && waiting_job==NULL && !cancel_prompt && placement->plan.reserved && placement->expected_generation==42 && !http_live);
-    assert(strstr(path,"/PXA/cache/store/.store-"));++installs;return stale_record?PXA_STATUS_BAD_STATE:PXA_STATUS_OK;
+    assert(strstr(path,"/PXA/cache/store/.store-") || strstr(path,"/PXA/cache/store/.stream-"));++installs;return stale_record?PXA_STATUS_BAD_STATE:PXA_STATUS_OK;
 }
 static void notified(pxa_esp_store_job_t *job,uint8_t phase) {
     if(phase==1) {assert(!job->approved);++confirmations;waiting_job=job;job->approved=approve;job->placement.selected=1;}
@@ -179,7 +213,25 @@ int main(void) {
     assert(value.status==PXA_STATUS_OK && transfers==before+1 && value.total_bytes==body_size && resource_commits==2);
     value=job(1);before=transfers;pxa_esp_store_worker(&value);
     assert(value.status==PXA_STATUS_UNSUPPORTED && !exists(&value) && transfers==before);
-    with_resources=false;free(resource_body);
+    with_resources=false;
+    for(unsigned i=0;i<2;++i) {
+        uint8_t *b=i?resource_body:body;size_t n=i?resource_size:body_size;
+        pxa_write_u16(b+6,2);pxa_write_u32(b+56,96);pxa_write_u64(b+32,n-metadata_size-96);
+        pxa_write_u32(b+60,pxa_container_crc32(b,60));
+    }
+    value=job(0);pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_OK && !exists(&value) && stream_finishes==1);
+    value=job(0);short_body=true;pxa_esp_store_worker(&value);short_body=false;
+    assert(value.status!=PXA_STATUS_OK && !exists(&value) && stream_finishes==1);
+    value=job(0);value.digest[0]^=1;pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_DENIED && !exists(&value));
+    value=job(0);stream_reject=true;pxa_esp_store_worker(&value);stream_reject=false;
+    assert(value.status!=PXA_STATUS_OK && !exists(&value));
+    value=job(0);stale_record=true;pxa_esp_store_worker(&value);stale_record=false;
+    assert(value.status==PXA_STATUS_BAD_STATE && !exists(&value));
+    with_resources=true;reuse_resources=false;value=job(0);pxa_esp_store_worker(&value);
+    assert(value.status==PXA_STATUS_OK && !exists(&value) && !value.resource_path[0]);
+    with_resources=false;unsigned previous=stream_begins;value=job(1);pxa_esp_store_worker(&value);
+    assert(value.status==PXA_STATUS_OK && exists(&value) && stream_begins==previous);assert(!unlink(value.path));
+    assert(stream_begins==stream_closes);free(resource_body);
     assert(!retained[2] && !retained[3]);
     assert(reservations==releases && completions==deletes);
     assert(started_progress>0); /* Approval publishes zero-byte progress before network I/O. */

@@ -2,9 +2,9 @@
 #define _GNU_SOURCE
 #endif
 #include "pxa_esp_store_cache.h"
+#include "pxa/posix/pxa_posix_fs.h"
 #include "pxa_esp_record_seal.h"
 #include "pxa_esp_volumes.h"
-#include "pxa/posix/pxa_posix_fs.h"
 #include "pxa/wire.h"
 #include "esp_heap_caps.h"
 #include "mbedtls/md.h"
@@ -39,6 +39,14 @@ static void clean_incomplete(const char *directory) {
     DIR *dir=opendir(directory);struct dirent *entry;
     while(dir && (entry=readdir(dir))) {
         char path[384],metadata[384];struct stat st;
+        if(strlen(entry->d_name)==16 && !strncmp(entry->d_name,".stream-",8)) {
+            int valid=1;
+            for(size_t i=8;i<16;++i)if(!((entry->d_name[i]>='0' && entry->d_name[i]<='9') ||
+                (entry->d_name[i]>='a' && entry->d_name[i]<='f')))valid=0;
+            if(valid && snprintf(path,sizeof(path),"%s/%s",directory,entry->d_name)<(int)sizeof(path) &&
+                pxa_posix_fs_remove_tree(path)==PXA_STATUS_OK) {closedir(dir);dir=opendir(directory);}
+            continue;
+        }
         if(!pxa_esp_store_cache_name_valid(entry->d_name))continue;
         if(snprintf(path,sizeof(path),"%s/%.19s",directory,entry->d_name)>=(int)sizeof(path) ||
             snprintf(metadata,sizeof(metadata),"%s.meta",path)>=(int)sizeof(metadata))continue;

@@ -11,16 +11,16 @@
 
 ## 只开发应用？先用 DevKit
 
-无需克隆本仓库或安装 ESP-IDF。下载 [DevKit 0.6.0](https://pxa.doit.am/docs/downloads/)，解压后：
+无需克隆本仓库或安装 ESP-IDF。下载 [DevKit 0.7.0](https://pxa.doit.am/docs/downloads/)，解压后：
 
 ```sh
-export PATH="$PWD/pxa-devkit-0.6.0-linux-x86_64/bin:$PATH"
+export PATH="$PWD/pxa-devkit-0.7.0-linux-x86_64/bin:$PATH"
 pxa init hello
 pxa run hello
 ```
 
 默认 C++26、O3，项目通过 `pxa.lock` 固定 SDK 与工具链版本。当前发行包要求 Linux x86_64、glibc 2.39+。应用包需要 Core 2.1 及其声明的服务能力。
-[中文入门教程](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [发布说明](https://github.com/SmartArduino/pxa-system/releases/tag/v0.6.0) · [发布说明与升级](docs/release-0.6.0.zh-CN.md)
+[中文入门教程](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [发布说明](https://github.com/SmartArduino/pxa-system/releases/tag/v0.7.0) · [发布说明与升级](docs/release-0.7.0.zh-CN.md)
 
 [PXA Agent Kit](https://pxa.doit.am/docs/ai-development/) 支持一句话准备环境、开发与调试、真机安装、官方固件升级及商城提交。把下面这句话交给 Codex、Claude Code、DSH 等编程助手：
 

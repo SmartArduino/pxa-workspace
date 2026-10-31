@@ -7,6 +7,9 @@
 extern "C" {
 #endif
 typedef struct pxa_esp_installations pxa_esp_installations_t;
+/* Initial private image footprint for admission on nonnative filesystems. */
+uint64_t pxa_esp_installations_private_capacity(void);
+uint64_t pxa_esp_installations_private_initial_bytes(void);
 /* One owner per operation, allocated in PSRAM. No primary filesystem or
  * per-app NVS registry. Pins this precise mount until close. Owner serializes
  * calls and keeps result buffers/source immutable through approval/commit.
@@ -43,6 +46,10 @@ pxa_status_t pxa_esp_installations_locator(const uint8_t root[32],const char *ap
 pxa_status_t pxa_esp_installations_plan(pxa_esp_installations_t *,
     const pxa_package_manifest_t *,uint64_t transfer_bytes,uint8_t new_private,
     pxa_install_plan_t *);
+/* Files already occupy a verified, caller-owned directory on this volume.
+ * Reserve only the remaining transaction/private-storage allocations. */
+pxa_status_t pxa_esp_installations_plan_prepared(pxa_esp_installations_t *,
+    const pxa_package_manifest_t *,uint8_t new_private,pxa_install_plan_t *);
 /* approved binds the intended identity, install ID, previous generation and
  * optional already-prepared media generation. The exact approved signed
  * manifest digest prevents changing permissions between preview and install.
