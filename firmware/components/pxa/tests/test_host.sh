@@ -56,6 +56,15 @@ build_and_run container_fetch \
   "${adapter_includes[@]}" "$tests_dir/pxa_esp_container_fetch_test.c" \
   "$component_dir/src/package/pxa_esp_container_fetch.c"
 
+for target in ESP32S3 ESP32S31 UNKNOWN; do
+  build_and_run "net_backend_$target" "-DCONFIG_IDF_TARGET_$target=1" \
+    "${adapter_includes[@]}" "$tests_dir/pxa_esp_net_backend_test.c" \
+    "$pxa_system_dir/libpxa/src/services/net/http_stream.c" \
+    "$pxa_system_dir/libpxa/src/services/net/socket_stream.c" \
+    "$pxa_system_dir/libpxa/src/services/net/net_validate.c" \
+    "$pxa_system_dir/libpxa/src/core/wire.c"
+done
+
 build_and_run activation_arena \
   -I"$component_dir/src/runtime" \
   "$tests_dir/pxa_host_activation_arena_test.c" \

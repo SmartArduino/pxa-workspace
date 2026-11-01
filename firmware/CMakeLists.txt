@@ -44,12 +44,15 @@ if(NOT SDKCONFIG)
     set(SDKCONFIG "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.${PXA_BOARD}")
 endif()
 
-# Firmware and Host capability profiles share the SDK release identity. Git's
-# nearest tag may be a separately versioned tool release (for example
-# host-tools-v0.1.0), so it cannot determine the firmware application version.
-file(STRINGS "${PXSYS_ROOT}/VERSION" PROJECT_VER LIMIT_COUNT 1)
-string(STRIP "${PROJECT_VER}" PROJECT_VER)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PXSYS_ROOT}/VERSION")
+# Board firmware and embedded PXA have independent release identities.
+# Product integrations can supply PROJECT_VER without changing PXA_VERSION_STRING
+# or the Host capability snapshot used for application compatibility.
+if(NOT DEFINED PROJECT_VER)
+    file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/VERSION" PROJECT_VER LIMIT_COUNT 1)
+    string(STRIP "${PROJECT_VER}" PROJECT_VER)
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_LIST_DIR}/VERSION" "${PXSYS_ROOT}/VERSION")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # Each board can resolve a different managed-component graph. Keep its exact

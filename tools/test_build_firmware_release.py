@@ -1,6 +1,9 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import hashlib
+import struct
+import tempfile
 
 spec = importlib.util.spec_from_file_location('firmware_release', Path(__file__).with_name('build_firmware_release.py'))
 release = importlib.util.module_from_spec(spec)
@@ -8,6 +11,41 @@ spec.loader.exec_module(release)
 
 
 class FirmwareLayout(unittest.TestCase):
+    def test_factory_tree_is_bound_to_container_inventory_and_version(self):
+        def tlv(tag, data):
+            return struct.pack('<HH', tag, len(data)) + data
+        with tempfile.TemporaryDirectory() as folder:
+            package = Path(folder) / 'pxa-store'
+            package.mkdir()
+            content = b'compiled-store'
+            (package / 'code.aot').write_bytes(content)
+            body = tlv(2, b'pxa-store') + tlv(3, b'0.9.3') + tlv(9, struct.pack('<Q', 33))
+            body += tlv(17, tlv(1, b'code.aot') + tlv(2, struct.pack('<Q', len(content)))
+                        + tlv(3, hashlib.sha256(content).digest()))
+            manifest = b'PXAM' + struct.pack('<HHI', 0, 8, len(body)) + body
+            (package / 'manifest.pxm').write_bytes(manifest)
+            signature = b'signature'
+            (package / 'signature.pxs').write_bytes(signature)
+            header = bytearray(64)
+            header[:4] = b'PXAC'
+            struct.pack_into('<H', header, 6, 2)
+            struct.pack_into('<II', header, 16, len(manifest), len(signature))
+            container = package.with_suffix('.pxa')
+            container.write_bytes(header + manifest + signature)
+            self.assertEqual(release.store_identity(package, container)['version'], '0.9.3')
+            self.assertEqual(release.store_identity(package, container)['release_sequence'], 33)
+            (package / 'code.aot').write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError, 'signed inventory'):
+                release.store_identity(package, container)
+            (package / 'code.aot').write_bytes(content)
+            (package / 'extra').write_bytes(b'unlisted')
+            with self.assertRaisesRegex(ValueError, 'unlisted'):
+                release.store_identity(package, container)
+            (package / 'extra').unlink()
+            (package / 'signature.pxs').write_bytes(b'wrongsign')
+            with self.assertRaisesRegex(ValueError, 'differs from container'):
+                release.store_identity(package, container)
+
     def test_factory_parameters_match_board_mounts(self):
         for name in release.BOARDS:
             board = release.ROOT / 'firmware/boards' / name

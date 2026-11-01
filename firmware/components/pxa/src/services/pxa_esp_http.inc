@@ -159,6 +159,8 @@ static void stream_step(pxa_esp_net_state_t *net, pxa_esp_net_slot_t *slot) {
                 break;
         }
         if (error == ESP_OK)
+            error = set_store_host_profile(h->client, slot->url);
+        if (error == ESP_OK)
             error = esp_http_client_open(h->client, (int)s->upload_bytes);
         if (error != ESP_OK) {
             stream_finish(net, slot,

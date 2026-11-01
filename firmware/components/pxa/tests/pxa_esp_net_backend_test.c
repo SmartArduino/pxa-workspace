@@ -6,6 +6,9 @@ static unsigned critical_depth, task_count, notifications;
 static unsigned worker_notifications, worker_pending_notifications, worker_waits;
 static size_t allocation_count, live_allocations;
 static int fail_allocation, fail_queue_send, cancel_in_transport, fail_transport;
+static int skip_platform_transport, fail_profile_header;
+static char mock_profile[101];
+static unsigned mock_profile_headers;
 static uint8_t queued[4];
 static unsigned queued_count;
 static jmp_buf worker_idle;
@@ -101,13 +104,21 @@ void esp_crt_bundle_attach(void) {}
 esp_http_client_handle_t esp_http_client_init(const esp_http_client_config_t *c) {
     assert(critical_depth == 0);
     ++mock_inits; mock_client = *c; mock_offset = mock_uploaded = 0;
+    mock_profile[0] = '\0'; mock_profile_headers = 0;
     mock_size = mock_mode == 2 ? 0 : 8192;
     mock_status = mock_mode == 2 ? 413 : 200;
     assert(c->disable_auto_redirect && c->buffer_size == 512);
     return &mock_client;
 }
 esp_err_t esp_http_client_set_header(esp_http_client_handle_t c, const char *n, const char *v) {
-    (void)c; (void)n; (void)v; return ESP_OK;
+    (void)c;
+    if (!strcasecmp(n, PXA_STORE_HOST_PROFILE_HEADER)) {
+        ++mock_profile_headers;
+        if (fail_profile_header) return ESP_ERR_NO_MEM;
+        assert(strlen(v) < sizeof(mock_profile));
+        strcpy(mock_profile, v);
+    }
+    return ESP_OK;
 }
 esp_err_t esp_http_client_set_post_field(esp_http_client_handle_t c, const char *b, int n) {
     (void)c; (void)b; (void)n; return ESP_FAIL;
@@ -170,6 +181,7 @@ int pxa_platform_net_http_request(const pxa_net_request_t *request,
     size_t header_capacity, size_t *header_count, uint8_t *header_storage,
     size_t header_storage_capacity, size_t *header_bytes) {
     (void)headers; (void)header_capacity;
+    if (skip_platform_transport) return PXA_PLATFORM_NET_FETCH_NOT_USED;
     assert(critical_depth == 0 && capacity >= 4 && content_capacity > 10);
     if (request->header_count) {
         assert(request->body.size == 3 && memcmp(request->body.data, "abc", 3) == 0);
@@ -193,6 +205,95 @@ static void step_stream(void) {
     assert(slot->state == PXA_ESP_NET_SLOT_QUEUED);
     slot->state = PXA_ESP_NET_SLOT_RUNNING;
     stream_step(g_net, slot);
+}
+
+static void test_store_profile(pxa_net_backend_t *backend) {
+    const char *accepted[] = {
+        "https://app.doit.am/api/v2/catalog",
+        "https://APP.DOIT.AM:443/api/v2/catalog?profile=old",
+        "https://app.doit.am/api/v2/apps/pxa-store?profile=old",
+        "https://app.doit.am/api/v2/device/update-check",
+    };
+    const char *rejected[] = {
+        "", "https://app.doit.am", "http://app.doit.am/api/v2/catalog",
+        "https://app.doit.am.evil.invalid/api/v2/catalog",
+        "https://app.doit.am@evil.invalid/api/v2/catalog",
+        "https://evil.invalid@ app.doit.am/api/v2/catalog",
+        "https://app.doit.am:8443/api/v2/catalog",
+        "https://app.doit.am/api/v2/catalogue",
+        "https://app.doit.am/api/v2/catalog/anything",
+        "https://app.doit.am/api/v2/device/update-check-other",
+        "https://app.doit.am/api/v2/apps/",
+        "https://app.doit.am/api/v2/apps/?id=pxa-store",
+        "https://app.doit.am/api/v2/artifacts/1/download-ticket",
+        "https://downloads.doit.am/api/v2/catalog",
+    };
+    assert(!pxa_store_host_profile_url(NULL));
+    for (unsigned i = 0; i < sizeof(accepted) / sizeof(*accepted); ++i)
+        assert(pxa_store_host_profile_url(accepted[i]));
+    for (unsigned i = 0; i < sizeof(rejected) / sizeof(*rejected); ++i)
+        assert(!pxa_store_host_profile_url(rejected[i]));
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+    const char *expected = "esp32-s3-pxa-0.7.0";
+#elif defined(CONFIG_IDF_TARGET_ESP32S31)
+    const char *expected = "esp32-s31-pxa-0.7.0";
+#else
+    const char *expected = "";
+#endif
+    pxa_net_request_t request = {0};
+    request.struct_size = sizeof(request);
+    request.method = PXA_NET_METHOD_GET;
+    request.timeout_ms = 1000;
+    request.max_response_bytes = 64;
+    request.buffer_bytes = 512;
+    request.response_header_bytes = 1024;
+    request.max_body_bytes = 8192;
+    skip_platform_transport = 1;
+    for (unsigned streaming = 0; streaming < 2; ++streaming) {
+        request.abi_minor = streaming ? 2 : 1;
+        for (unsigned official = 0; official < 2; ++official) {
+            const char *url = official ? accepted[0] : rejected[3];
+            request.url = (pxa_bytes_t){(const uint8_t *)url, strlen(url)};
+            if (streaming) {
+                void *exchange;
+                assert(backend->open_exchange(NULL, &request, &exchange) == PXA_STATUS_OK);
+                step_stream();
+                backend->close_exchange(NULL, exchange);
+                step_stream();
+            } else {
+                uint64_t operation;
+                pxa_net_response_t response;
+                assert(backend->start(NULL, &request, &operation) == PXA_STATUS_OK);
+                drain_worker();
+                assert(backend->poll(NULL, operation, &response) == PXA_STATUS_UNAVAILABLE);
+            }
+            assert(strcmp(mock_profile, official ? expected : "") == 0);
+            assert(mock_profile_headers == (unsigned)(official && *expected));
+            assert(live_allocations == 1 && !queued_count);
+        }
+    }
+    if (*expected) {
+        /* Host replaces even a differently cased guest declaration. */
+        pxa_net_header_t header = {
+            {(const uint8_t *)"x-pxa-host-profile", 18},
+            {(const uint8_t *)"stale", 5},
+        };
+        void *exchange;
+        request.headers = &header; request.header_count = 1;
+        assert(backend->open_exchange(NULL, &request, &exchange) == PXA_STATUS_OK);
+        step_stream();
+        assert(strcmp(mock_profile, expected) == 0 && mock_profile_headers == 2);
+        backend->close_exchange(NULL, exchange); step_stream();
+        request.headers = NULL; request.header_count = 0;
+        fail_profile_header = 1;
+        assert(backend->open_exchange(NULL, &request, &exchange) == PXA_STATUS_OK);
+        step_stream();
+        assert(http_stream(exchange)->stream.error == PXA_STATUS_IO_ERROR);
+        backend->close_exchange(NULL, exchange); step_stream();
+        fail_profile_header = 0;
+    }
+    skip_platform_transport = 0;
+    assert(live_allocations == 1 && !queued_count && mock_cleanups == mock_inits);
 }
 static void test_stream(pxa_net_backend_t *b) {
     pxa_net_request_t r = {0}; void *exchange;
@@ -344,6 +445,7 @@ int main(void) {
     pxa_esp_net_snapshot(&snapshot);
     assert(snapshot.active_slots == 0 && snapshot.slot_storage_bytes == sizeof(g_net->slots));
     test_stream(&backend);
+    test_store_profile(&backend);
     pxa_socket_request_t socket_request = {0};
     socket_request.host = (pxa_bytes_t){(const uint8_t *)"test.invalid", 12};
     socket_request.port = 443; socket_request.tls = 1;

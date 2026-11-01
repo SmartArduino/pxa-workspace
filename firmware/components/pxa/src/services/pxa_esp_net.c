@@ -21,6 +21,17 @@
 #include "freertos/task.h"
 
 #include "pxa/pxa_platform_net.h"
+#include "pxa_store_host_profile.h"
+
+static esp_err_t set_store_host_profile(esp_http_client_handle_t client,
+                                        const char *url) {
+    const char *profile = pxa_store_host_profile();
+    if (profile == NULL || !pxa_store_host_profile_url(url)) return ESP_OK;
+    /* Applied after guest headers: an old Store cannot pin discovery to its
+     * bundled profile once the PXA Host has been upgraded. */
+    return esp_http_client_set_header(client, PXA_STORE_HOST_PROFILE_HEADER,
+                                      profile);
+}
 
 #define PXA_ESP_NET_TAG "PxaNet"
 #define PXA_ESP_NET_URL_CAPACITY 513
@@ -393,6 +404,8 @@ static void net_worker(void *context) {
                         (const char *)header->value.data);
                     if (error != ESP_OK) break;
                 }
+                if (error == ESP_OK)
+                    error = set_store_host_profile(client, slot->url);
                 if (error == ESP_OK && slot->request_body_size != 0) {
                     error = esp_http_client_set_post_field(
                         client, (const char *)slot->request_body,
