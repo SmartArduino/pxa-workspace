@@ -83,15 +83,17 @@ endif()
 
 if(CONFIG_PXA_ENABLED)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    # On a fresh ESP-IDF build compile_commands also names generated sources.
+    # Scan maintained source before compilation; the post-link gate below scans
+    # every compiled source and header once their generators have completed.
     add_custom_target(pxa_system_license_gate
         COMMAND "${Python3_EXECUTABLE}"
             "${PXSYS_ROOT}/tools/licensing/check_system_licenses.py"
-            --compile-commands "${CMAKE_BINARY_DIR}/compile_commands.json"
             --source-root "${PXSYS_ROOT}/libpxa"
             --source-root "${PXSYS_ROOT}/system"
             --source-root "${PXSYS_ROOT}/ui"
             --source-root "${PXSYS_ROOT}/platforms"
-        COMMENT "Checking compiled system license policy"
+        COMMENT "Checking system source license policy"
         VERBATIM)
     add_dependencies(__idf_pxa pxa_system_license_gate)
     idf_build_get_property(pxa_python PYTHON)
