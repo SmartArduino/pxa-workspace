@@ -59,6 +59,9 @@ pxa_status_t pxa_esp_installations_install(pxa_esp_installations_t *,const char 
     const char *locator,const pxa_install_record_t *approved,uint64_t expected_generation,
     const uint8_t approved_manifest_sha256[32],const pxa_install_plan_t *,
     pxa_posix_media_ready_fn,void *,pxa_posix_installer_result_t *,pxa_posix_app_home_t *);
+/* Normal activation trusts the committed installation: no package signatures,
+ * manifest hashes or payload scans. Local record authentication, identity and
+ * mount checks remain; only pending/invalid state invokes verified recovery. */
 pxa_status_t pxa_esp_installations_load(pxa_esp_installations_t *,const char *locator,
     pxa_posix_media_ready_fn,void *,pxa_posix_installer_result_t *,pxa_posix_app_home_t *);
 pxa_status_t pxa_esp_installations_lookup(pxa_esp_installations_t *,const char *locator,pxa_posix_app_home_t *);
@@ -77,7 +80,8 @@ pxa_status_t pxa_esp_installations_reset_data(pxa_esp_installations_t *,const ch
 pxa_status_t pxa_esp_installations_remove(pxa_esp_installations_t *,const char *locator,
     uint64_t expected_generation,uint8_t keep_data,pxa_posix_app_home_t *);
 /* Caller owns the returned activation session and closes it after all services.
- * Home must be the verified result of load/install, not a discovery snapshot. */
+ * Home must be the authenticated local record from load/install, not a
+ * discovery snapshot. This does not reverify installed package contents. */
 pxa_status_t pxa_esp_installations_storage(pxa_esp_installations_t *,
     const pxa_posix_app_home_t *,pxa_esp_app_storage_t **);
 #ifdef __cplusplus

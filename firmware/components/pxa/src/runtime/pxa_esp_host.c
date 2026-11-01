@@ -3281,7 +3281,7 @@ static int start_verified(const char *identity) {
             &manifest)) {
         free(manifest_workspace);
         free(encoded);
-        pxa_esp_ui_shell_post_toast("应用验证失败", 1800);
+        pxa_esp_ui_shell_post_toast("应用信息读取失败", 1800);
         return 0;
     }
     stop_active(PXA_STOP_REPLACED);

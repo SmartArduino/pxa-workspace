@@ -299,12 +299,12 @@ static pxa_status_t resources_operation(pxa_esp_installations_t *owner,const pxa
             ?pxa_posix_installer_adopt_directory(installer,source,&identity,result,NULL)
             :pxa_posix_installer_install_for_identity(installer,source,&identity,result,NULL);
         else status=metadata_only
-            ?pxa_posix_installer_read_signed_manifest(installer,owner->resource_package,result)
+            ?pxa_posix_installer_load_directory(installer,owner->resource_package,result)
             :pxa_posix_installer_verify_source(installer,owner->resource_package,result);
         owner->plan=NULL;
         if(status==PXA_STATUS_OK) {
             const pxa_package_manifest_t *manifest=*result->manifest;
-            if(!manifest || manifest->app_id.size!=identity.app_id.size ||
+            if(!manifest || manifest->package_kind!=PXA_PACKAGE_KIND_RESOURCES || manifest->app_id.size!=identity.app_id.size ||
                 memcmp(manifest->app_id.data,identity.app_id.data,identity.app_id.size) ||
                 memcmp(manifest->management_key_id,record->publisher_root,32))status=PXA_STATUS_DENIED;
         }
@@ -492,7 +492,13 @@ pxa_status_t pxa_esp_installations_load(pxa_esp_installations_t *owner,const cha
     pxa_status_t status=available(owner);if(status!=PXA_STATUS_OK)return status;
     status=visible(owner,locator);if(status!=PXA_STATUS_OK)return status;
     owner->config.media_ready=media?media:load_media;owner->config.media_context=media?context:owner;
-    status=pxa_posix_app_store_recover(&owner->config,locator,result,home);
+    status=pxa_posix_app_store_load(&owner->config,locator,result,home);
+    if(status==PXA_STATUS_BUSY || status==PXA_STATUS_DENIED) {
+        /* Only an interrupted/invalid installation enters recovery. Keep its
+         * full code/resource verification separate from ordinary launches. */
+        owner->config.media_ready=media?media:pxa_esp_installations_verify_media;
+        status=pxa_posix_app_store_recover(&owner->config,locator,result,home);
+    }
     owner->config.media_ready=NULL;owner->config.media_context=NULL;return status;
 }
 pxa_status_t pxa_esp_installations_storage(pxa_esp_installations_t *owner,

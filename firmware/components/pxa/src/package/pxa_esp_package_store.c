@@ -581,11 +581,6 @@ static int parse_entry_manifest(const pxa_esp_package_entry_t *entry,
                          entry->root);
     if (path_size < 0 || (size_t)path_size >= sizeof(manifest_path)) return 0;
     if(!parse_manifest_file(manifest_path,manifest_out))return 0;
-    if(entry->volume_local) {
-        uint8_t hash[32];
-        if(pxa_esp_mbedtls_sha256((*manifest_out)->encoded.data,(*manifest_out)->encoded.size,hash)!=PXA_STATUS_OK ||
-            memcmp(hash,entry->manifest_sha256,32))return 0;
-    }
     return 1;
 }
 
@@ -2608,7 +2603,7 @@ pxa_status_t pxa_esp_package_store_open_storage(const char *identity,pxa_esp_app
     epoch=entry->mount_epoch;generation=entry->install_generation;
     memcpy(install_id,entry->install_id,16);memcpy(manifest_hash,entry->manifest_sha256,32);
     snprintf(locator,sizeof(locator),"%s",entry->storage_key);
-    /* Activation authenticates metadata without rescanning committed files.
+    /* Activation loads committed metadata without revalidating the package.
      * Catalog readers never wait for recovery or a private-image mount. */
     release_lock(g_store->metadata_lock);
     status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
@@ -3850,7 +3845,6 @@ bool pxa_esp_package_store_load_installed(
     char manifest_path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];
     size_t app_id_size;
     pxa_status_t status;
-    uint8_t volume_local=0,manifest_sha256[32];
     if (!store_is_initialized() || identity == NULL || root == NULL ||
         manifest_workspace == NULL || encoded == NULL ||
         manifest == NULL) {
@@ -3874,8 +3868,6 @@ bool pxa_esp_package_store_load_installed(
         return false;
     }
     memcpy(publisher_key_id, entry->publisher_key_id, sizeof(publisher_key_id));
-    volume_local=entry->volume_local;
-    if(volume_local)memcpy(manifest_sha256,entry->manifest_sha256,32);
     snprintf(app_id, sizeof(app_id), "%s", entry->id);
     release_lock(g_store->metadata_lock);
     if (root_capacity == 0 ||
@@ -3906,11 +3898,6 @@ bool pxa_esp_package_store_load_installed(
                        sizeof(publisher_key_id)) != 0) {
                 status = PXA_STATUS_DENIED;
             }
-        }
-        if(status==PXA_STATUS_OK && volume_local) {
-            uint8_t hash[32];
-            if(pxa_esp_mbedtls_sha256((*manifest)->encoded.data,(*manifest)->encoded.size,hash)!=PXA_STATUS_OK ||
-                memcmp(hash,manifest_sha256,32))status=PXA_STATUS_DENIED;
         }
     }
     release_lock(g_store->transaction_lock);

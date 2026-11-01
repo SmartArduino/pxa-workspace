@@ -41,10 +41,15 @@ esp_err_t esp_vfs_fat_info(const char *path,uint64_t *total,uint64_t *free_bytes
 static pxa_status_t capacity(void *ctx,const char *path,uint64_t *total,uint64_t *free_bytes,uint8_t *known) {
     (void)path;*total=16000000;*free_bytes=ctx?15000000:0;*known=3;return PXA_STATUS_OK;
 }
+static unsigned signature_checks;
+static pxa_status_t counted_verify(void *context,pxa_bytes_t key,pxa_bytes_t domain,
+    pxa_bytes_t manifest,pxa_bytes_t signature) {
+    ++signature_checks;return pxa_openssl_p256_verify(context,key,domain,manifest,signature);
+}
 pxa_status_t pxa_esp_package_installer_profile(pxa_posix_installer_config_t *config,pxa_esp_mbedtls_trust_t *trust) {
     (void)trust;memset(config,0,sizeof(*config));config->struct_size=sizeof(*config);
     config->trust=(pxa_openssl_trust_t){sizeof(config->trust),&publisher,1};
-    config->verify=pxa_openssl_p256_verify;config->flags=PXA_POSIX_INSTALLER_FLAG_SKIP_LOCK;
+    config->verify=counted_verify;config->flags=PXA_POSIX_INSTALLER_FLAG_SKIP_LOCK;
     pxa_package_limits_init(&config->limits);return PXA_STATUS_OK;
 }
 pxa_status_t pxa_esp_record_seal(pxa_bytes_t purpose,pxa_bytes_t binding,pxa_bytes_t body,uint8_t tag[32]) {
@@ -137,7 +142,20 @@ int main(int argc,char **argv) {
     assert(strstr(home.home,"/apps/lucinhu/volume-test") && !strcmp(home.locator,locator));
     unsigned discovered=0;size_t invalid;
     assert(!pxa_esp_installations_visit(owner,count_home,&discovered,&invalid) && discovered==1 && !invalid);
+    signature_checks=0;
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home) && prepare_calls==1);
+    assert(signature_checks==0);
+    /* A torn install transaction still takes the explicit verified recovery
+     * path; subsequent launches return to metadata-only loading. */
+    char pending_install[768];path(pending_install,sizeof(pending_install),home.home,"install.pending.pxi");
+    file=open(pending_install,O_WRONLY|O_CREAT|O_EXCL,0600);assert(file>=0);
+    assert(write(file,"PXI",3)==3 && !close(file));
+    assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home));
+    assert(signature_checks>0 && prepare_calls==1);
+    assert(access(pending_install,F_OK)<0 && errno==ENOENT);
+    signature_checks=0;
+    assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home));
+    assert(signature_checks==0 && home.record.generation==1);
     assert(!pxa_esp_installations_inspect(owner,source2,&result));
     assert(!pxa_openssl_sha256(manifest->encoded.data,manifest->encoded.size,digest));
     assert(!pxa_esp_installations_plan(owner,manifest,0,0,&plan) && !pxa_esp_storage_reserve_plan(&plan));
@@ -232,14 +250,16 @@ int main(int argc,char **argv) {
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home));
     pxa_esp_app_storage_t *active_storage=NULL;
     assert(!pxa_esp_installations_storage(owner,&home,&active_storage) && !pxa_esp_app_storage_close(&active_storage));
-    /* Activation loads signed resource metadata without reading payloads.
+    /* Activation loads installed resource metadata without rechecking signatures.
      * That lightweight load must never authorize later full verification. */
     assert(!pxa_esp_installations_close(&owner->media_owner));
     file=open(media_payload,O_RDWR);assert(file>=0);char saved_resource_byte=0;
     assert(read(file,&saved_resource_byte,1)==1 && lseek(file,0,SEEK_SET)==0);
     char damaged_resource_byte=saved_resource_byte^1;
     assert(write(file,&damaged_resource_byte,1)==1 && !close(file));
+    signature_checks=0;
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home));
+    assert(signature_checks==0);
     assert(owner->media_owner->resource_loaded && !owner->media_owner->resource_verified);
     assert(pxa_esp_installations_verify_resources(media_owner,&home.record,&result)==PXA_STATUS_DENIED);
     assert(pxa_esp_installations_verify_media(owner,&home.record)==PXA_STATUS_DENIED);
