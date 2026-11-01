@@ -1173,6 +1173,10 @@ size_t ConsumeFsBulk(const uint8_t* input, size_t available) {
         if(valid && FileUploadActive() && s_file_upload.remaining) {
             s_bulk=batch;s_bulk.used=0;s_bulk.last_us=esp_timer_get_time();
         } else free(batch.bytes);
+        // Decoding, storage flushes and final verification are active work.
+        // Start the control-session idle lease after the ACK, just as the
+        // text-command path does, including when the final frame frees bulk.
+        s_last_control_activity_us.store(esp_timer_get_time(), std::memory_order_relaxed);
         return amount+1;
     }
     if (batch.draining || !decode_bulk(batch.bytes, batch.used, batch.expected)) {
@@ -1183,6 +1187,7 @@ size_t ConsumeFsBulk(const uint8_t* input, size_t available) {
         SendFrame(batch.sequence, "ERR", "chunk_checksum_mismatch");
     else CommitFsUploadBytes(batch.sequence, batch.bytes, batch.expected);
     free(batch.bytes);
+    s_last_control_activity_us.store(esp_timer_get_time(), std::memory_order_relaxed);
     return amount + 1;
 }
 

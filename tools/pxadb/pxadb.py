@@ -12,6 +12,7 @@ import ipaddress
 import json
 import os
 import pathlib
+import re
 import secrets
 import socket
 import shlex
@@ -1074,19 +1075,20 @@ class NormalFsClient:
         timeout = max(60.0, getattr(self.client, "timeout", 0.0))
         if expected_size is not None:
             timeout = max(timeout, file_verification_timeout(expected_size))
-        try:
-            frames = self.client.request(
-                f"FSSHA {client_encode_path(remote_path)}", timeout=timeout
-            )
-        except PxaDbError:
-            return None, None
+        # A peer that advertises digests must provide one. A link timeout is
+        # not permission to publish an unverified backup of a package/save.
+        frames = self.client.request(
+            f"FSSHA {client_encode_path(remote_path)}", timeout=timeout
+        )
         digest = info_properties(frames[-1].payload)
-        sha = digest.get("sha256")
+        sha = digest.get("sha256", "")
         try:
-            size = int(digest["bytes"]) if "bytes" in digest else None
-        except ValueError:
-            size = None
-        return (sha if sha else None), size
+            size = int(digest["bytes"])
+            if size < 0 or re.fullmatch(r"[0-9a-fA-F]{64}", sha) is None:
+                raise ValueError()
+        except (KeyError, ValueError) as error:
+            raise PxaDbError("invalid file digest from device") from error
+        return sha.lower(), size
 
     def _append_data_frame(self, frame: Frame, output: bytearray,
                            require_offset: bool = True) -> bool:
@@ -1171,13 +1173,21 @@ class NormalFsClient:
                     del output[before:]
                     truncated = True
                     break
-                progressed = True
+                progressed = progressed or len(output) > before
             if progressed and progress is not None:
                 progress(len(output), expected_size)
-            if expected_size is not None and len(output) >= expected_size:
+            if expected_size is not None and len(output) > expected_size:
+                raise PxaDbError(
+                    f"file size mismatch: expected {expected_size}, got {len(output)}"
+                )
+            if expected_size is not None and len(output) == expected_size:
                 break
             status = frames[-1].payload if frames else ""
             if status == "eof" and not truncated:
+                if expected_size is not None and len(output) != expected_size:
+                    raise PxaDbError(
+                        f"file size mismatch: expected {expected_size}, got {len(output)}"
+                    )
                 break
             if not progressed:
                 failures += 1

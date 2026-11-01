@@ -90,6 +90,8 @@ the older bulk protocol. Buffers are released and command mode restored on
 completion, validation failure, cancellation, reconnect, or 10 seconds of
 inactivity. A truncated frame drains to a zero delimiter before text is parsed;
 the client sends that delimiter automatically during cancellation and HELLO.
+Storage writes, decompression and verification count as active work: the control
+session's idle window starts again after the binary-frame acknowledgement.
 
 Without `fs_fast`, firmware advertising `fs_bulk_cobs=1` uses checked binary batches up to its
 `max_bulk` limit (currently 2048 bytes), with an admission handshake before each
@@ -121,6 +123,13 @@ deadline. Local package installs, explicit staging, and Wi-Fi streaming also
 use the manifest's **decoded** file sizes, so highly compressed packages receive
 enough time. Install/stage verification waits at least 60 seconds. An explicitly
 longer `--timeout` is respected for these operations.
+
+File downloads retry from the first missing or corrupt window. Duplicate-only
+windows count toward the bounded retry limit, so a stalled peer cannot keep a
+backup running indefinitely. A device advertising `fs_sha256` must return a
+valid digest and byte count before download; query failures abort the operation
+instead of silently disabling verification. Transfer or verification failures
+leave an existing destination untouched.
 
 UART HELLO reports `uart_rx_buffer` and `uart_rx_fifo_threshold`: the software ring and the
 hardware FIFO interrupt watermark solve different receive-latency limits.

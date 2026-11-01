@@ -1461,7 +1461,7 @@ class FileVerificationBudgetTest(unittest.TestCase):
         client = fake_client([])
         client.device_info = "fs_sha256=1"
         client.timeout = 1200.0
-        with mock.patch.object(client, "request", return_value=[pxadb.Frame(1, "OK", "sha256=abc;bytes=1")]) as request:
+        with mock.patch.object(client, "request", return_value=[pxadb.Frame(1, "OK", "sha256=" + "a" * 64 + ";bytes=1")]) as request:
             pxadb.NormalFsClient(client)._expected_digest("sdcard/file")
         self.assertEqual(request.call_args.kwargs["timeout"], 1200.0)
 
@@ -1516,6 +1516,57 @@ class PxaDbFileTransferTest(unittest.TestCase):
         frame = self.data_frame(0, b"payload", crc=0xDEADBEEF)
         self.assertFalse(client._append_data_frame(frame, output))
         self.assertEqual(output, b"")
+
+    def test_duplicate_only_windows_have_a_bounded_retry_budget(self) -> None:
+        first = [self.data_frame(0, b"a"), pxadb.Frame(1, "OK", "more")]
+        client = self.client([first] * 22)
+        with self.assertRaisesRegex(pxadb.PxaDbError, "file read stalled"):
+            client._download_windowed("file", 2)
+        self.assertEqual(len(client.client.commands), 22)
+
+    def test_premature_eof_is_not_a_successful_download(self) -> None:
+        client = self.client([[self.data_frame(0, b"a"), pxadb.Frame(1, "OK", "eof")]])
+        with self.assertRaisesRegex(pxadb.PxaDbError, "file size mismatch"):
+            client._download_windowed("file", 2)
+
+    def test_overlong_download_is_rejected(self) -> None:
+        client = self.client([[self.data_frame(0, b"abc"), pxadb.Frame(1, "OK", "eof")]])
+        with self.assertRaisesRegex(pxadb.PxaDbError, "file size mismatch"):
+            client._download_windowed("file", 2)
+
+    def test_empty_file_download_is_verified(self) -> None:
+        sha = hashlib.sha256(b"").hexdigest()
+        client = self.client([[pxadb.Frame(1, "OK", f"sha256={sha};bytes=0")],
+                              [pxadb.Frame(2, "OK", "eof")]])
+        with tempfile.TemporaryDirectory() as directory:
+            target = pathlib.Path(directory) / "empty"
+            client.get("file", target)
+            self.assertEqual(target.read_bytes(), b"")
+
+    def test_failed_hash_retries_preserve_existing_backup(self) -> None:
+        sha = hashlib.sha256(b"good").hexdigest()
+        bad = [self.data_frame(0, b"evil"), pxadb.Frame(1, "OK", "eof")]
+        client = self.client([[pxadb.Frame(1, "OK", f"sha256={sha};bytes=4")], bad, bad, bad])
+        with tempfile.TemporaryDirectory() as directory:
+            target = pathlib.Path(directory) / "backup"
+            target.write_bytes(b"original")
+            with self.assertRaisesRegex(pxadb.PxaDbError, "checksum mismatch"):
+                client.get("file", target)
+            self.assertEqual(target.read_bytes(), b"original")
+
+    def test_advertised_digest_failure_does_not_disable_verification(self) -> None:
+        client = self.client([])
+        client.client.request = mock.Mock(side_effect=pxadb.PxaDbError("timed out"))
+        with self.assertRaisesRegex(pxadb.PxaDbError, "timed out"):
+            client._expected_digest("file")
+
+    def test_malformed_advertised_digest_is_rejected(self) -> None:
+        for payload in ("", "sha256=bad;bytes=3", "sha256=" + "a" * 64,
+                        "sha256=" + "a" * 64 + ";bytes=-1"):
+            with self.subTest(payload=payload):
+                client = self.client([[pxadb.Frame(1, "OK", payload)]])
+                with self.assertRaisesRegex(pxadb.PxaDbError, "invalid file digest"):
+                    client._expected_digest("file")
 
     def test_offset_tagged_frame_without_crc_is_accepted(self) -> None:
         client = object.__new__(pxadb.NormalFsClient)
