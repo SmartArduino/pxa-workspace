@@ -62,6 +62,8 @@ typedef struct {
     bool resources_movable;
     bool legacy_storage;
     bool archived;
+    bool ambiguous;
+    uint64_t mount_epoch; /* Zero for the legacy installation layout. */
 } pxa_host_package_info_t;
 
 typedef struct {

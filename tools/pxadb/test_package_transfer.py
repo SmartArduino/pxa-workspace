@@ -13,6 +13,55 @@ import test_pxadb as fixtures
 
 
 class PackageTransferTest(unittest.TestCase):
+    def test_update_volume_uses_complete_publisher_identity_and_keeps_legacy(self):
+        source = pathlib.Path("candidate.pxa")
+        root, other = bytes(range(32)), bytes(reversed(range(32)))
+        client = mock.Mock(device_info="package_location=1")
+        def row(publisher, state):
+            return pxadb.Frame(1, "PKG", publisher.hex()+":pxa-test\tTest\t1\t"+state)
+        with mock.patch.object(pxadb, "read_package_manifest", return_value=b"x"*12), \
+             mock.patch.object(pxadb, "manifest_records", return_value=[(1, root)]):
+            client.request.return_value = [row(other, "installed=1;volume=99"), row(root, "installed=1;volume=42")]
+            self.assertEqual(pxadb.existing_package_volume(client, source, "pxa-test"), "42")
+            for state in ("installed=1;volume=0", "installed=1", "staged=1;volume=42"):
+                client.request.return_value = [row(root, state)]
+                self.assertIsNone(pxadb.existing_package_volume(client, source, "pxa-test"))
+            client.request.return_value = [row(root, "installed=0;archived=1;volume=42")]
+            self.assertEqual(pxadb.existing_package_volume(client, source, "pxa-test"), "42")
+            client.request.return_value = [row(root, "installed=1;ambiguous=1;volume=0")]
+            with self.assertRaisesRegex(pxadb.PxaDbError, "original --volume"):
+                pxadb.existing_package_volume(client, source, "pxa-test")
+            client.request.return_value = [row(root, "installed=1;volume=-1")]
+            with self.assertRaisesRegex(pxadb.PxaDbError, "invalid installed volume"):
+                pxadb.existing_package_volume(client, source, "pxa-test")
+        client.device_info = "package_stream_volume=1"
+        client.request.reset_mock()
+        self.assertIsNone(pxadb.existing_package_volume(client, source, "pxa-test"))
+        client.request.assert_not_called()
+
+    def test_rotated_signer_placement_uses_original_root(self):
+        root, signer = b"a"*32, b"b"*32
+        lineage = b"PXKL"+struct.pack("<HHHHI", 0, 1, 16, 1, 80)+struct.pack("<II", 1, 0)+root+signer+bytes(8)
+        client = mock.Mock(device_info="package_location=1")
+        client.request.return_value = [pxadb.Frame(1, "PKG", root.hex()+":pxa-test\tTest\t1\tinstalled=1;volume=7")]
+        with mock.patch.object(pxadb, "read_package_manifest", return_value=b"x"*12), \
+             mock.patch.object(pxadb, "manifest_records", return_value=[(1, signer), (10, lineage)]):
+            self.assertEqual(pxadb.existing_package_volume(client, pathlib.Path("candidate"), "pxa-test"), "7")
+
+    def test_default_update_streams_to_existing_volume_without_legacy_staging(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = fixtures.PackageStorageTest.container(pathlib.Path(folder))
+            args = pxadb.build_parser().parse_args(["package", "install", str(source), "--yes", "--port", "/dev/mock"])
+            client = mock.MagicMock(); client.__enter__.return_value = client; client.request.return_value = []
+            with mock.patch.object(pxadb, "open_client", return_value=client), \
+                 mock.patch.object(pxadb, "existing_package_volume", return_value="42"), \
+                 mock.patch.object(pxadb, "stage_package_on_volume", return_value=(42, "candidate", "serial")) as stream, \
+                 mock.patch.object(pxadb, "stage_package_files") as legacy:
+                self.assertEqual(pxadb.command_package_install(args), 0)
+                self.assertEqual(stream.call_args.args[2], "42")
+                legacy.assert_not_called()
+                client.request.assert_any_call("PACKAGE install-volume 42 "+pxadb.client_encode_path("candidate"), timeout=60)
+
     def test_pending_cleanup_retries_without_masking_storage_errors(self):
         client = object.__new__(pxadb.PxaDbClient)
         client.timeout, client.sequence = 30, 0

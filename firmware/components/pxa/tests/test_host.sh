@@ -13,6 +13,7 @@ python3 "$project_dir/firmware/components/pxa_integration/tests/test_storage_sta
 python3 "$tests_dir/test_native_move_ui.py"
 python3 "$tests_dir/test_native_file_ui.py"
 python3 "$tests_dir/test_legacy_catalog.py"
+python3 "$tests_dir/test_package_deploy.py"
 python3 "$tests_dir/test_graceful_stop.py"
 python3 "$tests_dir/test_stop_cleanup.py"
 bash "$tests_dir/test_storage_worker.sh"

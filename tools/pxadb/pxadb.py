@@ -2004,6 +2004,51 @@ def clear_staged_source(client: PxaDbClient, identity: str) -> None:
             pass
 
 
+def existing_package_volume(client: PxaDbClient, source: pathlib.Path,
+                            app_id: str) -> str | None:
+    """Keep a signed identity's installed volume before receiving any bytes."""
+    if info_properties(client.device_info).get("package_location") != "1":
+        return None
+    fields = {}
+    for tag, value in manifest_records(read_package_manifest(source)[12:]):
+        if tag in {1, 10}:
+            if tag in fields:
+                raise PxaDbError("duplicate publisher metadata in manifest")
+            fields[tag] = value
+    root = fields.get(1)
+    if root is None:
+        return None
+    if len(root) != 32:
+        raise PxaDbError("invalid publisher key in manifest")
+    lineage = fields.get(10)
+    if lineage is not None:
+        # Placement is only a hint; firmware verifies the complete lineage and
+        # signature before committing. The first link carries the stable root.
+        if (len(lineage) < 96 or lineage[:8] != b"PXKL\x00\x00\x01\x00"
+                or struct.unpack_from("<H", lineage, 8)[0] != 16
+                or struct.unpack_from("<H", lineage, 10)[0] == 0
+                or struct.unpack_from("<I", lineage, 12)[0] != len(lineage) - 16):
+            raise PxaDbError("invalid publisher lineage in manifest")
+        root = lineage[24:56]
+    identity = root.hex() + ":" + app_id
+    for frame in client.request("PACKAGES"):
+        if frame.kind != "PKG":
+            continue
+        columns = frame.payload.split("\t")
+        if len(columns) != 4 or columns[0] != identity:
+            continue
+        state = info_properties(columns[3])
+        if state.get("ambiguous") == "1":
+            raise PxaDbError("multiple installations of this identity; select the original --volume explicitly")
+        if state.get("installed") != "1" and state.get("archived") != "1":
+            continue
+        epoch = state.get("volume", "0")
+        if not epoch.isdecimal() or int(epoch) >= 1 << 64:
+            raise PxaDbError("invalid installed volume returned by device")
+        return epoch if int(epoch) else None
+    return None
+
+
 def command_package_install(arguments: argparse.Namespace) -> int:
     def approve_replacement(client: PxaDbClient, identity: str) -> None:
         packages = client.request("PACKAGES")
@@ -2042,12 +2087,17 @@ def command_package_install(arguments: argparse.Namespace) -> int:
         control_timeout = max(arguments.timeout, 60.0)
         with open_client(resolve_pxadb_port(arguments.port, control_timeout),
                          control_timeout, arguments.logcat) as client:
-            if arguments.volume:
+            volume = arguments.volume
+            if not volume and local_package.is_file():
+                volume = existing_package_volume(client, local_package, identity)
+                if volume:
+                    print("updating on the existing installation volume", file=sys.stderr, flush=True)
+            if volume:
                 approve_replacement(client, identity)
                 try:
                     print(f"receiving and unpacking: {identity}", file=sys.stderr, flush=True)
                     epoch, remote, _ = stage_package_on_volume(
-                        client, local_package, arguments.volume, arguments.via)
+                        client, local_package, volume, arguments.via)
                     print(f"verifying and installing: {identity}", file=sys.stderr, flush=True)
                     client.request(f"PACKAGE install-volume {epoch} {client_encode_path(remote)}",
                                    timeout=deploy_timeout)

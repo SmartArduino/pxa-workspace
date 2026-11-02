@@ -62,6 +62,8 @@ typedef struct {
     bool resources_movable;
     bool legacy_storage;
     bool archived;
+    bool ambiguous;
+    uint64_t mount_epoch;
 } pxa_esp_package_record_t;
 
 typedef bool (*pxa_esp_package_record_visitor_fn)(

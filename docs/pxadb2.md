@@ -272,7 +272,17 @@ pxadb package install app.pxa --volume sd --via auto --yes --port /dev/ttyACM0
 文件和安装事务，不经过内部 Flash 的 inbox。应用运行时读取普通文件。
 `--via serial` 使用当前线缆；`--via usb` 要求已连接原生 USB；`--via wifi`
 强制局域网传包。默认 `auto` 优先原生 USB 二进制模式，USB 转串口设备则
-尝试网络，失败时清理候选后走线缆。未指定 `--volume` 时沿用 inbox 路径。
+尝试网络，失败时清理候选后走线缆。未指定 `--volume` 时，新版固件通过
+`package_location=1` 和 `PACKAGES` 的 `volume` 字段提供原安装卷；客户端按完整
+发布者根与 App ID 匹配，直接传到原卷，保留安装身份、存档和权限。旧布局或没有
+位置能力的固件继续使用 inbox。新版固件也会将旧客户端的 `PACKAGE deploy`
+路由到既有卷；跨卷 inbox 目录需要复制并计入目标卷空间预留。
+
+`PACKAGES` 的 `ambiguous=1` 表示同身份存在多份安装，默认更新会在传输前拒绝。
+若旧客户端已把 SD 应用重复安装到内部旧布局，可明确指定原卷，例如
+`pxadb package install app.pxa --volume sd --yes`。固件先验证并更新原卷的认证安装，
+成功后将冲突的旧代码目录保留到 `pxa-state/retained-packages/`，不合并或删除两处
+私有数据。目标卷缺少原认证安装、更新失败或仍有其他卷冲突时，不自动选择存档。
 自动选择依据 HELLO 的 `transport=uart|usb-jtag|usb-cdc`，不会改变 USB
 描述符、占用其他设备端口或将已挂载的文件系统暴露为 USB 磁盘。
 

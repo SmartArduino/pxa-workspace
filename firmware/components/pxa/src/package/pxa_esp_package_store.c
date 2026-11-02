@@ -818,7 +818,7 @@ static int refresh_entry_from_manifest(const char *app_id, const char *root,
         return 0;
     }
     entry = reserve_entry(app_id, publisher_root);
-    if (entry == NULL) return 0;
+    if (entry == NULL || entry->volume_local || entry->ambiguous) return 0;
     { char relative[130];uint16_t flags;
       pxa_status_t status=pxa_app_locators_find(&g_store->locators,publisher_root,app_id,&flags,relative,sizeof(relative));
       if(status!=PXA_STATUS_OK && status!=PXA_STATUS_NOT_FOUND)return 0;
@@ -2484,6 +2484,35 @@ static __attribute__((noinline)) pxa_status_t bind_prepared_media(const pxa_pack
 done:
     heap_caps_free(scratch);return status;
 }
+static pxa_status_t migration_move(void *,const char *,const char *);
+
+/* An explicit update on a selected volume may resolve an old PXADB duplicate.
+ * The selected home has already authenticated the same publisher/AppId and
+ * committed its update. Retain the conflicting executable outside discovery;
+ * neither private directory is merged, reset or deleted. */
+static pxa_status_t retain_legacy_duplicate(pxa_esp_package_entry_t *entry,
+    const pxa_posix_app_home_t *selected) {
+    if(!entry || !selected || !entry->installed || entry->volume_local ||
+       !entry->ambiguous || entry->built_in ||
+       memcmp(entry->publisher_key_id,selected->record.publisher_root,32) ||
+       strcmp(entry->id,selected->record.app_id))return PXA_STATUS_BAD_STATE;
+    char retained[PXA_ESP_PACKAGE_MAX_PATH];uint32_t nonce;struct stat info;
+    for(unsigned attempt=0;attempt<16;++attempt) {
+        esp_fill_random(&nonce,sizeof(nonce));
+        int n=snprintf(retained,sizeof(retained),"%s/retained-packages/%s-%08lx",
+                       g_store->state_root,entry->id,(unsigned long)nonce);
+        if(n<0 || (size_t)n>=sizeof(retained))return PXA_STATUS_RESOURCE_LIMIT;
+        if(lstat(retained,&info)==0)continue;
+        if(errno!=ENOENT)return PXA_STATUS_IO_ERROR;
+        pxa_status_t status=migration_move(NULL,entry->root,retained);
+        if(status!=PXA_STATUS_OK)return status;
+        ESP_LOGW(PXA_ESP_PACKAGE_TAG,"Retained duplicate package %s at %s",entry->identity,retained);
+        entry->installed=0;entry->ambiguous=0;entry->root[0]=0;
+        return PXA_STATUS_OK;
+    }
+    return PXA_STATUS_RESOURCE_LIMIT;
+}
+
 pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *source,uint64_t epoch,
     const uint8_t expected_root[32],const char *expected_app) {
     pxa_esp_installations_t *owner=NULL;pxa_package_manifest_t *manifest=NULL;
@@ -2491,7 +2520,7 @@ pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *source,uin
     pxa_posix_app_home_t home;pxa_install_plan_t plan={0};pxa_volume_info_t volume;
     char root[PXA_ESP_PACKAGE_MAX_PATH],identity[PXA_ESP_PACKAGE_MAX_IDENTITY],locator[PXA_POSIX_APP_LOCATOR_BYTES];
     uint8_t publisher[32],digest[32];char app_id[65];uint64_t expected=0,source_epoch=0;pxa_status_t status;
-    int legacy_update=0,created_entry=0,prepared=0;
+    int legacy_update=0,created_entry=0,prepared=0,resolve_duplicate=0;
     char *resource_result_root=NULL;
     if(!store_is_initialized() || !source || (expected_root && !expected_app))return PXA_STATUS_INVALID_ARGUMENT;
     status=retain_source_volume(source,&source_epoch);if(status!=PXA_STATUS_OK)return status;
@@ -2499,7 +2528,12 @@ pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *source,uin
         struct stat info;
         prepared=epoch && epoch==source_epoch && pxa_host_container_stream_volume_path(epoch,source) &&
             lstat(source,&info)==0 && S_ISDIR(info.st_mode);
-        if(!prepared) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_INVALID_ARGUMENT;}
+        /* Older PXADB clients stage an unpacked directory in the Host inbox.
+         * A volume update can copy it without changing its ownership or
+         * pretending a cross-volume source is already reserved there. */
+        int staged=path_is_within(source,g_store->inbox_root) &&
+            lstat(source,&info)==0 && S_ISDIR(info.st_mode);
+        if(!prepared && !staged) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_INVALID_ARGUMENT;}
     }
     if(!take_lock(g_store->transaction_lock)) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
     if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
@@ -2530,11 +2564,14 @@ pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *source,uin
         goto done;
     }
     pxa_esp_package_entry_t *entry=find_entry(identity);
+    resolve_duplicate=epoch && entry && entry->installed && entry->ambiguous &&
+        !entry->volume_local && !entry->built_in;
     if(!epoch && entry && entry->installed && !entry->volume_local && !entry->ambiguous) {legacy_update=1;goto done;}
     if(!epoch && entry && entry->volume_local)epoch=entry->mount_epoch;
     if(!epoch) {status=default_install_volume(manifest,&epoch);if(status!=PXA_STATUS_OK)goto done;}
     status=installation_path_fits(epoch,locator);if(status!=PXA_STATUS_OK)goto done;
-    if(entry && (entry->installed || entry->volume_local) && (!entry->volume_local || entry->mount_epoch!=epoch || entry->ambiguous)) {
+    if(entry && (entry->installed || entry->volume_local) && !resolve_duplicate &&
+       (!entry->volume_local || entry->mount_epoch!=epoch || entry->ambiguous)) {
         status=PXA_STATUS_BAD_STATE;goto done; /* Explicit migration/instance resolution, never a second save. */
     }
     if(!entry) {entry=reserve_entry(app_id,publisher);created_entry=entry!=NULL;}
@@ -2563,9 +2600,17 @@ pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *source,uin
     if(status!=PXA_STATUS_OK)goto done;
     status=pxa_esp_storage_reserve_plan(&plan);if(status!=PXA_STATUS_OK)goto done;
     status=pxa_esp_installations_install(owner,source,locator,&approved,expected,digest,&plan,NULL,NULL,&result,&home);
+    if(status==PXA_STATUS_OK && resolve_duplicate)status=retain_legacy_duplicate(entry,&home);
     if(status==PXA_STATUS_OK) {
         volume_catalog_context_t scan={epoch,0};
         if(!catalog_volume_home(&scan,&home) || scan.rejected)status=PXA_STATUS_RESOURCE_LIMIT;
+        if(status==PXA_STATUS_OK && resolve_duplicate) {
+            /* Retiring one legacy copy does not silently select between two
+             * other native homes. Reapply discovery's ambiguity policy. */
+            scan_volume_homes();
+            entry=find_entry(identity);
+            if(!entry || entry->ambiguous)status=PXA_STATUS_BAD_STATE;
+        }
     }
 done:
     if(plan.reserved) {
@@ -3410,11 +3455,14 @@ pxa_status_t pxa_esp_package_store_migrate_storage(const char *identity,char *ro
     if(!store_is_initialized() || !identity || !root_out || !capacity)return PXA_STATUS_INVALID_ARGUMENT;
     if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
     if(!take_lock(g_store->metadata_lock)){release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
+    uint16_t flags=0;
+    const char *stage="entry";
     pxa_esp_package_entry_t *entry=find_entry(identity);pxa_status_t status=PXA_STATUS_NOT_FOUND;
     if(!entry || !entry->installed)goto migration_done;
     if(entry->ambiguous) {status=PXA_STATUS_BAD_STATE;goto migration_done;}
     if(entry->volume_local) {status=PXA_STATUS_OK;goto migration_copy;}
-    uint16_t flags=0;char relative[130],old_key[130],old_path[384],next_path[384];
+    char relative[130],old_key[130],old_path[384],next_path[384];
+    stage="locator";
     status=pxa_app_locators_find(&g_store->locators,entry->publisher_key_id,entry->id,&flags,relative,sizeof(relative));
     if(status==PXA_STATUS_NOT_FOUND){status=PXA_STATUS_OK;goto migration_copy;}
     if(status!=PXA_STATUS_OK)goto migration_done;
@@ -3423,6 +3471,7 @@ pxa_status_t pxa_esp_package_store_migrate_storage(const char *identity,char *ro
     const char *bases[2]={g_store->packages_root,g_store->data_root};
     for(unsigned i=0;i<2;++i) {
         if(!(flags&(1u<<i)))continue;
+        stage=i==0?"package-move":"data-move";
         int n=snprintf(old_path,sizeof(old_path),"%s/%s",bases[i],old_key);
         int m=snprintf(next_path,sizeof(next_path),"%s/%s",bases[i],relative);
         if(n<0 || m<0 || (size_t)n>=sizeof(old_path) || (size_t)m>=sizeof(next_path)){status=PXA_STATUS_RESOURCE_LIMIT;goto migration_done;}
@@ -3442,10 +3491,15 @@ pxa_status_t pxa_esp_package_store_migrate_storage(const char *identity,char *ro
     }
     status=PXA_STATUS_OK;
 migration_copy:
+    stage="root-copy";
     {int n=snprintf(root_out,capacity,"%s",entry->root);if(n<0 || (size_t)n>=capacity)status=PXA_STATUS_RESOURCE_LIMIT;}
 migration_done:
     release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);
-    if(status!=PXA_STATUS_OK)root_out[0]=0;
+    if(status!=PXA_STATUS_OK) {
+        root_out[0]=0;
+        ESP_LOGE(PXA_ESP_PACKAGE_TAG,"Legacy storage failed for %s: %ld (stage=%s flags=0x%x)",
+                 identity,(long)status,stage,(unsigned)flags);
+    }
     return status;
 }
 
@@ -3553,6 +3607,7 @@ bool pxa_esp_package_store_deploy_detailed(
     int source_selected = 0;
     int transaction_lock_held = 0;
     int metadata_lock_held = 0;
+    uint64_t installed_epoch = 0;
     if (result_out != NULL) {
         result_out->status = result_status;
         result_out->stage = result_stage;
@@ -3603,6 +3658,12 @@ bool pxa_esp_package_store_deploy_detailed(
             goto done;
         }
         source_selected = 1;
+        if(entry->ambiguous) {
+            result_status=PXA_STATUS_BAD_STATE;
+            result_stage="ambiguous_installation";
+            goto done;
+        }
+        if(entry->volume_local)installed_epoch=entry->mount_epoch;
         snprintf(app_id, sizeof(app_id), "%s", entry->id);
         if (!entry->has_publisher_key_id) {
             result_status = PXA_STATUS_DENIED;
@@ -3611,6 +3672,19 @@ bool pxa_esp_package_store_deploy_detailed(
         }
         memcpy(expected_publisher_root, entry->publisher_key_id,
                sizeof(expected_publisher_root));
+    }
+    if(installed_epoch) {
+        /* The old transport inbox is not an installation selector. An update
+         * keeps the existing home, private generation and permission store. */
+        release_lock(g_store->metadata_lock);metadata_lock_held=0;
+        release_lock(g_store->transaction_lock);transaction_lock_held=0;
+        result_status=pxa_esp_package_store_install_file_on_volume(
+            source,installed_epoch,expected_publisher_root,app_id);
+        result_stage="volume_install";
+        success=result_status==PXA_STATUS_OK;
+        transaction_lock_held=take_lock(g_store->transaction_lock);
+        if(transaction_lock_held)metadata_lock_held=take_lock(g_store->metadata_lock);
+        goto done;
     }
     memset(&result, 0, sizeof(result));
     result.struct_size = sizeof(result);
@@ -3664,7 +3738,7 @@ bool pxa_esp_package_store_deploy_detailed(
 done:
     /* A deployment attempt consumes its selected transport source, including
      * admission or commit failures. Current and private data are separate. */
-    if (source_selected) {
+    if (source_selected && metadata_lock_held) {
         (void)remove_staging_source(source);
         (void)scan_inbox(0);
     }
@@ -4151,6 +4225,8 @@ static void fill_package_record(const pxa_esp_package_entry_t *entry,
     record->staged = entry->staged != 0;
     record->enabled = entry->enabled != 0;
     record->archived=entry->volume_local && entry->archived;
+    record->ambiguous=entry->ambiguous;
+    record->mount_epoch=entry->volume_local?entry->mount_epoch:0;
     record->has_private_data = (entry->installed || record->archived) && entry->has_private_data;
     record->movable=(entry->installed || record->archived) && !entry->built_in && !entry->ambiguous;
     record->resources_movable=record->movable && entry->installed && entry->volume_local && entry->managed_media;

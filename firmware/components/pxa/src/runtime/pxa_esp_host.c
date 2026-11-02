@@ -3290,12 +3290,15 @@ static int start_verified(const char *identity) {
         .struct_size=sizeof(verification),.manifest_workspace=manifest_workspace,
         .manifest_workspace_size=manifest_workspace_size,.encoded=encoded,
         .encoded_capacity=encoded_size,.manifest=&manifest,.root=root,.root_capacity=sizeof(root)};
+    const char *storage_stage="open";
     status=pxa_esp_package_store_open_storage(identity,&app_storage,&media_mount_epoch,
         media_relative,sizeof(media_relative),&verification);
-    if(status==PXA_STATUS_OK && !app_storage)
+    if(status==PXA_STATUS_OK && !app_storage) {
+        storage_stage="legacy-migrate";
         status=pxa_esp_package_store_migrate_storage(identity,root,sizeof(root));
+    }
     if(status!=PXA_STATUS_OK) {
-        ESP_LOGE(PXA_ESP_HOST_TAG,"Storage activation failed for %s: %ld",identity,(long)status);
+        ESP_LOGE(PXA_ESP_HOST_TAG,"Storage activation failed for %s: %ld (stage=%s)",identity,(long)status,storage_stage);
         (void)pxa_esp_app_storage_close(&app_storage);
         if(app_storage)g_host.retired_storage=app_storage;
         free(manifest_workspace);free(encoded);return 0;
@@ -6078,6 +6081,8 @@ static bool project_host_package(const pxa_esp_package_record_t *record,
     package->resources_movable = record->resources_movable;
     package->legacy_storage = record->legacy_storage;
     package->archived = record->archived;
+    package->ambiguous = record->ambiguous;
+    package->mount_epoch = record->mount_epoch;
     package->permission_count = record->permission_count;
     package->granted_permission_count = record->granted_permission_count;
     return projection->count < projection->capacity;
