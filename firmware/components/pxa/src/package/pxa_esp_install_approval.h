@@ -24,6 +24,11 @@ typedef struct {
     pxa_esp_install_choice_t choices[PXA_ESP_INSTALL_CHOICES];
     size_t count, selected;
     uint8_t download_only;
+    /* Updates of pre-volume installations keep the original private/media
+     * locators. A built-in receives a writable overlay; its factory copy stays. */
+    uint8_t legacy_update, legacy_builtin;
+    char legacy_root[PXA_ESP_PACKAGE_ROOT_BYTES];
+    uint8_t legacy_manifest_sha256[32];
     uint8_t requires_resources;
     uint64_t resource_container_bytes;
     pxa_esp_install_choice_t media_choices[PXA_ESP_INSTALL_CHOICES];

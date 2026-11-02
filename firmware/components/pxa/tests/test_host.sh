@@ -158,6 +158,7 @@ cmake -S "$pxa_system_dir/libpxa" -B "$libpxa_build" \
   -DPXA_BUILD_TESTS=OFF -DPXA_BUILD_ADAPTERS=OFF "${libpxa_options[@]}" >/dev/null
 cmake --build "$libpxa_build" -j2 >/dev/null
 python3 "$tests_dir/test_font_source.py" --libpxa "$libpxa_build/libpxa.a"
+python3 "$tests_dir/test_legacy_update.py" --libpxa "$libpxa_build/libpxa.a"
 build_and_run install_approval "${adapter_includes[@]}" \
   "$tests_dir/pxa_esp_install_approval_test.c" "$component_dir/src/package/pxa_esp_install_approval.c" \
   "$libpxa_build/libpxa.a" -lm

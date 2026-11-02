@@ -265,6 +265,9 @@ int main(int argc,char **argv) {
     assert(pxa_esp_installations_verify_media(owner,&home.record)==PXA_STATUS_DENIED);
     file=open(media_payload,O_WRONLY);assert(file>=0 && write(file,&saved_resource_byte,1)==1 && !close(file));
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home));
+    /* The deliberate damage/repair above changes mtime. Compare relocation
+     * with the repaired source, even when sanitizer runs cross a second. */
+    assert(!stat(media_payload,&source_payload));
     /* Resource relocation copies to a third volume, changes only the exact
      * approved local record, and preserves private bytes/code/permissions. */
     pxa_install_record_t before_move=home.record,move_approval;

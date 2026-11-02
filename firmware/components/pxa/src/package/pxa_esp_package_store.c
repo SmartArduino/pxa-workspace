@@ -6,6 +6,7 @@
 #include "pxa_esp_package_limits.h"
 #include "pxa_esp_app_transfer.h"
 #include "pxa_esp_legacy_adoption.h"
+#include "pxa_esp_legacy_update.h"
 #include "pxa_package_identity_match.h"
 #include "pxa_app_locators.h"
 #include "pxa_publisher_profile.h"
@@ -2753,6 +2754,23 @@ static int preview_manifest(const pxa_package_manifest_t *manifest,pxa_esp_packa
     return 1;
 }
 
+/* Called after planning: the signed incoming prefix outlives the shared
+ * parser buffers, which are reused to authenticate the old installation. */
+static __attribute__((noinline)) pxa_status_t snapshot_legacy_update(
+    pxa_esp_install_approval_t *approval,pxa_bytes_t incoming) {
+    pxa_package_limits_t limits;size_t bytes;
+    if(!manifest_workspace_for_encoded(incoming.data,incoming.size,&limits,&bytes))return PXA_STATUS_DENIED;
+    void *workspace=esp_alloc(bytes);
+    if(!workspace)return PXA_STATUS_RESOURCE_LIMIT;
+    pxa_package_manifest_t *next=NULL,*current=NULL;char root[PXA_ESP_PACKAGE_ROOT_BYTES];
+    pxa_posix_installer_result_t result={.struct_size=sizeof(result),.manifest=&current,.root=root,.root_capacity=sizeof(root)};
+    pxa_status_t status=pxa_package_manifest_parse(workspace,bytes,incoming,&limits,&next);
+    if(status==PXA_STATUS_OK)status=read_source_into_store(approval->legacy_root,&result,1);
+    if(status==PXA_STATUS_OK)status=pxa_esp_legacy_update_allowed(current,next);
+    if(status==PXA_STATUS_OK)status=pxa_esp_mbedtls_sha256(current->encoded.data,current->encoded.size,approval->legacy_manifest_sha256);
+    heap_caps_free(workspace);return status;
+}
+
 pxa_status_t pxa_esp_package_store_prepare_install(const uint8_t *prefix,size_t bytes,uint64_t total,uint64_t transfer,uint8_t download_only,
     const uint8_t expected_root[32],const char *expected_app,
     pxa_esp_package_preview_t *preview,pxa_esp_install_approval_t *approval) {
@@ -2789,9 +2807,22 @@ pxa_status_t pxa_esp_package_store_prepare_install(const uint8_t *prefix,size_t 
     pxa_esp_package_entry_t *entry=find_entry(preview->id);
     if(!download_only && entry && (entry->installed || entry->volume_local)) {
         if(entry->ambiguous) {status=PXA_STATUS_BAD_STATE;goto done;}
-        /* Legacy data must be explicitly migrated before a whole-app update;
-         * never create an apparently fresh installation on another volume. */
-        if(!entry->volume_local) {status=PXA_STATUS_UNSUPPORTED;goto done;}
+        if(!entry->volume_local) {
+            pxa_volume_info_t original;
+            status=pxa_esp_storage_resolve_volume(entry->root,&original);
+            if(status!=PXA_STATUS_OK)goto done;
+            /* The legacy installer owns the primary native filesystem. Never
+             * turn an update into a fresh install with an empty data root. */
+            if(!g_store->legacy_ready || !(original.capabilities&PXA_VOLUME_PRIVATE_NATIVE) ||
+                !path_is_within(entry->root,CONFIG_PXA_MOUNT_POINT) || manifest->resource_manifest_sha256) {
+                status=PXA_STATUS_UNSUPPORTED;goto done;
+            }
+            existing_epoch=original.mount_epoch;
+            approval->legacy_update=1;approval->legacy_builtin=entry->built_in;
+            snprintf(approval->legacy_root,sizeof(approval->legacy_root),"%s",entry->root);
+            memcpy(approval->record.publisher_root,preview->publisher_root,32);
+            strcpy(approval->record.app_id,preview->app_id);
+        } else {
         existing_epoch=entry->mount_epoch;
         status=pxa_esp_installations_open(existing_epoch,&owner);
         if(status==PXA_STATUS_OK)status=pxa_esp_installations_lookup(owner,approval->locator,&home);
@@ -2800,6 +2831,7 @@ pxa_status_t pxa_esp_package_store_prepare_install(const uint8_t *prefix,size_t 
             approval->record.flags&=~PXA_INSTALL_RECORD_ARCHIVED;
         }
         status=close_volume_operation(&owner,status);if(status!=PXA_STATUS_OK)goto done;
+        }
     } else {
         approval->record.flags=PXA_INSTALL_RECORD_ENABLED;approval->record.data_generation=1;
         memcpy(approval->record.publisher_root,preview->publisher_root,32);
@@ -2826,7 +2858,7 @@ pxa_status_t pxa_esp_package_store_prepare_install(const uint8_t *prefix,size_t 
         pxa_volume_info_t *volume=&volumes[i];
         if(volume->state!=PXA_VOLUME_READY || volume->ambiguous || (volume->capabilities&required)!=required ||
             (existing_epoch && volume->mount_epoch!=existing_epoch))continue;
-        if(!download_only && installation_path_fits(volume->mount_epoch,approval->locator)!=PXA_STATUS_OK)continue;
+        if(!download_only && !approval->legacy_update && installation_path_fits(volume->mount_epoch,approval->locator)!=PXA_STATUS_OK)continue;
         pxa_status_t candidate;
         pxa_esp_install_choice_t *choice=&approval->choices[approval->count];
         candidate=pxa_install_file_allocation(volume,transfer,&choice->temporary_bytes);
@@ -2840,6 +2872,13 @@ pxa_status_t pxa_esp_package_store_prepare_install(const uint8_t *prefix,size_t 
             if(candidate==PXA_STATUS_OK)candidate=pxa_esp_installations_plan(owner,manifest,transfer,!existing_epoch,&choice->estimate);
         }
         candidate=close_volume_operation(&owner,candidate);
+        if(candidate==PXA_STATUS_OK && approval->legacy_update) {
+            /* Match the legacy transaction's metadata safety margin, including
+             * when the streamed payload is adopted with no second copy. */
+            pxa_install_requirements_t required={.app_bytes=choice->estimate.volumes[0].bytes-4096,
+                .volume_headroom_bytes=UINT64_C(128)*1024};
+            candidate=pxa_esp_storage_plan(&required,volume->mount_epoch,0,&choice->estimate);
+        }
         if(candidate!=PXA_STATUS_OK)continue;
         (void)pxa_esp_storage_volume(volume->mount_epoch,&choice->volume);
         if(!approval->count || ((approval->choices[approval->selected].volume.capabilities&PXA_VOLUME_REMOVABLE) &&
@@ -2847,6 +2886,8 @@ pxa_status_t pxa_esp_package_store_prepare_install(const uint8_t *prefix,size_t 
         ++approval->count;
     }
     heap_caps_free(volumes);if(approval->count)status=PXA_STATUS_OK;
+    if(status==PXA_STATUS_OK && approval->legacy_update)
+        status=snapshot_legacy_update(approval,(pxa_bytes_t){prefix+header.manifest_offset,header.manifest_size});
 done:
     release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);
     if(status!=PXA_STATUS_OK) {memset(approval,0,sizeof(*approval));memset(preview,0,sizeof(*preview));}
@@ -2970,6 +3011,76 @@ pxa_status_t pxa_esp_package_store_commit_resources(const char *source,pxa_esp_i
     release_lock(g_store->metadata_lock);release_lock(g_store->transaction_lock);pxa_esp_volumes_release(source_epoch);return status;
 }
 
+static pxa_status_t legacy_update_space(void *context,const char *home,
+    const pxa_package_manifest_t *manifest,size_t bytes,uint8_t staged) {
+    const pxa_esp_install_approval_t *approval=context;(void)home;(void)bytes;(void)staged;
+    uint8_t digest[32];
+    pxa_status_t status=pxa_esp_mbedtls_sha256(manifest->encoded.data,manifest->encoded.size,digest);
+    if(status!=PXA_STATUS_OK)return status;
+    if(memcmp(digest,approval->manifest_sha256,32))return PXA_STATUS_DENIED;
+    pxa_esp_volumes_lock();
+    status=pxa_install_plan_validate(pxa_esp_volumes_registry(),&approval->plan);
+    pxa_esp_volumes_unlock();return status;
+}
+static pxa_status_t legacy_update_incoming(void *context,
+    const pxa_posix_installer_identity_t *identity,const char *incoming) {
+    char path[PXA_ESP_PACKAGE_MAX_ASSET_PATH];pxa_package_manifest_t *manifest=NULL;
+    int n=snprintf(path,sizeof(path),"%s/manifest.pxm",incoming);
+    if(n<0 || (size_t)n>=sizeof(path) || !parse_manifest_file(path,&manifest))return PXA_STATUS_DENIED;
+    pxa_status_t status=legacy_update_space(context,incoming,manifest,manifest->encoded.size,1);
+    return status==PXA_STATUS_OK?verified_incoming_layout(NULL,identity,incoming):status;
+}
+
+/* Transaction and metadata locks held. The bounded approval binds both old
+ * and new manifests, including built-in overlays. Only a Host-owned completed
+ * stream may transfer its directory; arbitrary local directories are copied. */
+static __attribute__((noinline)) pxa_status_t commit_legacy_update(const char *source,
+    const pxa_esp_install_approval_t *approval,pxa_posix_installer_result_t *result) {
+    const pxa_esp_package_entry_t *entry=find_entry(approval->identity);
+    if(!entry || !entry->installed || entry->volume_local || entry->ambiguous ||
+        entry->built_in!=approval->legacy_builtin || strcmp(entry->root,approval->legacy_root))return PXA_STATUS_BAD_STATE;
+    pxa_volume_info_t volume;
+    pxa_status_t status=pxa_esp_storage_resolve_volume(entry->root,&volume);
+    if(status!=PXA_STATUS_OK)return status;
+    if(volume.mount_epoch!=approval->plan.app_mount_epoch ||
+        memcmp(volume.id.bytes,approval->record.app_volume.bytes,16))return PXA_STATUS_UNAVAILABLE;
+    status=read_source_into_store(entry->root,result,1);
+    uint8_t digest[32];
+    if(status==PXA_STATUS_OK)status=pxa_esp_mbedtls_sha256((*result->manifest)->encoded.data,
+        (*result->manifest)->encoded.size,digest);
+    if(status!=PXA_STATUS_OK)return status;
+    if(memcmp(digest,approval->legacy_manifest_sha256,32))return PXA_STATUS_BAD_STATE;
+    status=read_source_into_store(source,result,1);
+    if(status!=PXA_STATUS_OK)return status;
+    status=legacy_update_space((void *)approval,source,*result->manifest,(*result->manifest)->encoded.size,0);
+    if(status!=PXA_STATUS_OK)return status;
+    /* Bind only incoming code to the approval. Recovery must still accept
+     * the previous signed package after an interrupted update. */
+    pxa_posix_installer_config_t config=g_store->installer_config;
+    config.expected_package_kind=PXA_PACKAGE_KIND_APPLICATION;
+    config.space_context=(void *)approval;config.check_space=legacy_update_space;
+    config.layout_context=(void *)approval;config.incoming_ready=legacy_update_incoming;
+    if(approval->legacy_builtin)config.retained_owner_source=approval->legacy_root;
+    const size_t size=pxa_posix_installer_workspace_size(&config);
+    void *memory=size?esp_alloc(size):NULL;
+    if(!memory)return PXA_STATUS_RESOURCE_LIMIT;
+    pxa_posix_installer_t *installer=NULL;
+    status=pxa_posix_installer_init(memory,size,&config,&installer);
+    const pxa_posix_installer_identity_t identity={{approval->record.publisher_root,32},
+        {(const uint8_t *)approval->record.app_id,strlen(approval->record.app_id)}};
+    pxa_posix_install_disposition_t disposition;
+    if(status==PXA_STATUS_OK) {
+        if(pxa_host_container_stream_volume_path(volume.mount_epoch,source) && is_directory(source))
+            status=pxa_posix_installer_adopt_directory(installer,source,&identity,result,&disposition);
+        else status=pxa_posix_installer_install_for_identity(installer,source,&identity,result,&disposition);
+        if(status==PXA_STATUS_OK)status=legacy_update_space((void *)approval,result->root,*result->manifest,(*result->manifest)->encoded.size,1);
+        if(status==PXA_STATUS_OK && !refresh_entry_from_manifest(approval->record.app_id,result->root,0,*result->manifest))
+            status=PXA_STATUS_RESOURCE_LIMIT;
+    }
+    if(installer)pxa_posix_installer_deinit(installer);
+    heap_caps_free(memory);return status;
+}
+
 pxa_status_t pxa_esp_package_store_commit_install(const char *source,pxa_esp_install_approval_t *approval) {
     pxa_esp_installations_t *owner=NULL;pxa_posix_app_home_t *home=NULL;uint64_t source_epoch=0;
     pxa_package_manifest_t *manifest=NULL;char root[PXA_ESP_PACKAGE_MAX_PATH];
@@ -2979,6 +3090,10 @@ pxa_status_t pxa_esp_package_store_commit_install(const char *source,pxa_esp_ins
     if(!take_lock(g_store->transaction_lock)) {pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
     if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);pxa_esp_volumes_release(source_epoch);return PXA_STATUS_UNAVAILABLE;}
     status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
+    if(approval->legacy_update) {
+        if(approval->requires_resources) {status=PXA_STATUS_BAD_STATE;goto done;}
+        status=commit_legacy_update(source,approval,&result);goto done;
+    }
     if(approval->requires_resources) {
         if(approval->media_selected>=approval->media_count) {status=PXA_STATUS_BAD_STATE;goto done;}
         const pxa_esp_install_choice_t *selected=&approval->media_choices[approval->media_selected];
