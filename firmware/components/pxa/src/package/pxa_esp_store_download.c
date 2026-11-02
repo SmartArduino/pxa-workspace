@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
+#include "esp_wifi.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_heap_caps.h"
@@ -249,7 +250,16 @@ static __attribute__((noinline)) pxa_status_t download_file(pxa_esp_store_job_t 
         .disable_auto_redirect=true,.crt_bundle_attach=esp_crt_bundle_attach,.event_handler=download_event,
         .user_data=&sink,.buffer_size=1024};
     client=esp_http_client_init(&config);
+    /* Keep the radio awake during the approved bulk transfer. Modem sleep
+     * can starve a small TLS receive window long enough to time out. Restore
+     * the previous policy before commit, including failed/cancelled transfers;
+     * non-Wi-Fi transports simply skip this optional optimization. */
+    wifi_ps_type_t previous=WIFI_PS_NONE,current;
+    int restore=client && esp_wifi_get_ps(&previous)==ESP_OK && previous!=WIFI_PS_NONE &&
+        esp_wifi_set_ps(WIFI_PS_NONE)==ESP_OK;
     esp_err_t fetched=client?esp_http_client_perform(client):ESP_FAIL;
+    if(restore && esp_wifi_get_ps(&current)==ESP_OK && current==WIFI_PS_NONE)
+        (void)esp_wifi_set_ps(previous);
     status=PXA_STATUS_IO_ERROR;
     if(cancelled(job)) {status=PXA_STATUS_CANCELLED;goto done;}
     if(!client || fetched!=ESP_OK) {status=transport_failure(client,fetched);goto done;}

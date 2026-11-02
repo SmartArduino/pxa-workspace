@@ -6,6 +6,7 @@
 #include "pxa_esp_store_cache.h"
 #include "pxa/container.h"
 #include "pxa/pxa_container_stream.h"
+#include "esp_wifi.h"
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -28,6 +29,12 @@ static unsigned resource_commits,retained[4];
 static bool resource_request;
 static unsigned metadata_requests;
 static unsigned started_progress;
+static wifi_ps_type_t wifi_power=WIFI_PS_MAX_MODEM;
+static bool wifi_available=true;
+esp_err_t esp_wifi_get_ps(wifi_ps_type_t *power) {
+    *power=wifi_power;return wifi_available?ESP_OK:ESP_FAIL;
+}
+esp_err_t esp_wifi_set_ps(wifi_ps_type_t power) {wifi_power=power;return ESP_OK;}
 static pxa_esp_store_job_t *waiting_job;
 void *heap_caps_malloc(size_t n,unsigned caps) {assert(caps&MALLOC_CAP_SPIRAM);return malloc(n);}
 void heap_caps_free(void *p) {free(p);}
@@ -57,6 +64,7 @@ int esp_http_client_read(esp_http_client_handle_t c,char *out,int n) {
     memcpy(out,(resource_request?resource_body:body)+read_offset,got);read_offset+=got;return (int)got;
 }
 esp_err_t esp_http_client_perform(esp_http_client_handle_t c) {
+    assert(wifi_power==(wifi_available?WIFI_PS_NONE:WIFI_PS_MAX_MODEM));
     (void)c;++transfers;is_metadata=false;assert(strstr(http.url,"/download?expires="));
     esp_http_client_event_t e={.user_data=http.user_data,.event_id=HTTP_EVENT_ON_DATA};
     size_t remaining=(resource_request?resource_size:body_size)-(short_body?1:0),offset=0;
@@ -155,7 +163,7 @@ pxa_status_t pxa_esp_package_store_commit_install(const char *path,pxa_esp_insta
 }
 static void notified(pxa_esp_store_job_t *job,uint8_t phase) {
     if(phase==1) {assert(!job->approved);++confirmations;waiting_job=job;job->approved=approve;job->placement.selected=1;}
-    if(phase==2)++completions;
+    if(phase==2) {assert(wifi_power==WIFI_PS_MAX_MODEM);++completions;}
     if(phase==3) {assert(job->keep_file);waiting_job=job;}
     if(phase==4 && job->downloaded_bytes==0) {
         assert(job->approved && job->placement.plan.reserved && !http_live);
@@ -202,6 +210,8 @@ int main(void) {
     pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_OK && !exists(&value) && transfers==before);
     assert(started_progress==started_before); /* Cached install retries have no network transfer. */
     value=job(0);old_server=true;pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_OK && !exists(&value) && metadata_requests>transfers);old_server=false;
+    value=job(0);wifi_available=false;pxa_esp_store_worker(&value);
+    assert(value.status==PXA_STATUS_OK && !exists(&value));wifi_available=true;
     char third[384];snprintf(third,sizeof(third),"%s/third",CONFIG_PXA_MOUNT_POINT);assert(!mkdir(third,0700));
     resource_body=calloc(1,resource_size);assert(resource_body);memcpy(resource_body,body,metadata_size);
     pxa_write_u64(resource_body+32,resource_size-metadata_size);pxa_write_u64(resource_body+48,resource_size);
