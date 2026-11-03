@@ -234,9 +234,9 @@ static void test_store_profile(pxa_net_backend_t *backend) {
     for (unsigned i = 0; i < sizeof(rejected) / sizeof(*rejected); ++i)
         assert(!pxa_store_host_profile_url(rejected[i]));
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
-    const char *expected = "esp32-s3-pxa-0.7.0";
+    const char *expected = "esp32-s3-pxa-0.8.0";
 #elif defined(CONFIG_IDF_TARGET_ESP32S31)
-    const char *expected = "esp32-s31-pxa-0.7.0";
+    const char *expected = "esp32-s31-pxa-0.8.0";
 #else
     const char *expected = "";
 #endif

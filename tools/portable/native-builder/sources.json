@@ -1,0 +1,20 @@
+{
+  "sdl2": {
+    "archive_sha256": "ffb9852b787992e09de7fecbb80c9c9b319109ab237389c8a1cf2d72ee6e3fb4",
+    "version": "2.32.10",
+    "commit": "5d249570393f7a37e037abf22cd6012a4cc56a71",
+    "upstream": "https://github.com/libsdl-org/SDL"
+  },
+  "curl": {
+    "archive_sha256": "9f871760972ff64fb7b9a2fcef3f251011159918a6cb81629ff1826304685e8f",
+    "version": "8.23.0",
+    "upstream": "https://curl.se/download/curl-8.23.0.tar.gz"
+  },
+  "builder_base_image": "sha256:477e701d46a679fb422b93bb886e5fce78615baea41cf80a831cda178ae9c543",
+  "builder_image": "sha256:369755022788acd4727b124e90044c73b011810e55ef64cae9a92deeb1bf8921",
+  "pillow": {
+    "version": "10.2.0",
+    "sha256": "e87f0b2c78157e12d7686b27d63c070fd65d994e8ddae6f328e0dcf4a0cd007e",
+    "license": "HPND"
+  }
+}

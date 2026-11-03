@@ -8,13 +8,14 @@
 
 /* A published PXA capability snapshot, NOT the board's firmware version.
  * Keep the snapshot stable across patches that do not change compatibility.
- * The official Host supplies Container 0.2, DEFLATE and Store install 0.8.
+ * PXA 0.8.0 adds UI 0.10 system-font capabilities; advertise the matching
+ * published snapshot. Container 0.2 and Store install 0.8 remain available.
  * Unknown targets must not claim another target's capabilities. */
 static const char *pxa_store_host_profile(void) {
 #if defined(CONFIG_IDF_TARGET_ESP32S3) && CONFIG_IDF_TARGET_ESP32S3
-    return "esp32-s3-pxa-0.7.0";
+    return "esp32-s3-pxa-0.8.0";
 #elif defined(CONFIG_IDF_TARGET_ESP32S31) && CONFIG_IDF_TARGET_ESP32S31
-    return "esp32-s31-pxa-0.7.0";
+    return "esp32-s31-pxa-0.8.0";
 #else
     return NULL;
 #endif
