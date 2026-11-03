@@ -1201,7 +1201,7 @@ static pxa_status_t host_store_install_control(
         job->separate = 2u;
         job->notify = store_install_notify;
         g_store_install = job;
-        if (!pxa_esp_store_worker_submit(job)) {
+        if (!pxa_esp_store_worker_initialize() || !pxa_esp_store_worker_submit(job)) {
             g_store_install = NULL;
             status = pxa_request_complete(runtime, component,
                                           message->request_token,
@@ -1247,7 +1247,7 @@ static pxa_status_t host_store_install_control(
     ESP_LOGI(PXA_ESP_HOST_TAG, "Store worker start: internal_free=%u largest=%u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-    if (!pxa_esp_store_worker_submit(job)) {
+    if (!pxa_esp_store_worker_initialize() || !pxa_esp_store_worker_submit(job)) {
         ESP_LOGW(PXA_ESP_HOST_TAG,
                  "Store worker allocation failed: internal_free=%u largest=%u",
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
@@ -3206,6 +3206,9 @@ static void stop_active(pxa_stop_reason_t reason) {
     g_host.runtime_workspace = NULL;
     activation_memory_release_all();
     activation_state_reset();
+    /* A cancelled transfer still owns its stack until its completion event.
+     * Otherwise release it before the next App or native UI is entered. */
+    if (!g_store_install) pxa_esp_store_worker_deinitialize();
     /* The system can rebuild the launcher immediately on STOPPED. Publish
      * only after releasing the guest heap/code and activation allocations:
      * otherwise long-lived decoded icons can fragment the next app's PSRAM. */
@@ -3314,6 +3317,15 @@ static int start_verified(const char *identity) {
     g_host.activation.encoded_keep = encoded;
     g_host.activation.active_manifest = manifest;
     g_host.activation.app_storage=app_storage;
+#if defined(CONFIG_PXA_STORE_PERSISTENT_WORKER) && CONFIG_PXA_STORE_PERSISTENT_WORKER
+    /* Reserve before constructing the Store's UI and starting its network
+     * requests, without retaining an idle installation stack in other Apps. */
+    if (pxa_esp_store_worker_required(manifest) && !pxa_esp_store_worker_initialize()) {
+        ESP_LOGE(PXA_ESP_HOST_TAG, "Unable to prepare Store worker for %s", identity);
+        stop_active(PXA_STOP_FAULT);
+        return 0;
+    }
+#endif
     g_host.activation.active_components = activation_alloc(
         (size_t)manifest->component_count *
         sizeof(g_host.activation.active_components[0]));
@@ -4384,6 +4396,8 @@ static __attribute__((noinline)) void handle_store_install_event(pxa_esp_store_j
             show_store_result(false, job->preview.name, job->preview.id);
     }
     free(job);
+    if (!pxa_esp_store_worker_required(g_host.activation.active_manifest))
+        pxa_esp_store_worker_deinitialize();
 }
 
 static void maintain_scheduler(void) {
@@ -5388,10 +5402,6 @@ bool pxa_esp_host_initialize(void) {
     if (!pxa_esp_package_store_initialize()) {
         ESP_LOGE(PXA_ESP_HOST_TAG, "Package store initialization failed");
         return false;
-    }
-    if (!pxa_esp_store_worker_initialize()) {
-        failed_stage = "create-store-worker";
-        goto failed;
     }
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
     (void)pxa_esp_font_source_acquire(pxa_esp_system_font_path(),&g_host.ui_font_source);

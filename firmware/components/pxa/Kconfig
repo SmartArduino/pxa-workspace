@@ -178,14 +178,14 @@ menu "PXA Development Apps"
             default 4
 
         config PXA_STORE_PERSISTENT_WORKER
-            bool "Reserve and reuse the Store installation worker at startup"
+            bool "Precreate and reuse the Store installation worker"
             default n
             help
-                Reserve the Store worker's 10 KiB internal stack while the
-                internal heap is still contiguous, then reuse it for downloads,
-                installations and retries. This prevents late task creation
-                failures on boards with fragmented SRAM. The stack and a
-                one-entry queue remain allocated while the Host is initialized.
+                Reserve the 10 KiB internal stack before constructing an App
+                that declares the Store installer service, then reuse it for downloads, installations
+                and retries. Release it when that App stops and any pending
+                installation has completed. This prevents late task creation
+                failures without retaining an idle stack in other Apps.
 
         config PXA_RUNTIME_TASK_AFFINITY
             int "PXA runtime pthread core affinity"

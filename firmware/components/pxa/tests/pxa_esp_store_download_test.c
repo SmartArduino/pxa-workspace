@@ -33,9 +33,16 @@ static pxa_esp_store_job_t *waiting_job;
 static void (*worker_entry)(void *);
 static bool queue_fail,task_fail,queue_live;
 static unsigned task_creates,queue_deletes,notification_drains;
+static unsigned worker_busy_ticks,worker_yields;
 static pxa_esp_store_job_t *queued_job;
 static int task_token,queue_token;
 static jmp_buf queue_empty;
+eTaskState eTaskGetState(TaskHandle_t task) {
+    assert(task==&task_token);return worker_busy_ticks?eRunning:eBlocked;
+}
+void vTaskDelay(TickType_t ticks) {
+    assert(ticks==1 && worker_busy_ticks);--worker_busy_ticks;++worker_yields;
+}
 QueueHandle_t xQueueCreate(unsigned count,size_t size) {
     assert(count==1 && size==sizeof(queued_job) && !queue_live);
     if(queue_fail)return NULL;
@@ -201,6 +208,12 @@ static pxa_esp_store_job_t job(unsigned separate) {
 }
 static bool exists(const pxa_esp_store_job_t *j) {return j->path[0] && !access(j->path,F_OK);}
 int main(void) {
+    pxa_package_service_requirement_t requirements[2]={{0}};
+    pxa_package_manifest_t manifest={0};
+    assert(!pxa_esp_store_worker_required(NULL) && !pxa_esp_store_worker_required(&manifest));
+    manifest.services=requirements;manifest.service_count=2;requirements[0].service=7;
+    assert(!pxa_esp_store_worker_required(&manifest));
+    requirements[1].service=PXA_STORE_INSTALL_SERVICE_ID;assert(pxa_esp_store_worker_required(&manifest));
     assert(!mkdir(CONFIG_PXA_MOUNT_POINT,0700));body=calloc(1,body_size);assert(body);
     memcpy(body,"PXAC",4);pxa_write_u16(body+6,1);pxa_write_u16(body+8,64);pxa_write_u16(body+14,12);
     pxa_write_u32(body+16,12);pxa_write_u32(body+20,108);pxa_write_u32(body+24,108);
@@ -291,7 +304,10 @@ int main(void) {
         assert(task_creates==2 && !queued_job && !exists(&value));
     }
     cancel_prompt=false;assert(notification_drains==2 && !deletes);
-    pxa_esp_store_worker_deinitialize();assert(!queue_live && queue_deletes==2 && deletes==1);
+    worker_busy_ticks=9;pxa_esp_store_worker_deinitialize();
+    assert(worker_yields==4 && queue_live && !deletes); /* Never delete a running worker. */
+    worker_busy_ticks=2;pxa_esp_store_worker_deinitialize();
+    assert(worker_yields==6 && !queue_live && queue_deletes==2 && deletes==1);
     pxa_esp_store_worker_deinitialize();assert(deletes==1);
     assert(!pxa_esp_store_worker_submit(&value));task_fail=false;
 #else

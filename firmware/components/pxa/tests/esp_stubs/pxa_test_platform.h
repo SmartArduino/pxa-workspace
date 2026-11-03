@@ -13,6 +13,8 @@ typedef unsigned UBaseType_t;
 typedef int BaseType_t;
 typedef void *QueueHandle_t;
 typedef void *TaskHandle_t;
+typedef enum {eRunning,eReady,eBlocked,eSuspended,eDeleted,eInvalid} eTaskState;
+eTaskState eTaskGetState(TaskHandle_t);
 typedef unsigned TickType_t;
 typedef int StaticSemaphore_t;
 typedef void *SemaphoreHandle_t;

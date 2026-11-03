@@ -47,6 +47,13 @@ static void store_worker_loop(void *unused) {
 }
 #endif
 
+int pxa_esp_store_worker_required(const pxa_package_manifest_t *manifest) {
+    if (!manifest) return 0;
+    for (uint16_t i = 0; i < manifest->service_count; ++i)
+        if (manifest->services[i].service == PXA_STORE_INSTALL_SERVICE_ID) return 1;
+    return 0;
+}
+
 int pxa_esp_store_worker_initialize(void) {
 #if defined(CONFIG_PXA_STORE_PERSISTENT_WORKER) && CONFIG_PXA_STORE_PERSISTENT_WORKER
     if (store_task) return 1;
@@ -64,8 +71,18 @@ int pxa_esp_store_worker_initialize(void) {
 
 void pxa_esp_store_worker_deinitialize(void) {
 #if defined(CONFIG_PXA_STORE_PERSISTENT_WORKER) && CONFIG_PXA_STORE_PERSISTENT_WORKER
-    /* Initialization rollback only: no Guest request has been admitted. */
-    if (store_task) { vTaskDelete(store_task); store_task = NULL; }
+    /* The owner calls this only after the last completion was consumed.
+     * Let that worker return from notify() and block on our empty queue before
+     * deleting it, so another core cannot still be accessing the queue. */
+    if (store_task) {
+        unsigned attempts = 0;
+        while (eTaskGetState(store_task) != eBlocked && attempts++ < 4) vTaskDelay(1);
+        if (eTaskGetState(store_task) != eBlocked) {
+            ESP_LOGW("PxaStore", "Installation worker is still retiring");
+            return;
+        }
+        vTaskDelete(store_task); store_task = NULL;
+    }
     if (store_queue) { vQueueDelete(store_queue); store_queue = NULL; }
 #endif
 }

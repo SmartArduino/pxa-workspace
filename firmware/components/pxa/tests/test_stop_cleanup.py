@@ -52,7 +52,7 @@ struct Job {
 struct { unsigned prompt_id; } g_store_result;
 enum { ENGINE=1, RUNTIME=2, AUDIO=4, SERVICES=8, PERMISSIONS=16, RESOURCE=32,
        NET=64, STORAGE=128, ENGINE_WORK=256, RUNTIME_WORK=512, ARENA=1024, CLOCKS=2048 };
-unsigned live, notifications, closed_storage, resources_retired;
+unsigned live, notifications, closed_storage, resources_retired, worker_retirements;
 bool defer_storage, start_in_callback, new_work;
 pxa_stop_reason_t expected_reason;
 static void *token(unsigned value) { return reinterpret_cast<void *>(uintptr_t(value)); }
@@ -87,6 +87,7 @@ static void unpublish_active_state() { published={}; }
 static void pxa_wamr_engine_deinit(void *value) { assert(value==token(ENGINE)); retire(ENGINE); }
 static void pxa_runtime_deinit(void *value) { assert(value==token(RUNTIME)); retire(RUNTIME); }
 static void pxa_esp_audio_deinitialize() { retire(AUDIO); }
+static void pxa_esp_store_worker_deinitialize() { assert(!g_store_install); ++worker_retirements; }
 static void destroy_services() { retire(SERVICES); }
 static void pxa_esp_permission_store_release_cache() { retire(PERMISSIONS); }
 static int pxa_esp_resource_memory_end() { ++resources_retired; retire(RESOURCE); return 0; }
@@ -113,6 +114,7 @@ static void notify_runtime_event(unsigned event, const char *identity,
     assert(!g_host.engine && !g_host.activation.runtime && !g_host.activation.app_storage);
     assert(!g_host.engine_workspace && !g_host.runtime_workspace);
     assert(!g_host.activation.active_identity[0]);
+    assert(worker_retirements==(g_store_install ? 0u : 1u));
     assert(g_host.retired_storage==(defer_storage ? token(STORAGE) : nullptr));
     ++notifications;
     if (start_in_callback) { new_work=true; g_host.engine=token(4096); }
@@ -129,7 +131,7 @@ static void reset(bool active) {
     g_host.activation.coordinator=token(4095);
     g_host.engine=token(ENGINE);g_host.engine_workspace=token(ENGINE_WORK);
     g_host.runtime_workspace=token(RUNTIME_WORK);
-    live=4095;notifications=closed_storage=resources_retired=0;
+    live=4095;notifications=closed_storage=resources_retired=worker_retirements=0;
     defer_storage=start_in_callback=new_work=false;
 }
 int main() {
@@ -143,6 +145,9 @@ int main() {
     reset(false);stop_active(PXA_STOP_NORMAL);
     assert(!notifications && !live && closed_storage==1);
     stop_active(PXA_STOP_NORMAL);assert(!notifications && !live && closed_storage==1);
+    reset(true);expected_reason=PXA_STOP_NORMAL;Job pending{};pending.instance_id=42;
+    g_store_install=&pending;stop_active(PXA_STOP_NORMAL);
+    assert(pending.cancelled && !worker_retirements);g_store_install=nullptr;
     puts("Activation stop: notification follows guest/service/storage/arena retirement; callback reentry, inactive repeat and deferred storage passed");
 }
 '''
