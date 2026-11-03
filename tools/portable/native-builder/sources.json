@@ -11,10 +11,17 @@
     "upstream": "https://curl.se/download/curl-8.23.0.tar.gz"
   },
   "builder_base_image": "sha256:477e701d46a679fb422b93bb886e5fce78615baea41cf80a831cda178ae9c543",
-  "builder_image": "sha256:369755022788acd4727b124e90044c73b011810e55ef64cae9a92deeb1bf8921",
+  "builder_image": "441fad417b064e7b05c8dda55b625b61c9e018f59dd8141ffab14b9f1f3d73d0",
   "pillow": {
     "version": "10.2.0",
     "sha256": "e87f0b2c78157e12d7686b27d63c070fd65d994e8ddae6f328e0dcf4a0cd007e",
     "license": "HPND"
-  }
+  },
+  "libarchive": {
+    "version": "3.8.11",
+    "sha256": "900fe9fc7237c2b04f090f3c3648de8fe597525771f5035016537ce2d667d12b",
+    "upstream": "https://www.libarchive.org/downloads/libarchive-3.8.11.tar.gz",
+    "license": "BSD-2-Clause; BSD-3-Clause subsets; bundled Blake2 uses CC0 option"
+  },
+  "intermediate_builder_image": "sha256:369755022788acd4727b124e90044c73b011810e55ef64cae9a92deeb1bf8921"
 }

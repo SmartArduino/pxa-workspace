@@ -1,0 +1,4 @@
+ARG NATIVE_BASE_IMAGE
+FROM ${NATIVE_BASE_IMAGE}
+COPY libarchive-source.tar.gz /tmp/
+RUN echo '900fe9fc7237c2b04f090f3c3648de8fe597525771f5035016537ce2d667d12b  /tmp/libarchive-source.tar.gz' | sha256sum -c - && tar -xzf /tmp/libarchive-source.tar.gz -C /native/src && cmake -S /native/src/libarchive-3.8.11 -B /native/archive-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/native -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DENABLE_NETTLE=OFF -DENABLE_ACL=OFF -DENABLE_XATTR=OFF -DENABLE_MBEDTLS=OFF -DENABLE_OPENSSL=ON -DENABLE_LIBB2=OFF -DENABLE_LZO=OFF -DENABLE_ICONV=OFF -DENABLE_LIBXML2=OFF -DENABLE_BSDXML=OFF -DENABLE_EXPAT=OFF -DENABLE_PCREPOSIX=OFF -DENABLE_PCRE2POSIX=OFF -DENABLE_TEST=OFF -DENABLE_TAR=OFF -DENABLE_CPIO=OFF -DENABLE_CAT=OFF -DENABLE_UNZIP=OFF && cmake --build /native/archive-build --parallel 4 && cmake --install /native/archive-build

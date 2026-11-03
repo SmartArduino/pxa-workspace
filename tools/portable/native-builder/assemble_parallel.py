@@ -12,9 +12,9 @@ def archive(root, paths, destination, epoch):
         root=Path(root)
         recipe=root/'licenses/native-runtime-build';recipe.mkdir(parents=True,exist_ok=True)
         here=Path(__file__).resolve().parent
-        for name in ['Dockerfile','sources.json','audit_runtime.py','assemble_parallel.py']:
+        for name in ['Dockerfile','Dockerfile.archive','sources.json','audit_runtime.py','assemble_parallel.py']:
             shutil.copyfile(here/name,recipe/name)
-        for source,name in [('/native/src/sdl2/LICENSE.txt','SDL2-Zlib.txt'),('/native/src/curl/COPYING','curl.txt')]:
+        for source,name in [('/native/src/sdl2/LICENSE.txt','SDL2-Zlib.txt'),('/native/src/curl/COPYING','curl.txt'),('/native/src/libarchive-3.8.11/COPYING','libarchive.txt')]:
             shutil.copyfile(source,root/'licenses'/name)
         with (root/'README.md').open('a') as f:
             f.write('\nLinux audio uses PipeWire; ALSA/PulseAudio-only hosts are not supported by this kit. X11/Wayland window backends are available. Pillow uses basic FreeType layout without optional Raqm, TIFF or ImageQuant. See native-runtime.json for the audited ELF closure and licenses/native-runtime-build for build inputs.\n')

@@ -6,6 +6,8 @@ BASE={'libc.so.6','libm.so.6','libdl.so.2','libpthread.so.0','librt.so.1','libre
 # for libraries generally. No distro audio/network/GUI aggregation is admitted.
 LIBRARIES={
  'libSDL2-2.0.so':'Zlib (curated upstream SDL2)', 'libcurl.so':'curl (curated HTTP/TLS build)',
+ 'libarchive.so':'BSD-2-Clause / BSD-3-Clause / CC0 (curated upstream)',
+ 'libedit.so':'BSD-3-Clause (NetBSD editline)', 'libpanelw.so':'MIT (ncurses)',
  'libpipewire-0.3.so':'MIT (PipeWire client library)',
  'libpng16.so':'Libpng-2.0','libz.so':'Zlib','libbz2.so':'bzip2-1.0.6','liblzma.so':'public domain / 0BSD library',
  'liblz4.so':'BSD-2-Clause','libzstd.so':'BSD-3-Clause branch', 'libbrotlidec.so':'MIT','libbrotlicommon.so':'MIT',
@@ -24,7 +26,7 @@ LIBRARIES={
 def classification(name):
  for prefix,license in LIBRARIES.items():
   if name==prefix or name.startswith(prefix+'.'):return license
- if name.startswith(('libLLVM','libclang')):return 'Apache-2.0 WITH LLVM-exception (pinned compiler runtime)'
+ if name.startswith(('libLLVM','libclang','liblldb')):return 'Apache-2.0 WITH LLVM-exception (pinned compiler runtime)'
  return None
 
 def audit(root):

@@ -34,3 +34,8 @@ Watcher 为 32 MiB Flash，其余五板为 16 MiB；不能跨板型混刷。
 
 本次发布按六板交叉构建、Host 回归、安装包/工厂镜像校验及桌面消费测试验收。
 交叉构建不等于六板全部完成真机验证，商城自更新修复的新固件真机验收仍待完成。
+
+Linux DevKit 要求 glibc 2.39+，原生音频使用 PipeWire；仅有 ALSA/PulseAudio 的
+环境不在此发行支持范围。SDL2、curl、libarchive 与 Pillow 使用明确裁剪的构建，
+分发前检查实际 ELF 依赖，运行时归档保留依赖清单、构建输入与上游许可。
+正常 PXA 图像和 FreeType 字体工具保留，不附带可选 Raqm、TIFF、ImageQuant。

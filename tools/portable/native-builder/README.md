@@ -7,12 +7,18 @@ base first and pass its inspected immutable image ID as `BASE_IMAGE`. Supply
 licenses. Release source archives are kept with the signed release assets, not
 in this directory.
 
-Build this Dockerfile, then configure the desktop simulator with
+Build `Dockerfile` with `BASE_IMAGE` set to the inspected base ID, then build
+`Dockerfile.archive` with `NATIVE_BASE_IMAGE` set to the inspected first image ID.
+The second layer supplies a BSD libarchive with ACL/Nettle/LZO disabled and
+OpenSSL enabled, preventing distro CMake from pulling copyleft dependencies.
+Supply the exact `libarchive-source.tar.gz` from `sources.json` in its context.
+Use the final image for all remaining steps. Configure the desktop simulator with
 `CMAKE_PREFIX_PATH=/native`, `SDL2_DIR=/native/lib/cmake/SDL2`,
+`CURL_NO_CURL_CMAKE=ON`,
 `CURL_LIBRARY_RELEASE=/native/lib/libcurl.so`,
 `CURL_LIBRARY_DEBUG=/native/lib/libcurl.so` and `CURL_INCLUDE_DIR=/native/include`.
 Run the normal source license gate and CTest suite. Seed copies of
-`/native/lib/libcurl.so.4` and `/native/lib/libSDL2-2.0.so.0` in a `native-runtime/`
+`/native/lib/libcurl.so.4` `/native/lib/libSDL2-2.0.so.0` and `/native/lib/libarchive.so.13` in a `native-runtime/`
 subdirectory of the simulator build before assembly so distro CMake cannot pull
 a different curl into the private dependency closure.
 
@@ -24,7 +30,8 @@ source tree must remain clean and committed. Optional Python GPL bindings and
 Pillow Raqm/TIFF/ImageQuant are excluded; normal PXA PNG/JPEG/WebP and FreeType
 font tooling remain available. Native Linux audio requires PipeWire. X11 or
 Wayland and the normal operating-system loader/glibc remain host requirements.
-This does not permit arbitrary LGPL libraries in the shipped kit.
+This does not permit arbitrary LGPL libraries in the shipped kit. Check CMake archive support with `cmake -E tar tf` on a
+released SDK component in the clean offline consumer environment.
 
 Verify the final archive in an offline, read-only container without the source
 tree: build all four targets, run the simulator and install from its signed
