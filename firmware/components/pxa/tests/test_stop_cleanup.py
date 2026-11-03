@@ -46,13 +46,14 @@ struct Host {
 struct Job {
     uint64_t instance_id, prompt_id, request_token;
     pxa_component_t component;
-    unsigned cancelled, approved, separate, ready;
+    unsigned cancelled, approved, separate, ready, self_update, commit_waiting;
     void *worker;
 } *g_store_install, g_store_uninstall;
+typedef Job pxa_esp_store_job_t;
 struct { unsigned prompt_id; } g_store_result;
 enum { ENGINE=1, RUNTIME=2, AUDIO=4, SERVICES=8, PERMISSIONS=16, RESOURCE=32,
        NET=64, STORAGE=128, ENGINE_WORK=256, RUNTIME_WORK=512, ARENA=1024, CLOCKS=2048 };
-unsigned live, notifications, closed_storage, resources_retired;
+unsigned live, notifications, closed_storage, resources_retired, worker_notifications;
 bool defer_storage, start_in_callback, new_work;
 pxa_stop_reason_t expected_reason;
 static void *token(unsigned value) { return reinterpret_cast<void *>(uintptr_t(value)); }
@@ -65,7 +66,7 @@ template <typename... A> static void unused(A...) {}
 #define pxa_esp_ui_shell_dismiss_permission_prompt unused
 #define pxa_esp_ui_shell_dismiss_store_result unused
 #define pxa_esp_surface_runtime_modal_leave unused
-#define xTaskNotifyGive unused
+static void xTaskNotifyGive(void *) { assert(!live); ++worker_notifications; }
 #define pxa_request_cancel unused
 #define dismiss_runtime_permission_prompt unused
 #define dismiss_unresponsive_prompt unused
@@ -129,7 +130,7 @@ static void reset(bool active) {
     g_host.activation.coordinator=token(4095);
     g_host.engine=token(ENGINE);g_host.engine_workspace=token(ENGINE_WORK);
     g_host.runtime_workspace=token(RUNTIME_WORK);
-    live=4095;notifications=closed_storage=resources_retired=0;
+    live=4095;notifications=closed_storage=resources_retired=worker_notifications=0;
     defer_storage=start_in_callback=new_work=false;
 }
 int main() {
@@ -143,6 +144,16 @@ int main() {
     reset(false);stop_active(PXA_STOP_NORMAL);
     assert(!notifications && !live && closed_storage==1);
     stop_active(PXA_STOP_NORMAL);assert(!notifications && !live && closed_storage==1);
+    for(auto reason : {PXA_STOP_NORMAL,PXA_STOP_FAULT,PXA_STOP_REPLACED,PXA_STOP_SHUTDOWN}) {
+        reset(true);expected_reason=reason;
+        Job job={};job.instance_id=42;job.self_update=job.commit_waiting=1;g_store_install=&job;
+        stop_active(reason);
+        assert(worker_notifications==1 && !job.commit_waiting &&
+            job.cancelled==(reason!=PXA_STOP_REPLACED));
+    }
+    reset(true);expected_reason=PXA_STOP_REPLACED;defer_storage=true;
+    Job job={};job.instance_id=42;job.self_update=job.commit_waiting=1;g_store_install=&job;
+    stop_active(expected_reason);assert(worker_notifications==1 && job.cancelled);
     puts("Activation stop: notification follows guest/service/storage/arena retirement; callback reentry, inactive repeat and deferred storage passed");
 }
 '''
@@ -150,7 +161,8 @@ int main() {
 
 def main():
     production = (ROOT / "firmware/components/pxa/src/runtime/pxa_esp_host.c").read_text()
-    source = FIXTURE.replace("// PRODUCTION", function(production, "void stop_active(pxa_stop_reason_t reason) {"))
+    source = FIXTURE.replace("// PRODUCTION", "\n".join(function(production, signature) for signature in (
+        "void resume_store_install_after_stop(", "void stop_active(pxa_stop_reason_t reason) {")))
     with tempfile.TemporaryDirectory(prefix="pxa-stop-cleanup-") as directory:
         unit = Path(directory) / "stop.cpp"
         binary = Path(directory) / "stop"

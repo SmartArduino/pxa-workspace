@@ -3084,9 +3084,38 @@ static void destroy_services(void) {
 
 /* --- app start/stop ------------------------------------------------------ */
 
+static void prepare_store_install_commit(pxa_esp_store_job_t *job) {
+    if(job!=g_store_install || !job)return;
+    if(!job->approved || __atomic_load_n(&job->cancelled,__ATOMIC_ACQUIRE) ||
+        !g_host.activation.runtime || job->instance_id!=g_host.activation.active_instance_id ||
+        !pxa_request_is_active(g_host.activation.runtime,job->component,job->request_token) ||
+        g_host.graceful_stop_active) {
+        __atomic_store_n(&job->cancelled,1u,__ATOMIC_RELEASE);
+        xTaskNotifyGive(job->worker);return;
+    }
+    if(job->separate==1 || strcmp(job->preview.id,g_host.activation.active_identity)) {
+        xTaskNotifyGive(job->worker);return;
+    }
+    /* Download and consent are complete. The native worker now owns this
+     * transaction; stopping its old Guest must not cancel the self-update. */
+    job->self_update=1;job->commit_waiting=1;
+    ESP_LOGI(PXA_ESP_HOST_TAG,"Store self-update: retiring %s before commit",job->preview.id);
+    begin_graceful_stop(PXA_STOP_REPLACED,0,1200);
+}
+
+static void resume_store_install_after_stop(uint64_t instance,pxa_stop_reason_t reason) {
+    pxa_esp_store_job_t *job=g_store_install;
+    if(!job || !job->commit_waiting || job->instance_id!=instance)return;
+    job->commit_waiting=0;
+    if(!job->self_update || reason!=PXA_STOP_REPLACED || g_host.retired_storage)
+        __atomic_store_n(&job->cancelled,1u,__ATOMIC_RELEASE);
+    xTaskNotifyGive(job->worker);
+}
+
 static void stop_active(pxa_stop_reason_t reason) {
     pxa_esp_host_public_state_t public_state;
     char stopped_identity[PXA_ESP_HOST_MAX_APP_ID];
+    const uint64_t stopped_instance=g_host.activation.active_instance_id;
     pxa_esp_ime_suspend();
     pxa_esp_ime_stop();
     g_host.graceful_stop_active = 0;
@@ -3095,7 +3124,9 @@ static void stop_active(pxa_stop_reason_t reason) {
     snprintf(stopped_identity, sizeof(stopped_identity), "%s",
              g_host.activation.active_identity);
     if (g_store_install != NULL &&
-        g_store_install->instance_id == g_host.activation.active_instance_id)
+        g_store_install->instance_id == g_host.activation.active_instance_id &&
+        !(g_store_install->self_update && g_store_install->commit_waiting &&
+          reason==PXA_STOP_REPLACED))
         __atomic_store_n(&g_store_install->cancelled, 1u, __ATOMIC_RELEASE);
     if (g_store_install != NULL && g_store_install->prompt_id != 0) {
         pxa_esp_ui_shell_dismiss_install_prompt(g_store_install->prompt_id);
@@ -3210,6 +3241,7 @@ static void stop_active(pxa_stop_reason_t reason) {
     g_host.runtime_workspace = NULL;
     activation_memory_release_all();
     activation_state_reset();
+    resume_store_install_after_stop(stopped_instance,reason);
     /* The system can rebuild the launcher immediately on STOPPED. Publish
      * only after releasing the guest heap/code and activation allocations:
      * otherwise long-lived decoded icons can fragment the next app's PSRAM. */
@@ -3219,6 +3251,12 @@ static void stop_active(pxa_stop_reason_t reason) {
 }
 
 static int start_verified(const char *identity) {
+    if(g_store_install && g_store_install->self_update &&
+        !strcmp(identity,g_store_install->preview.id)) {
+        pxa_esp_ui_shell_post_toast(pxa_esp_host_locale_is_chinese()?
+            "应用正在更新，请稍后再打开":"App is updating. Please try again shortly.",2600);
+        return 0;
+    }
     pxa_package_manifest_t *manifest = NULL;
     pxa_activation_plan_t *plan = NULL;
     pxa_package_host_profile_t host_profile;
@@ -3543,7 +3581,8 @@ static int start_verified(const char *identity) {
                     PXA_UI_FEATURE_RGB565_BITMAP |
                     PXA_UI_FEATURE_CONTROLLER_INPUT |
                     PXA_UI_FEATURE_CANVAS_STREAM_IO |
-                    PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT | PXA_UI_FEATURE_PASSWORD_INPUT;
+                    PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT |
+                    PXA_UI_FEATURE_PASSWORD_INPUT | PXA_UI_FEATURE_FONT_GLYPH;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
                 service_capabilities[index].features |= PXA_UI_FEATURE_SIZED_TEXT;
 #endif
@@ -4311,6 +4350,7 @@ static void complete_runtime_permission_prompt(uint32_t prompt_id,
 static __attribute__((noinline)) void handle_store_install_event(pxa_esp_store_job_t *job,
                                         uint8_t phase, uint64_t downloaded_bytes) {
     if (job == NULL || job != g_store_install) return;
+    if(phase==5u) {prepare_store_install_commit(job);return;}
     if (phase == 4u) {
         uint8_t payload[24];
         if (g_host.activation.runtime == NULL ||
@@ -4377,7 +4417,13 @@ static __attribute__((noinline)) void handle_store_install_event(pxa_esp_store_j
             (void)pxa_esp_store_cache_remove(&g_store_downloads[i]);memset(&g_store_downloads[i],0,sizeof(g_store_downloads[i]));
         }
     }
-    if (g_host.activation.runtime != NULL &&
+    if(job->self_update) {
+        if(job->status==PXA_STATUS_OK)
+            show_store_result(false,job->preview.name,job->preview.id);
+        else if(job->status!=PXA_STATUS_CANCELLED)
+            pxa_esp_ui_shell_post_toast(pxa_esp_host_locale_is_chinese()?
+                "商城更新失败，请重新打开商城重试":"Store update failed. Reopen the Store to retry.",3600);
+    } else if (g_host.activation.runtime != NULL &&
         job->instance_id == g_host.activation.active_instance_id &&
         pxa_request_is_active(g_host.activation.runtime, job->component,
                               job->request_token)) {
@@ -5457,7 +5503,8 @@ bool pxa_esp_host_initialize(void) {
         PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
         PXA_UI_FEATURE_GRID | PXA_UI_FEATURE_RGB565_BITMAP |
         PXA_UI_FEATURE_CONTROLLER_INPUT | PXA_UI_FEATURE_TEXT_INPUT_CONTROL |
-        PXA_UI_FEATURE_DYNAMIC_TEXT | PXA_UI_FEATURE_PASSWORD_INPUT;
+        PXA_UI_FEATURE_DYNAMIC_TEXT | PXA_UI_FEATURE_PASSWORD_INPUT |
+        PXA_UI_FEATURE_FONT_GLYPH;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
     ui_config.primary_environment.features |= PXA_UI_FEATURE_SIZED_TEXT;
 #endif

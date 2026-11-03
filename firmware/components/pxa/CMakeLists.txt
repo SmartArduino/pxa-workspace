@@ -209,6 +209,9 @@ target_compile_definitions(${COMPONENT_LIB} PUBLIC
     PXA_ENABLE_LEGACY_CONTAINER=$<BOOL:${CONFIG_PXA_ENABLE_LEGACY_CONTAINER}>)
 if(CONFIG_PXA_ENABLED AND CONFIG_LV_USE_FREETYPE)
     target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=FT_Stream_Open")
+    target_include_directories(freetype PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src/ui")
+    target_compile_definitions(freetype PRIVATE
+        FT_CONFIG_OPTIONS_H="pxa_freetype_options.h")
 endif()
 if(PXA_VOICE_TRIGGER_ENABLED)
     target_include_directories(${COMPONENT_LIB} PUBLIC

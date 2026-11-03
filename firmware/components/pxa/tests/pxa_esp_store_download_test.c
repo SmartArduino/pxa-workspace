@@ -29,6 +29,8 @@ static unsigned resource_commits,retained[4];
 static bool resource_request;
 static unsigned metadata_requests;
 static unsigned started_progress;
+static unsigned commit_barriers;
+static bool cancel_commit;
 static wifi_ps_type_t wifi_power=WIFI_PS_MAX_MODEM;
 static bool wifi_available=true;
 esp_err_t esp_wifi_get_ps(wifi_ps_type_t *power) {
@@ -170,6 +172,12 @@ static void notified(pxa_esp_store_job_t *job,uint8_t phase) {
         assert(job->total_bytes==body_size+((with_resources && !reuse_resources)?resource_size:0));
         ++started_progress;
     }
+    if(phase==5) {
+        assert(job->approved && job->placement.plan.reserved && !http_live);
+        assert(job->separate!=1 && job->path[0]);
+        ++commit_barriers;waiting_job=job;
+        if(cancel_commit)job->cancelled=1;
+    }
 }
 #include "../src/package/pxa_esp_store_download.c"
 static pxa_esp_store_job_t job(unsigned separate) {
@@ -201,6 +209,10 @@ int main(void) {
     assert(value.status==PXA_STATUS_QUOTA_EXCEEDED && !transfers);reserve_fail=false;
     value=job(0);short_body=true;pxa_esp_store_worker(&value);assert(value.status!=PXA_STATUS_OK && !exists(&value));short_body=false;
     value=job(0);value.digest[0]^=1;pxa_esp_store_worker(&value);assert(value.status!=PXA_STATUS_OK && !exists(&value));
+    unsigned installed_before=installs,barriers_before=commit_barriers;
+    value=job(0);cancel_commit=true;pxa_esp_store_worker(&value);cancel_commit=false;
+    assert(value.status==PXA_STATUS_CANCELLED && installs==installed_before &&
+        commit_barriers==barriers_before+1 && !exists(&value));
     value=job(0);pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_OK && !exists(&value) && installs==1);
     value=job(0);stale_record=true;pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_BAD_STATE && !exists(&value));stale_record=false;
     value=job(1);pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_OK && exists(&value));

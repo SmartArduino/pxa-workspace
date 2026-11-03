@@ -16,6 +16,7 @@ python3 "$tests_dir/test_legacy_catalog.py"
 python3 "$tests_dir/test_package_deploy.py"
 python3 "$tests_dir/test_graceful_stop.py"
 python3 "$tests_dir/test_stop_cleanup.py"
+python3 "$tests_dir/test_store_self_update.py"
 bash "$tests_dir/test_storage_worker.sh"
 
 cc_flags=(-std=c99 -Wall -Wextra -Wpedantic -Werror)
@@ -140,6 +141,8 @@ build_and_run wasi_stdio -DESP_PLATFORM=1 \
 build_and_run early_security "${adapter_includes[@]}" "$tests_dir/pxa_esp_security_test.c"
 build_and_run directory_handles -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
   "${adapter_includes[@]}" -pthread "$tests_dir/pxa_esp_directory_test.c"
+build_and_run directory_reentrant -DESP_PLATFORM=1 -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 \
+  "${adapter_includes[@]}" -pthread "$tests_dir/pxa_esp_directory_reentrant_test.c"
 build_and_run native_fs_scan -DESP_PLATFORM=1 -DPXA_POSIX_NATIVE_DIR_SCAN=1 \
   -DCONFIG_LITTLEFS_FCNTL_GET_PATH=0 "${adapter_includes[@]}" -pthread \
   "$tests_dir/pxa_esp_fs_scan_test.c" "$pxa_system_dir/libpxa/adapters/tests/fs_tree_test.c" \

@@ -360,6 +360,15 @@ void pxa_esp_store_worker(void *context) {
             job->resource_path,sizeof(job->resource_path),resource_filename,sizeof(resource_filename));
         if(job->status!=PXA_STATUS_OK)goto done;
         if(cancelled(job)) {job->status=PXA_STATUS_CANCELLED;goto done;}
+    }
+    if(job->separate!=1) {
+        /* The runtime owner releases an updating Store's activation lease
+         * before replacing its package. Never bypass the installer's busy
+         * check while the old Guest can still access its home. */
+        job->notify(job,5u);(void)ulTaskNotifyTake(pdTRUE,portMAX_DELAY);
+        if(cancelled(job)) {job->status=PXA_STATUS_CANCELLED;goto done;}
+    }
+    if(job->resource_path[0]) {
         /* The application signature binds the resource manifest, and the
          * SDK authenticates both resource signatures and every decoded file.
          * No unsigned HTTP header becomes a resource trust credential. */
