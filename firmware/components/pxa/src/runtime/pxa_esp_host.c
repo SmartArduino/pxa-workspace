@@ -1201,9 +1201,7 @@ static pxa_status_t host_store_install_control(
         job->separate = 2u;
         job->notify = store_install_notify;
         g_store_install = job;
-        if (xTaskCreate(pxa_esp_store_worker, "pxa-store-install",
-                        PXA_STORE_WORKER_STACK_BYTES,
-                        job, 3, &job->worker) != pdPASS) {
+        if (!pxa_esp_store_worker_submit(job)) {
             g_store_install = NULL;
             status = pxa_request_complete(runtime, component,
                                           message->request_token,
@@ -1249,9 +1247,7 @@ static pxa_status_t host_store_install_control(
     ESP_LOGI(PXA_ESP_HOST_TAG, "Store worker start: internal_free=%u largest=%u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-    if (xTaskCreate(pxa_esp_store_worker, "pxa-store-install",
-                    PXA_STORE_WORKER_STACK_BYTES,
-                    job, 3, &job->worker) != pdPASS) {
+    if (!pxa_esp_store_worker_submit(job)) {
         ESP_LOGW(PXA_ESP_HOST_TAG,
                  "Store worker allocation failed: internal_free=%u largest=%u",
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
@@ -5327,6 +5323,7 @@ static pxa_status_t prepare_start(void *context, pxa_component_t component,
 
 /* Roll back only the process resources created before the runtime thread starts. */
 static void rollback_host_initialization(void) {
+    pxa_esp_store_worker_deinitialize();
     if (g_host.watchdog_timer != NULL) {
         (void)esp_timer_delete(g_host.watchdog_timer);
         g_host.watchdog_timer = NULL;
@@ -5391,6 +5388,10 @@ bool pxa_esp_host_initialize(void) {
     if (!pxa_esp_package_store_initialize()) {
         ESP_LOGE(PXA_ESP_HOST_TAG, "Package store initialization failed");
         return false;
+    }
+    if (!pxa_esp_store_worker_initialize()) {
+        failed_stage = "create-store-worker";
+        goto failed;
     }
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
     (void)pxa_esp_font_source_acquire(pxa_esp_system_font_path(),&g_host.ui_font_source);

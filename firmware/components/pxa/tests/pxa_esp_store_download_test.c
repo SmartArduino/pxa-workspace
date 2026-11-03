@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <mbedtls/md.h>
+#include <setjmp.h>
 
 typedef uint32_t StackType_t;
 static esp_http_client_config_t http;
@@ -29,12 +30,41 @@ static bool resource_request;
 static unsigned metadata_requests;
 static unsigned started_progress;
 static pxa_esp_store_job_t *waiting_job;
+static void (*worker_entry)(void *);
+static bool queue_fail,task_fail,queue_live;
+static unsigned task_creates,queue_deletes,notification_drains;
+static pxa_esp_store_job_t *queued_job;
+static int task_token,queue_token;
+static jmp_buf queue_empty;
+QueueHandle_t xQueueCreate(unsigned count,size_t size) {
+    assert(count==1 && size==sizeof(queued_job) && !queue_live);
+    if(queue_fail)return NULL;
+    queue_live=true;return &queue_token;
+}
+void vQueueDelete(QueueHandle_t queue) {
+    assert(queue==&queue_token && queue_live && !queued_job);queue_live=false;++queue_deletes;
+}
+int xQueueSendToBack(QueueHandle_t queue,const void *item,uint32_t ticks) {
+    assert(queue==&queue_token && queue_live && ticks==0);
+    if(queued_job)return 0;
+    queued_job=*(pxa_esp_store_job_t *const *)item;return pdTRUE;
+}
+int xQueueReceive(QueueHandle_t queue,void *item,uint32_t ticks) {
+    assert(queue==&queue_token && queue_live && ticks==portMAX_DELAY);
+    if(!queued_job)longjmp(queue_empty,1); /* Stop the otherwise persistent test task. */
+    *(pxa_esp_store_job_t **)item=queued_job;queued_job=NULL;return pdTRUE;
+}
+int xTaskCreate(void (*entry)(void *),const char *name,unsigned stack,void *context,unsigned priority,TaskHandle_t *task) {
+    assert(!strcmp(name,"pxa-store-install") && stack==PXA_STORE_WORKER_STACK_BYTES && priority==3);
+    (void)context;++task_creates;if(task_fail)return 0;
+    worker_entry=entry;*task=&task_token;return pdPASS;
+}
 void *heap_caps_malloc(size_t n,unsigned caps) {assert(caps&MALLOC_CAP_SPIRAM);return malloc(n);}
 void heap_caps_free(void *p) {free(p);}
 void vTaskDelete(TaskHandle_t t) {(void)t;++deletes;}
 unsigned uxTaskGetStackHighWaterMark(TaskHandle_t t) {(void)t;return 512;}
 uint32_t ulTaskNotifyTake(int clear,TickType_t ticks) {
-    (void)clear;(void)ticks;assert(waiting_job);
+    (void)clear;if(ticks==0){++notification_drains;return 0;}assert(waiting_job);
     if(cancel_prompt)waiting_job->cancelled=1;
     waiting_job=NULL;return 1;
 }
@@ -175,7 +205,7 @@ int main(void) {
     memcpy(body,"PXAC",4);pxa_write_u16(body+6,1);pxa_write_u16(body+8,64);pxa_write_u16(body+14,12);
     pxa_write_u32(body+16,12);pxa_write_u32(body+20,108);pxa_write_u32(body+24,108);
     pxa_write_u64(body+32,body_size-metadata_size);pxa_write_u64(body+48,body_size);pxa_write_u32(body+60,pxa_container_crc32(body,60));
-    pxa_esp_store_job_t value;
+    static pxa_esp_store_job_t value;
 #if !PXA_ENABLE_LEGACY_CONTAINER
     value=job(0);pxa_esp_store_worker(&value);
     assert(value.status!=PXA_STATUS_OK && !transfers && !confirmations && !exists(&value));
@@ -241,7 +271,35 @@ int main(void) {
     assert(value.status==PXA_STATUS_OK && exists(&value) && stream_begins==previous);assert(!unlink(value.path));
     assert(stream_begins==stream_closes);free(resource_body);
     assert(!retained[2] && !retained[3]);
-    assert(reservations==releases && completions==deletes);
+    assert(reservations==releases);
+#if defined(CONFIG_PXA_STORE_PERSISTENT_WORKER) && CONFIG_PXA_STORE_PERSISTENT_WORKER
+    assert(deletes==0);
+    value=job(0);assert(!pxa_esp_store_worker_submit(&value));
+    queue_fail=true;assert(!pxa_esp_store_worker_initialize());queue_fail=false;
+    assert(!queue_live && !task_creates);
+    task_fail=true;assert(!pxa_esp_store_worker_initialize());task_fail=false;
+    assert(!queue_live && queue_deletes==1);
+    assert(pxa_esp_store_worker_initialize() && queue_live && task_creates==2);
+    task_fail=true; /* The fragmented heap can no longer allocate a 10 KiB task. */
+    assert(pxa_esp_store_worker_initialize() && task_creates==2);
+    for(unsigned i=0;i<2;++i) {
+        value=job(0);assert(pxa_esp_store_worker_submit(&value));
+        assert(value.worker==&task_token && !pxa_esp_store_worker_submit(&value));
+        cancel_prompt=i!=0;
+        if(!setjmp(queue_empty))worker_entry(NULL);
+        assert(value.status==(i?PXA_STATUS_CANCELLED:PXA_STATUS_OK));
+        assert(task_creates==2 && !queued_job && !exists(&value));
+    }
+    cancel_prompt=false;assert(notification_drains==2 && !deletes);
+    pxa_esp_store_worker_deinitialize();assert(!queue_live && queue_deletes==2 && deletes==1);
+    pxa_esp_store_worker_deinitialize();assert(deletes==1);
+    assert(!pxa_esp_store_worker_submit(&value));task_fail=false;
+#else
+    assert(completions==deletes);
+    assert(pxa_esp_store_worker_initialize());pxa_esp_store_worker_deinitialize();
+    assert(!pxa_esp_store_worker_submit(NULL));
+    value=job(0);assert(pxa_esp_store_worker_submit(&value) && value.worker==&task_token);
+#endif
     assert(started_progress>0); /* Approval publishes zero-byte progress before network I/O. */
     uint8_t payload[512]={0};value=job(0);size_t a=strlen(value.app_id),t=strlen(value.ticket);payload[0]=(uint8_t)a;
     pxa_write_u16(payload+1,(uint16_t)t);pxa_write_u64(payload+3,body_size);memcpy(payload+43,value.app_id,a);memcpy(payload+43+a,value.ticket,t);

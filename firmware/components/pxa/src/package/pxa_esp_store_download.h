@@ -67,5 +67,8 @@ int pxa_esp_store_job_decode(pxa_esp_store_job_t *job,
                              const uint8_t *payload, size_t size);
 int pxa_esp_store_job_decode_identity(pxa_esp_store_job_t *,const uint8_t *,size_t);
 void pxa_esp_store_worker(void *context);
+int pxa_esp_store_worker_initialize(void);
+void pxa_esp_store_worker_deinitialize(void);
+int pxa_esp_store_worker_submit(pxa_esp_store_job_t *job);
 
 #endif

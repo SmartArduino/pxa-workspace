@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_heap_caps.h"
+#include "freertos/queue.h"
 #include "pxa_esp_store_cache.h"
 #include "pxa_esp_volumes.h"
 #include "pxa/container.h"
@@ -28,6 +29,58 @@
 #ifndef CONFIG_PXA_STORE_ORIGIN
 #define CONFIG_PXA_STORE_ORIGIN "https://app.doit.am"
 #endif
+
+#if defined(CONFIG_PXA_STORE_PERSISTENT_WORKER) && CONFIG_PXA_STORE_PERSISTENT_WORKER
+static QueueHandle_t store_queue;
+static TaskHandle_t store_task;
+
+static void store_worker_loop(void *unused) {
+    (void)unused;
+    for (;;) {
+        pxa_esp_store_job_t *job;
+        if (xQueueReceive(store_queue, &job, portMAX_DELAY) != pdTRUE) continue;
+        /* A cancelled previous request may leave a notification behind.
+         * The new job has not posted its approval prompt yet. */
+        (void)ulTaskNotifyTake(pdTRUE, 0);
+        pxa_esp_store_worker(job);
+    }
+}
+#endif
+
+int pxa_esp_store_worker_initialize(void) {
+#if defined(CONFIG_PXA_STORE_PERSISTENT_WORKER) && CONFIG_PXA_STORE_PERSISTENT_WORKER
+    if (store_task) return 1;
+    store_queue = xQueueCreate(1, sizeof(pxa_esp_store_job_t *));
+    if (!store_queue) return 0;
+    if (xTaskCreate(store_worker_loop, "pxa-store-install", PXA_STORE_WORKER_STACK_BYTES,
+                    NULL, 3, &store_task) != pdPASS) {
+        vQueueDelete(store_queue); store_queue = NULL; store_task = NULL;
+        return 0;
+    }
+    ESP_LOGI("PxaStore", "Installation worker ready: %u-byte internal stack", PXA_STORE_WORKER_STACK_BYTES);
+#endif
+    return 1;
+}
+
+void pxa_esp_store_worker_deinitialize(void) {
+#if defined(CONFIG_PXA_STORE_PERSISTENT_WORKER) && CONFIG_PXA_STORE_PERSISTENT_WORKER
+    /* Initialization rollback only: no Guest request has been admitted. */
+    if (store_task) { vTaskDelete(store_task); store_task = NULL; }
+    if (store_queue) { vQueueDelete(store_queue); store_queue = NULL; }
+#endif
+}
+
+int pxa_esp_store_worker_submit(pxa_esp_store_job_t *job) {
+    if (!job) return 0;
+#if defined(CONFIG_PXA_STORE_PERSISTENT_WORKER) && CONFIG_PXA_STORE_PERSISTENT_WORKER
+    if (!store_task || !store_queue) return 0;
+    job->worker = store_task;
+    return xQueueSendToBack(store_queue, &job, 0) == pdTRUE;
+#else
+    return xTaskCreate(pxa_esp_store_worker, "pxa-store-install", PXA_STORE_WORKER_STACK_BYTES,
+                       job, 3, &job->worker) == pdPASS;
+#endif
+}
 
 typedef struct {
     FILE *file;
@@ -385,6 +438,9 @@ done:
     if(retained_epoch)pxa_esp_volumes_release(retained_epoch);
     ESP_LOGI("PxaStore","Transfer completed: status=%ld install=%d stack_spare=%u",(long)job->status,attempted_install,
         (unsigned)(uxTaskGetStackHighWaterMark(NULL)*sizeof(StackType_t)));
-    job->notify(job,2);vTaskDelete(NULL);
+    job->notify(job,2);
+#if !defined(CONFIG_PXA_STORE_PERSISTENT_WORKER) || !CONFIG_PXA_STORE_PERSISTENT_WORKER
+    vTaskDelete(NULL);
+#endif
 }
 #endif

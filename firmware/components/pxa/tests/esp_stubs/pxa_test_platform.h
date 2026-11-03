@@ -93,6 +93,7 @@ void *heap_caps_aligned_calloc(size_t, size_t, size_t, unsigned);
 void heap_caps_free(void *);
 size_t heap_caps_get_allocated_size(void *);
 QueueHandle_t xQueueCreateWithCaps(unsigned, size_t, unsigned);
+QueueHandle_t xQueueCreate(unsigned, size_t);
 int xQueueReceive(QueueHandle_t, void *, uint32_t);
 int xQueueSendToBack(QueueHandle_t, const void *, uint32_t);
 void vQueueDelete(QueueHandle_t);
