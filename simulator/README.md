@@ -27,9 +27,9 @@ controls only the visible host backdrop outside a rounded panel;
 saved PNG screenshots keep those pixels transparent.
 
 `--app-root <root>` selects an external source tree containing
-`<app-id>/package.json` files. These manifests create launcher entries only.
-The UI simulator does not execute those cards, install `.pxa` containers or
-provide a pxadb endpoint.
+`<app-id>/package.json` files for launcher entries. The UI simulator starts a
+PXADB2 service and launches installed, signed packages from their catalog cards.
+Build and install a package before launching its App.
 
 ## Product simulator
 
@@ -45,7 +45,7 @@ tools/simulator.sh product --profile pai-touch \
 
 The package is verified before the `linux-x86_64` AOT artifact is selected and
 started. The runner supplies window, LVGL UI, clock, silent development audio,
-and permission services. It is a package runner, not a hardware emulator.
+and permission services.
 
 `--package` remains useful for one-off runs. `tools/simulator.sh run --profile
 pai-touch` starts a local PXADB2 service automatically and stops that service
@@ -71,14 +71,34 @@ binary and use up to 64 KiB per upload frame. By default it is bound only to a
 per-user Unix socket (`/tmp/pxa-simulator-<uid>/<profile>.sock`), while package
 state is persistent and ignored at `local/simulator/<profile>/`. It stages the
 `.pxa` in its inbox, then uses the POSIX installer to verify its signature and
-commit the normal slot transaction. Use `tools/simulator.sh service stop
+commit the normal slot transaction. Container 0.2 supports STORE, LZ4 and DEFLATE
+with 4, 16 or 32 KiB blocks. The service advertises legacy Container 0.1 support
+when its installer is built with `PXA_ENABLE_LEGACY_CONTAINER=ON`.
+Use `tools/simulator.sh service stop
 --profile pai-touch` to stop it. `PXA_SIMULATOR_SOCKET_ROOT` overrides the
 socket parent when needed.
+
+`service start` configures and incrementally builds the installer, checks the
+running service, and refreshes it when its source, installer or publisher key
+changes. Refreshing preserves an existing TCP listener and the visible window's
+debug-control socket. Service start and stop operations are serialized.
+
+Uploads publish a file after its complete size and optional SHA-256 digest have
+been checked. Empty files are supported. `FSABORT` and disconnected clients
+discard their partial uploads. Concurrent uploads to the same destination
+return `file_upload_busy` so a retry can follow the first transfer.
 
 Multiple `run --profile pai-touch` windows share this service and installed
 state. The automatically started service remains available until the last such
 window closes. An explicit `service start` is persistent and must be stopped
 explicitly.
+
+Separate instances keep settings, App data and control sockets independent.
+
+```sh
+tools/simulator.sh ui --profile pai-touch --instance demo-a
+pxadb package list --simulator pai-touch@demo-a
+```
 
 For an explicitly enabled trusted-LAN development listener, the service creates
 a mode-0600 token file and requires it on every TCP connection:
@@ -143,9 +163,9 @@ tools/simulator.sh ui build --profile pai-touch
 Profile 可设置 `corner_radius`、`safe_insets` 和 `shape_background`。最后一个值只控制
 圆角面板外的主机可见背景；保存的 PNG 截图会将这些像素保留为透明。
 
-`--app-root <root>` 选择外部源码树；其中需要包含 `<app-id>/package.json`。这些
-manifest 只会生成启动器条目。UI 模拟器不会执行这些卡片，也没有 `.pxa` 安装或 pxadb
-端点。
+`--app-root <root>` 选择包含 `<app-id>/package.json` 的外部源码树，用于生成启动器
+条目。UI 模拟器会启动 PXADB2 服务，并可通过卡片启动已安装、已签名的应用。
+启动应用前需要先构建和安装对应的包。
 
 ## 产品模拟器
 
@@ -160,7 +180,7 @@ tools/simulator.sh product --profile pai-touch \
 ```
 
 启动前会验签并选择 `linux-x86_64` AOT Artifact。运行器提供窗口、LVGL UI、时钟、静音的
-开发音频和权限服务。它是 Package 运行器，而不是硬件模拟器。
+开发音频和权限服务。
 
 `--package` 仍适用于一次性运行。`tools/simulator.sh run --profile pai-touch` 会在启动
 模拟器前自动启动 PXADB2 服务，并在模拟器窗口关闭时停止这个自动启动的服务；它会打印
@@ -181,12 +201,29 @@ pxa-arcade --simulator pai-touch` 仍可用于直接启动。
 默认只绑定每个用户的 Unix socket，位置为
 `/tmp/pxa-simulator-<uid>/<profile>.sock`；Package 状态持久保存于被忽略的
 `local/simulator/<profile>/`。它将 `.pxa` 暂存到 inbox 后，使用 POSIX installer
-完成验签和常规 slot 事务提交。用
+完成验签和常规 slot 事务提交。Container 0.2 支持 STORE、LZ4、DEFLATE，以及
+4、16、32 KiB 数据块。安装器以 `PXA_ENABLE_LEGACY_CONTAINER=ON` 构建时，服务会声明
+支持旧版 Container 0.1。用
 `tools/simulator.sh service stop --profile pai-touch` 停止服务；需要时可通过
 `PXA_SIMULATOR_SOCKET_ROOT` 修改 socket 父目录。
 
+`service start` 会配置并增量构建安装器、检查服务健康状态，并在服务源码、安装器或
+发布者公钥变化后刷新服务。刷新时保留已有的 TCP listener 和窗口调试控制 socket。
+服务启动和停止操作通过锁串行执行。
+
+上传在完整大小和可选 SHA-256 校验通过后发布文件，支持空文件。`FSABORT` 和客户端
+断线会清理对应的临时上传。同一目标的并发上传返回 `file_upload_busy`，可在首个传输
+完成后重试。
+
 同一 `run --profile pai-touch` 可同时打开多个窗口，它们共享服务和已安装状态。自动启动的
 服务会持续到最后一个窗口关闭；显式执行的 `service start` 会常驻，必须显式停止。
+
+需要独立设置、应用数据和控制 socket 时，使用不同实例。
+
+```sh
+tools/simulator.sh ui --profile pai-touch --instance demo-a
+pxadb package list --simulator pai-touch@demo-a
+```
 
 需要在受信任局域网中调试时，可显式开启 listener；服务会创建权限为 0600 的 token 文件，
 每个 TCP 连接都必须携带该 token：

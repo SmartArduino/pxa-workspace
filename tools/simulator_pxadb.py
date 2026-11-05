@@ -17,6 +17,7 @@ import socket
 import socketserver
 import struct
 import subprocess
+import tempfile
 import threading
 import time
 import zlib
@@ -88,13 +89,19 @@ def write_tcp_address(path: pathlib.Path, address: tuple[str, int]) -> None:
 class SimulatorPxaDb:
     def __init__(self, state_root: pathlib.Path, installer: pathlib.Path,
                  publisher_key: pathlib.Path,
-                 control_socket: pathlib.Path | None = None) -> None:
-        self.state_root = state_root
+                 control_socket: pathlib.Path | None = None,
+                 legacy_container: bool = False) -> None:
+        self.state_root = state_root.resolve()
         self.installer = installer
         self.publisher_key = publisher_key
         self.control_socket = control_socket
         self.lock = threading.Lock()
+        self.upload_lock = threading.Lock()
+        self.closed = False
         self.pointer_limit: int | None = None
+        self.package_capabilities = (
+            f"package_stream=2;package_legacy={int(legacy_container)};"
+            "package_codecs=0,1,2;package_max_block=32768")
         self.uploads: dict[int, tuple[pathlib.Path, pathlib.Path, int, str]] = {}
         self.state_root.mkdir(mode=0o700, parents=True, exist_ok=True)
 
@@ -241,13 +248,22 @@ class SimulatorPxaDb:
         raise ServiceError("invalid_input_command")
 
     def storage_path(self, remote: str) -> pathlib.Path:
+        if "\0" in remote:
+            raise ServiceError("invalid_path")
         normalized = pathlib.PurePosixPath(remote.strip("/"))
         if str(normalized) in {"", "."}:
             return self.state_root
         if (not remote or normalized.is_absolute() or
                 ".." in normalized.parts):
             raise ServiceError("path must remain inside simulator PXA storage")
-        return self.state_root.joinpath(*normalized.parts)
+        path = self.state_root.joinpath(*normalized.parts)
+        try:
+            contained = path.resolve().is_relative_to(self.state_root)
+        except (OSError, RuntimeError) as error:
+            raise ServiceError("invalid_path") from error
+        if not contained:
+            raise ServiceError("path must remain inside simulator PXA storage")
+        return path
 
     def send(self, connection: "BinaryHandler", sequence: int, kind: str,
              payload: str = "") -> None:
@@ -288,23 +304,48 @@ class SimulatorPxaDb:
         if digest and (len(digest) != 64 or
                        any(character not in "0123456789abcdef" for character in digest)):
             raise ServiceError("invalid_file_digest")
-        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        temporary = destination.with_name(f".{destination.name}.pxadb2-part")
-        temporary.unlink(missing_ok=True)
-        temporary.touch(mode=0o600)
-        self.uploads[id(connection)] = (destination, temporary, size, digest)
-        self.send(connection, sequence, "READY", str(size))
+        if destination == self.state_root or destination.is_dir():
+            raise ServiceError("invalid_file_path")
+        self.abort_upload(connection)
+        with self.upload_lock:
+            if self.closed:
+                raise ServiceError("service_stopping")
+            if any(upload[0] == destination for upload in self.uploads.values()):
+                raise ServiceError("file_upload_busy")
+            destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            descriptor, name = tempfile.mkstemp(
+                prefix=".pxadb2-", suffix=".pxadb2-part",
+                dir=destination.parent)
+            os.close(descriptor)
+            self.uploads[id(connection)] = (destination, pathlib.Path(name), size, digest)
+        if size == 0:
+            self.write_upload(connection, sequence, struct.pack("!Q", 0))
+        else:
+            self.send(connection, sequence, "READY", str(size))
+
+    def abort_upload(self, connection: "BinaryHandler") -> None:
+        with self.upload_lock:
+            upload = self.uploads.pop(id(connection), None)
+            if upload is not None:
+                upload[1].unlink(missing_ok=True)
+
+    def close(self) -> None:
+        with self.upload_lock:
+            self.closed = True
+            for _destination, temporary, _size, _digest in self.uploads.values():
+                temporary.unlink(missing_ok=True)
+            self.uploads.clear()
 
     def write_upload(self, connection: "BinaryHandler", sequence: int,
                      payload: bytes) -> None:
-        upload_key = id(connection)
-        if upload_key not in self.uploads or len(payload) <= 8:
+        upload = self.uploads.get(id(connection))
+        if upload is None or len(payload) < 8:
             raise ServiceError("no_file_upload")
-        destination, temporary, total, expected_digest = self.uploads[upload_key]
+        destination, temporary, total, expected_digest = upload
         offset = struct.unpack("!Q", payload[:8])[0]
         data = payload[8:]
         current = temporary.stat().st_size
-        if (offset != current or len(data) > MAX_CHUNK_BYTES or
+        if (offset != current or (not data and total != 0) or len(data) > MAX_CHUNK_BYTES or
                 current + len(data) > total):
             raise ServiceError("invalid_file_offset")
         with temporary.open("ab") as file:
@@ -314,13 +355,13 @@ class SimulatorPxaDb:
             self.send(connection, sequence, "READY", str(remaining))
             return
         if expected_digest:
-            digest = hashlib.sha256(temporary.read_bytes()).hexdigest()
+            with temporary.open("rb") as file:
+                digest = hashlib.file_digest(file, "sha256").hexdigest()
             if digest != expected_digest:
-                temporary.unlink(missing_ok=True)
-                del self.uploads[upload_key]
+                self.abort_upload(connection)
                 raise ServiceError("file_digest_mismatch")
         os.replace(temporary, destination)
-        del self.uploads[upload_key]
+        self.abort_upload(connection)
         self.send(connection, sequence, "OK")
 
     def file_list(self, connection: "BinaryHandler", sequence: int,
@@ -469,9 +510,12 @@ class SimulatorPxaDb:
             self.send(connection, sequence, "OK",
                       f"protocol=2;transport={transport};fs_offset=1;"
                       f"fs_sha256=1;max_chunk={MAX_CHUNK_BYTES};binary=1;"
+                      f"{self.package_capabilities};"
                       "simulator=1;screenshot=png;input=pointer,key")
         elif command == "INFO":
-            self.send(connection, sequence, "OK", "kind=simulator;package_installer=posix;protocol=2;debug_control=1")
+            self.send(connection, sequence, "OK",
+                      "kind=simulator;package_installer=posix;protocol=2;debug_control=1;"
+                      + self.package_capabilities)
         elif command in {"PING", "BYE"}:
             self.send(connection, sequence, "OK", "pong" if command == "PING" else "disconnected")
         elif command in {"LOGSUB", "LOGUNSUB"}:
@@ -485,6 +529,9 @@ class SimulatorPxaDb:
             self.send(connection, sequence, "OK", self.input(arguments))
         elif command == "FSPUT":
             self.begin_upload(connection, sequence, arguments)
+        elif command == "FSABORT" and not arguments:
+            self.abort_upload(connection)
+            self.send(connection, sequence, "OK", "aborted")
         elif command == "FSMKDIR" and len(arguments) == 1:
             self.storage_path(decode_path(arguments[0])).mkdir(mode=0o700, parents=True, exist_ok=True)
             self.send(connection, sequence, "OK")
@@ -517,6 +564,9 @@ class BinaryHandler(socketserver.BaseRequestHandler):
     def setup(self) -> None:
         self.authenticated = not self.server.require_token  # type: ignore[attr-defined]
 
+    def finish(self) -> None:
+        self.server.service.abort_upload(self)  # type: ignore[attr-defined]
+
     def read_exact(self, size: int) -> bytes | None:
         output = bytearray()
         while len(output) < size:
@@ -539,12 +589,15 @@ class BinaryHandler(socketserver.BaseRequestHandler):
             arguments = command_parts[1:]
             if not self.authenticated:
                 expected = self.server.token  # type: ignore[attr-defined]
-                if command != "AUTH" or len(arguments) != 1 or not hmac.compare_digest(arguments[0], expected):
+                if command != "AUTH" or len(arguments) != 1 or not hmac.compare_digest(
+                        arguments[0].encode("utf-8"), expected.encode("utf-8")):
                     raise ServiceError("authentication_required")
                 self.authenticated = True
                 service.send(self, sequence, "OK", "authenticated")
                 return
             service.dispatch(self, sequence, command, arguments)
+        except subprocess.TimeoutExpired:
+            service.send(self, sequence, "ERR", "package_operation_timeout")
         except (ServiceError, UnicodeError, OSError) as error:
             service.send(self, sequence, "ERR", str(error))
 
@@ -568,6 +621,7 @@ class BinaryHandler(socketserver.BaseRequestHandler):
                 else:
                     raise ServiceError("invalid_frame_kind")
             except (ServiceError, OSError) as error:
+                service.abort_upload(self)
                 service.send(self, sequence, "ERR", str(error))
 
 
@@ -594,6 +648,8 @@ def main() -> int:
     parser.add_argument("--installer", required=True, type=pathlib.Path)
     parser.add_argument("--publisher-key", required=True, type=pathlib.Path)
     parser.add_argument("--control-socket", type=pathlib.Path)
+    parser.add_argument("--legacy-container", action="store_true",
+                        help="advertise an installer built with PXA_ENABLE_LEGACY_CONTAINER=ON")
     parser.add_argument("--tcp-listen", type=parse_tcp_address)
     parser.add_argument("--token-file", type=pathlib.Path)
     parser.add_argument("--tcp-address-file", type=pathlib.Path)
@@ -619,6 +675,7 @@ def main() -> int:
     service = SimulatorPxaDb(
         state_root, arguments.installer.resolve(), arguments.publisher_key.resolve(),
         arguments.control_socket.resolve() if arguments.control_socket else None,
+        legacy_container=arguments.legacy_container,
     )
     unix_server = UnixServer(str(socket_path), BinaryHandler)
     configure_server(unix_server, service, None)
@@ -646,6 +703,7 @@ def main() -> int:
         if tcp_server is not None:
             tcp_server.shutdown()
             tcp_server.server_close()
+        service.close()
         if arguments.tcp_address_file:
             arguments.tcp_address_file.unlink(missing_ok=True)
         socket_path.unlink(missing_ok=True)

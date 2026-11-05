@@ -166,7 +166,7 @@ if [[ -n "$package_path" && -n "$installed_id" ]]; then
   exit 2
 fi
 
-mapfile -t profile_args < <("${PYTHON:-python3}" - "$profile" <<'PYTHON'
+profile_output="$("${PYTHON:-python3}" - "$profile" <<'PYTHON'
 import sys
 try:
     import tomllib
@@ -179,7 +179,7 @@ if not isinstance(desktop, dict):
     raise SystemExit("[desktop] must be a table")
 for key in ("width", "height"):
     value = desktop.get(key)
-    if not isinstance(value, int) or value <= 0:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise SystemExit(f"desktop.{key} must be a positive integer")
     print(f"--{key}")
     print(value)
@@ -189,7 +189,7 @@ if isinstance(density, bool) or not isinstance(density, int) or not 1 <= density
 print("--density-dpi")
 print(density)
 corner_radius = desktop.get("corner_radius", 0)
-if not isinstance(corner_radius, int) or corner_radius < 0:
+if isinstance(corner_radius, bool) or not isinstance(corner_radius, int) or corner_radius < 0:
     raise SystemExit("desktop.corner_radius must be a non-negative integer")
 if corner_radius > min(desktop["width"], desktop["height"]) // 2:
     raise SystemExit("desktop.corner_radius exceeds half of the display's shortest side")
@@ -198,9 +198,12 @@ if corner_radius:
     print(corner_radius)
 safe_insets = desktop.get("safe_insets", [0, 0, 0, 0])
 if (not isinstance(safe_insets, list) or len(safe_insets) != 4 or
-        any(not isinstance(value, int) or value < 0 or value > 65535
+        any(isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > 65535
             for value in safe_insets)):
     raise SystemExit("desktop.safe_insets must be [top, right, bottom, left] in 0..65535")
+if (safe_insets[0] + safe_insets[2] >= desktop["height"] or
+        safe_insets[1] + safe_insets[3] >= desktop["width"]):
+    raise SystemExit("desktop.safe_insets must leave a non-empty display area")
 if any(safe_insets):
     print("--safe-insets")
     print(",".join(str(value) for value in safe_insets))
@@ -218,6 +221,9 @@ theme = desktop.get("theme", "dark")
 if theme not in ("dark", "light", "custom"):
     raise SystemExit("desktop.theme must be dark, light or custom")
 print(f"--{theme}" if theme != "custom" else "--custom-theme")
+for key in ("round", "gestures", "navigation_bar"):
+    if key in desktop and not isinstance(desktop[key], bool):
+        raise SystemExit(f"desktop.{key} must be true or false")
 if desktop.get("round", False):
     if corner_radius:
         raise SystemExit("desktop.corner_radius and desktop.round cannot be used together")
@@ -225,11 +231,10 @@ if desktop.get("round", False):
 if desktop.get("gestures", False):
     print("--gestures")
 if "navigation_bar" in desktop:
-    if not isinstance(desktop["navigation_bar"], bool):
-        raise SystemExit("desktop.navigation_bar must be true or false")
     print("--navigation-bar" if desktop["navigation_bar"] else "--no-navigation-bar")
 PYTHON
-)
+)"
+mapfile -t profile_args <<< "$profile_output"
 
 build_dir="$project_root/build/simulator/$profile_name"
 cmake_bin="${CMAKE:-cmake}"
@@ -305,7 +310,40 @@ print_pxadb_endpoint() {
   fi
 }
 
+service_pid_running() {
+  local pid="$1" command_line=""
+  [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null || return 1
+  command_line="$(ps -p "$pid" -o args=)" || return 1
+  [[ "$command_line" == *"$script_dir/simulator_pxadb.py "* ]]
+}
+
+service_healthy() {
+  "${PYTHON:-python3}" - "$script_dir" "$1" <<'PYTHON'
+import sys
+sys.path.insert(0, sys.argv[1])
+from pxadb.pxadb import PxaDbClient, PxaDbError
+
+try:
+    with PxaDbClient("unix:" + sys.argv[2], timeout=1) as client:
+        client.hello(attempts=1)
+        client.request("PING")
+except (OSError, PxaDbError):
+    raise SystemExit(1)
+PYTHON
+}
+
 service() {
+  local service_lock_fd service_status=0
+  mkdir -p -- "$state_root" || return 1
+  exec {service_lock_fd}>"$state_root/pxadb.lock" || return 1
+  flock -x "$service_lock_fd" || return 1
+  service_locked || service_status=$?
+  flock -u "$service_lock_fd"
+  exec {service_lock_fd}>&-
+  return "$service_status"
+}
+
+service_locked() {
   local socket_root="${PXA_SIMULATOR_SOCKET_ROOT:-/tmp/pxa-simulator-${UID}}"
   local socket_path="$socket_root/$simulator_id.sock"
   local control_socket="$socket_root/$simulator_id.control.sock"
@@ -315,53 +353,99 @@ service() {
   local token_path="$state_root/pxadb2.token"
   local tcp_endpoint_path="$state_root/pxadb2.tcp"
   local tcp_args=()
+  local installer_args=()
+  local legacy_container=""
   local tcp_endpoint=""
   local pid=""
+  local revision_path="$state_root/pxadb.revision" revision="" persistent_refresh=0
   case "$action" in
     start)
+      configure || return 1
+      "$cmake_bin" --build "$build_dir" --target pxsys_package_installer || return 1
+      [[ -f "$publisher_key" ]] || { echo "Publisher key is unavailable: $publisher_key" >&2; return 2; }
+      if [[ -f "$build_dir/CMakeCache.txt" ]]; then
+        legacy_container="$(sed -n 's/^PXA_ENABLE_LEGACY_CONTAINER:BOOL=//p' "$build_dir/CMakeCache.txt")"
+      fi
+      case "${legacy_container^^}" in
+        ""|0|OFF|NO|FALSE|N|IGNORE|NOTFOUND|*-NOTFOUND) ;;
+        *) installer_args=(--legacy-container) ;;
+      esac
+      revision="$("${PYTHON:-python3}" - "$script_dir/simulator_pxadb.py" "$installer" "$publisher_key" "${installer_args[*]}" <<'PYTHON'
+import hashlib
+import pathlib
+import sys
+digest = hashlib.sha256()
+digest.update(sys.argv[4].encode())
+for name in sys.argv[1:4]:
+    path = pathlib.Path(name).resolve()
+    digest.update(str(path).encode())
+    with path.open("rb") as source:
+        digest.update(hashlib.file_digest(source, "sha256").digest())
+print(digest.hexdigest())
+PYTHON
+)" || return 1
       if [[ -f "$pid_path" ]]; then
         pid="$(<"$pid_path")"
-        if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+        if service_pid_running "$pid"; then
           if [[ -n "$tcp_listen" && ! -f "$tcp_endpoint_path" ]]; then
             echo "PXADB2 service is already running without a TCP listener; stop it before using --listen" >&2
             return 1
           fi
-          log_notice "PXADB2 service already running: socket=$socket_path state=$state_root log=$log_path"
-          [[ -f "$tcp_endpoint_path" ]] && log_info "PXADB2 TCP listener: tcp://$(<"$tcp_endpoint_path") (token: $token_path)"
-          return 0
+          if [[ -f "$revision_path" && "$(<"$revision_path")" == "$revision" ]] &&
+              service_healthy "$socket_path"; then
+            log_notice "PXADB2 service already running: socket=$socket_path state=$state_root log=$log_path"
+            [[ -f "$tcp_endpoint_path" ]] && log_info "PXADB2 TCP listener: tcp://$(<"$tcp_endpoint_path") (token: $token_path)"
+            return 0
+          fi
+          # Keep the explicit listener when refreshing an existing service.
+          if [[ -z "$tcp_listen" && -f "$tcp_endpoint_path" ]]; then
+            tcp_listen="$(<"$tcp_endpoint_path")"
+          fi
+          [[ -f "$state_root/pxadb.autostart" ]] || persistent_refresh=1
+          log_notice "Refreshing simulator PXADB service"
+          action="stop"
+          service_locked || { action="start"; return 1; }
+          action="start"
         fi
         rm -f -- "$pid_path"
       fi
-      mkdir -p -- "$socket_root"
-      chmod 700 -- "$socket_root"
-      rm -f -- "$socket_path" "$tcp_endpoint_path"
-      mkdir -p -- "$state_root"
-      configure
-      "$cmake_bin" --build "$build_dir" --target pxsys_package_installer
-      [[ -f "$publisher_key" ]] || { echo "Publisher key is unavailable: $publisher_key" >&2; return 2; }
+      mkdir -p -- "$socket_root" || return 1
+      chmod 700 -- "$socket_root" || return 1
+      rm -f -- "$socket_path" "$tcp_endpoint_path" || return 1
+      mkdir -p -- "$state_root" || return 1
       if [[ -n "$tcp_listen" ]]; then
         tcp_args=(--tcp-listen "$tcp_listen" --token-file "$token_path" --tcp-address-file "$tcp_endpoint_path")
       fi
       nohup "${PYTHON:-python3}" "$script_dir/simulator_pxadb.py" \
         --state-root "$state_root" --socket "$socket_path" \
         --installer "$installer" --publisher-key "$publisher_key" \
-        --control-socket "$control_socket" "${tcp_args[@]}" \
-        >"$log_path" 2>&1 < /dev/null &
+        --control-socket "$control_socket" "${tcp_args[@]}" "${installer_args[@]}" \
+        >"$log_path" 2>&1 < /dev/null {service_lock_fd}>&- &
       pid="$!"
-      printf '%s\n' "$pid" > "$pid_path"
+      printf '%s\n' "$pid" > "$pid_path" || { kill -TERM "$pid"; return 1; }
       for _ in {1..50}; do
         [[ -S "$socket_path" && ( -z "$tcp_listen" || -s "$tcp_endpoint_path" ) ]] && break
         if ! kill -0 "$pid" 2>/dev/null; then
           cat "$log_path" >&2 || true
-          rm -f -- "$pid_path"
+          rm -f -- "$pid_path" "$socket_path" "$tcp_endpoint_path" "$revision_path"
           return 1
         fi
         sleep 0.05
       done
-      [[ -S "$socket_path" ]] || { echo "Simulator PXADB service did not create its socket" >&2; return 1; }
-      [[ -z "$tcp_listen" || -s "$tcp_endpoint_path" ]] || { echo "Simulator PXADB service did not create its TCP listener" >&2; return 1; }
+      if [[ ! -S "$socket_path" || ( -n "$tcp_listen" && ! -s "$tcp_endpoint_path" ) ]] ||
+          ! service_healthy "$socket_path"; then
+        action="stop"
+        service_locked || { action="start"; return 1; }
+        action="start"
+        cat "$log_path" >&2 || true
+        echo "Simulator PXADB service did not become ready" >&2
+        return 1
+      fi
+      printf '%s\n' "$revision" > "$revision_path" || return 1
       log_success "PXADB2 service started: socket=$socket_path state=$state_root log=$log_path"
-      pxadb_autostart_started=1
+      if [[ "$persistent_refresh" == "0" ]]; then
+        pxadb_autostart_started=1
+      fi
       if [[ -n "$tcp_listen" ]]; then
         tcp_endpoint="$(<"$tcp_endpoint_path")"
         log_info "PXADB2 TCP service started: $tcp_endpoint (token: $token_path)"
@@ -370,22 +454,25 @@ service() {
     stop)
       [[ -f "$pid_path" ]] || { echo "Simulator PXADB service is not running"; return 0; }
       pid="$(<"$pid_path")"
-      if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+      if service_pid_running "$pid"; then
         kill -TERM "$pid"
         for _ in {1..50}; do
           kill -0 "$pid" 2>/dev/null || break
           sleep 0.05
         done
+        if service_pid_running "$pid"; then
+          echo "Simulator PXADB service did not stop: pid=$pid" >&2
+          return 1
+        fi
       fi
-      rm -f -- "$pid_path" "$socket_path" "$tcp_endpoint_path" \
-          "$control_socket" \
+      rm -f -- "$pid_path" "$socket_path" "$tcp_endpoint_path" "$revision_path" \
           "$state_root/pxadb.autostart"
       log_notice "Simulator PXADB service stopped"
       ;;
     status)
       if [[ -f "$pid_path" ]]; then
         pid="$(<"$pid_path")"
-        if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null && [[ -S "$socket_path" ]]; then
+        if service_pid_running "$pid" && service_healthy "$socket_path"; then
           echo "Simulator PXADB service is running: $socket_path"
           [[ -f "$tcp_endpoint_path" ]] && echo "Simulator PXADB TCP listener: $(<"$tcp_endpoint_path")"
           return 0
