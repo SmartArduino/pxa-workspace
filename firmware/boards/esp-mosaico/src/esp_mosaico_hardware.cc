@@ -21,11 +21,14 @@
 #include <esp_efuse_table.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <esp_private/esp_sys_event_internal.h>
+#include <hal/usb_utmi_ll.h>
 #include <esp_lcd_co5300.h>
 #include <esp_lcd_touch_cst92xx.h>
 #include <esp_lv_decoder.h>
 #include <esp_lv_adapter.h>
 #include <esp_log.h>
+#include <esp_mac.h>
 #include <esp_rom_sys.h>
 #include <esp_netif_sntp.h>
 #include <esp_timer.h>
@@ -41,6 +44,8 @@
 #include <wifi_manager.h>
 
 #include "esp_mosaico_pxa_surface.h"
+#include "esp_mosaico_usb_download.h"
+#include "esp_mosaico_usb_restart.h"
 
 #ifndef CONFIG_PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT
 #define CONFIG_PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT 0
@@ -121,15 +126,34 @@ bool EspMosaicoHardware::DetectHardware() {
 }
 
 bool EspMosaicoHardware::InitializeUsb() {
+    static EspMosaicoHardware* self = this;
+    static mosaico_board::UsbDownloadTrigger download_trigger;
+    static char serial[18];
+    static const char language[] = {0x09, 0x04};
+    static const char* strings[] = {
+        language, "Espressif Systems", "ESP-Mosaico", serial, "PXA Debug",
+    };
+    uint8_t mac[6];
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) return false;
+    std::snprintf(serial, sizeof(serial), "%02x:%02x:%02x:%02x:%02x:%02x",
+                  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     tinyusb_config_t config = TINYUSB_DEFAULT_CONFIG();
     config.task.xCoreID = 0;
+    config.descriptor.string = strings;
+    config.descriptor.string_count = sizeof(strings) / sizeof(strings[0]);
     if (tinyusb_driver_install(&config) != ESP_OK) return false;
     const tinyusb_config_cdcacm_t cdc_config = {
         .cdc_port = TINYUSB_CDC_ACM_0,
         .callback_rx = nullptr,
         .callback_rx_wanted_char = nullptr,
-        .callback_line_state_changed = nullptr,
-        .callback_line_coding_changed = nullptr,
+        .callback_line_state_changed = [](int, cdcacm_event_t* event) {
+            if (download_trigger.SetDtr(event->line_state_changed_data.dtr))
+                (void)self->RequestPowerAction(kUsbDownloadAction);
+        },
+        .callback_line_coding_changed = [](int, cdcacm_event_t* event) {
+            download_trigger.SetBitRate(
+                event->line_coding_changed_data.p_line_coding->bit_rate);
+        },
     };
     if (tinyusb_cdcacm_init(&cdc_config) != ESP_OK) return false;
     if (tinyusb_console_init(TINYUSB_CDC_ACM_0) != ESP_OK) return false;
@@ -1227,16 +1251,37 @@ void EspMosaicoHardware::UpdateInteractivity() {
     (void)pxa_host_set_display_interactive(interactive);
 }
 
-bool EspMosaicoHardware::RequestPowerAction(pxsys_reference_power_action_t action) {
+bool EspMosaicoHardware::QuiesceDisplayForRestart() {
+    if (esp_lv_adapter_lock(2000) != ESP_OK) return false;
+    WaitForUiSnapshot();
+    WaitForFlush();
+    if (xSemaphoreTake(panel_mutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        esp_lv_adapter_unlock();
+        return false;
+    }
+    if (!WaitForTransfer(pdMS_TO_TICKS(1000)) ||
+        esp_lcd_panel_io_del(panel_io_) != ESP_OK) {
+        xSemaphoreGive(panel_mutex_);
+        esp_lv_adapter_unlock();
+        return false;
+    }
+    panel_io_ = nullptr;
+    // Keep both producers and the flush worker locked until reset. GPIO36
+    // can now leave the QSPI bus and select 3.3 V Flash power at ROM entry.
+    return true;
+}
+
+bool EspMosaicoHardware::RequestPowerAction(int8_t action) {
     if (action != PXSYS_REFERENCE_POWER_ACTION_RESTART &&
-        action != PXSYS_REFERENCE_POWER_ACTION_SHUTDOWN) return false;
+        action != PXSYS_REFERENCE_POWER_ACTION_SHUTDOWN &&
+        action != kUsbDownloadAction) return false;
     if (touch_task_ == nullptr) {
         ESP_LOGE(kTag, "System power action requires the input worker");
         return false;
     }
     int8_t expected = -1;
-    if (!power_action_.compare_exchange_strong(expected, static_cast<int8_t>(action)))
-        return expected == static_cast<int8_t>(action);
+    if (!power_action_.compare_exchange_strong(expected, action))
+        return expected == action;
     // The existing input worker executes this within its next 10-ms poll.
     // No extra task/stack allocation and no UI-thread save/detach deadlock.
     return true;
@@ -1262,6 +1307,34 @@ void EspMosaicoHardware::PerformPowerAction() {
         ESP_LOGE(kTag, "Power action cancelled: expansion resource cleanup failed");
         power_action_ = -1; power_menu_pending_ = true; wake_pending_ = true;
         return;
+    }
+    if (power_action_.load() == kUsbDownloadAction) {
+        // GPIO60 is both the active-low expansion power control and a ROM
+        // download strap. Quiesce expansion I/O before changing its level.
+        if (ConfigureOutput(mosaico_board::kPeripheralPower, 1) != ESP_OK) {
+            ESP_LOGE(kTag, "USB download cancelled: GPIO60 unavailable");
+            power_action_ = -1; power_menu_pending_ = true; wake_pending_ = true;
+            return;
+        }
+        if (!QuiesceDisplayForRestart()) {
+            ESP_LOGE(kTag, "USB download cancelled: display DMA is still active");
+            power_action_ = -1; power_menu_pending_ = true; wake_pending_ = true;
+            return;
+        }
+        (void)ConfigureOutput(mosaico_board::kDisplayData0, 1);
+        audio_.StopForShutdown();
+        (void)EspMosaicoVibrate(0);
+        // Keep the CDC task running until the control transfer has completed.
+        vTaskDelay(pdMS_TO_TICKS(150));
+        esp_sys_event_trigger(ESP_SYS_EVENT_SHUTDOWN, nullptr);
+        pxadb::Stop();
+        (void)tinyusb_driver_uninstall();
+        vTaskDelay(pdMS_TO_TICKS(100));
+        // The ROM needs a reset OTG controller and live UTMI clocks after
+        // TinyUSB releases its PHY. Finish IDF's CPU/cache cleanup first.
+        usb_utmi_ll_enable_bus_clock(true);
+        usb_utmi_ll_reset_register();
+        EspMosaicoRestartToUsbDownload();
     }
     audio_.StopForShutdown();
     (void)EspMosaicoVibrate(0);

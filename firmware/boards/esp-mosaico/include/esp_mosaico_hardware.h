@@ -62,7 +62,9 @@ private:
     bool InitializeWifi();
     void UpdateInteractivity();
     void ProcessControls();
-    bool RequestPowerAction(pxsys_reference_power_action_t action);
+    static constexpr int8_t kUsbDownloadAction = 2;
+    bool RequestPowerAction(int8_t action);
+    bool QuiesceDisplayForRestart();
     void PerformPowerAction();
     void PollBattery(uint32_t now_ms);
     bool ApplyBrightness();

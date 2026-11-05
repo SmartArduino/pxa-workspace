@@ -587,13 +587,34 @@ HTTP 403. This machine builds successfully using its validated Component Manager
 cache. API fallback fixes version resolution; downloading with an empty cache
 still requires the public archive to become available.
 
-If the device already runs this firmware, fully power it off, hold BOOT, power
-it on again, then release BOOT after USB enumerates. A battery-powered board
-does not power off just because its USB cable is unplugged. Stop serial monitors
-and check the port again after entering download mode; its ttyACM number can
-change. This USB CDC implementation does not implement esptool's automatic
-download-reset sequence, so this board defaults to `--before=no-reset` to keep
-the manually established download-mode connection intact.
+The application enumerates as `ESP-Mosaico` with its Wi-Fi MAC as the USB serial
+number. A 1200-baud CDC connection followed by a DTR falling edge requests ROM
+download mode. The input worker runs the existing application save and expansion
+cleanup sequence, drives the GPIO60 download strap high, sets
+GPIO36 high after draining and releasing QSPI display I/O, then notifies IDF
+shutdown users, stops PXADB and uninstalls TinyUSB. It restores and resets the
+UTMI hardware before completing IDF's CPU/cache/clock restart cleanup. At the
+last local CPU reset, a board-scoped hook sets `LP_SYSTEM_REG_FORCE_DOWNLOAD_BOOT`
+and invokes the ROM system reset so the downloader receives fresh USB state.
+Normal 115200-baud monitoring can open and close the connection safely.
+
+The board integrates `tools/mosaico_esptool.py` through `ESPTOOL_WRAPPER`.
+`flash`, `app-flash`, `bootloader-flash` and `partition-table-flash` request the
+CDC restart, wait for the same MAC's `ESP32-S31` ROM port, and connect using
+`--before no-reset`. The ttyACM number may change during this transition. Specify
+`--port` when several S31 devices are connected and stop serial monitors first.
+An existing `ESPTOOL_WRAPPER` takes precedence and must integrate this sequence
+itself. Existing saved configurations need
+`CONFIG_ESPTOOLPY_BEFORE_RESET=y` (Serial flasher config → Before flashing →
+Reset to bootloader) to enable the automatic path. Explicit `--before no-reset`
+keeps the manual connection workflow.
+
+For the first installation, older firmware, or an application that cannot finish
+board initialization, fully power the device off, hold BOOT, power it on again,
+then release BOOT after USB enumerates. A battery-powered board does not power
+off just because its USB cable is unplugged. Check the port again after entering
+download mode. The wrapper connects directly when the selected port already
+belongs to the ROM downloader.
 
 On Linux, `tools/firmware.sh` holds the native device's usbfs node read-only
 before waiting for the build lock and running CMake/Ninja. This keeps runtime

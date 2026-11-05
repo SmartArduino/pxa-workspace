@@ -3,6 +3,7 @@ idf_component_register(
         "src/esp_mosaico_board_port.cc"
         "src/esp_mosaico_diagnostics.cc"
         "src/esp_mosaico_hardware.cc"
+        "src/esp_mosaico_usb_restart.cc"
         "src/esp_mosaico_audio.cc"
         "src/esp_mosaico_storage.cc"
         "src/esp_mosaico_sensors.cc"
@@ -32,6 +33,9 @@ idf_component_register(
         esp_lcd
         esp_netif
         esp_timer
+        esp_hal_usb
+        esp_hw_support
+        esp_rom
         espressif__button
         espressif__esp_codec_dev
         espressif__esp_lcd_co5300
@@ -47,6 +51,9 @@ idf_component_register(
         pxa_system_reference_ui
         pxa_system_standard
         pxadb)
+
+target_link_options(${COMPONENT_LIB} INTERFACE
+    "-Wl,--wrap=esp_cpu_reset" "-Wl,--undefined=__wrap_esp_cpu_reset")
 
 if(TARGET lvgl_docoder_lib)
     target_compile_definitions(lvgl_docoder_lib PRIVATE ESP_LV_ENABLE_HW_JPEG=0)

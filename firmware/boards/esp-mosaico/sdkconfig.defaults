@@ -1,8 +1,8 @@
 CONFIG_IDF_TARGET_ESP32S31=y
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
-# Native USB CDC has no hardware RTS/DTR auto-download wiring. Enter ROM
-# download mode with BOOT before flashing, and keep that USB session intact.
-CONFIG_ESPTOOLPY_BEFORE_NORESET=y
+# The board esptool wrapper requests a 1200-baud CDC restart, then connects
+# to the same MAC's ROM USB port with no-reset after re-enumeration.
+CONFIG_ESPTOOLPY_BEFORE_RESET=y
 # Native USB-OTG on rev0 has failed during stub writes. Use the verified ROM
 # path by default. External UART users may enable the stub in menuconfig.
 CONFIG_ESPTOOLPY_NO_STUB=y

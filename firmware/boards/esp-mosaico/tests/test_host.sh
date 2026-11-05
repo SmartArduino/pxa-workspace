@@ -6,6 +6,13 @@ project_dir="$(cd "$tests_dir/../../../.." && pwd)"
 build_dir=${PXA_TEST_ARTIFACT_DIR:-"$project_dir/local/artifacts/mosaico-host/$(date +%Y%m%d-%H%M%S)"}
 mkdir -p "$build_dir"
 
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
+  -I"$tests_dir/../include" \
+  "$tests_dir/usb_download_trigger_test.cc" -o "$build_dir/usb_download_trigger_test"
+"$build_dir/usb_download_trigger_test"
+python3 "$tests_dir/power_action_test.py" "$build_dir"
+TMPDIR="$build_dir" python3 "$tests_dir/test_usb_restart.py"
+
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -Wno-missing-field-initializers \
   -fsanitize=address,undefined -fno-omit-frame-pointer -g \
   -I"$tests_dir/stubs" -I"$tests_dir/../include" \
