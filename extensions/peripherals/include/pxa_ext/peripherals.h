@@ -2,6 +2,7 @@
 #ifndef PXA_EXT_PERIPHERALS_H
 #define PXA_EXT_PERIPHERALS_H
 #include <pxa/permission.h>
+#include <pxa/assets.h>
 #include <stddef.h>
 #include "peripherals_protocol.h"
 #ifdef __cplusplus
@@ -18,6 +19,11 @@ typedef struct {
     uint32_t serial_number;
     char name[32];
 } pxa_peripheral_module_t;
+typedef struct {
+    uint32_t id;
+    uint16_t encoding, width, height, quality;
+    uint32_t max_frame_bytes, period_us, flags;
+} pxa_camera_profile_t;
 typedef struct {
     uint32_t struct_size;
     void *context;
@@ -42,13 +48,23 @@ typedef struct {
      * never do device I/O. close cancels preparation and retains native state
      * until the worker has finished. Omit for synchronous backends. */
     pxa_status_t (*ready)(void *, void *device);
+    /* Cached capabilities only. IDs are stable, board-owned OPEN parameters.
+     * Zero selects the default. Unknown IDs fail without native side effects. */
+    pxa_status_t (*camera_profiles)(void *, uint16_t port, pxa_camera_profile_t *,
+                                   size_t capacity, size_t *count);
+    /* Nonblocking, optional. Transfers one immutable, budgeted IMAGE reference
+     * on OK. WOULD_BLOCK queues native work. close cancels any queued result. */
+    pxa_status_t (*camera_preview)(void *, void *device, pxa_raster_asset_t **);
 } pxa_peripherals_backend_t;
 #define PXA_PERIPHERALS_BACKEND_BASE_SIZE offsetof(pxa_peripherals_backend_t, ready)
+#define PXA_PERIPHERALS_BACKEND_READY_SIZE offsetof(pxa_peripherals_backend_t, camera_profiles)
+#define PXA_PERIPHERALS_BACKEND_PROFILES_SIZE offsetof(pxa_peripherals_backend_t, camera_preview)
 typedef struct pxa_peripherals_service pxa_peripherals_service_t;
 size_t pxa_peripherals_service_workspace_size(void);
 pxa_status_t pxa_peripherals_service_init(void *, size_t, pxa_runtime_t *,
     pxa_permission_service_t *, const pxa_peripherals_backend_t *, pxa_peripherals_service_t **);
 pxa_status_t pxa_peripherals_service_register(pxa_peripherals_service_t *);
+void pxa_peripherals_service_set_assets(pxa_peripherals_service_t *, pxa_assets_service_t *);
 void pxa_peripherals_service_set_foreground(pxa_peripherals_service_t *, pxa_component_t);
 int pxa_peripherals_service_pending(const pxa_peripherals_service_t *);
 void pxa_peripherals_service_poll(pxa_peripherals_service_t *);

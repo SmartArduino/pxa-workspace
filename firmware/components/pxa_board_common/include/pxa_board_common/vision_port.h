@@ -12,5 +12,13 @@ struct PxaBoardVisionDriver {
     pxa_status_t (*prepare)(void*, uint16_t format);
     pxa_status_t (*read)(void*, uint8_t*, size_t capacity, size_t* size);
     void (*finish)(void*);
+    const pxa_camera_profile_t* profiles = nullptr;
+    size_t profile_count = 0;
+    pxa_status_t (*prepare_profile)(void*, const pxa_camera_profile_t&) = nullptr;
+    // Optional worker-only preview producer. Its immutable, budgeted result
+    // is published as a Core IMAGE. Such drivers capture only on demand.
+    pxa_status_t (*preview)(void*, pxa_raster_asset_t**) = nullptr;
+    // JPEG-only cameras can decode the already captured bytes on this worker.
+    pxa_status_t (*preview_jpeg)(void*, const uint8_t*, size_t, pxa_raster_asset_t**) = nullptr;
 };
 bool pxa_board_vision_port_initialize(const PxaBoardVisionDriver*);

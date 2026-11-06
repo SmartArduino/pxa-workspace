@@ -15,7 +15,9 @@
 
 namespace {
 constexpr size_t kFrameSamples = 320;
-constexpr unsigned kPacketCount = 4;
+// Cover bounded storage stalls while a recorder drains encoded packets.
+// Memory remains fixed, and closing a generation discards its backlog.
+constexpr unsigned kPacketCount = 64;
 // The native Opus encoder uses a deep stack even at complexity zero. Keep it
 // on budgeted PSRAM rather than consuming the Host's internal SRAM stack.
 constexpr size_t kStackBytes = 65536;

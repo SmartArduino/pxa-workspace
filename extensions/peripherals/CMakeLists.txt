@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 cmake_minimum_required(VERSION 3.20)
-project(pxa_peripherals VERSION 0.3.0 LANGUAGES C CXX)
+project(pxa_peripherals VERSION 0.7.0 LANGUAGES C CXX)
 set(PXA_SYSTEM_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../deps/pxa-system" CACHE PATH "PXA Host/Guest SDK checkout")
 if(NOT TARGET pxa)
     add_subdirectory("${PXA_SYSTEM_ROOT}/libpxa" "${CMAKE_CURRENT_BINARY_DIR}/libpxa")

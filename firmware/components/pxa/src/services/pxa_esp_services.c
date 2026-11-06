@@ -1126,8 +1126,10 @@ static pxa_status_t register_services(
                  "register-sensor-service");
     PXA_REGISTER(pxa_haptics_service_register(services->haptics), "register-haptics-service");
 #if PXA_ENABLE_PERIPHERALS
-    if (services->peripherals)
+    if (services->peripherals) {
+        pxa_peripherals_service_set_assets(services->peripherals, services->assets);
         PXA_REGISTER(pxa_peripherals_service_register(services->peripherals), "register-peripherals");
+    }
 #endif
     PXA_REGISTER(pxa_device_service_register(services->device),
                  "register-device-service");

@@ -24,6 +24,7 @@
 #include <cstring>
 #include <inttypes.h>
 #include <new>
+#include "pai_touch_display_dma.h"
 
 namespace zuowei_pai_touch {
 
@@ -1164,13 +1165,23 @@ private:
             const uint32_t send_started_us =
                 static_cast<uint32_t>(esp_timer_get_time());
             context->submitted_frames.fetch_add(1, std::memory_order_relaxed);
-            const esp_err_t result = esp_lcd_panel_draw_bitmap(
-                context->panel, 0, 0, context->native_width,
-                context->native_height, context->outputs[buffer_index]);
-
-            // Even a failed draw may have queued earlier chunks. Drain both
-            // success and error paths before returning this buffer to free_queue.
-            DrainColorTransfers(context);
+            esp_err_t result = ESP_FAIL;
+            for (unsigned attempt = 0; attempt < 3; ++attempt) {
+                const auto before = PaiTouchDisplayDmaFaults();
+                result = esp_lcd_panel_draw_bitmap(
+                    context->panel, 0, 0, context->native_width,
+                    context->native_height, context->outputs[buffer_index]);
+                // A reported DMA failure still returns a completed descriptor.
+                // Drain all queued chunks before replaying or recycling pixels.
+                DrainColorTransfers(context);
+                if (PaiTouchDisplayDmaFaults() != before) result = ESP_ERR_INVALID_STATE;
+                if (result == ESP_OK) break;
+                ESP_LOGW(kTag, "LCD frame retry=%u error=%s dma_faults=%lu staged=%u",
+                    attempt + 1, esp_err_to_name(result),
+                    static_cast<unsigned long>(PaiTouchDisplayDmaFaults()),
+                    unsigned(PaiTouchDisplayDmaUsesStaging()));
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
             if (result == ESP_OK) {
                 const uint64_t completed_us =
                     static_cast<uint64_t>(esp_timer_get_time());

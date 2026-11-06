@@ -22,7 +22,7 @@ static pxa_status_t FakePoll(void* c, void* d, uint64_t cookie, uint8_t*, size_t
 static void FakeCancel(void* c, void* d, uint64_t cookie) { assert(c == d && cookie == 42); ++static_cast<Fake*>(c)->cancels; }
 static void FakeClose(void* c, void* d) { assert(c == d); ++static_cast<Fake*>(c)->closes; }
 int main() {
-    pxa_peripherals_backend_t a{sizeof(a), &first, FakeList, FakeModule, FakeOpen, FakeIo, FakeStart, FakePoll, FakeCancel, FakeClose, nullptr};
+    pxa_peripherals_backend_t a{sizeof(a), &first, FakeList, FakeModule, FakeOpen, FakeIo, FakeStart, FakePoll, FakeCancel, FakeClose, nullptr, nullptr, nullptr};
     auto b = a; b.context = &second; b.ready = FakeReady;
     assert(pxa_board_add_peripheral_backend(&a));
     assert(!pxa_board_add_peripheral_backend(&a)); // Duplicate IDs/scopes rejected before publication.

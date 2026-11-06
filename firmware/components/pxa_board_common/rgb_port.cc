@@ -111,7 +111,7 @@ bool Initialize(void* context, bool (*apply)(void*, unsigned, unsigned, unsigned
     if (!state.task) return false;
     const pxa_peripherals_backend_t backend = {
         sizeof(pxa_peripherals_backend_t), nullptr, List, Module, Open, Io,
-        Start, Poll, Cancel, Close, nullptr,
+        Start, Poll, Cancel, Close, nullptr, nullptr, nullptr,
     };
     return pxa_board_add_peripheral_backend(&backend);
 }

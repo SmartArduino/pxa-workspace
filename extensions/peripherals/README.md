@@ -1,4 +1,4 @@
-# PXA peripherals extension 0.3
+# PXA peripherals extension 0.7
 
 `org.doit.peripherals` provides logical GPIO, I²C, UART and module-slot discovery.
 It is optional and separate from standard Sensor, Audio, Storage and Haptics.
@@ -8,7 +8,7 @@ including `sdk/Peripherals.cmake`. Host builds use `pxa_peripherals`.
 Service/resource ID 33026 is allocated in this workspace's extension registry;
 identity is UUID `26531fa8-55a1-446a-b917-316c58b06582`. Always start with
 `co_await pxa::ext::peripherals::open(ctx)`: HELLO verifies this identity and
-negotiates 0.1–0.3. RGB ports require 0.2 and vision streams require 0.3. The Host still accepts 0.1 clients,
+negotiates 0.1–0.7. RGB ports require 0.2 and vision streams require 0.3. The Host still accepts 0.1 clients,
 hiding RGB ports from LIST and rejecting their OPEN attempts, while GPIO/I²C/
 UART/slot behavior stays compatible. Clients limited to 0.2 cannot list or open
 vision ports. Version ranges compare (major, minor) lexicographically;
@@ -26,6 +26,10 @@ with i32 status; failures contain only status. Sizes below exclude that status.
 | 3 MODULE_INFO | slot-port u16 | generation u32, flags u32, type/id/hardware-version/vendor u16 each, serial u32, name[32] |
 | 4 OPEN | port u16, mode u16, parameter u32, address u16, reserved u16=0, permission u64 | handle u64 |
 | 5 TRANSFER | handle u64, tx-size/rx-size u16 each, tx bytes | rx bytes |
+| 6 FRAME_STREAM (0.4) | camera-port handle u64 | finite Core STREAM handle u64 |
+| 7 CAMERA_PROFILES (0.5) | camera-port ID u16 | count u16, profile records |
+| 8 JPEG_FILE_FRAME (0.6) | FILE u64, offset u64, length u32, first-cookie u64 | finite STREAM u64 |
+| 9 CAMERA_PREVIEW (0.7) | camera-port handle u64 | IMAGE handle u64, Assets descriptor (20 bytes) |
 
 A port record is id u16, kind u16, flags u32, name-length u16, then 1–31 ASCII
 name bytes. Names are canonical permission scopes. At most 32 ports are returned.
@@ -131,12 +135,56 @@ reservation until bounded in-flight I/O and cleanup finish. Frame and transport
 buffers use the shared device memory budget. Applications must also release
 their own buffers and ports when backgrounded.
 
-The `examples/camera` app requests access only after a button press. It saves a
-complete frame atomically as `snapshot.jpg` or `inference.json` in app-private
-files, and releases capture before writing. It never uploads images or installs
-models. Retrieve the file with the normal PXADB app-data tools. The last complete
-capture survives a failed subsequent capture; leftover `capture.tmp` is replaced
-on the next attempt.
+## Camera profiles (0.5)
+
+`Client::camera_profiles(port, output)` queries cached Host capabilities without
+starting the sensor. A profile record is exactly 24 little-endian bytes, ordered
+as ID u32, encoding/width/height/quality u16 each, max-frame-bytes/period-us/flags
+u32 each. At most 16 unique nonzero IDs are returned, with exactly one default.
+Encoding is currently JPEG=1. Quality zero means native or unspecified. Period
+zero means unspecified, otherwise it is a suggested sampling interval in
+microseconds, without a guaranteed frame rate. Flags are default=1 and
+native-size=2. Native-size profiles may report width=height=0, meaning that the
+sensor coprocessor chooses its current dimensions. Read the actual JPEG size.
+
+Pass the selected ID as OPEN's parameter. Zero keeps the existing default
+behavior. Nonzero camera parameters require negotiation of 0.5. Unknown IDs
+fail before native setup. Change a profile by closing all frame resources and
+the port, then reopening. Busy can persist briefly while the old worker releases
+its buffers. Resource exhaustion is reported by OPEN, never silently replaced
+with a lower resolution. No sensor registers or board GPIO appear in the App.
+
+Profiles describe the format delivered to applications. A sensor's RGB565 or YUV input
+can be encoded by its Host to JPEG. The API reports that delivered JPEG format.
+PAI Touch currently offers three JPEG dimensions/quality combinations. Watcher
+exposes its native Himax JPEG configuration without claiming arbitrary sensor
+reconfiguration. Other encodings need an explicitly negotiated extension version
+and an implementation on the selected board.
+
+## JPEG frame resources (0.4)
+
+`Client::frame(port)` borrows one complete JPEG from an open `camera.jpeg`
+port. The returned move-only `FrameStream` is a standard readable Core STREAM
+resource. Pass it to `ctx.assets().decode_image(std::move(frame), options)` to
+keep encoded data and decoded pixels on the Host. Its READ strips the PXVF
+header, returns the finite payload, and then EOF. WouldBlock preserves partial
+header and payload progress. A port allows one frame resource at a time.
+Raw port reads return Busy until that resource closes.
+
+The frame inherits the camera permission and component ownership. Revocation,
+backgrounding and component teardown close both resources. Closing a fully
+consumed frame leaves the camera open for the next frame. Closing an incomplete
+or malformed frame also closes its parent port because its byte position cannot
+be reused safely. Reset and reopen the port before retrying. This operation is
+unsupported when negotiation selected a minor version below 4.
+
+The `examples/camera` app requests access after a Preview or Photograph button
+press. Preview fits the source aspect ratio inside the display safe area and
+keeps a single retained Host image. Photograph writes `capture.tmp`, closes it,
+and atomically renames it to the next unused `photo-000001.jpg` style filename
+in app-private storage. Existing photographs survive restarts and failed saves.
+Preview does not write files. Stop or backgrounding releases the camera session.
+Retrieve photographs with normal PXADB app-data tools.
 
 ```sh
 tools/app.sh build camera --source-root extensions/peripherals/examples --target all
@@ -155,3 +203,71 @@ back partially initialized devices; a successful `open` must return a device.
 The implementation is Apache-2.0 and adds no third-party dependency. Module
 EEPROM format and board pin assignments follow Espressif's
 [ESP-MOSAICO BSP](https://github.com/esp-mosaico/esp-mosaico-bsp/tree/7cbfb390638dcb93522fc3cde094b2d43cf907c2).
+
+## File-backed JPEG frames (0.6)
+
+`JPEG_FILE_FRAME` (opcode 8) takes an owned Core FILE handle (u64), byte offset
+(u64), length (u32, 1–262144) and first ReadAt cookie (u64). The reply contains one finite Core STREAM
+handle (u64). It reads only that range with cursor-preserving ReadAt, using a
+1024-byte Host cache. This allows Host image decode of MJPEG AVI frames without
+a Guest JPEG decoder or a whole-video allocation. The caller must validate its
+container and frame bounds.
+
+The foreground component must own the parent FILE. Every read, including cached
+bytes, revalidates parent ownership and generation. Closing the frame cancels a
+pending ReadAt but keeps the parent file open. Parent closure, permission
+revocation or foreground loss terminates access. The stream has no independent
+file authority. The C++ entry point is `Client::file_frame(file, offset, bytes, next_cookie)`.
+
+The caller owns one monotonically increasing ReadAt cookie counter per file.
+The SDK reserves `length` cookies before opening a slice, enough even for
+one-byte short reads, so subsequent caller reads remain newer than Host reads.
+Read operations on the same file must be serialized. WouldBlock retries reuse
+the pending cookie and preserve the request. Cookie ranges must not wrap.
+
+## Native preview images (0.7)
+
+`Client::preview(port)` returns one immutable Core IMAGE. Native acquisition
+runs on its worker and the Host completes the pending Core request when ready.
+Hosts may also return WouldBlock, which older clients handle by yielding before
+retrying. Each camera allows one pending preview. JPEG streams and raw port
+reads return Busy until that preview completes. Unsupported boards may fall
+back to JPEG FrameStream decoding. This operation requires the same live,
+foreground camera permission as JPEG reads and returns Busy while a JPEG stream
+is open. The SDK owns and validates the image handle before exposing its pixels
+through Canvas. No native pointer or raw pixels enter Guest memory.
+
+The current preview contract uses RGB565 or BGRA8888 (straight or premultiplied alpha), at most320×320 pixels. VGA capture may
+produce a smaller preview while photos and video keep the selected profile.
+The Host wires the Assets service with `pxa_peripherals_service_set_assets`.
+Native producers allocate through a bounded Host resource allocator and publish
+via the Host-only `pxa_assets_publish_image` bridge. Asset ownership and resource
+limits follow ordinary decoded images. A prepared image remains valid after its
+camera session closes, until the last image or submitted-frame reference drops.
+Pending native results are released on close or backgrounding.
+
+PAI Touch uses one sensor framebuffer. After copying an immutable preview, it
+returns that buffer so acquisition can overlap app/UI work. WHEN_EMPTY parks
+DMA once the next frame is queued, bounding prefetch to one frame. The app pauses the camera before writing Flash. A JPEG capture and its following preview
+share that raw frame, so recording needs one acquisition and one JPEG encode per
+video frame. GC2145 supplies YUYV422 directly to the JPEG encoder. Native preview
+converts that frame to an immutable RGB565 image using full-range BT.601, sharing
+chroma calculations between adjacent pixels. There is no JPEG round trip in this
+preview path.
+
+Watcher decodes its cached Himax JPEG on the native worker. Recording preview
+reuses those bytes directly, without rereading the file being recorded.
+Korvo uses the OV3660 hardware JPEG encoder with 320×240 and optional640×480
+profiles. Both JPEG cameras use `PxaBoardVisionPreviewJpeg` for the same bounded
+native decoder, allocation limits and immutable RGB565 ownership.
+
+After a session first requests preview, the native worker prepares the image
+as soon as each JPEG is published. Guest JPEG reads overlap preview conversion
+or decoding. At most one image is retained, and the next JPEG request releases
+an unused image. JPEG-only sessions keep their on-demand allocation behavior.
+Worker completions wake the Host owner through `pxa_host_io_notify`, so result
+delivery can proceed immediately. The worker never calls Guest code.
+
+Finite JPEG STREAM reads coalesce up to4096 bytes per Core call, with at most16
+native transfers. Individual peripheral transfers remain bounded to256 bytes.
+Short reads and WouldBlock retain their usual stream semantics.

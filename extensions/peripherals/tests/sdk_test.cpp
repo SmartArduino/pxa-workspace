@@ -13,6 +13,9 @@ static uint16_t selected_minor = PXA_PERIPHERALS_MINOR;
 static pxa::Permission permission;
 static ports::Port port;
 static pxa::HapticsActuator motor;
+static std::array<ports::PortInfo, 2> listed;
+static std::array<ports::CameraProfile, 2> camera_profiles;
+static ports::PortInfo camera_info;
 extern "C" std::int32_t pxa_test_control(const std::uint8_t* data, std::uint32_t size) {
     const auto* p = reinterpret_cast<const std::byte*>(data);
     service = pxa::wire::get16(p); opcode = pxa::wire::get16(p+2); token = pxa::wire::get64(p+4);
@@ -28,17 +31,50 @@ extern "C" std::int32_t pxa_test_control(const std::uint8_t* data, std::uint32_t
     return 0;
 }
 extern "C" std::int32_t pxa_io(std::uint64_t handle, std::uint32_t op, std::uint8_t* data, std::uint32_t size) {
+    if (handle == UINT64_C(0x100000007)) { assert(op == 1 && size == 1); data[0] = 77; return 1; }
     assert(handle == UINT64_C(0x100000006));
     if (size == 3) { assert(op == 2 && data[0] == 7 && data[1] == 17 && data[2] == 255); return 3; }
     assert(size == 1);
     if (op == 1) data[0] = 1; else assert(op == 2 && data[0] == 1);
     return 1;
 }
+static pxa::Task<void> check_profiles(ports::Client client) {
+    if (selected_minor >= 5) {
+        camera_info = listed[0]; camera_info.kind = PXA_PERIPHERALS_VISION;
+        std::strcpy(camera_info.name.data(), "camera.jpeg");
+        auto n = co_await client.camera_profiles(camera_info, camera_profiles);
+        assert(n && *n == 1 && camera_profiles[0].id == 2 && camera_profiles[0].width == 320 && camera_profiles[0].height == 240 && camera_profiles[0].is_default());
+    }
+    co_return pxa::Result<void>{};
+}
+static pxa::Task<void> check_frame(ports::Client client) {
+    std::array<std::byte, 1> value{};
+    if (selected_minor >= 4) {
+        auto frame = co_await client.frame(port); assert(frame);
+        assert(frame->readable().type == 2 && frame->readable().transport == &context->transport());
+        auto read = frame->read(value); assert(read && *read == 1 && value[0] == std::byte{77});
+        assert(frame->close());
+    } else {
+        auto frame = co_await client.frame(port); assert(!frame && frame.error() == pxa::Error::unsupported);
+    }
+    co_return pxa::Result<void>{};
+}
+static pxa::Task<void> check_preview(ports::Client client) {
+    if (selected_minor>=7) {
+        auto image=co_await client.preview(port);
+        assert(image && image->descriptor().width==320 && image->descriptor().height==240);
+        assert(image->descriptor().encoding==2 && image->close());
+    } else {
+        auto image=co_await client.preview(port);
+        assert(!image && image.error()==pxa::Error::unsupported);
+    }
+    co_return pxa::Result<void>{};
+}
 static pxa::Task<void> run() {
     auto client = co_await ports::open(*context); assert(client && client->version_minor() == selected_minor);
-    std::array<ports::PortInfo, 2> listed;
     auto count = co_await client->list(listed);
     assert(count && *count == 1 && listed[0].scope() == "expansion.i2c");
+    assert(co_await check_profiles(*client));
     auto opened = co_await client->open_port(listed[0], 3, 100000, 0x20, permission);
     assert(opened); port = std::move(*opened);
     std::array<std::byte, 1> tx{std::byte{42}};
@@ -48,6 +84,8 @@ static pxa::Task<void> run() {
     std::array<std::byte, 1> value{};
     assert(port.read(value) && value[0] == std::byte{1}); assert(port.write(value));
     auto color = port.rgb(7, 17, 255); assert(color && *color == 3);
+    assert(co_await check_frame(*client));
+    assert(co_await check_preview(*client));
     assert(port.close());
     auto caps = co_await context->haptics().capabilities(); assert(caps && caps->supported() && !caps->amplitude_control());
     auto actuator = co_await context->haptics().open(permission); assert(actuator); motor = std::move(*actuator);
@@ -81,15 +119,38 @@ int main(int argc, char**) {
     pxa::wire::put32(list.data()+6, 3); pxa::wire::put16(list.data()+10, 13);
     std::memcpy(list.data()+12, "expansion.i2c", 13);
     assert(opcode == 2); answer(list);
+    if (selected_minor >= 5) {
+        std::array<std::byte, 26> profiles{};
+        pxa::wire::put16(profiles.data(), 1); pxa::wire::put32(profiles.data()+2, 2);
+        pxa::wire::put16(profiles.data()+6, PXA_VISION_JPEG);
+        pxa::wire::put16(profiles.data()+8, 320); pxa::wire::put16(profiles.data()+10, 240);
+        pxa::wire::put16(profiles.data()+12, 75); pxa::wire::put32(profiles.data()+14, PXA_VISION_MAX_JPEG);
+        pxa::wire::put32(profiles.data()+22, PXA_CAMERA_PROFILE_DEFAULT);
+        assert(opcode == 7); answer(profiles);
+    }
     std::array<std::byte, 8> handle{}; pxa::wire::put64(handle.data(), UINT64_C(0x100000006));
     assert(opcode == 4); answer(handle);
     std::array<std::byte, 2> data{std::byte{10}, std::byte{20}};
     assert(opcode == 5); answer(data);
+    if (selected_minor >= 4) {
+        std::array<std::byte, 8> frame_handle{};
+        pxa::wire::put64(frame_handle.data(), UINT64_C(0x100000007));
+        assert(opcode == 6); answer(frame_handle);
+    }
+    if (selected_minor>=7) {
+        std::array<std::byte,28> image{};
+        pxa::wire::put64(image.data(),UINT64_C(0x100000008));
+        image[8]=std::byte{4}; image[9]=std::byte{2}; pxa::wire::put16(image.data()+10,1);
+        pxa::wire::put16(image.data()+12,320); pxa::wire::put16(image.data()+14,240);
+        pxa::wire::put32(image.data()+16,153600); pxa::wire::put32(image.data()+20,153600);
+        pxa::wire::put32(image.data()+24,153728);
+        assert(opcode==9); answer(image);
+    }
     std::array<std::byte, 8> caps{}; pxa::wire::put32(caps.data(), 1); pxa::wire::put32(caps.data()+4, 1000);
     assert(service == 23 && opcode == 1); answer(caps);
     assert(opcode == 2); answer(handle);
     assert(opcode == 3); answer({}); assert(opcode == 4); answer({});
-    assert(done && closes == 2);
+    assert(done && closes == (selected_minor >= 7 ? 4u : selected_minor >= 4 ? 3u : 2u));
     pxa_app_stop(0);
     puts("Peripherals and Haptics SDK: negotiation, resource ownership, request copies and wire encoding passed");
 }

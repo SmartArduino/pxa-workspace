@@ -113,15 +113,30 @@ XCLK=55, VSYNC=56 and HREF=57. SCCB shares board I²C0 (SDA0/SCL1).
 The CAM peripheral supplies 20 MHz XCLK before detection; the sensor driver
 does not configure a second LEDC clock. Initialization uses the Apache-2.0
 `esp_cam_sensor` 2.6.0 / `esp_sccb_intf` 1.0.0 components directly.
+After each JPEG format change, the board restores neutral brightness, contrast
+and saturation, automatic white balance and the driver's AE target (-2).
+The vendor QVGA/VGA tables otherwise apply brightness +2, saturation -2 and
+contrast +3. JPEG uses sensor quality 34 (quantization scale 7). These are sensor
+ISP settings applied once per session, without per-frame software color filters.
 
-`org.doit.peripherals` 0.3 exposes the read-only `camera.jpeg` port. Request its
-exact permission scope, open STREAM mode with zero parameter/address, and use
-`<pxa-ext/vision.hpp>` to consume JPEG frames (320×240). A worker owns setup,
+`org.doit.peripherals` 0.7 exposes the read-only `camera.jpeg` port. Request its
+exact permission scope and select a Host profile in STREAM mode. Profile 1 is
+320×240 JPEG (default), and profile 2 is 640×480 JPEG when
+`CONFIG_CAMERA_OV3660_DVP_JPEG_640X480_25FPS` is enabled. Both use the sensor's
+hardware JPEG encoder. A worker owns setup,
 capture and teardown; aligned double DMA buffers preserve the first complete
 image while stopping the controller. The driver waits at most three seconds
 per capture. Shared budget allocation failures, sensor detection failures and
 capture deadlines are reported to the application. Closing/backgrounding or
 revoking permission releases the physical session after in-flight work ends.
+
+Native preview decodes the captured JPEG into a bounded immutable RGB565 Core
+image, up to 320×320 pixels. JPEG reads overlap preview preparation, and video
+preview reuses the captured frame. The `local/pxa-apps/camera` application opens
+preview automatically and provides profile switching, photos, MJPEG/Opus MKV
+recording and a photo/video album. Fixed buffers stream into private storage,
+and frame timestamps preserve capture timing. Recording length depends on
+available storage. The audio capture queue absorbs bounded storage stalls.
 
 See `extensions/peripherals/examples/camera` for permission, frame reading and
 atomic private-file saving. Firmware does not assume every attached camera or

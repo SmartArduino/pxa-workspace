@@ -50,11 +50,11 @@ extern "C" void pxa_esp_audio_set_capture_source(void* ctx,uint16_t frame,pxa_st
     int32_t(*read)(void*,uint8_t*,size_t),void(*close)(void*)) {
     assert(frame==20); source=ctx; source_open=open; source_read=read; source_close=close;
 }
-QueueHandle_t xQueueCreateStatic(unsigned count,size_t bytes,uint8_t*,StaticQueue_t*) { assert(count==4); item_size=bytes; return &packets; }
+QueueHandle_t xQueueCreateStatic(unsigned count,size_t bytes,uint8_t*,StaticQueue_t*) { assert(count==64); item_size=bytes; return &packets; }
 void vQueueDelete(QueueHandle_t) { packets.clear(); }
 int xQueueSend(QueueHandle_t,const void* data,uint32_t timeout) {
     assert(!timeout); std::lock_guard<std::mutex> lock(queue_mutex);
-    if(packets.size()==4) return 0;
+    if(packets.size()==64) return 0;
     const auto* p=static_cast<const uint8_t*>(data); packets.emplace_back(p,p+item_size); return pdTRUE;
 }
 int xQueueReceive(QueueHandle_t,void* data,uint32_t timeout) {
@@ -114,9 +114,9 @@ int main(int argc,char** argv) {
     assert(source_read(source,data,sizeof(data))==PXA_STATUS_WOULD_BLOCK);
     reads_left=2;
     Wait([&]{return source_read(source,data,sizeof(data))==3;}); assert(data[0]==10 && enabled);
-    const int before=encoded; reads_left=20; Wait([&]{return encoded>=before+10;});
-    // A slow consumer retains at most four packets.
-    unsigned count=0; while(source_read(source,data,sizeof(data))==3) ++count; assert(count<=4 && count>=1);
+    const int before=encoded; reads_left=140; Wait([&]{return encoded>=before+70;});
+    // A slow consumer retains at most 64 packets across storage stalls.
+    unsigned count=0; while(source_read(source,data,sizeof(data))==3) ++count; assert(count<=64 && count>=1);
     block_read=true; Wait([]{return reading.load();});
     source_close(source); assert(source_open(source)==PXA_STATUS_OK);
     marker=20; reads_left=4; block_read=false;

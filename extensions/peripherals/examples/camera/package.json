@@ -1,10 +1,10 @@
 {
   "format": "pxa-package-source-0.1",
   "id": "pxa-ext-camera-example",
-  "version": "0.1.4",
-  "release_sequence": 5,
-  "name": "Board Camera Example",
-  "description": "Permission-controlled JPEG capture and optional native inference through workspace peripherals 0.3.",
+  "version": "0.2.0",
+  "release_sequence": 6,
+  "name": "相机",
+  "description": "摄像头实时预览与JPEG拍照，照片保存在应用私有文件中。",
   "min_sdk": [
     2,
     1
@@ -30,11 +30,6 @@
       "name": "org.doit.peripherals",
       "scope": "camera.jpeg",
       "required": false
-    },
-    {
-      "name": "org.doit.peripherals",
-      "scope": "vision.inference",
-      "required": false
     }
   ],
   "components": [
@@ -48,7 +43,8 @@
         "clock",
         "fs",
         "log",
-        "window"
+        "window",
+        "assets"
       ],
       "wasi": {
         "version": "preview1",

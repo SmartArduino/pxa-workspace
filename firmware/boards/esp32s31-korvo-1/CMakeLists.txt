@@ -9,6 +9,7 @@ idf_component_register(
         "src/esp32s31_korvo_1_vision.cc"
         "src/korvo_lvgl_accel.c"
     INCLUDE_DIRS "include"
+    PRIV_INCLUDE_DIRS "${PXSYS_ROOT}/libpxa/adapters/include"
     PRIV_REQUIRES
         78__esp-wifi-connect
         esp_adc

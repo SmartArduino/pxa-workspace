@@ -76,3 +76,34 @@ Wi-Fi 配网和 FreeType。跨板的 LVGL、LVGL port 与 LittleFS 依赖保留�
 
 component 在 `include/pxa_board.h` 中导出
 `pxa_board_register_selected()`；`main` 使用该稳定名称，而不包含 pai-touch 专用头文件。
+
+## GC2145 摄像头
+
+MZ42-DJJXJ-S3-6824 V3.0 摄像头通过 workspace 扩展 `camera.jpeg` 接入。
+应用获得该精确作用域的权限且处于前台时才能打开，关闭后释放驱动和缓冲区。
+SCCB 使用 I2C0、SDA0/SCL4，触摸控制器继续使用 I2C1。
+D0–D7 对应 GPIO13、15、16、14、12、10、9、7，XCLK8 在160×120与320×240时为32 MHz，VGA为16 MHz，
+PCLK11、HREF6、VSYNC5。摄像头采用 LEDC 定时器和通道2。
+
+Host提供160×120/Q55、320×240/Q75（默认）、640×480/Q75三档。
+各档位使用一个YUYV422 PSRAM缓冲区。预览转换到独立Core图像后归还缓冲区，
+让下一帧采集与应用、UI处理重叠；WHEN_EMPTY在下一帧排队完成后暂停DMA。
+应用在拍照和视频写入Flash前关闭摄像头，保存后自动恢复预览。复用系统已有的
+Espressif JPEG编码器，直接以传感器YUYV数据编码JPEG，省去编码阶段的RGB转换。采集先经过两个内部SRAM DMA
+节点，再按完整行复制到PSRAM，规避此板PSRAM直采的错行。小分辨率环形缓冲区
+为3840字节，VGA为2560字节。板级覆盖固定版本驱动的DMA尺寸计算，并保留其他格式的原实现。
+原生预览按全范围BT.601将YUYV转换为有预算限制的RGB565 Core IMAGE，跳过JPEG编解码。
+录像预览复用同一次JPEG采集的原始帧。相机应用位于 `local/pxa-apps/camera`，支持自动预览、画质切换、JPEG照片及MJPEG/Opus MKV相册。
+`PXA_PAI_CAMERA_DIAGNOSTIC` 默认0，正式固件保持0。
+
+## LCD DMA 错误恢复
+
+板级 SPI 适配会区分“已回收但 DMA 失败”与未完成事务。前者同步修正 LCD
+在途计数，并在所有 DMA 排空后重传整帧。累计两次欠载后改用启动时预留的
+两个1920字节 SRAM 槽，每槽只在对应事务回收后复用。LCD 的分块长度单独
+限制为1920字节，避免 IDF 按 DMA 描述符取整后超过槽容量。其他 SPI 设备
+保持原有路径。正常帧继续使用直接 PSRAM DMA。
+
+`PXA_PAI_DISPLAY_DMA_TEST_FAULTS` 是构建期故障注入开关，默认0。非零时仅在
+GC2145打开后的真实 LCD 事务完成处注入指定次数的欠载结果，用于恢复回归。
+正式固件必须保持0。

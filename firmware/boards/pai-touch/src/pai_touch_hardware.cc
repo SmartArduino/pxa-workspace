@@ -1,6 +1,8 @@
 #include "pai_touch_hardware.h"
 
 #include "pai_touch_config.h"
+#include "pai_touch_camera.h"
+#include "pai_touch_display_dma.h"
 #include <src/draw/lv_draw_buf_private.h>
 #include <src/misc/cache/instance/lv_image_cache.h>
 #include <src/misc/cache/instance/lv_image_header_cache.h>
@@ -200,6 +202,7 @@ bool PaiTouchHardware::Initialize() {
         nvs_close(performance_handle);
     }
     if (!InitializeTouch()) ESP_LOGW(kTag, "Continuing without touch input");
+    if (!PaiTouchInitializeCamera()) ESP_LOGW(kTag, "Camera port unavailable");
     if (!InitializeAdc()) return false;
     InitializeButtons();
     if (!InitializeWifi()) ESP_LOGW(kTag, "Continuing without Wi-Fi");
@@ -258,7 +261,10 @@ bool PaiTouchHardware::InitializeDisplay() {
     /* Rotation buffers live in aligned PSRAM. ESP32-S3 DMA can consume them
      * directly, avoiding two internal 1920-byte bounce buffers per frame. */
     io.flags.psram_dma_direct = true;
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(SPI2_HOST, &io, &panel_io_));
+    PaiTouchDisplayDmaBeginBinding(SPI2_HOST);
+    const auto io_result = esp_lcd_new_panel_io_spi(SPI2_HOST, &io, &panel_io_);
+    PaiTouchDisplayDmaEndBinding();
+    ESP_ERROR_CHECK(io_result);
 
     esp_lcd_panel_dev_config_t panel_config = {};
     panel_config.reset_gpio_num = PAI_LCD_RESET;

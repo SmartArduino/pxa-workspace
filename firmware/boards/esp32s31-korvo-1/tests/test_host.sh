@@ -8,3 +8,8 @@ trap 'rm -rf -- "$test_build"' EXIT
     -I"$tests_dir/../include" "$tests_dir/touch_state_test.cc" \
     -o "$test_build/touch_state_test"
 "$test_build/touch_state_test"
+"${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror \
+    -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+    -I"$tests_dir/../include" "$tests_dir/camera_buffer_test.cc" \
+    -o "$test_build/camera_buffer_test"
+"$test_build/camera_buffer_test"

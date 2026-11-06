@@ -35,6 +35,10 @@ pxa_status_t Module(void*, uint16_t port, pxa_peripheral_module_t* output) {
     const auto* p = Find(port);
     return p ? p->module(p->context, port, output) : PXA_STATUS_NOT_FOUND;
 }
+pxa_status_t CameraProfiles(void*, uint16_t port, pxa_camera_profile_t* output, size_t capacity, size_t* size) {
+    const auto* p = Find(port);
+    return p && p->camera_profiles ? p->camera_profiles(p->context, port, output, capacity, size) : PXA_STATUS_UNSUPPORTED;
+}
 pxa_status_t Open(void*, uint64_t owner, uint16_t port, uint16_t mode, uint32_t parameter, uint16_t address, void** output) {
     *output = nullptr;
     const auto* p = Find(port);
@@ -49,6 +53,12 @@ pxa_status_t Ready(void*, void* native) {
     auto* d = Get(native);
     if (!d || !d->native) return PXA_STATUS_PROTOCOL_ERROR;
     return d->provider->ready ? d->provider->ready(d->provider->context, d->native) : PXA_STATUS_OK;
+}
+pxa_status_t CameraPreview(void*, void* native, pxa_raster_asset_t** output) {
+    *output = nullptr;
+    auto* device = Get(native);
+    return device && device->native && device->provider->camera_preview ?
+        device->provider->camera_preview(device->provider->context, device->native, output) : PXA_STATUS_UNSUPPORTED;
 }
 int32_t Io(void*, void* native, uint32_t op, uint8_t* bytes, size_t size) {
     auto* d = Get(native);
@@ -89,9 +99,13 @@ bool pxa_board_add_peripheral_backend(const pxa_peripherals_backend_t* p) {
             if (added[a].id == ports[b].id || !std::strcmp(added[a].name, ports[b].name)) return false;
     }
     const pxa_peripherals_backend_t mux = {
-        sizeof(pxa_peripherals_backend_t), nullptr, List, Module, Open, Io, Start, Poll, Cancel, Close, Ready,
+        sizeof(pxa_peripherals_backend_t), nullptr, List, Module, Open, Io, Start, Poll, Cancel, Close, Ready, CameraProfiles, CameraPreview,
     };
     if (!count && !pxa_esp_peripherals_set_backend(&mux)) return false;
-    std::memcpy(&providers[count++], p, p->struct_size >= sizeof(*p) ? sizeof(*p) : PXA_PERIPHERALS_BACKEND_BASE_SIZE);
+    auto& provider = providers[count++];
+    std::memcpy(&provider, p, PXA_PERIPHERALS_BACKEND_BASE_SIZE);
+    if (p->struct_size >= PXA_PERIPHERALS_BACKEND_READY_SIZE) provider.ready = p->ready;
+    if (p->struct_size >= PXA_PERIPHERALS_BACKEND_PROFILES_SIZE) provider.camera_profiles = p->camera_profiles;
+    if (p->struct_size >= sizeof(*p)) provider.camera_preview = p->camera_preview;
     return true;
 }

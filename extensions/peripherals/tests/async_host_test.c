@@ -104,7 +104,7 @@ int main(void) {
     const pxa_permission_declaration_t declaration={
         {(const uint8_t *)PXA_PERIPHERALS_PERMISSION,sizeof(PXA_PERIPHERALS_PERMISSION)-1},
         {(const uint8_t *)"expansion.i2c",13},0};
-    const pxa_peripherals_backend_t backend={sizeof(backend),NULL,ports,module,open_device,io,start,poll,cancel,close_device,ready_device};
+    const pxa_peripherals_backend_t backend={PXA_PERIPHERALS_BACKEND_READY_SIZE,NULL,ports,module,open_device,io,start,poll,cancel,close_device,ready_device,NULL,NULL};
     pxa_runtime_limits_init(&limits); limits.max_services=3; limits.max_components=2;
     limits.max_requests=8; limits.max_requests_per_component=6; limits.max_handles=8;
     limits.max_events=16; limits.mailbox_capacity=8; limits.event_block_size=64; limits.event_block_count=128;

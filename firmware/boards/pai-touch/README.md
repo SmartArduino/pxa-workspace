@@ -92,3 +92,48 @@ continues to own the direct PXA frame and SPI DMA path.
 
 The component exports `pxa_board_register_selected()` in `include/pxa_board.h`;
 `main` uses that stable name rather than a pai-touch-specific header.
+
+## GC2145 camera
+
+The MZ42-DJJXJ-S3-6824 V3.0 GC2145 is exposed as the optional workspace
+`camera.jpeg` peripheral. Exact-scope permission and foreground ownership are
+required. The camera initializes on open and deinitializes on close.
+
+SCCB uses I2C0 on SDA0/SCL4, separate from the touch controller on I2C1.
+D0–D7 are GPIO13,15,16,14,12,10,9,7. XCLK is GPIO8 at 32 MHz for 160×120 and 320×240, and 16 MHz for VGA,
+PCLK11, HREF6 and VSYNC5. PWDN/reset have passive board wiring.
+LEDC timer/channel 2 leaves display brightness and shutdown indication available.
+
+Host profiles select 160×120/Q55, 320×240/Q75 (default), 640×480/Q75. Capture uses one YUYV422 PSRAM framebuffer. Preview returns it after copying the
+immutable Core image, overlapping the next acquisition with app/UI processing.
+WHEN_EMPTY parks DMA once that single queued frame is ready.
+The app closes the camera before writing photos or buffered video to Flash. The existing Espressif JPEG encoder runs in the shared
+vision worker with the sensor's YUYV input, avoiding an RGB conversion during
+JPEG encoding. The pinned esp32-camera 2.1.8 dependency uses its Apache-2.0
+and file-specific permissive licenses. Its public esp_jpeg dependency is
+Apache-2.0. esp_new_jpeg retains its Espressif product-use license.
+Two whole-row internal SRAM DMA nodes feed the PSRAM framebuffers. The ring
+uses 3840 bytes for smaller profiles and 2560 bytes for VGA, avoiding corrupted
+rows observed with direct PSRAM capture on this board. A board-local wrapper
+overrides DMA geometry in the pinned camera driver and delegates other formats
+to its original implementation. `PXA_PAI_CAMERA_DIAGNOSTIC` defaults to 0 and
+must remain 0 in production builds.
+Native preview converts full-range BT.601 YUYV into a bounded RGB565 Core IMAGE,
+bypassing JPEG encoding/decoding. Video preview reuses the last JPEG capture.
+The camera app is `local/pxa-apps/camera`, with automatic preview, profile
+selection, JPEG photos and a thumbnail album for photos and MJPEG/Opus MKV videos.
+
+## LCD DMA recovery
+
+The board SPI adapter distinguishes a completed/dequeued DMA error from an
+uncompleted transaction. It retires completed errors for LCD accounting, then
+retries the entire frame after draining all DMA. After two underruns it uses
+two reserved 1920-byte internal SRAM slots, retained until each corresponding
+transaction is dequeued. The LCD-only chunk cap accounts for IDF rounding the
+bus limit to a DMA descriptor. Other SPI devices retain their original path.
+Successful normal frames continue to use direct PSRAM DMA.
+
+The build-time `PXA_PAI_DISPLAY_DMA_TEST_FAULTS` defaults to 0. Nonzero test
+builds inject that many completed DMA errors after GC2145 opens. Production
+firmware must leave it at 0. The production camera app is
+`local/pxa-apps/camera`, with JPEG photos and sequential MJPEG AVI playback.

@@ -15,6 +15,7 @@ idf_component_register(
         "src/watcher_rgb565_swap.S"
         "src/watcher_spd2010_touch.c"
     INCLUDE_DIRS "include" "vendor/sscma-spi"
+    PRIV_INCLUDE_DIRS "${PXSYS_ROOT}/libpxa/adapters/include"
     PRIV_REQUIRES
         78__esp-wifi-connect
         esp_adc

@@ -32,5 +32,12 @@ mkdir -p "$out"
   -I"$tests/rgb_stubs" -I"$tests/../include" \
   -I"$root/firmware/components/pxa/include" \
   -I"$root/extensions/peripherals/include" -I"$root/deps/pxa-system/libpxa/include" \
-  "$tests/vision_port_test.cc" -o "$out/vision-test"
+  -DESP_PLATFORM "$tests/vision_port_test.cc" -o "$out/vision-test"
 "$out/vision-test"
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -g \
+  -fsanitize=address,undefined -fno-omit-frame-pointer \
+  -I"$tests/../include" -I"$root/firmware/components/pxa/include" \
+  -I"$root/extensions/peripherals/include" -I"$root/deps/pxa-system/libpxa/include" \
+  -I"$root/deps/pxa-system/libpxa/adapters/include" \
+  "$tests/vision_jpeg_preview_test.cc" -o "$out/vision-jpeg-test"
+"$out/vision-jpeg-test"

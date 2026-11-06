@@ -166,6 +166,6 @@ bool pxa_board_i2c_port_initialize(i2c_master_bus_handle_t bus, uint16_t port,
     state.task = xTaskCreateStatic(Worker, "pxa_ext_i2c", sizeof(state.stack), nullptr, 2, state.stack, &state.task_storage);
     if (!state.task) return false;
     const pxa_peripherals_backend_t backend = {sizeof(pxa_peripherals_backend_t), nullptr,
-        List, Module, Open, Io, Start, Poll, Cancel, Close, Ready};
+        List, Module, Open, Io, Start, Poll, Cancel, Close, Ready, nullptr, nullptr};
     return pxa_board_add_peripheral_backend(&backend);
 }
