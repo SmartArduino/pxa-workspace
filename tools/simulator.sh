@@ -290,6 +290,7 @@ configure() {
     -DCMAKE_BUILD_TYPE="$simulator_build_type" \
     -DPXSYS_LVGL_SOURCE_DIR="$simulator_lvgl_source" \
     -DPXSYS_DESKTOP_APP_SOURCE_ROOT="$(realpath -m -- "$app_root")" \
+    -DPXSYS_DESKTOP_HOST_EXTENSIONS_DIR="$project_root/simulator/peripherals" \
     "${launcher_cmake_args[@]}"
 }
 
