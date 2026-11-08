@@ -115,7 +115,8 @@ def main():
         entries = [line for line in path.read_text().splitlines()
                    if line.strip() and not line.startswith(('#', 'import '))
                    and not re.match(r'^[A-Za-z]:', line) and not line.startswith(('/', '\\'))]
-        path.write_text('\n'.join([*entries, '../../tools', 'import site']) + '\n')
+        path.write_text('\n'.join([*entries, '../../tools', '../../tools/package',
+                                   '../../tools/i18n', 'import site']) + '\n')
     copy(args.cmake / 'bin/cmake.exe', root / 'runtime/bin/cmake.exe')
     for directory in ('share', 'doc'):
         copy(args.cmake / directory, root / 'runtime' / directory, ignore=ignore)
