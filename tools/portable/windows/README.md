@@ -73,6 +73,8 @@ Linux 到 Windows 的交叉编译工具链为 `deps/pxa-system/cmake/windows-min
 
 `assemble.py` 接收已构建的模拟器、固定配方 wamrc、Windows WASI SDK 34、嵌入式 Python、CMake/Ninja、OpenSSL、审查过的 DLL 与许可目录，生成五个拆分组件、完整 ZIP 和签名 `distribution-windows-x86_64.json`。它按 PE 导入表递归收集 DLL，不打包 MSYS/Cygwin。源码必须已提交，输出目录必须为空。签名私钥通过 `--signing-key` 从工作区外传入。必须先验证原始依赖归档的官方摘要并保留版权声明，实际运行解压后的包，再上架；`--validation wine` 明确表示尚未完成原生 Windows 实机验收。
 
+打包前安装本目录 `requirements.txt` 中固定的 LIEF（Apache-2.0，仅用于构建）。打包器为未签名的 OpenSSL 合并 UTF-8 进程清单，使中文用户名和项目目录可用于签名；同时核对代码、入口、版本及版权资源保持一致。已带 Authenticode 签名且未启用 UTF-8 的 OpenSSL 会被拒绝，应提供自行构建并启用 UTF-8 的版本。
+
 下载 ZIP 后解压，将 `bin` 加入 PATH，可用 `pxa init hello` 与 `pxa run hello --offline`，无需安装 MSYS2 或编译 LLVM。包内 Python 负责普通 CLI；Agent Kit 使用其 uv 固定 Python 环境，并自动下载对应平台签名组件。
 
 Windows 工具链还需要微软 Visual C++ 2015–2022 x64 运行库；电脑未安装时，从 [微软官方下载](https://aka.ms/vs/17/release/vc_redist.x64.exe) 安装一次，再运行 setup。AI 会在下载原生开发包前检查并说明此项。发行包不会混入 Wine 的运行库实现。

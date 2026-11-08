@@ -1,0 +1,2 @@
+# Build-only PE resource editing; Apache-2.0, no transitive wheel dependencies.
+lief==1.0.0

@@ -8,6 +8,7 @@ Validate the resulting archive on Windows (or identify Wine-only validation).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+import xml.etree.ElementTree as ET
 
 WORKSPACE = Path(__file__).resolve().parents[3]
 SYSTEM = WORKSPACE / 'deps/pxa-system'
@@ -30,6 +32,71 @@ OS_DLLS = set(('kernel32 user32 gdi32 advapi32 shell32 ole32 oleaut32 uuid '
               'comdlg32 comctl32 winspool winhttp netapi32 userenv psapi '
               'dnsapi mswsock ncrypt cabinet wintrust authz dbghelp bcryptprimitives '
               'msvcp140 vcruntime140 vcruntime140_1 propsys msi').split())
+
+
+def enable_utf8_paths(path):
+    """Opt unsigned OpenSSL into Windows UTF-8 without changing executable code."""
+    import lief  # Apache-2.0, build-only; see requirements.txt.
+    binary = lief.PE.parse(str(path))
+    if binary is None or not binary.has_resources:
+        raise ValueError('OpenSSL must have a readable PE resource tree')
+    original = binary.resources_manager.manifest
+    document = ET.fromstring(original)
+    code_page = '{http://schemas.microsoft.com/SMI/2019/WindowsSettings}activeCodePage'
+    current = document.find('.//' + code_page)
+    if current is not None and current.text == 'UTF-8':
+        return
+    if len(binary.signatures):
+        raise ValueError('Do not rewrite Authenticode-signed OpenSSL; supply a UTF-8-enabled build')
+    namespace = '{urn:schemas-microsoft-com:asm.v3}'
+    application = document.find(namespace + 'application')
+    if application is None:
+        application = ET.SubElement(document, namespace + 'application')
+    settings = application.find(namespace + 'windowsSettings')
+    if settings is None:
+        settings = ET.SubElement(application, namespace + 'windowsSettings')
+    if current is None:
+        current = ET.SubElement(settings, code_page)
+    current.text = 'UTF-8'
+    ET.register_namespace('', 'urn:schemas-microsoft-com:asm.v1')
+    ET.register_namespace('asmv3', 'urn:schemas-microsoft-com:asm.v3')
+
+    def sections(pe):
+        return {s.name: (s.virtual_address, hashlib.sha256(bytes(s.content)).hexdigest())
+                for s in pe.sections if s.name != '.rsrc'}
+
+    def resources(pe):
+        result = {}
+        def visit(node, prefix):
+            name = str(node.name) if node.has_name else str(node.id)
+            name = prefix + '/' + name
+            if node.is_data:
+                result[name] = hashlib.sha256(bytes(node.content)).hexdigest()
+            else:
+                for child in node.childs:
+                    visit(child, name)
+        for child in pe.resources.childs:
+            if child.has_name or child.id != 24:
+                visit(child, '')
+        return result
+
+    original_sections, original_resources = sections(binary), resources(binary)
+    entry = binary.optional_header.addressof_entrypoint
+    binary.resources_manager.manifest = ET.tostring(document, encoding='unicode')
+    temporary = path.with_suffix('.utf8.exe')
+    binary.write(str(temporary))
+    try:
+        checked = lief.PE.parse(str(temporary))
+        if (checked is None or checked.optional_header.addressof_entrypoint != entry
+                or not all(sections(checked).get(name) == value for name, value in original_sections.items())
+                or resources(checked) != original_resources):
+            raise ValueError('OpenSSL executable code or non-manifest resources changed')
+        if ET.fromstring(checked.resources_manager.manifest).find('.//' + code_page).text != 'UTF-8':
+            raise ValueError('OpenSSL UTF-8 manifest was not preserved')
+        temporary.chmod(path.stat().st_mode)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def imports(path, objdump):
@@ -122,6 +189,7 @@ def main():
         copy(args.cmake / directory, root / 'runtime' / directory, ignore=ignore)
     copy(args.ninja, root / 'runtime/bin/ninja.exe')
     copy(args.openssl, root / 'runtime/bin/openssl.exe')
+    enable_utf8_paths(root / 'runtime/bin/openssl.exe')
     for name in ('pxsys_desktop_simulator', 'pxsys_product_simulator', 'pxsys_package_installer'):
         copy(args.simulator / (name + '.exe'), root / 'simulator/bin' / (name + '.exe'))
     copy(WORKSPACE / 'simulator/profiles', root / 'share/pxa/profiles')
