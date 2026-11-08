@@ -29,7 +29,7 @@ OS_DLLS = set(('kernel32 user32 gdi32 advapi32 shell32 ole32 oleaut32 uuid '
               'normaliz iphlpapi ntdll msvcrt ucrtbase powrprof cfgmgr32 '
               'comdlg32 comctl32 winspool winhttp netapi32 userenv psapi '
               'dnsapi mswsock ncrypt cabinet wintrust authz dbghelp bcryptprimitives '
-              'msvcp140 vcruntime140 vcruntime140_1').split())
+              'msvcp140 vcruntime140 vcruntime140_1 propsys msi').split())
 
 
 def imports(path, objdump):

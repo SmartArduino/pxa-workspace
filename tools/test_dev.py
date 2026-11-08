@@ -230,11 +230,15 @@ elif sys.argv[2] == 'stay':
                 dev.stop_process(process, "test runner", mock.Mock(), timeout=0.15)
                 # A killed orphan may briefly await reaping by the OS.
                 state = pathlib.Path(f"/proc/{runner_pid}/stat")
+                def retired():
+                    try:
+                        return state.read_text().split()[2] == "Z"
+                    except (FileNotFoundError, ProcessLookupError):
+                        return True
                 deadline = time.monotonic() + 2
-                while state.exists() and state.read_text().split()[2] != "Z" \
-                        and time.monotonic() < deadline:
+                while not retired() and time.monotonic() < deadline:
                     time.sleep(0.01)
-                self.assertTrue(not state.exists() or state.read_text().split()[2] == "Z")
+                self.assertTrue(retired())
                 self.assertIsNotNone(process.returncode)
             finally:
                 try:
