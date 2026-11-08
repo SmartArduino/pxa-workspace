@@ -35,6 +35,7 @@ adapter_includes=(
   -I"$component_dir/src/package"
   -I"$component_dir/src/ui"
   -I"$component_dir/include"
+  -I"$project_dir/firmware/components/pxa_render_accel/include"
   -I"$pxa_system_dir/libpxa/include"
   -I"$pxa_system_dir/libpxa/adapters/include"
 )
@@ -162,6 +163,7 @@ cmake -S "$pxa_system_dir/libpxa" -B "$libpxa_build" \
   -DPXA_BUILD_TESTS=OFF -DPXA_BUILD_ADAPTERS=OFF "${libpxa_options[@]}" >/dev/null
 cmake --build "$libpxa_build" -j2 >/dev/null
 python3 "$tests_dir/test_font_source.py" --libpxa "$libpxa_build/libpxa.a"
+python3 "$tests_dir/test_launch_manifest.py" --libpxa "$libpxa_build/libpxa.a"
 python3 "$tests_dir/test_legacy_update.py" --libpxa "$libpxa_build/libpxa.a"
 build_and_run install_approval "${adapter_includes[@]}" \
   "$tests_dir/pxa_esp_install_approval_test.c" "$component_dir/src/package/pxa_esp_install_approval.c" \
@@ -262,10 +264,14 @@ cc "${cc_flags[@]}" "${adapter_includes[@]}" -pthread \
 python3 "$pxa_system_dir/tools/package/test_resource_worker.py" "$build_dir/assets_backend" --music
 
 for backend in surface audio net; do
+  backend_sources=()
+  if [[ $backend == surface ]]; then
+    backend_sources+=("$project_dir/firmware/components/pxa_render_accel/ppa.c")
+  fi
   build_and_run "${backend}_backend" \
     "${adapter_includes[@]}" -pthread \
     "$tests_dir/pxa_esp_${backend}_backend_test.c" \
-    "$libpxa_build/libpxa.a" -lm
+    "${backend_sources[@]}" "$libpxa_build/libpxa.a" -lm
 done
 
 # Constrained-board policy must retain budget charging and release semantics
@@ -274,15 +280,29 @@ build_and_run surface_external_palette \
   -DCONFIG_PXA_RASTER_INTERNAL_ALLOCATION_MAX_BYTES=4096 \
   "${adapter_includes[@]}" -pthread \
   "$tests_dir/pxa_esp_surface_backend_test.c" \
+  "$project_dir/firmware/components/pxa_render_accel/ppa.c" \
   "$libpxa_build/libpxa.a" -lm
 
-build_and_run lazy_storage \
+# ESP32-P4's optional 128-byte L2 lines must cover the allocation and the
+# writeback, including small frames and non-line-aligned final rows.
+build_and_run surface_cache128 \
+  -DCONFIG_CACHE_L2_CACHE_LINE_SIZE=128 \
   "${adapter_includes[@]}" -pthread \
-  "$tests_dir/pxa_esp_lazy_storage_test.c" \
-  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_fs.c" \
-  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_scheduler_store.c" \
-  "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_storage.c" \
+  "$tests_dir/pxa_esp_surface_backend_test.c" \
+  "$project_dir/firmware/components/pxa_render_accel/ppa.c" \
   "$libpxa_build/libpxa.a" -lm
+
+# Exercise the smallest supported file-handle budget as well as the default.
+for fs_handles in 1 8; do
+  build_and_run "lazy_storage_$fs_handles" \
+    -DCONFIG_PXA_PRIVATE_FS_MAX_OPEN_HANDLES="$fs_handles" \
+    "${adapter_includes[@]}" -pthread \
+    "$tests_dir/pxa_esp_lazy_storage_test.c" \
+    "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_fs.c" \
+    "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_scheduler_store.c" \
+    "$pxa_system_dir/libpxa/adapters/posix/pxa_posix_storage.c" \
+    "$libpxa_build/libpxa.a" -lm
+done
 
 for affinity in -1 0 1; do
   c++ "${cxx_flags[@]}" -DESP_PLATFORM=1 \

@@ -69,5 +69,8 @@ int pxa_esp_store_job_decode(pxa_esp_store_job_t *job,
                              const uint8_t *payload, size_t size);
 int pxa_esp_store_job_decode_identity(pxa_esp_store_job_t *,const uint8_t *,size_t);
 void pxa_esp_store_worker(void *context);
+/* Executes one job without deleting the caller. Only the reserved Store
+ * worker may call this; job completion is the final access to the job. */
+void pxa_esp_store_run_job(void *context);
 
 #endif

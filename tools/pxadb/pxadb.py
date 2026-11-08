@@ -25,6 +25,10 @@ import zlib
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
+# Also support importlib consumers (GUI, Agent Kit and simulator.sh), whose
+# sys.path does not necessarily contain this client's directory.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
 try:
     import serial
     from serial.tools import list_ports
@@ -90,7 +94,8 @@ class BinarySocketTransport:
     def __init__(self, target: str) -> None:
         if target.startswith("unix:"):
             path = target[len("unix:"):]
-            self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            from pxa_local_socket import LocalSocket
+            self.socket = LocalSocket()
             address: str | tuple[str, int] = path
         elif target.startswith("tcp:"):
             address_text = target[len("tcp:"):].split("|", 1)[0]
@@ -320,10 +325,12 @@ class PxaDbClient:
             baudrate = int(os.environ.get("PXADB_BAUD", "115200"))
         except ValueError:
             raise PxaDbError("PXADB_BAUD must be an integer baud rate")
+        self.upload_profile = serial_upload_profile(port)
         self._usb_awake_fd = _hold_usb_awake(port)
+        serial_port = None
         try:
-            self.serial = SerialLineReader(serial.Serial(
-                port,
+            serial_port = serial.Serial(
+                None if self.upload_profile == "uart" else port,
                 baudrate=baudrate,
                 timeout=0.2,
                 # Most PXADB commands fit in one small OS write. In pyserial's finite
@@ -332,11 +339,22 @@ class PxaDbClient:
                 # has no PXADB reader. Non-blocking mode returns the actual count.
                 write_timeout=0,
                 exclusive=True,
-            ))
+            )
+            if self.upload_profile == "uart":
+                # USB-UART bridges can wire these modem outputs to EN/BOOT.
+                # Deassert them before opening so a control session keeps the
+                # application running. Native USB retains its DTR behavior.
+                serial_port.dtr = False
+                serial_port.rts = False
+                serial_port.port = port
+                serial_port.open()
+            self.serial = SerialLineReader(serial_port)
         except BaseException:
+            if serial_port is not None:
+                with contextlib.suppress(Exception):
+                    serial_port.close()
             self._release_usb_awake()
             raise
-        self.upload_profile = serial_upload_profile(port)
         self.timeout = timeout
         self.sequence = 0
         self.pending_frames: list[Frame] = []
@@ -648,6 +666,11 @@ class PxaDbClient:
     def hello(self, attempts: int = 3) -> str:
         error: PxaDbError | None = None
         deadline = time.monotonic() + self.timeout
+        if getattr(self, "upload_profile", "unknown") == "uart":
+            # Some bridges pulse EN while the OS opens the tty, before modem
+            # outputs can be deasserted. Allow the application to boot once;
+            # ordinary request deadlines and native USB stay unchanged.
+            deadline += 5.0
         for attempt in range(attempts):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -824,6 +847,9 @@ def resolve_pxadb_port(port: str | None, timeout: float) -> str:
 
 
 def simulator_socket_root() -> pathlib.Path | None:
+    if os.name == 'nt':
+        from pxa_local_socket import socket_root
+        return socket_root()
     override = os.environ.get("PXA_SIMULATOR_SOCKET_ROOT")
     if override:
         return pathlib.Path(override)
@@ -1310,6 +1336,7 @@ class NormalFsClient:
             chunk_size = int(properties.get("max_chunk", "192"))
         except ValueError:
             chunk_size = 192
+        text_chunk_limit = chunk_size if chunk_size > 0 else 192
         if bulk_transfer:
             try:
                 chunk_size = min(16 * 1024, int(properties.get("max_bulk", "0")))
@@ -1335,6 +1362,7 @@ class NormalFsClient:
         last_progress = -1
         recoveries = 0
         last_recovery_offset = 0
+        fast_retry_available = True
         # FSPUT can validate an already-present file; the final data reply
         # follows the device's full SHA-256 pass. Budget that pass for large
         # removable-media files without relaxing ordinary data acknowledgements.
@@ -1384,7 +1412,7 @@ class NormalFsClient:
                     raise
                 self.client.fast_upload_active = False
                 fast_transfer = bulk_transfer = False
-                chunk_size = 256
+                chunk_size = min(256, text_chunk_limit)
         with source.open("rb") as input_file:
             while terminal.kind == "READY":
                 try:
@@ -1422,6 +1450,8 @@ class NormalFsClient:
                     terminal = frames[-1]
                 except PxaDbError as error:
                     reason = str(error)
+                    retry_fast = (fast_transfer and offset_transfer and fast_retry_available
+                                  and chunk_size > 256 and reason != "bulk_no_memory")
                     if fast_transfer:
                         self.client.cancel_fast_upload()
                         fast_transfer = False
@@ -1439,23 +1469,52 @@ class NormalFsClient:
                     recoveries += 1
                     if recoveries >= 3:
                         raise
-                    if bulk_transfer:
+                    if retry_fast:
+                        # One isolated lost reply must not force the rest of a
+                        # large file through tiny base64 commands. Confirm the
+                        # receiver's offset before renegotiating a smaller buffer.
+                        # This opportunity is file-wide, independent of the
+                        # progress-based retry budget below.
+                        fast_retry_available = False
+                        chunk_size = max(256, chunk_size // 2)
+                    elif bulk_transfer:
                         # A noisy UART or constrained device keeps the legacy
                         # checked path as a bounded recovery option.
                         bulk_transfer = False
-                        chunk_size = 256
-                    if not binary_transfer and (reason == "invalid_file_chunk" or
+                        chunk_size = min(256, text_chunk_limit)
+                    if not retry_fast and not binary_transfer and (reason == "invalid_file_chunk" or
                                                 not isinstance(error, PxaDbRejectedError)):
                         # Corrupted lines or lost replies suggest smaller UART
                         # bursts. Resume at the confirmed offset; the full file
                         # digest still gates acceptance of every retry.
                         chunk_size = max(1, chunk_size // 2)
                     print(f"upload recovery {recoveries}/2: {reason}; "
-                          f"confirming offset, chunk={chunk_size}",
+                          f"sent_offset={offset}; confirming offset, "
+                          f"{'binary retry ' if retry_fast else ''}chunk={chunk_size}",
                           file=sys.stderr, flush=True)
                     # The digest identifies an upload. A new device resumes at
                     # its confirmed offset; legacy firmware restarts safely.
                     terminal = begin_upload()
+                    if retry_fast and terminal.kind == "READY":
+                        try:
+                            chunk_size = self.client.start_fast_upload(chunk_size)
+                            fast_transfer = True
+                            print(f"binary transfer resumed: remaining={terminal.payload}, "
+                                  f"chunk={chunk_size}, window=1", file=sys.stderr, flush=True)
+                        except PxaDbError as negotiation_error:
+                            if (isinstance(negotiation_error, PxaDbRejectedError)
+                                    and str(negotiation_error) != "bulk_no_memory"):
+                                raise
+                            # A missing negotiation ACK can leave the peer in
+                            # binary mode. Cancel and reconfirm its offset before
+                            # falling back; never send text into an uncertain mode.
+                            self.client.cancel_fast_upload()
+                            bulk_transfer = False
+                            chunk_size = min(128, text_chunk_limit)
+                            print(f"binary retry unavailable: {negotiation_error}; "
+                                  f"confirming offset, text chunk={chunk_size}",
+                                  file=sys.stderr, flush=True)
+                            terminal = begin_upload()
                     continue
                 report_progress(offset + len(chunk))
         if terminal.kind != "OK":

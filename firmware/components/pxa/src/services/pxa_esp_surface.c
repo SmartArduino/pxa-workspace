@@ -17,12 +17,20 @@
 #include "pxa/wire.h"
 #include "pxa/raster_assets.h"
 #include "pxa_esp_resource_memory.h"
+#include "pxa_render_accel.h"
 #include "sdkconfig.h"
 
 #define PXA_ESP_SURFACE_MAX_BUFFERS 3
 #define PXA_ESP_SURFACE_NONE (-1)
 #define PXA_ESP_SURFACE_MAGIC UINT32_C(0x45504753)
 #define PXA_ESP_SURFACE_LATENCY_BUCKETS 64u
+/* P4 may use 128-byte L2 lines. Both the allocation and writeback range must
+ * cover whole lines owned by this frame, including its final padded line. */
+#if defined(CONFIG_CACHE_L2_CACHE_LINE_SIZE) && CONFIG_CACHE_L2_CACHE_LINE_SIZE > 64
+#define PXA_ESP_SURFACE_CACHE_ALIGNMENT CONFIG_CACHE_L2_CACHE_LINE_SIZE
+#else
+#define PXA_ESP_SURFACE_CACHE_ALIGNMENT 64u
+#endif
 /* Three slots let the Guest queue one frame while the presenter renders the
  * previous one; a fourth submission replaces the pending list instead, which
  * keeps latency bounded without stalling the Guest. */
@@ -459,9 +467,19 @@ static uint32_t prefill_raster_background(
     uint32_t offset = PXA_RASTER_DRAW_HEADER_BYTES;
     uint32_t cursor = 0;
     uint8_t count = 0;
-    if (g_fill_bands == NULL || bytes == NULL || list == NULL ||
+    if (bytes == NULL || list == NULL ||
         target == NULL || target->pixels == NULL)
         return 0;
+    pxa_esp_surface_fill_bands_fn fill = g_fill_bands ? g_fill_bands : pxa_render_fill_bands;
+    /* CLEAR also resets depth/coverage in the CPU executor. Its normal
+     * prefilled-command path preserves those semantics before skipping color. */
+    if (list->command_count && bytes[offset] == PXA_RASTER_RECORD_CLEAR_RGB565 &&
+        !(list->required_capabilities & PXA_RASTER_CAP_COVERAGE_MASK)) {
+        tops[0] = 0; bottoms[0] = target->height;
+        colors[0] = pxa_read_u16(bytes + offset + 4);
+        return fill(g_fill_bands_context, target->pixels, target->stride_pixels,
+                    target->width, target->height, tops, bottoms, colors, 1) ? 1 : 0;
+    }
     while (count < PXA_ESP_RASTER_BACKGROUND_BANDS &&
            count < list->command_count) {
         const uint8_t *record = bytes + offset;
@@ -502,7 +520,7 @@ static uint32_t prefill_raster_background(
         if (cursor == target->height) break;
     }
     if (cursor != target->height || count == 0) return 0;
-    if (!g_fill_bands(g_fill_bands_context, target->pixels,
+    if (!fill(g_fill_bands_context, target->pixels,
                       target->stride_pixels, target->width, target->height,
                       tops, bottoms, colors, count))
         return 0;
@@ -701,7 +719,9 @@ static pxa_status_t create_surface_with_raster_capacity(
     }
     taskEXIT_CRITICAL(&g_surface_lock);
     frame_bytes64 = (uint64_t)desc->width * desc->height * bytes_per_pixel;
-    if (frame_bytes64 > UINT32_MAX) return PXA_STATUS_RESOURCE_LIMIT;
+    if (frame_bytes64 > UINT32_MAX ||
+        frame_bytes64 > SIZE_MAX - (PXA_ESP_SURFACE_CACHE_ALIGNMENT - 1u))
+        return PXA_STATUS_RESOURCE_LIMIT;
     frame_bytes = (uint32_t)frame_bytes64;
     surface = pxa_esp_resource_allocate(PXA_MEMORY_INTERNAL, PXA_MEMORY_METADATA, sizeof(*surface));
     if (surface == NULL) return PXA_STATUS_RESOURCE_LIMIT;
@@ -747,7 +767,9 @@ static pxa_status_t create_surface_with_raster_capacity(
                  * through a DMA that the writer flushes with esp_cache_msync
                  * before handing the frame over. */
                 surface->buffers[index] = heap_caps_aligned_calloc(
-                    64, 1, frame_bytes,
+                    PXA_ESP_SURFACE_CACHE_ALIGNMENT, 1,
+                    ((size_t)frame_bytes + PXA_ESP_SURFACE_CACHE_ALIGNMENT - 1u) &
+                        ~(size_t)(PXA_ESP_SURFACE_CACHE_ALIGNMENT - 1u),
                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
             } else {
                 surface->buffers[index] = heap_caps_calloc(
@@ -1600,6 +1622,24 @@ pxa_status_t pxa_esp_game_render_execute_compute(void *context,
     }
     g_materialize_active = true;
     taskEXIT_CRITICAL(&g_surface_lock);
+#if CONFIG_PXA_RENDER_ACCEL_INDEX8
+    if (batch->kind == PXA_RASTER_COMPUTE_BLIT &&
+        !batch->state.blit.cursor &&
+        batch->state.blit.target_width == batch->state.blit.source_width &&
+        batch->state.blit.target_height == batch->state.blit.source_height &&
+        batch->state.blit.source_pitch == batch->state.blit.source_width &&
+        batch->state.blit.target_pitch == (uint32_t)batch->state.blit.target_width * 2u &&
+        (batch->state.blit.exact_sampling ||
+         (batch->state.blit.target_width == 320 && batch->state.blit.target_height == 240)) &&
+        pxa_render_index8_rgb565((uint16_t *)batch->target, batch->state.blit.pixels,
+            (const uint16_t *)batch->state.blit.palette,
+            batch->state.blit.target_width, batch->state.blit.target_height)) {
+        taskENTER_CRITICAL(&g_surface_lock);
+        g_materialize_active = false;
+        taskEXIT_CRITICAL(&g_surface_lock);
+        return PXA_STATUS_OK;
+    }
+#endif
 #if CONFIG_PXA_PARALLEL_RASTER
     ensure_raster_worker();
     /* Avoid waking the second core for very small surfaces. The split is a
@@ -2199,7 +2239,8 @@ static bool render_raster_draw(pxa_esp_surface_t *borrowed_surface,
     if (surface->buffers[buffer_index] != NULL) {
         size_t frame_bytes =
             (size_t)surface->stride_bytes * (size_t)surface->height;
-        frame_bytes = (frame_bytes + 63u) & ~(size_t)63u;
+        frame_bytes = (frame_bytes + PXA_ESP_SURFACE_CACHE_ALIGNMENT - 1u) &
+                      ~(size_t)(PXA_ESP_SURFACE_CACHE_ALIGNMENT - 1u);
         (void)esp_cache_msync(surface->buffers[buffer_index], frame_bytes,
                               ESP_CACHE_MSYNC_FLAG_DIR_C2M);
     }

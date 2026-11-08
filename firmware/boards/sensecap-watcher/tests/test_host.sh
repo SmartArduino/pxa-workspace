@@ -23,3 +23,12 @@ trap 'rm -rf -- "$build_dir"' EXIT
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined \
   -I"$tests_dir/../include" "$tests_dir/rtc_calendar_test.cc" -o "$build_dir/rtc_calendar_test"
 "$build_dir/rtc_calendar_test"
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  -I"$tests_dir/sensor_stubs" -I"$tests_dir/stubs" -I"$tests_dir/../include" \
+  -I"$project_dir/firmware/components/pxa/include" \
+  -I"$project_dir/deps/pxa-system/libpxa/include" \
+  "$tests_dir/sensors_test.cc" \
+  "$project_dir/firmware/components/pxa/src/services/pxa_esp_sensor.c" \
+  -o "$build_dir/sensors_test"
+"$build_dir/sensors_test"
+"$build_dir/sensors_test" missing

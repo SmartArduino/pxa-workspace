@@ -45,6 +45,9 @@ void TestEligibilityAndAlpha() {
     std::vector<uint16_t> pixels(412*412, 0x07e0);
     auto frame = Frame(pixels, 412, 412, 824);
     assert(watcher_pxa_surface::DirectFrameEligible(frame));
+    assert(watcher_pxa_surface::NativeFrameEligible(frame));
+    frame.flags |= PXA_SURFACE_FLAG_GUEST_MAPPED;
+    assert(watcher_pxa_surface::NativeFrameEligible(frame));
     frame.x = 1;
     assert(!watcher_pxa_surface::DirectFrameEligible(frame));
     frame.x = 0;
@@ -64,6 +67,7 @@ void TestEligibilityAndAlpha() {
     plane.pixel_stride_bytes = 6; plane.alpha_stride_bytes = 3;
     assert(watcher_pxa_surface::DirectFrameEligible(frame));
     const lv_area_t area{49, 50, 53, 50};
+    assert(!watcher_pxa_surface::NativeFrameEligible(frame));
     uint16_t out[5]{};
     watcher_pxa_surface::ComposeFrame(frame, &area,
         reinterpret_cast<uint8_t*>(out));
@@ -76,12 +80,14 @@ void TestEligibilityAndAlpha() {
     assert(!watcher_pxa_surface::DirectFrameEligible(frame));
     frame.suppress_guest_alpha = true;
     assert(watcher_pxa_surface::DirectFrameEligible(frame));
+    assert(watcher_pxa_surface::NativeFrameEligible(frame));
     frame.system_alpha_plane = plane;
     assert(!watcher_pxa_surface::DirectFrameEligible(frame));
     auto small = Frame(pixels, 296, 240, 592);
     assert(!watcher_pxa_surface::DirectFrameEligible(small));
     auto half = Frame(pixels, 206, 206, 412);
     assert(watcher_pxa_surface::DirectFrameEligible(half));
+    assert(!watcher_pxa_surface::NativeFrameEligible(half));
 }
 
 void TestOverlayMatchesGeneralPath() {

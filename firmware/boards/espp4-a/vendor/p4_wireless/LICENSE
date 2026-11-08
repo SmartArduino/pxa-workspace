@@ -1,0 +1,79 @@
+p4_wireless License Agreement
+Copyright 2026 SmartArduino. All rights reserved.
+
+This license applies to the p4_wireless component, including the prebuilt
+library (lib/libp4_wireless.a), the wireless firmware contained in it, and
+the accompanying source files, headers and build files ("the Software").
+The examples under examples/ are licensed under the Apache License,
+Version 2.0, except where a file states otherwise.
+
+1. Permitted use
+   You may use the Software free of charge, including for commercial
+   purposes, and redistribute it in unmodified form as part of your
+   products, only on ESPP4-A modules supplied by SmartArduino or its
+   authorized distributors.
+
+2. Restrictions
+   You may not:
+   a) use the Software on any other hardware;
+   b) decompile, disassemble, reverse engineer, or attempt to extract the
+      source code or firmware of the Software, except to the extent that
+      applicable law expressly permits it;
+   c) modify the prebuilt library or remove or bypass its module
+      authorization;
+   d) sell or license the Software as a standalone product.
+
+3. Ownership
+   The Software is licensed, not sold. SmartArduino and its licensors
+   retain all rights not expressly granted here.
+
+4. No warranty
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+5. Limitation of liability
+   IN NO EVENT SHALL SMARTARDUINO OR ITS LICENSORS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR OTHER LIABILITY ARISING FROM, OUT OF OR IN CONNECTION WITH
+   THE SOFTWARE OR ITS USE.
+
+6. Termination
+   This license terminates automatically if you breach any of its terms.
+
+----------------------------------------------------------------------------
+
+p4_wireless 许可协议
+版权所有 2026 SmartArduino，保留所有权利。
+
+本协议适用于 p4_wireless 组件，包括预编译库（lib/libp4_wireless.a）、其中包含的
+无线固件，以及随附的源文件、头文件和构建文件（以下称"本软件"）。examples/ 下的
+例程采用 Apache License 2.0，文件中另有声明的除外。
+
+1. 允许的使用
+   您可以免费使用本软件（包括商业用途），并以未经修改的形式随您的产品再分发，
+   但仅限在 SmartArduino 或其授权经销商提供的 ESPP4-A 模组上使用。
+
+2. 限制
+   您不得：
+   a) 在其他硬件上使用本软件；
+   b) 对本软件进行反编译、反汇编、逆向工程，或试图提取其源代码或固件，
+      适用法律明确允许的情况除外；
+   c) 修改预编译库，或移除、绕过其模组授权校验；
+   d) 将本软件作为独立产品出售或授权。
+
+3. 所有权
+   本软件是授权使用而非出售。SmartArduino 及其授权方保留本协议未明确授予的
+   一切权利。
+
+4. 不提供担保
+   本软件按"原样"提供，不提供任何明示或暗示的担保，包括但不限于适销性、
+   特定用途适用性和不侵权的担保。
+
+5. 责任限制
+   在任何情况下，SmartArduino 及其授权方均不对因本软件或其使用引起或与之相关的
+   任何索赔、损害或其他责任负责。
+
+6. 终止
+   如您违反本协议任何条款，本协议自动终止。
+
+如中英文版本存在差异，以英文版本为准。

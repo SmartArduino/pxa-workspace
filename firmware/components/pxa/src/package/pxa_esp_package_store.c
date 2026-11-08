@@ -4022,11 +4022,11 @@ done:
     return success != 0;
 }
 
-bool pxa_esp_package_store_load_installed(
+static bool load_installed(
     const char *identity, char *root, size_t root_capacity,
     void *manifest_workspace, size_t manifest_workspace_size,
     uint8_t *encoded, size_t encoded_capacity,
-    pxa_package_manifest_t **manifest) {
+    pxa_package_manifest_t **manifest, pxa_posix_installer_result_t *owned) {
     pxa_esp_package_entry_t *entry;
     uint8_t publisher_key_id[PXA_PACKAGE_DIGEST_BYTES];
     char app_id[PXA_ESP_PACKAGE_MAX_ID];
@@ -4035,7 +4035,7 @@ bool pxa_esp_package_store_load_installed(
     size_t app_id_size;
     pxa_status_t status;
     if (!store_is_initialized() || identity == NULL || root == NULL ||
-        manifest_workspace == NULL || encoded == NULL ||
+        (owned == NULL && (manifest_workspace == NULL || encoded == NULL)) ||
         manifest == NULL) {
         return false;
     }
@@ -4071,12 +4071,28 @@ bool pxa_esp_package_store_load_installed(
         /* Managed Package storage is authenticated by the installer on every
          * install or update. Trusted Host storage only needs its manifest and
          * identity parsed when it is read. */
-        status = path_size < 0 || (size_t)path_size >= sizeof(manifest_path) ||
-                         !load_manifest_file(manifest_path, manifest_workspace,
-                                             manifest_workspace_size, encoded,
-                                             encoded_capacity, manifest)
-                     ? PXA_STATUS_INVALID_ARGUMENT
-                     : PXA_STATUS_OK;
+        status = PXA_STATUS_INVALID_ARGUMENT;
+        if (path_size >= 0 && (size_t)path_size < sizeof(manifest_path)) {
+            if (owned != NULL) {
+                pxa_package_limits_t limits;
+                size_t size = manifest_size_at_root(package_root);
+                /* One bounded read supplies both measurement and parsing.
+                 * Both buffers belong to the caller only after success. */
+                if (size && size <= PXA_ESP_SIGNED_MANIFEST_MAX_BYTES &&
+                    (encoded = esp_alloc(size)) != NULL &&
+                    read_manifest_file(manifest_path, encoded, size, &encoded_capacity) &&
+                    manifest_workspace_for_encoded(encoded, encoded_capacity,
+                                                    &limits, &manifest_workspace_size) &&
+                    (manifest_workspace = esp_alloc(manifest_workspace_size)) != NULL) {
+                    status = pxa_package_manifest_parse(manifest_workspace,
+                        manifest_workspace_size, (pxa_bytes_t){encoded, encoded_capacity},
+                        &limits, manifest);
+                }
+            } else if (load_manifest_file(manifest_path, manifest_workspace,
+                        manifest_workspace_size, encoded, encoded_capacity, manifest)) {
+                status = PXA_STATUS_OK;
+            }
+        }
         if (status == PXA_STATUS_OK &&
             !manifest_matches_app_id(*manifest, app_id)) {
             status = PXA_STATUS_DENIED;
@@ -4095,7 +4111,37 @@ bool pxa_esp_package_store_load_installed(
                  "Load installed Package failed: id=%s status=%d workspace=%u",
                  identity, (int)status, (unsigned)manifest_workspace_size);
     }
-    return status == PXA_STATUS_OK && *manifest != NULL;
+    if (status != PXA_STATUS_OK || *manifest == NULL) {
+        *manifest = NULL;
+        if (owned != NULL) { free(manifest_workspace); free(encoded); }
+        return false;
+    }
+    if (owned != NULL) {
+        owned->manifest_workspace = manifest_workspace;
+        owned->manifest_workspace_size = manifest_workspace_size;
+        owned->encoded = encoded;
+        owned->encoded_capacity = encoded_capacity;
+    }
+    return true;
+}
+
+bool pxa_esp_package_store_load_installed(
+    const char *identity, char *root, size_t root_capacity,
+    void *manifest_workspace, size_t manifest_workspace_size,
+    uint8_t *encoded, size_t encoded_capacity, pxa_package_manifest_t **manifest) {
+    return load_installed(identity, root, root_capacity, manifest_workspace,
+        manifest_workspace_size, encoded, encoded_capacity, manifest, NULL);
+}
+
+bool pxa_esp_package_store_prepare_launch(const char *identity,
+    pxa_posix_installer_result_t *result) {
+    if (result == NULL || result->struct_size < sizeof(*result) ||
+        result->manifest_workspace != NULL || result->encoded != NULL)
+        return false;
+    result->manifest_workspace_size = 0;
+    result->encoded_capacity = 0;
+    return load_installed(identity, result->root, result->root_capacity,
+        NULL, 0, NULL, 0, result->manifest, result);
 }
 
 size_t pxa_esp_package_store_manifest_workspace_size(void) {

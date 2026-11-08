@@ -12,12 +12,13 @@ App is resolved from local/apps.toml, which is intentionally ignored by Git.
 Targets (comma separated, or 'all'):
   esp32s3    Xtensa ESP32-S3 AOT            artifacts/main.esp32-s3.aot
   esp32s31   RISC-V32 ILP32F ESP32-S31 AOT  artifacts/main.esp32-s31.aot
+  esp32p4    RISC-V32 ILP32F ESP32-P4 AOT   artifacts/main.esp32-p4.aot
   simulator  x86_64 AOT                     artifacts/main.linux-x86_64.aot
   wasm       Portable WASM-only Package       artifacts/main.wasm
 
 Aliases: xtensa -> esp32s3; riscv32, riscv32-ilp32f -> esp32s31;
          x86, x86_64, linux-x86_64 -> simulator.
-'all' expands to wasm,x86,esp32s3,esp32s31.
+'all' expands to wasm,x86,esp32s3,esp32s31,esp32p4.
 
 The first AOT target signs the package and names the primary artifact; the
 remaining AOT targets are built into the same package as extra architecture
@@ -100,12 +101,13 @@ if [[ -n "$target_spec" ]]; then
     [[ -n "$raw_target" ]] || continue
     case "$raw_target" in
       all)
-        targets+=(esp32s3 esp32s31 simulator)
+        targets+=(esp32s3 esp32s31 esp32p4 simulator)
         requested_wasm=1
         ;;
       wasm) requested_wasm=1 ;;
       esp32s3|xtensa) targets+=(esp32s3) ;;
       esp32s31|esp32-s31|riscv32|riscv32-ilp32f) targets+=(esp32s31) ;;
+      esp32p4|esp32-p4) targets+=(esp32p4) ;;
       simulator|x86|x86_64|linux-x86_64) targets+=(simulator) ;;
       *)
         echo "Unsupported PXA package target: $raw_target" >&2

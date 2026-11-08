@@ -59,7 +59,7 @@ touch "$3/artifacts/main.$2.aot"
     def test_new_board_device_target_comes_from_metadata(self) -> None:
         args = SimpleNamespace(mode="device", app_id="demo", board=self.board)
         developer = dev.Developer(args, mock.Mock(), self.source)
-        for target in ("esp32s31", "esp32s3"):
+        for target in ("esp32s31", "esp32s3", "esp32p4"):
             with self.subTest(target=target):
                 self.declare(target)
                 with mock.patch.object(dev, "ROOT", self.root), \
@@ -69,7 +69,7 @@ touch "$3/artifacts/main.$2.aot"
                 self.assertEqual(command[command.index("--target") + 1], target)
 
     def test_new_board_app_and_package_defaults_follow_metadata(self) -> None:
-        for target in ("esp32s31", "esp32s3"):
+        for target in ("esp32s31", "esp32s3", "esp32p4"):
             with self.subTest(target=target):
                 self.declare(target)
                 result = self.build()
@@ -93,13 +93,13 @@ touch "$3/artifacts/main.$2.aot"
         self.assertEqual(self.target_log.read_text().splitlines(), ["esp32s31"])
 
     def test_all_keeps_new_board_as_primary_target(self) -> None:
-        for target in ("esp32s31", "esp32s3"):
+        for target in ("esp32s31", "esp32s3", "esp32p4"):
             with self.subTest(target=target):
                 self.declare(target)
                 result = self.build("--target", "all")
                 self.assertEqual(result.returncode, 0, result.stderr)
                 targets = self.target_log.read_text().splitlines()
-                self.assertEqual(set(targets), {"esp32s3", "esp32s31", "simulator"})
+                self.assertEqual(set(targets), {"esp32s3", "esp32s31", "esp32p4", "simulator"})
                 self.assertEqual(targets[-1], target)  # Extras build before the primary package.
 
     def test_missing_board_or_target_fails_without_s3_fallback(self) -> None:
@@ -114,7 +114,7 @@ touch "$3/artifacts/main.$2.aot"
                 self.assertFalse(self.target_log.exists())
 
     def test_unsupported_native_target_fails_but_simulator_override_works(self) -> None:
-        self.declare("esp32p4")
+        self.declare("esp32c6")
         result = self.build()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("unsupported", result.stderr)

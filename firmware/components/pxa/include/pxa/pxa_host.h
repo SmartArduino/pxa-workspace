@@ -406,6 +406,9 @@ typedef struct {
 void pxa_host_set_audio_music_sink(const pxa_host_audio_music_sink_t *);
 /* Worker-safe signal only; never delivers Guest events on the audio task. */
 void pxa_host_audio_notify(void);
+/* Worker-safe completion signal. Service polling and Guest delivery stay on
+ * the runtime owner task. Publish the result before calling this function. */
+void pxa_host_io_notify(void);
 
 #ifdef __cplusplus
 }

@@ -20,6 +20,8 @@ FIXTURE = r'''
 #define PXA_HOST_RUNTIME_STOPPED 7
 #define PXA_ESP_HOST_TAG "test"
 #define ESP_LOGW(...) unused(__VA_ARGS__)
+#define ESP_LOGI(...) unused(__VA_ARGS__)
+static uint64_t host_now_us(void *) { return 0; }
 #define portENTER_CRITICAL(...) ((void)0)
 #define portEXIT_CRITICAL(...) ((void)0)
 struct pxa_esp_host_public_state_t { bool main_active; uint64_t main_instance_id; } published;

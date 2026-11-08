@@ -590,6 +590,7 @@ void pxa_host_set_audio_music_sink(const pxa_host_audio_music_sink_t *sink) {
     pxa_esp_host_set_audio_music_sink(sink);
 }
 void pxa_host_audio_notify(void) { pxa_esp_host_audio_notify(); }
+void pxa_host_io_notify(void) { pxa_esp_host_io_notify(); }
 
 void pxa_host_set_audio_asset_sink(
     pxa_host_audio_asset_play_fn play,

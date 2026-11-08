@@ -7,6 +7,7 @@ idf_component_register(
         "src/watcher_audio.cc"
         "src/watcher_storage.cc"
         "src/watcher_rtc.cc"
+        "src/watcher_sensors.cc"
         "src/watcher_vision.cc"
         "src/watcher_vision_reply.cc"
         "vendor/sscma-spi/sscma_client_io_spi.c"
@@ -24,6 +25,7 @@ idf_component_register(
         esp_driver_i2s
         esp_driver_ledc
         esp_driver_spi
+        esp_driver_tsens
         esp_driver_sdspi
         fatfs
         mbedtls

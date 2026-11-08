@@ -12,6 +12,7 @@
 #include <freertos/task.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_surface_transform.h>
+#include <pxa_render_accel.h>
 
 #include "esp_mosaico_config.h"
 #include "esp_mosaico_transfer.h"
@@ -28,56 +29,14 @@ void* g_direct_context = nullptr;
 lv_area_t g_last_present_area = {};
 bool g_has_last_present_area = false;
 ppa_client_handle_t g_ppa_srm = nullptr;
-ppa_client_handle_t g_ppa_fill = nullptr;
-std::atomic<uint32_t> g_ppa_fills{0};
-
-bool FillRasterBands(void*, uint16_t* pixels, uint32_t stride_pixels,
-                     uint16_t width, uint16_t height, const uint16_t* tops,
-                     const uint16_t* bottoms, const uint16_t* colors, uint8_t count) {
-    if (!g_ppa_fill || !pixels || !tops || !bottoms || !colors || !count ||
-        stride_pixels != width || !width || !height) return false;
-    // Validate the entire request before the first DMA changes the target.
-    for (uint8_t i = 0; i < count; ++i)
-        if (tops[i] >= bottoms[i] || bottoms[i] > height) return false;
-    for (uint8_t i = 0; i < count; ++i) {
-        const uint16_t color = colors[i];
-        color_pixel_argb8888_data_t argb = {};
-        argb.a = 255;
-        const uint8_t r = color >> 11, g = (color >> 5) & 63, b = color & 31;
-        argb.r = (r << 3) | (r >> 2);
-        argb.g = (g << 2) | (g >> 4);
-        argb.b = (b << 3) | (b >> 2);
-        const ppa_fill_oper_config_t config = {
-            .out = {.buffer = pixels,
-                    .buffer_size = static_cast<size_t>(width) * height * sizeof(*pixels),
-                    .pic_w = width, .pic_h = height,
-                    .block_offset_x = 0, .block_offset_y = tops[i],
-                    .fill_cm = PPA_FILL_COLOR_MODE_RGB565},
-            .fill_block_w = width,
-            .fill_block_h = static_cast<uint32_t>(bottoms[i] - tops[i]),
-            .fill_argb_color = argb,
-            .mode = PPA_TRANS_MODE_BLOCKING,
-        };
-        if (ppa_do_fill(g_ppa_fill, &config) != ESP_OK) return false;
-    }
-    g_ppa_fills.fetch_add(1, std::memory_order_relaxed);
-    return true;
-}
-
 void InitializeAcceleration() {
     const ppa_client_config_t srm = {
         .oper_type = PPA_OPERATION_SRM, .max_pending_trans_num = 1,
         .data_burst_length = PPA_DATA_BURST_LENGTH_128,
     };
     if (ppa_register_client(&srm, &g_ppa_srm) != ESP_OK) g_ppa_srm = nullptr;
-    const ppa_client_config_t fill = {
-        .oper_type = PPA_OPERATION_FILL, .max_pending_trans_num = 1,
-        .data_burst_length = PPA_DATA_BURST_LENGTH_128,
-    };
-    if (ppa_register_client(&fill, &g_ppa_fill) != ESP_OK) g_ppa_fill = nullptr;
-    if (g_ppa_fill) pxa_esp_surface_set_fill_bands_callback(FillRasterBands, nullptr);
-    ESP_LOGI("mosaico_surface", "Raster cores=1+0 outside UI lock; presenter core=1 priority=5; PPA 1x copy/swap=%d background=%d",
-             g_ppa_srm != nullptr, g_ppa_fill != nullptr);
+    ESP_LOGI("mosaico_surface", "Raster cores=1+0 outside UI lock; presenter core=1 priority=5; PPA 1x copy/swap=%d; shared GameRender acceleration",
+             g_ppa_srm != nullptr);
 }
 
 bool ResolvePresentArea(lv_area_t* area) {
@@ -402,7 +361,7 @@ bool TryAcceleratedDirectFrame(const pxa_esp_surface_frame_t& frame, uint8_t* pi
 
 uint32_t RasterTimeUs() { return g_raster_us.load(std::memory_order_relaxed); }
 
-uint32_t AcceleratedFillCount() { return g_ppa_fills.load(std::memory_order_relaxed); }
+uint32_t AcceleratedFillCount() { return pxa_render_ppa_fill_count(); }
 
 // Integer expansion and wire byte conversion share one sequential pass. The
 // constant scale removes per-pixel division/modulo on S31; paired source reads
@@ -422,20 +381,11 @@ static void ExpandRgb565Row(const uint8_t* source, uint16_t* output,
         count -= head;
     }
     source += (first / Scale) * 2;
-    for (; count >= 2 * Scale; count -= 2 * Scale) {
-        uint32_t pair;
-        std::memcpy(&pair, source, 4);
-        if constexpr (Panel)
-            pair = ((pair & 0x00ff00ffu) << 8) | ((pair & 0xff00ff00u) >> 8);
-        const uint32_t low = (pair & 0xffffu) * 0x00010001u;
-        const uint32_t high = (pair >> 16) * 0x00010001u;
-        std::memcpy(output, &low, 4);
-        if constexpr (Scale == 4) std::memcpy(output + 2, &low, 4);
-        std::memcpy(output + Scale, &high, 4);
-        if constexpr (Scale == 4) std::memcpy(output + Scale + 2, &high, 4);
-        source += 4;
-        output += 2 * Scale;
-    }
+    const int32_t whole = count / Scale;
+    pxa_render_expand_rgb565(output, source, whole, Scale, Panel);
+    source += whole * 2;
+    output += whole * Scale;
+    count -= whole * Scale;
     while (count > 0) {
         uint16_t value;
         std::memcpy(&value, source, 2);
@@ -510,14 +460,13 @@ uint64_t ComposeFrameImpl(const pxa_esp_surface_frame_t& frame,
             }
             int32_t pixel_x = left;
             if (scale == 1) {
-                for (; pixel_x + 1 < right; pixel_x += 2) {
-                    uint32_t pair;
-                    std::memcpy(&pair, source + (pixel_x - origin_x) * 2, 4);
-                    if constexpr (Panel)
-                        pair = ((pair & 0x00ff00ffu) << 8) |
-                               ((pair & 0xff00ff00u) >> 8);
-                    std::memcpy(row + pixel_x - area->x1, &pair, 4);
-                }
+                if constexpr (Panel)
+                    pxa_render_swap_rgb565(row + left - area->x1,
+                        source + (left - origin_x) * 2, right - left);
+                else
+                    std::memcpy(row + left - area->x1,
+                        source + (left - origin_x) * 2, (right - left) * 2);
+                pixel_x = right;
             }
             for (; pixel_x < right;) {
                 const int32_t relative_x = pixel_x - origin_x;

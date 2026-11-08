@@ -43,6 +43,7 @@ def build(root: Path, output: Path, image: Path, image_id: str, devkit_sha: str,
                      'README.md', 'README.en.md', 'requirements.txt'):
             shutil.copy2(root / 'tools/portable' / name, stage / name)
         shutil.copy2(root / 'tools/pxadb/pxadb.py', stage / 'pxadb.py')
+        shutil.copy2(root / 'tools/pxadb/pxa_local_socket.py', stage / 'pxa_local_socket.py')
         shutil.copy2(root / 'deps/pxa-system/LICENSE', stage / 'LICENSE.pxa-system')
         # This copy is convenient, not a trust anchor. Verification requires a
         # separately trusted key; the README explains where to obtain it.

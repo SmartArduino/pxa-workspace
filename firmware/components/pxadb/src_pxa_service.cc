@@ -18,10 +18,13 @@
 #include <unistd.h>
 
 #include "sdkconfig.h"
+#if CONFIG_PXA_RENDER_ACCEL_SELF_TEST
+#include "pxa_render_accel.h"
+#endif
 
 #include "pxadb_jpeg_encode.h"
 
-#if CONFIG_PXADB_ENABLED && (CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32S31)
+#if CONFIG_PXADB_ENABLED && (CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32S31 || CONFIG_IDF_TARGET_ESP32P4)
 
 #if CONFIG_PXADB_TRANSPORT_UART
 #include <driver/gpio.h>
@@ -61,6 +64,7 @@ extern "C" unsigned pxadb_uart_rx_buffer_capacity(void);
 #include "pxa/pxa_container_stream.h"
 #include "pxa/pxa_esp_surface.h"
 #include "pxa/pxa_esp_storage.h"
+#include "pxa/pxa_esp_sensor.h"
 #include "pxa/posix/pxa_posix_fs.h"
 #include "pxa/version.h"
 #include "pxa/wire.h"
@@ -1622,7 +1626,7 @@ void SendHello(unsigned long sequence) {
 
 void SendInfo(unsigned long sequence) {
     const esp_app_desc_t* app = esp_app_get_description();
-    char payload[512] = {};
+    char payload[1024] = {};
     snprintf(payload, sizeof(payload), "target=%s;serial=%s;version=%s;free_heap=%u;pxa=%s",
              CONFIG_IDF_TARGET, DeviceSerial(),
              app == nullptr ? "unknown" : app->version,
@@ -1640,6 +1644,23 @@ void SendInfo(unsigned long sequence) {
              PXA_FIRMWARE_BOARD, PXA_VERSION_STRING,
              static_cast<unsigned>(PXA_CORE_VERSION_MAJOR),
              static_cast<unsigned>(PXA_CORE_VERSION_MINOR));
+    pxa_sensor_config_t sensors = {};
+    pxa_esp_sensor_configure(&sensors);
+    size_t used = strlen(payload);
+    snprintf(payload + used, sizeof(payload) - used, ";sensor_count=%u;sensors=",
+             unsigned(sensors.descriptor_count));
+    for (uint16_t i = 0; i < sensors.descriptor_count; ++i) {
+        const pxa_bytes_t name = sensors.descriptors[i].semantic;
+        bool valid = name.data && name.size && name.size <= 64;
+        for (size_t j = 0; valid && j < name.size; ++j) {
+            const uint8_t c = name.data[j];
+            valid = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_';
+        }
+        used = strlen(payload);
+        if (!valid || used + name.size + 400 >= sizeof(payload)) break;
+        snprintf(payload + used, sizeof(payload) - used, "%s%.*s", i ? "," : "",
+                 int(name.size), reinterpret_cast<const char*>(name.data));
+    }
     pxa_volume_info_t storage={};
     if(pxa_esp_storage_resolve_volume(CONFIG_PXA_MOUNT_POINT,&storage)==PXA_STATUS_OK &&
         // INFO drives upload admission. Its free-space value must include
@@ -1654,6 +1675,13 @@ void SendInfo(unsigned long sequence) {
     }
 #endif
 #if CONFIG_PXADB_TEST_CONTROL
+    if (TestControlAvailable()) {
+        const size_t used = strlen(payload);
+        snprintf(payload + used, sizeof(payload) - used,
+                 ";width=%u;height=%u;debug_max_pointers=%u;debug_controller_mask=%u",
+                 unsigned(s_test_control.width), unsigned(s_test_control.height),
+                 unsigned(s_test_control.max_pointers), s_test_control.inject_controller ? 4095u : 0u);
+    }
     if (TestControlAvailable() && s_test_control.presentation_fps_x10 != nullptr) {
         const size_t used = strlen(payload);
         snprintf(payload + used, sizeof(payload) - used, ";presentation_fps_x10=%u",
@@ -1753,6 +1781,14 @@ bool ParseUnsigned(const char* text, uint32_t maximum, uint32_t* value) {
 #if CONFIG_PXA_ENABLED
 void HandlePerf(unsigned long sequence, char* const* arguments,
                 size_t argument_count) {
+#if CONFIG_PXADB_TEST_CONTROL && CONFIG_PXA_RENDER_ACCEL_SELF_TEST
+    if (argument_count == 1 && strcmp(arguments[0], "ACCELTEST") == 0) {
+        if (!TestControlAvailable()) { SendFrame(sequence, "ERR", "test_control_unavailable"); return; }
+        const bool passed = pxa_render_accel_self_test();
+        SendFrame(sequence, passed ? "OK" : "ERR", passed ? "render_accel_self_test=passed" : "render_accel_self_test=failed");
+        return;
+    }
+#endif
     if (argument_count == 1 && strcmp(arguments[0], "FPS") == 0) {
 #if CONFIG_PXADB_TEST_CONTROL
         if (TestControlAvailable() && s_test_control.presentation_fps_x10 != nullptr) {
@@ -1964,7 +2000,7 @@ void SendInputCapabilities(unsigned long sequence) {
         return;
     }
     char payload[256] = {};
-    TestControlInputState state;
+    TestControlInputState state = {};
     const bool physical_known = s_test_control.physical_input_state &&
         s_test_control.physical_input_state(s_test_control.context, &state);
     snprintf(payload, sizeof(payload),

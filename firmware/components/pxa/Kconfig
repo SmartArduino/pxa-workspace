@@ -1,5 +1,5 @@
 menu "PXA Development Apps"
-    depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32S31) && !USE_EMOTE_MESSAGE_STYLE
+    depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32S31 || IDF_TARGET_ESP32P4) && !USE_EMOTE_MESSAGE_STYLE
 
     config PXA_ENABLED
         bool "Enable PXA Draft 0.1 platform"
@@ -295,6 +295,15 @@ menu "PXA Development Apps"
             help
                 Host only downloads signed PXA containers from this origin.
                 Keep it aligned with the Store App catalog origin.
+
+        config PXA_STORE_WORKER_RESERVED_STACK
+            bool "Reserve the Store worker's internal RAM stack"
+            default n
+            help
+                Reserve 10 KiB of internal RAM plus task/queue controls at boot.
+                Reuse one worker for downloads and installs so fragmented SRAM
+                cannot prevent task creation. Flash writes require an internal
+                stack; moving this worker to PSRAM is unsafe.
 
         config PXA_PRIVATE_FS_MAX_OPEN_HANDLES
             int "Per-App private FS open Handle limit"

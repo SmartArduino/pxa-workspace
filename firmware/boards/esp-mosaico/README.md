@@ -341,16 +341,24 @@ Only presentation/composition holds the UI lock, reducing touch blocking.
 The flush worker runs at priority 6 on core 0, sleeping during TE and DMA
 waits so rendering and audio can use the CPU. This adds one 4 KiB task stack;
 it allocates no additional framebuffers.
-PPA fills validated full-width GameRender background bands before the CPU
-rasterizes the remaining commands, as on Korvo. Eligible full-panel RGB565
+The shared `pxa_render_accel` backend uses PPA for validated, cache-aligned
+full-width GameRender background bands and leading color clears before CPU
+workers rasterize the remaining commands. Depth and coverage semantics stay
+with the CPU renderer. Eligible full-panel RGB565
 frames at 1x use a blocking PPA SRM operation for copy and byte swapping
-into the owned PSRAM presentation buffer. 2x/4x expansion uses CPU nearest
-neighbour copies: SRM upscaling changed edge colors on this S31, so it is
-not used for pixel art. LVGL primitives stay on the software drawing backend. Driver cache
+into the owned PSRAM presentation buffer. 2x/4x expansion uses the shared
+bit-exact nearest-neighbour kernel, with PIE SIMD on core 1 and a scalar
+fallback. SRM upscaling changes pixel-art edge colors and is not used for this
+path. LVGL keeps its software renderer and accelerates eligible opaque RGB565
+fills through the shared SIMD hook. Driver cache
 synchronization completes before CPU/scanout reads. Allocation/operation
 failures fall back to the CPU path: native composition byte-swaps pixel pairs;
-2x/4x expansion uses fixed-scale paired reads/writes, combining byte swapping
-with replication without per-pixel division, then copies repeated rows.
+2x/4x expansion combines byte swapping with replication without per-pixel
+division, then copies repeated rows. Damage detection compares equal prefixes
+with SIMD where eligible, finds the last changed pixel from the row end, and
+skips the interior once its bounds are known. The diagnostics overlay remains
+excluded from application damage. See `firmware/components/pxa_render_accel/README.md`
+for shared-backend configuration and verification commands.
 RGB565 frames with transparent system/guest overlays first use the fast
 base copy/scale path, then blend clipped overlay intersections, skipping zero
 alpha and directly storing opaque colors. Hidden planes skip blending. Opaque

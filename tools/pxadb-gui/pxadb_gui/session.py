@@ -13,6 +13,7 @@ import collections
 import dataclasses
 import errno
 import pathlib
+import os
 import subprocess
 import threading
 import time
@@ -501,7 +502,7 @@ class DeviceSession:
         selector = self._simulator
 
         def run(session: "DeviceSession") -> object:
-            if selector:
+            if selector and os.name != 'nt':
                 profile, separator, instance = selector.partition("@")
                 command = [str(ROOT / "tools" / "simulator.sh"), "product",
                            "run", "--profile", profile]
@@ -514,7 +515,7 @@ class DeviceSession:
             return f"run: {identity}"
 
         self._enqueue(f"run {identity}", run,
-                      needs_client=not bool(selector))
+                      needs_client=not bool(selector) or os.name == 'nt')
 
     def reboot(self) -> None:
         def run(session: "DeviceSession") -> object:

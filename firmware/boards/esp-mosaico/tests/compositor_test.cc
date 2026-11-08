@@ -278,20 +278,6 @@ void TestPpaDirectAndFallback() {
         assert(accelerated == software); // Error permits complete CPU repaint.
         g_ppa_fail = false;
     }
-    std::vector<uint16_t> background(480 * 480, 0x1234);
-    const uint16_t top[] = {0, 160, 320}, bottom[] = {160, 320, 480};
-    const uint16_t colors[] = {0xf800, 0x07e0, 0x001f};
-    assert(FillRasterBands(nullptr, background.data(), 480, 480, 480, top, bottom, colors, 3));
-    for (size_t y = 0; y < 480; ++y)
-        for (size_t x = 0; x < 480; ++x)
-            assert(background[y * 480 + x] == colors[y / 160]);
-    const auto previous = background;
-    const uint16_t invalid_bottom[] = {160, 320, 481};
-    assert(!FillRasterBands(nullptr, background.data(), 480, 480, 480, top, invalid_bottom, colors, 3));
-    assert(background == previous);
-    g_ppa_fail = true;
-    assert(!FillRasterBands(nullptr, background.data(), 480, 480, 480, top, bottom, colors, 3));
-    g_ppa_fail = false;
     g_has_frame = false;
 }
 

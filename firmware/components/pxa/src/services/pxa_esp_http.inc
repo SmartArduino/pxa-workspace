@@ -132,8 +132,9 @@ static void stream_step(pxa_esp_net_state_t *net, pxa_esp_net_slot_t *slot) {
         goto schedule;
     }
     if (h->phase == 0) {
-        ESP_LOGI(PXA_ESP_NET_TAG, "HTTP stream %s started: %s",
-                 method_name(slot->method), slot->url);
+        /* Request URLs can contain API keys and precise coordinates. */
+        ESP_LOGI(PXA_ESP_NET_TAG, "HTTP stream %s started",
+                 method_name(slot->method));
         esp_http_client_config_t config = {0};
         uint16_t i;
         esp_err_t error = ESP_OK;

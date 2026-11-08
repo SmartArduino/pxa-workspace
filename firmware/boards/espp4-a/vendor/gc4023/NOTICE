@@ -1,0 +1,21 @@
+GC4023 sensor support
+
+ESP32 driver adaptation and 1920x1080 timing/crop:
+SmartArduino/ESPP4-A, Apache-2.0
+https://github.com/SmartArduino/ESPP4-A/tree/1e981d9f159a1afb30bd5e41b0137344ce3916a6/components/gc4023
+
+Sensor register initialization and gain tables:
+Copyright (c), 2001-2025, Shenshu Tech. Co., Ltd.
+OpenIPC/openhisilicon, commit c0d8112da51c8e9f6215a2208bdeaefc1b6201bf
+libraries/sensor/hi3516cv6xx/galaxycore_gc4023/gc4023_cfg.h
+libraries/sensor/hi3516cv6xx/galaxycore_gc4023/gc4023_cmos.c
+https://github.com/OpenIPC/openhisilicon/tree/c0d8112da51c8e9f6215a2208bdeaefc1b6201bf/libraries/sensor/hi3516cv6xx/galaxycore_gc4023
+The repository README at that same commit explicitly scopes its licenses:
+"Kernel modules: GPL v3"
+"Sensor libraries: MIT (for use with OpenIPC and third-party software)"
+https://github.com/OpenIPC/openhisilicon/blob/c0d8112da51c8e9f6215a2208bdeaefc1b6201bf/README.md#license
+Only the MIT sensor data is used. No kernel modules are included or linked.
+Original sensor copyright notice restored from this source. The timing and
+crop changes and ESP32 API adaptation retain SmartArduino's Apache-2.0 terms.
+The separate HiSpark checkout has no explicit license and is not the license
+basis for these tables.

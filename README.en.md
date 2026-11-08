@@ -25,7 +25,7 @@ C++26 and O3 are the defaults; `pxa.lock` pins the SDK and toolchain. The publis
 
 The optional [PXA AI kit](https://pxa.doit.am/docs/ai-development/) adds development/debug/device/release skills, project-scoped agents and repeatable verification scripts. It works with the existing DevKit and adds no device runtime overhead.
 
-Windows/macOS users can use [the cross-platform companion](tools/portable/README.en.md): build and run headless in a container, then use host-native PXADB for USB serial without forwarding devices.
+Windows x64 users can [build the toolchain, simulator and debugging tools natively](tools/portable/windows/README.md). Windows/macOS users can also use [the cross-platform companion](tools/portable/README.en.md): build and run headless in a container, then use host-native PXADB for USB serial without forwarding devices.
 
 The remaining commands are for system and board development, from this workspace root:
 
@@ -91,6 +91,12 @@ initialization from the reference firmware, FT6336U touch, 14 keys including
 MENU/RETURN, MAX98357A audio and native four-bit SDMMC. Build with
 `tools/firmware.sh doit-gamekit-1 build`; see the
 [board guide](firmware/boards/doit-gamekit-1/README.md).
+
+`doit-esp32s31-devkit` supports the DOIT ESP32-S31 DevKit with 8 MiB Flash,
+480 × 854 ST7102 RGB display and touch, ES8311 audio and four-bit SDMMC.
+Build with `tools/firmware.sh doit-esp32s31-devkit build`; USB-Uart runs at
+921600 baud. See the [board guide](firmware/boards/doit-esp32s31-devkit/README.md)
+for shared buses, BOOT/LCD chip select and camera connector limitations.
 
 ```sh
 tools/firmware.sh pai-touch build

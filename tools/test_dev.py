@@ -79,6 +79,7 @@ class DeviceLaunchTest(unittest.TestCase):
             ("esp32s31-korvo-1", "esp32s31"),
             ("doit-gamekit", "esp32s31"),
             ("doit-gamekit-1", "esp32s31"),
+            ("doit-esp32s31-devkit", "esp32s31"),
             ("pai-touch", "esp32s3"),
             ("sensecap-watcher", "esp32s3"),
         ):
@@ -109,6 +110,16 @@ class DeviceLaunchTest(unittest.TestCase):
                 self.assertNotIn("--baud", self.developer.pxadb("info"))
                 self.developer.args.baud = 921600
                 self.assertEqual(self.developer.pxadb("info")[-2:], ["--baud", "921600"])
+
+    def test_doit_devkit_uart_uses_921600(self) -> None:
+        self.developer.args.board = "doit-esp32s31-devkit"
+        self.developer.args.baud = None
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(self.developer.pxadb("info")[-2:], ["--baud", "921600"])
+        with mock.patch.dict(os.environ, {"PXADB_BAUD": "115200"}):
+            self.assertNotIn("--baud", self.developer.pxadb("info"))
+        self.developer.args.baud = 460800
+        self.assertEqual(self.developer.pxadb("info")[-2:], ["--baud", "460800"])
 
     def test_other_boards_keep_pxadb_baud_default(self) -> None:
         self.developer.args.baud = None

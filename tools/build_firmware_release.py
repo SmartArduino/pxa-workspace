@@ -21,7 +21,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-BOARDS = ('pai-touch', 'esp-mosaico', 'esp32s31-korvo-1', 'sensecap-watcher', 'doit-gamekit', 'doit-gamekit-1')
+BOARDS = ('pai-touch', 'esp-mosaico', 'esp32s31-korvo-1', 'sensecap-watcher', 'doit-gamekit', 'doit-gamekit-1', 'doit-esp32s31-devkit', 'espp4-a')
 
 
 def store_identity(package: Path, container: Path) -> dict:
@@ -107,7 +107,9 @@ def build_board(args, name: str, version: str) -> dict:
     if description['project_version'] != version:
         raise ValueError(f'Firmware build version differs from release: {name}')
     chip = flash['extra_esptool_args']['chip']
-    target = 'esp32s3' if chip == 'esp32s3' else 'esp32s31'
+    if chip not in ('esp32s3', 'esp32s31', 'esp32p4'):
+        raise ValueError(f'Unsupported firmware CPU: {chip}')
+    target = chip
     package = args.packages / target / 'pxa-store'
     container = package.with_suffix('.pxa')
     if not container.is_file() or not all((package / p).is_file() for p in ('manifest.pxm', 'signature.pxs')):

@@ -21,6 +21,10 @@ import tempfile
 import threading
 import time
 import zlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / 'pxadb'))
+from pxa_local_socket import LocalSocket, LocalServer
 
 
 FRAME_HEADER = struct.Struct("!IBBI")
@@ -108,7 +112,7 @@ class SimulatorPxaDb:
     def control(self, command: str, timeout: float = 5.0) -> bytes:
         if self.control_socket is None:
             raise ServiceError("simulator_control_unavailable")
-        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection = LocalSocket()
         connection.settimeout(timeout)
         try:
             connection.connect(str(self.control_socket))
@@ -625,7 +629,7 @@ class BinaryHandler(socketserver.BaseRequestHandler):
                 service.send(self, sequence, "ERR", str(error))
 
 
-class UnixServer(socketserver.ThreadingUnixStreamServer):
+class UnixServer(LocalServer):
     daemon_threads = True
 
 
@@ -663,7 +667,7 @@ def main() -> int:
     state_root = arguments.state_root.resolve()
     socket_path = arguments.socket.resolve()
     socket_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if socket_path.parent.stat().st_uid != os.getuid():
+    if os.name != 'nt' and socket_path.parent.stat().st_uid != os.getuid():
         parser.error("socket directory must be owned by the current user")
     os.chmod(socket_path.parent, 0o700)
     if not arguments.installer.is_file() or not os.access(arguments.installer, os.X_OK):

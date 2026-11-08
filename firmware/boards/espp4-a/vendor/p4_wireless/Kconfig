@@ -1,0 +1,40 @@
+menu "P4 Wireless (ESPP4-A)"
+
+    config P4_WIRELESS
+        bool
+        default y
+
+    # Fixed by the prebuilt library, do not change
+    if !ESP_WIFI_REMOTE_IN_IDF
+
+    config ESP_WIFI_REMOTE_MAX_CONN_NUM
+        int
+        default 15
+
+    config ESP_WIFI_SOFTAP_SUPPORT
+        bool
+        default y
+
+    config ESP_WIFI_STATIC_RX_BUFFER_NUM
+        int
+        default 10
+
+    config ESP_WIFI_DYNAMIC_RX_BUFFER_NUM
+        int
+        default 32
+
+    config ESP_WIFI_TX_BUFFER_TYPE
+        int
+        default 1
+
+    config ESP_WIFI_DYNAMIC_RX_MGMT_BUF
+        int
+        default 0
+
+    config ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM
+        int
+        default 7
+
+    endif # !ESP_WIFI_REMOTE_IN_IDF
+
+endmenu

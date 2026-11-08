@@ -25,6 +25,14 @@ pxa_status_t pxa_esp_storage_worker_submit(void *context, pxa_storage_work_fn wo
     return PXA_STATUS_WOULD_BLOCK;
 }
 void pxa_esp_storage_worker_end(void) { assert(storage_worker_active); storage_worker_active = 0; }
+static int fs_worker_active;
+pxa_status_t pxa_esp_fs_worker_begin(void (*notify)(void *), void *context) {
+    (void)notify;(void)context;assert(!fs_worker_active);fs_worker_active=1;return PXA_STATUS_OK;
+}
+pxa_status_t pxa_esp_fs_worker_submit(void *context,pxa_fs_async_work_fn work,void *job) {
+    (void)context;(void)work;(void)job;assert(!"fixture does not execute async FS jobs");return PXA_STATUS_WOULD_BLOCK;
+}
+void pxa_esp_fs_worker_end(void) {assert(fs_worker_active);fs_worker_active=0;}
 static pxa_status_t session_status=PXA_STATUS_OK;
 static unsigned session_calls;
 pxa_status_t pxa_esp_app_storage_permissions(pxa_esp_app_storage_t *session,pxa_permission_store_t *store) {

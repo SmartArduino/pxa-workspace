@@ -17,8 +17,14 @@ TMPDIR="$build_dir" python3 "$tests_dir/test_usb_restart.py"
   -fsanitize=address,undefined -fno-omit-frame-pointer -g \
   -I"$tests_dir/stubs" -I"$tests_dir/../include" \
   -I"$project_dir/firmware/components/pxa/include" \
+  -I"$project_dir/firmware/components/pxa_render_accel/include" \
   -I"$project_dir/deps/pxa-system/libpxa/include" \
-  "$tests_dir/compositor_test.cc" -o "$build_dir/compositor_test"
+  -DCONFIG_PXA_RENDER_ACCEL=0 \
+  "$tests_dir/compositor_test.cc" \
+  "$project_dir/firmware/components/pxa_render_accel/pixels.c" \
+  "$project_dir/firmware/components/pxa_render_accel/ppa.c" \
+  "$project_dir/firmware/components/pxa_render_accel/self_test.c" \
+  -o "$build_dir/compositor_test"
 "$build_dir/compositor_test"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -Wno-missing-field-initializers \

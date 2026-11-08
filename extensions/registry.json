@@ -3,6 +3,17 @@
   "description": "Workspace allocations, not a PXA standard or globally reserved vendor range. HELLO identity and version negotiation are mandatory.",
   "extensions": [
     {
+      "name": "org.doit.wifi-location",
+      "service_id": 33027,
+      "version": [
+        0,
+        1
+      ],
+      "identity": "2bdd0e91-e1c4-48da-99e2-6a70f3113985",
+      "permission": "org.doit.wifi-location",
+      "scope": "wifi.scan"
+    },
+    {
       "name": "org.doit.voice-trigger",
       "service_id": 33025,
       "resource_type": 33025,

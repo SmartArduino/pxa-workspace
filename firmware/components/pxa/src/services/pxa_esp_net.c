@@ -331,8 +331,8 @@ static void net_worker(void *context) {
         method = slot->method;
         portEXIT_CRITICAL(&g_net_lock);
 
-        ESP_LOGI(PXA_ESP_NET_TAG, "Network %s started: %s",
-                 method_name(method), slot->url);
+        /* URLs may contain API keys or private location parameters. */
+        ESP_LOGI(PXA_ESP_NET_TAG, "Network %s started", method_name(method));
         platform_result = PXA_PLATFORM_NET_FETCH_NOT_USED;
         if (pxa_platform_net_http_request != NULL) {
             pxa_net_request_t request;

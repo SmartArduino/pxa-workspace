@@ -1,5 +1,7 @@
 #pragma once
 
+#include <pxa_render_accel.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -83,19 +85,7 @@ bool CopyRefreshArea(const Area& dirty, const uint8_t* frame, uint8_t* snapshot,
         // memcpy keeps unaligned buffers and strict aliasing well-defined.
         for (int32_t y = area.y1; y <= area.y2; ++y) {
             const size_t offset = y * row_bytes + area.x1 * sizeof(uint16_t);
-            size_t x = 0;
-            for (; x + 4 <= bytes; x += 4) {
-                uint32_t pair;
-                std::memcpy(&pair, frame + offset + x, 4);
-                pair = ((pair & 0x00ff00ffu) << 8) | ((pair & 0xff00ff00u) >> 8);
-                std::memcpy(snapshot + offset + x, &pair, 4);
-            }
-            if (x < bytes) {
-                uint16_t pixel;
-                std::memcpy(&pixel, frame + offset + x, 2);
-                pixel = __builtin_bswap16(pixel);
-                std::memcpy(snapshot + offset + x, &pixel, 2);
-            }
+            pxa_render_swap_rgb565(snapshot + offset, frame + offset, bytes / 2);
         }
         return true;
     }
@@ -135,24 +125,21 @@ FrameDamage FindFrameDamage(const uint8_t* previous, const uint8_t* next,
         return FrameDamage::Unavailable;
     int left = kWidth, right = -1, top = kHeight, bottom = -1;
     for (int y = 0; y < kHeight; ++y) {
-        const bool exclude_row = excluded && y >= excluded->y1 && y <= excluded->y2;
-        const size_t row = size_t(y) * kWidth * sizeof(uint16_t);
-        for (int x = 0; x < kWidth; x += 2) {
-            uint32_t before, after;
-            std::memcpy(&before, previous + row + x * sizeof(uint16_t), 4);
-            std::memcpy(&after, next + row + x * sizeof(uint16_t), 4);
-            uint32_t difference = before ^ after;
-            if (!difference) continue;
-            if (exclude_row) {
-                if (x >= excluded->x1 && x <= excluded->x2) difference &= 0xffff0000u;
-                if (x + 1 >= excluded->x1 && x + 1 <= excluded->x2) difference &= 0x0000ffffu;
-                if (!difference) continue;
-            }
-            left = std::min(left, x + ((difference & 0xffffu) ? 0 : 1));
-            right = std::max(right, x + ((difference >> 16) ? 1 : 0));
+        const auto segment = [&](int begin, int end) {
+            if (begin >= end) return;
+            const size_t offset = (size_t(y) * kWidth + begin) * 2;
+            uint32_t first, last;
+            if (!pxa_render_diff_rgb565(previous + offset, next + offset,
+                                        end - begin, &first, &last)) return;
+            left = std::min(left, begin + int(first));
+            right = std::max(right, begin + int(last));
             top = std::min(top, y);
             bottom = y;
-        }
+        };
+        if (excluded && y >= excluded->y1 && y <= excluded->y2) {
+            segment(0, std::clamp<int>(excluded->x1, 0, kWidth));
+            segment(std::clamp<int>(excluded->x2 + 1, 0, kWidth), kWidth);
+        } else segment(0, kWidth);
     }
     if (right < 0) {
         // Retain normal frame completion/TE ownership without retransmitting

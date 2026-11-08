@@ -1,0 +1,26 @@
+menu "PXA rendering acceleration"
+    config PXA_RENDER_ACCEL
+        bool "Use ESP32-S31 rendering acceleration"
+        depends on IDF_TARGET_ESP32S31
+        default y
+        help
+            Shared SIMD pixel primitives and PPA bulk operations for LVGL,
+            PXA GameRender and board presenters. Unsupported operations retain
+            the scalar renderer. Disable for performance comparisons.
+
+    config PXA_RENDER_ACCEL_INDEX8
+        bool "Use PPA for native INDEX8 GameRender blits"
+        depends on PXA_RENDER_ACCEL
+        default n
+        help
+            Experimental. Palette setup and synchronization can cost more than
+            CPU lookup. Enable only after measuring the intended workload.
+
+    config PXA_RENDER_ACCEL_SELF_TEST
+        bool "Include rendering acceleration differential tests"
+        depends on PXA_RENDER_ACCEL
+        default n
+        help
+            Enable the PXADB PERF ACCELTEST developer command when PXADB test
+            control is enabled. Tests run explicitly, never during startup.
+endmenu

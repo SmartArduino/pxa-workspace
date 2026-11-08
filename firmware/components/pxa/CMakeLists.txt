@@ -16,6 +16,7 @@ set(PXA_SRCS
     "src/services/pxa_esp_net.c"
     "src/services/pxa_esp_services.c"
     "src/services/pxa_esp_storage_worker.c"
+    "src/services/pxa_esp_fs_worker.c"
     "src/services/pxa_esp_sensor.c"
     "src/services/pxa_esp_haptics.c"
     "src/services/pxa_esp_fs_roots.c"
@@ -167,12 +168,18 @@ set(PXA_PRIV_REQUIRES
     pthread
     freertos)
 list(APPEND PXA_PRIV_REQUIRES lz4)
-set(PXA_REQUIRES lvgl esp_timer esp_mm)
+set(PXA_REQUIRES lvgl esp_timer esp_mm pxa_render_accel)
+idf_build_get_property(PXA_WIFI_LOCATION_ENABLED PXA_ENABLE_WIFI_LOCATION)
+get_filename_component(PXA_WIFI_LOCATION_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../extensions/wifi-location" ABSOLUTE)
+if(PXA_WIFI_LOCATION_ENABLED)
+    list(APPEND PXA_SRCS "${PXA_WIFI_LOCATION_ROOT}/src/wifi_location.c" "src/services/pxa_esp_wifi_location.cc")
+    list(APPEND PXA_PRIV_REQUIRES 78__esp-wifi-connect)
+endif()
 if(PXA_ENABLE_APP_PAGES_COMPAT)
     list(APPEND PXA_REQUIRES app_pages)
 endif()
 idf_build_get_property(PXA_TARGET IDF_TARGET)
-if(PXA_TARGET STREQUAL "esp32s3" OR PXA_TARGET STREQUAL "esp32s31")
+if(PXA_TARGET STREQUAL "esp32s3" OR PXA_TARGET STREQUAL "esp32s31" OR PXA_TARGET STREQUAL "esp32p4")
     list(APPEND PXA_REQUIRES wamr)
 endif()
 set(PXA_RASTER_SPAN_IRAM_DEFAULT OFF)
@@ -205,8 +212,18 @@ idf_component_register(
     PRIV_REQUIRES ${PXA_PRIV_REQUIRES}
     LDFRAGMENTS ${PXA_LINKER_FRAGMENTS}
 )
+if(CONFIG_PXA_RENDER_ACCEL)
+    set_property(SOURCE "${PXA_C_CORE_ROOT}/src/services/game_render/raster.c"
+        "${PXA_C_CORE_ROOT}/src/services/game_render/raster_rgb565.c"
+        APPEND PROPERTY COMPILE_DEFINITIONS
+        PXA_RASTER_FILL_RGB565=pxa_render_fill_rgb565)
+endif()
 target_compile_definitions(${COMPONENT_LIB} PUBLIC
     PXA_ENABLE_LEGACY_CONTAINER=$<BOOL:${CONFIG_PXA_ENABLE_LEGACY_CONTAINER}>)
+if(PXA_WIFI_LOCATION_ENABLED)
+    target_include_directories(${COMPONENT_LIB} PUBLIC "${PXA_WIFI_LOCATION_ROOT}/include")
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC PXA_ENABLE_WIFI_LOCATION=1)
+endif()
 if(CONFIG_PXA_ENABLED AND CONFIG_LV_USE_FREETYPE)
     target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=FT_Stream_Open")
     target_include_directories(freetype PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src/ui")
@@ -230,6 +247,7 @@ if(CONFIG_COMPILER_OPTIMIZATION_PERF AND
     set_property(SOURCE
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster.c"
         "${PXA_C_CORE_ROOT}/src/services/game_render/raster_blit.c"
+        "${PXA_C_CORE_ROOT}/src/services/game_render/raster_rgb565.c"
         APPEND PROPERTY COMPILE_OPTIONS "-O3")
 endif()
 if(CONFIG_WAMR_ENABLE_LIBC_WASI)
@@ -247,7 +265,7 @@ if(PXA_PRIORITY_TILE_TRACE)
         APPEND PROPERTY COMPILE_DEFINITIONS PXA_PRIORITY_TILE_TRACE=1)
 endif()
 
-if(CONFIG_IDF_TARGET_ESP32S3 OR CONFIG_IDF_TARGET_ESP32S31)
+if(CONFIG_IDF_TARGET_ESP32S3 OR CONFIG_IDF_TARGET_ESP32S31 OR CONFIG_IDF_TARGET_ESP32P4)
     include("${PXSYS_ROOT}/platforms/esp-idf/cmake/pxsys_wamr.cmake")
     if(DEFINED PXA_HOST_SDK_ROOT)
         # Archives have verified provenance, but deliberately contain no .git.

@@ -283,7 +283,7 @@ done:
     if(status!=PXA_STATUS_OK && owned) {if(!streaming)unlink(path);path[0]=0;}
     return status;
 }
-void pxa_esp_store_worker(void *context) {
+void pxa_esp_store_run_job(void *context) {
     pxa_esp_store_job_t *job=context;
     uint8_t *prefix=NULL;size_t prefix_bytes=0;char url[512]={0},resource_filename[24];
     uint8_t stream_app=0,stream_resources=0;
@@ -404,6 +404,11 @@ done:
     if(retained_epoch)pxa_esp_volumes_release(retained_epoch);
     ESP_LOGI("PxaStore","Transfer completed: status=%ld install=%d stack_spare=%u",(long)job->status,attempted_install,
         (unsigned)(uxTaskGetStackHighWaterMark(NULL)*sizeof(StackType_t)));
-    job->notify(job,2);vTaskDelete(NULL);
+    job->notify(job,2);
+}
+
+void pxa_esp_store_worker(void *context) {
+    pxa_esp_store_run_job(context);
+    vTaskDelete(NULL);
 }
 #endif

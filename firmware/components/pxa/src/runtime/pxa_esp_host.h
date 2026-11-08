@@ -110,6 +110,7 @@ void pxa_esp_host_set_audio_asset_sink(
     pxa_host_audio_asset_control_fn control, void *context);
 void pxa_esp_host_set_audio_music_sink(const pxa_host_audio_music_sink_t *);
 void pxa_esp_host_audio_notify(void);
+void pxa_esp_host_io_notify(void);
 const lv_font_t *pxa_esp_host_ui_body_font(void);
 const lv_font_t *pxa_esp_host_ui_label_font(void);
 /* Borrowed epoch-bound name, including for lazily created sized/IME fonts. */

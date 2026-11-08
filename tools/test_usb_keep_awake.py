@@ -131,7 +131,7 @@ class FirmwareRoutingTest(unittest.TestCase):
                     self.assertEqual([v['tool'] for v in calls], expected_tools)
                     self.assertTrue(all(v['guard'] == expected_guard for v in calls))
                     args = calls[-1]['args']
-                    self.assertEqual(args[-3:], ['921600', action, literal])
+                    self.assertEqual(args[-3:], ['921600', literal, action])
                     self.assertEqual(args[args.index('--port')+1], '/dev/pxa-test-no-device')
                     if board == 'esp-mosaico' and action == 'app-flash':
                         self.assertEqual(calls[-1]['baud'], '2000000')

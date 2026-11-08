@@ -5,6 +5,9 @@
 
 #define ESP_PLATFORM 1
 #define PXA_ESP_SURFACE_GUEST_MAPPING_SUPPORTED 1
+#include "esp_cache.h"
+static int surface_test_cache_msync(void *address, size_t size, int flags);
+#define esp_cache_msync surface_test_cache_msync
 #include "../src/services/pxa_esp_resource_memory.c"
 #include "../src/services/pxa_esp_surface.c"
 
@@ -69,8 +72,18 @@ void *heap_caps_aligned_alloc(size_t alignment, size_t size, unsigned caps) {
 }
 void *heap_caps_aligned_calloc(size_t alignment, size_t count, size_t size,
                                unsigned caps) {
-    (void)alignment;
-    return heap_caps_calloc(count, size, caps);
+    last_malloc_caps = caps;
+    assert(lock_depth == 0);
+    void *memory = memalign(alignment, count * size);
+    if (memory != NULL) { ++allocations; memset(memory, 0, count * size); }
+    return memory;
+}
+static int surface_test_cache_msync(void *address, size_t size, int flags) {
+    assert((uintptr_t)address % PXA_ESP_SURFACE_CACHE_ALIGNMENT == 0);
+    assert(size != 0 && size % PXA_ESP_SURFACE_CACHE_ALIGNMENT == 0);
+    assert(size <= malloc_usable_size(address));
+    assert(flags == ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    return 0;
 }
 void heap_caps_free(void *memory) {
     assert(lock_depth == 0);

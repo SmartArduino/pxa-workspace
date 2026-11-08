@@ -3,6 +3,11 @@ cmake_minimum_required(VERSION 3.16)
 set(PXSYS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../deps/pxa-system" CACHE PATH
     "Path to the imported pxa-system checkout")
 set(PXA_BOARD "pai-touch" CACHE STRING "Selected board profile")
+set(PXA_WIFI_LOCATION_DEFAULT OFF)
+if(PXA_BOARD STREQUAL "pai-touch")
+    set(PXA_WIFI_LOCATION_DEFAULT ON)
+endif()
+option(PXA_ENABLE_WIFI_LOCATION "Expose permission-controlled Wi-Fi positioning snapshots" ${PXA_WIFI_LOCATION_DEFAULT})
 
 if(NOT EXISTS "${PXSYS_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR "PXSYS_ROOT must contain an initialized pxa-system checkout")
@@ -55,6 +60,10 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_LIST_DIR}/VERSION" "${PXSYS_ROOT}/VERSION")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+if(PXA_BOARD_BOOTLOADER_COMPONENT_DIRS)
+    idf_build_set_property(BOOTLOADER_EXTRA_COMPONENT_DIRS
+        "${PXA_BOARD_BOOTLOADER_COMPONENT_DIRS}" APPEND)
+endif()
 # Each board can resolve a different managed-component graph. Keep its exact
 # resolution in a separate lock file instead of rewriting another board's.
 idf_build_set_property(DEPENDENCIES_LOCK "dependencies.lock.${PXA_BOARD}")
@@ -65,6 +74,7 @@ idf_build_set_property(PXA_BOARD_COMPONENT "${PXA_BOARD_COMPONENT}")
 idf_build_set_property(PXA_BOARD_ID "${PXA_BOARD}")
 idf_build_set_property(PXA_ENABLE_VOICE_TRIGGER "${PXA_ENABLE_VOICE_TRIGGER}")
 idf_build_set_property(PXA_ENABLE_PERIPHERALS "${PXA_BOARD_ENABLE_PERIPHERALS}")
+idf_build_set_property(PXA_ENABLE_WIFI_LOCATION "${PXA_ENABLE_WIFI_LOCATION}")
 idf_build_set_property(MINIMAL_BUILD ON)
 # The generic ESP PXA host has no app_pages dependency. Legacy products can
 # provide their own compatibility component without changing this project.

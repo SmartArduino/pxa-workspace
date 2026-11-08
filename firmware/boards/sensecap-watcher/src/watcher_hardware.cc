@@ -3,6 +3,7 @@
 #include "sensecap_watcher_config.h"
 #include "watcher_pxa_surface.h"
 #include "watcher_lcd_io.h"
+#include "watcher_sensors.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -185,7 +186,9 @@ bool SensecapWatcherHardware::Initialize() {
     } else ESP_LOGW(kTag, "Continuing without SD and vision");
     WatcherInitializeRtc(i2c_bus_);
     if (!InitializeTouch()) ESP_LOGW(kTag, "Continuing without touch input");
-    if (!InitializeBattery()) ESP_LOGW(kTag, "Continuing without battery data");
+    const bool battery_available = InitializeBattery();
+    if (!battery_available) ESP_LOGW(kTag, "Continuing without battery data");
+    WatcherInitializeSensors(battery_available ? &battery_ : nullptr);
     if (!InitializeInputs()) ESP_LOGW(kTag, "Continuing without wheel input");
     if (!audio_.Initialize(i2c_bus_)) {
         ESP_LOGW(kTag, "Continuing without speaker output");
@@ -646,6 +649,7 @@ void SensecapWatcherHardware::FlushTask() {
             }
             if (request.last) {
                 pxa_board_performance_note_frame();
+                pxa_esp_surface_note_display_frame_presented(completed_us);
                 pxa_esp_surface_note_display_latency(
                     request.frame_id, request.input_timestamp_us,
                     request.raster_ready_tick_us, completed_us);
@@ -693,18 +697,13 @@ bool SensecapWatcherHardware::PresentDirectFrame() {
         return false;
     }
     const lv_area_t area = {0, 0, WATCHER_DISPLAY_WIDTH - 1, WATCHER_DISPLAY_HEIGHT - 1};
-    const auto visible = [](const pxa_esp_surface_ui_alpha_plane_t& plane) {
-        return plane.visible && plane.opacity != 0;
-    };
-    const bool native = scanout_ != nullptr && frame.width == WATCHER_DISPLAY_WIDTH &&
-        frame.height == WATCHER_DISPLAY_HEIGHT &&
-        frame.stride_bytes == WATCHER_DISPLAY_WIDTH * 2 &&
-        (frame.flags & PXA_SURFACE_FLAG_GUEST_MAPPED) == 0 &&
-        (!visible(frame.ui_alpha_plane) || frame.suppress_guest_alpha) &&
-        !visible(frame.system_alpha_plane);
+    const bool native = scanout_ != nullptr &&
+        watcher_pxa_surface::NativeFrameEligible(frame);
     if (native) {
         // Pack straight from the leased Surface into two small DMA blocks.
-        // No whole-frame mirror copy; the next raster may use another buffer.
+        // Guest-mapped pixels are equally safe: direct_lease_ is released by
+        // FlushTask only after the final DMA completion, never after packing
+        // or queue admission. The next frame may use the other guest buffer.
         direct_lease_ = frame.lease;
         (void)xSemaphoreTake(snapshot_sem_, 0);
         const FlushRequest request{nullptr, area, const_cast<uint8_t*>(frame.pixels),

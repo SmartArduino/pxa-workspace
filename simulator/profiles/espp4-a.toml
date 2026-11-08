@@ -1,0 +1,9 @@
+[desktop]
+width = 480
+height = 854
+density_dpi = 200
+safe_insets = [0, 0, 0, 0]
+locale = "zh-CN"
+theme = "dark"
+gestures = true
+navigation_bar = true

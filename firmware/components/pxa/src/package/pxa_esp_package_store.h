@@ -185,6 +185,15 @@ bool pxa_esp_package_store_load_installed(
     uint8_t *encoded, size_t encoded_capacity,
     pxa_package_manifest_t **manifest);
 
+/* Read and parse installed metadata once, without repeating installation-time
+ * package integrity verification. Initialize result with root/manifest outputs
+ * and NULL workspace/encoded. On success the caller owns both allocated buffers
+ * and must keep them alive while using the manifest, then free() them. On
+ * failure no buffers are transferred. The existing storage activation still
+ * validates the committed installation generation and media binding. */
+bool pxa_esp_package_store_prepare_launch(const char *identity,
+    pxa_posix_installer_result_t *result);
+
 /* Upper-bound workspace required to parse any manifest accepted by this store. */
 size_t pxa_esp_package_store_manifest_workspace_size(void);
 /* Current encoded manifest size, or zero when the Package is unavailable. */

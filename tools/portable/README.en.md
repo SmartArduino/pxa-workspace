@@ -1,5 +1,10 @@
 # PXA on Windows, macOS and other Linux hosts
 
+Windows x64 now has a [native source build entry](windows/README.md) for the
+MinGW Host simulators, installer and pinned LLVM/WAMR compiler. The published
+container companion described below remains separate from a signed Windows
+DevKit release; Windows hardware acceptance is still required before release.
+
 [简体中文](README.md)
 
 The native DevKit 0.8.0 binary release supports Linux x86_64 with glibc 2.39+. This companion uses the same DevKit inside a Linux amd64 container for builds/signing/headless simulation, and runs the Python PXADB client on the host for USB serial access. USB passthrough is unnecessary.

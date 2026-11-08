@@ -18,6 +18,156 @@ import pxadb
 
 
 class BulkUploadTest(unittest.TestCase):
+    def run_recovery(self, failures, *, negotiation_error=None, max_chunk=192,
+                     offset_support=True, stream=False, size=20000,
+                     reset_on_abort=False, fast_cap=3840):
+        """Model lost data/ACKs and receiver-confirmed offsets independently."""
+        payload = bytes(range(256)) * (size // 256) + bytes(range(size % 256))
+        client = fake_client([])
+        client.device_info = (f"fs_fast=1;max_fast=3840;fs_bulk_cobs=1;max_bulk=2048;"
+                              f"max_chunk={max_chunk};fs_chunk_crc32=1;fs_offset={int(offset_support)}")
+        received = bytearray()
+        starts, negotiations, sends, text_sizes = [], [], [], []
+        peer_fast = False
+
+        def reply(sequence=1):
+            return [pxadb.Frame(sequence, "OK", "") if len(received) == size else
+                    pxadb.Frame(sequence, "READY", str(size - len(received)))]
+
+        def collect(sequence, kinds, command, deadline):
+            nonlocal peer_fast
+            if command.startswith(("FSPUT ", "FSINSTALL ")):
+                self.assertFalse(peer_fast, "resume command must follow a confirmed cancel")
+                self.assertEqual(command.split()[3], hashlib.sha256(payload).hexdigest())
+                starts.append(command)
+                if not offset_support:
+                    received.clear()
+                return reply(sequence)
+            if command.startswith("FSFAST "):
+                negotiations.append(int(command.split()[1]))
+                peer_fast = True
+                if len(negotiations) == 2 and negotiation_error is not None:
+                    raise negotiation_error
+                return [pxadb.Frame(sequence, "OK",
+                                   f"chunk={min(fast_cap, negotiations[-1])};window=1")]
+            if command == "FSABORT":
+                self.assertEqual(client.serial.writes[-2], b"\0\0")
+                peer_fast = False
+                if reset_on_abort:
+                    received.clear()
+                return [pxadb.Frame(sequence, "OK", "aborted")]
+            self.assertFalse(peer_fast, "text data cannot enter binary mode")
+            fields = command.split()
+            if fields[0] == "FSDATA2":
+                self.assertEqual(int(fields[1]), len(received))
+                chunk = base64.b64decode(fields[3])
+                self.assertEqual(int(fields[2], 16), zlib.crc32(chunk))
+            else:
+                self.assertEqual(fields[0], "FSDATA")
+                chunk = base64.b64decode(fields[-1])
+            self.assertLessEqual(len(chunk), max_chunk)
+            self.assertEqual(chunk, payload[len(received):len(received) + len(chunk)])
+            text_sizes.append(len(chunk))
+            received.extend(chunk)
+            return reply(sequence)
+
+        def send(offset, chunk, timeout):
+            self.assertTrue(peer_fast)
+            self.assertEqual(offset, len(received))
+            self.assertEqual(chunk, payload[offset:offset + len(chunk)])
+            sends.append((offset, len(chunk)))
+            accepted, error = failures.get(len(sends), (True, None))
+            if accepted:
+                received.extend(chunk)
+            if error is not None:
+                raise error
+            if len(received) == size:
+                client.fast_upload_active = False
+            return reply()
+
+        with tempfile.TemporaryDirectory() as folder:
+            source = pathlib.Path(folder) / "data"; source.write_bytes(payload)
+            with mock.patch.dict(os.environ, {}, clear=True), \
+                 mock.patch.object(client, "_collect_serial_frames", side_effect=collect), \
+                 mock.patch.object(client, "send_fast_upload", side_effect=send):
+                pxadb.NormalFsClient(client).put(source, "data", progress=lambda *_: None,
+                                               stream_install=stream)
+        self.assertEqual(bytes(received), payload)
+        self.assertFalse(client.fast_upload_active)
+        self.assertTrue(all(command == starts[0] for command in starts))
+        return negotiations, sends, text_sizes, starts
+
+    def test_fast_recovery_confirms_lost_data_or_ack_before_smaller_binary_retry(self):
+        for accepted in (False, True):
+            for stream in (False, True):
+                with self.subTest(accepted=accepted, stream=stream):
+                    modes, sends, text, starts = self.run_recovery(
+                        {2: (accepted, pxadb.PxaDbError("lost ACK"))}, stream=stream)
+                    self.assertEqual(modes, [3840, 1920])
+                    self.assertEqual(sends[2][0], 7680 if accepted else 3840)
+                    self.assertEqual(text, [])
+                    self.assertEqual(len(starts), 2)
+
+    def test_second_fast_failure_falls_back_with_device_text_limit(self):
+        modes, _, text, _ = self.run_recovery({
+            1: (False, pxadb.PxaDbError("lost ACK")),
+            2: (False, pxadb.PxaDbError("lost ACK")),
+        }, max_chunk=64)
+        self.assertEqual(modes, [3840, 1920])
+        self.assertTrue(text)
+        self.assertLessEqual(max(text), 64)
+
+    def test_stream_recovery_uses_receiver_rewind_after_abort(self):
+        modes, sends, text, _ = self.run_recovery(
+            {2: (True, pxadb.PxaDbError("lost ACK"))},
+            stream=True, reset_on_abort=True)
+        self.assertEqual(modes, [3840, 1920])
+        self.assertEqual(sends[2], (0, 1920))
+        self.assertEqual(text, [])
+
+    def test_fast_recovery_respects_smaller_memory_negotiation(self):
+        modes, sends, text, _ = self.run_recovery(
+            {2: (False, pxadb.PxaDbError("lost ACK"))}, fast_cap=512)
+        self.assertEqual(modes, [3840, 256])
+        self.assertEqual(sends[2], (512, 256))
+        self.assertEqual(text, [])
+
+    def test_progress_does_not_reenable_fast_retry_for_same_file(self):
+        modes, _, text, _ = self.run_recovery({
+            2: (True, pxadb.PxaDbError("lost ACK")),
+            40: (True, pxadb.PxaDbError("lost ACK")),
+        }, size=100000)
+        self.assertEqual(modes, [3840, 1920])
+        self.assertTrue(text)
+
+    def test_failed_fast_renegotiation_cancels_before_text_fallback(self):
+        for error in (pxadb.PxaDbError("lost negotiation ACK"),
+                      pxadb.PxaDbRejectedError("bulk_no_memory")):
+            with self.subTest(error=error):
+                modes, _, text, starts = self.run_recovery(
+                    {1: (True, pxadb.PxaDbError("lost ACK"))},
+                    negotiation_error=error, max_chunk=64)
+                self.assertEqual(modes, [3840, 1920])
+                self.assertTrue(text)
+                self.assertEqual(len(starts), 3)
+
+    def test_lost_final_fast_ack_confirms_completion_without_renegotiation(self):
+        modes, _, text, starts = self.run_recovery(
+            {1: (True, pxadb.PxaDbError("lost final ACK"))}, size=2000)
+        self.assertEqual(modes, [3840])
+        self.assertEqual(text, [])
+        self.assertEqual(len(starts), 2)
+
+    def test_fast_fatal_write_error_is_not_retried(self):
+        with self.assertRaisesRegex(pxadb.PxaDbRejectedError, "file_write_failed"):
+            self.run_recovery({1: (False, pxadb.PxaDbRejectedError("file_write_failed"))})
+
+    def test_fast_retry_requires_offset_support(self):
+        modes, _, text, _ = self.run_recovery(
+            {2: (True, pxadb.PxaDbError("lost ACK"))}, offset_support=False)
+        self.assertEqual(modes, [3840])
+        self.assertTrue(text)
+
     def test_progress_callback_cannot_insert_text_into_binary_data(self):
         client = fake_client([])
         client.fast_upload_active = True
@@ -98,6 +248,43 @@ class BulkUploadTest(unittest.TestCase):
 
 
 class UsbRuntimeGuardTest(unittest.TestCase):
+    def test_uart_deasserts_reset_and_boot_before_open(self):
+        port = SimpleNamespace(dtr=True, rts=True, port=None, open=mock.Mock(), close=mock.Mock())
+        def opened():
+            self.assertFalse(port.dtr)
+            self.assertFalse(port.rts)
+            self.assertEqual(port.port, "/dev/ttyUSB1")
+        port.open.side_effect = opened
+        with mock.patch.object(pxadb, "serial_upload_profile", return_value="uart"), \
+                mock.patch.object(pxadb, "_hold_usb_awake", return_value=None), \
+                mock.patch.object(pxadb.serial, "Serial", return_value=port) as create:
+            client = pxadb.PxaDbClient("/dev/ttyUSB1")
+        self.assertIsNone(create.call_args.args[0])
+        port.open.assert_called_once()
+        self.assertIs(client.serial.serial_port, port)
+
+    def test_native_usb_retains_existing_control_line_behavior(self):
+        port = SimpleNamespace(dtr=True, rts=True, open=mock.Mock(), close=mock.Mock())
+        with mock.patch.object(pxadb, "serial_upload_profile", return_value="usb"), \
+                mock.patch.object(pxadb, "_hold_usb_awake", return_value=None), \
+                mock.patch.object(pxadb.serial, "Serial", return_value=port) as create:
+            pxadb.PxaDbClient("/dev/ttyACM0")
+        self.assertEqual(create.call_args.args[0], "/dev/ttyACM0")
+        self.assertTrue(port.dtr)
+        self.assertTrue(port.rts)
+        port.open.assert_not_called()
+
+    def test_uart_open_failure_closes_port_and_releases_guard(self):
+        port = SimpleNamespace(open=mock.Mock(side_effect=OSError("busy")), close=mock.Mock())
+        with tempfile.TemporaryFile() as file:
+            fd = os.dup(file.fileno())
+            with mock.patch.object(pxadb, "serial_upload_profile", return_value="uart"), \
+                    mock.patch.object(pxadb, "_hold_usb_awake", return_value=fd), \
+                    mock.patch.object(pxadb.serial, "Serial", return_value=port):
+                with self.assertRaises(OSError): pxadb.PxaDbClient("/dev/ttyUSB1")
+            port.close.assert_called_once()
+            with self.assertRaises(OSError): os.fstat(fd)
+
     def test_usb_parent_is_held_read_only_and_missing_devices_are_optional(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -373,6 +560,26 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertTrue(all(value is not None and value <= client.timeout
                             for value in timeouts))
+
+    def test_uart_allows_bridge_reset_boot_without_changing_native_deadline(self):
+        for profile in ("uart", "usb"):
+            client = fake_client([])
+            client.upload_profile = profile
+            client.timeout = 2.0
+            clock = [0.0]
+            def request(command, timeout):
+                clock[0] += timeout
+                if clock[0] < 3.0:
+                    raise pxadb.PxaDbError("application is still booting")
+                return [pxadb.Frame(1, "OK", "ready")]
+            client.request = request
+            with mock.patch.object(pxadb.time, "monotonic", side_effect=lambda: clock[0]), \
+                    mock.patch.object(pxadb.time, "sleep", side_effect=lambda t: clock.__setitem__(0, clock[0]+t)):
+                if profile == "uart":
+                    self.assertEqual(client.hello(), "ready")
+                else:
+                    with self.assertRaises(pxadb.PxaDbError): client.hello()
+            self.assertEqual(client.timeout, 2.0)
 
     def test_close_tolerates_a_dead_port(self) -> None:
         class DeadPortError(Exception):

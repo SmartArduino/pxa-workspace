@@ -30,6 +30,8 @@ struct WifiNetwork {
     std::string ssid;
     int8_t rssi = 0;
     wifi_auth_mode_t authmode = WIFI_AUTH_OPEN;
+    uint8_t bssid[6]{};
+    int64_t observed_at_us = 0;
 };
 
 /**

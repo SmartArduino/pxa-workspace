@@ -1,0 +1,7 @@
+# Current IDF's CSI ISR reconfigures DW-GDMA each frame, but its built-in
+# DW_GDMA_CTRL_FUNC_IN_IRAM mapping omits this function. Keep the entire
+# normal ISR call path available while photo/video writes suspend Flash cache.
+[mapping:espp4_a_camera_dma]
+archive: libesp_driver_dma.a
+entries:
+    dw_gdma: dw_gdma_channel_config_transfer (noflash)

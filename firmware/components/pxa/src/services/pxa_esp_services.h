@@ -30,6 +30,9 @@
 #include "pxa_esp_net.h"
 #include "pxa_esp_fs_roots.h"
 #include "pxa_esp_app_storage.h"
+#if PXA_ENABLE_WIFI_LOCATION
+#include <pxa_ext/wifi_location.h>
+#endif
 #if PXA_ENABLE_PERIPHERALS
 #include <pxa/pxa_peripherals.h>
 #endif
@@ -54,6 +57,9 @@ typedef struct {
 
     pxa_fs_service_t *fs;
     void *fs_workspace;
+    void *fs_atomic_workspace;
+    pthread_mutex_t fs_mutex;
+    uint8_t fs_mutex_ready, fs_worker_active;
     pxa_posix_fs_t *posix_fs;
     void *posix_fs_workspace;
     pxa_fs_backend_t fs_backend;
@@ -86,6 +92,10 @@ typedef struct {
     void *sensor_workspace;
     pxa_haptics_service_t *haptics;
     void *haptics_workspace;
+#if PXA_ENABLE_WIFI_LOCATION
+    pxa_wl_service_t *wifi_location;
+    void *wifi_location_workspace;
+#endif
 #if PXA_ENABLE_PERIPHERALS
     pxa_peripherals_service_t *peripherals;
     void *peripherals_workspace;

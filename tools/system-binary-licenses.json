@@ -91,5 +91,41 @@
     "license_sha256": "50efe887fcc2662f2ec264f0b74c5f449eb460ceccf6dd7361518dba6645185b",
     "selected": "MIT",
     "evidence": "ESP-IDF copyright notice explicitly identifies Xtensa libhal under the Tensilica MIT grant; adjacent HAL/core headers retain Cadence MIT notices. Verified against https://github.com/espressif/esp-idf/blob/master/docs/en/COPYRIGHT.rst . Exact ESP32-S3 HAL archive pinned; no compiler overlays admitted."
+  },
+  {
+    "root": "toolchain",
+    "archive_pattern": "riscv32\\-esp\\-elf/lib/rv32imafc_zicsr_zmmul_zaamo_zalrsc_zca_zcf/ilp32f/no\\-rtti/libc\\.a",
+    "archive_sha256": "4b5adb79fb7615a9ac8ca4e71df11c046b5727bf8f14929955acea0fa256b6e0",
+    "license": "share/licenses/newlib/COPYING.NEWLIB",
+    "license_sha256": "f3afe48e4bc6ed8466a42e9dacb6be1d8f9cbf5aac15cb8e474a5ccde8b40ef6",
+    "selected": "BSD/MIT/ISC permissive newlib runtime bundle",
+    "evidence": "ESP32-P4 GCC16.1 RISC-V bare-metal ilp32f runtime only, exact archive pinned. COPYING.NEWLIB LGPL sections (21) and (22) explicitly apply only to Linux targets; these are riscv32-esp-elf, not Linux. RISC-V machine implementations are BSD (SiFive/Michael Neilly). Compiler build tools, Linux syscalls and libgloss are not linked. Supplier radio requires the newlib ABI. Preserve the full newlib attribution bundle."
+  },
+  {
+    "root": "toolchain",
+    "archive_pattern": "riscv32\\-esp\\-elf/lib/rv32imafc_zicsr_zmmul_zaamo_zalrsc_zca_zcf/ilp32f/no\\-rtti/libm\\.a",
+    "archive_sha256": "a32e219c4d3688d92604876c71d2be3a96e8e19f8f27f78f7b96d946234ca677",
+    "license": "share/licenses/newlib/COPYING.NEWLIB",
+    "license_sha256": "f3afe48e4bc6ed8466a42e9dacb6be1d8f9cbf5aac15cb8e474a5ccde8b40ef6",
+    "selected": "BSD/MIT/ISC permissive newlib runtime bundle",
+    "evidence": "ESP32-P4 GCC16.1 RISC-V bare-metal ilp32f runtime only, exact archive pinned. COPYING.NEWLIB LGPL sections (21) and (22) explicitly apply only to Linux targets; these are riscv32-esp-elf, not Linux. RISC-V machine implementations are BSD (SiFive/Michael Neilly). Compiler build tools, Linux syscalls and libgloss are not linked. Supplier radio requires the newlib ABI. Preserve the full newlib attribution bundle."
+  },
+  {
+    "root": "firmware",
+    "archive_pattern": "boards/espp4\\-a/vendor/p4_wireless/lib/libp4_wireless\\.a",
+    "archive_sha256": "12f1fbb622d57817dc4c638802519b11703d445299ca029892ae02ac4545b6fc",
+    "license": "boards/espp4-a/vendor/p4_wireless/LICENSE",
+    "license_sha256": "86b247c0aefe03e8bf0057e74d48ee24efdac82e015ddce8c841799e5d9756bc",
+    "selected": "LicenseRef-SmartArduino-ESPP4-A",
+    "evidence": "SmartArduino/ESPP4-A commit 1e981d9f159a1afb30bd5e41b0137344ce3916a6, p4_wireless LICENSE clauses 1-3: free commercial use and unchanged redistribution only within products using genuine SmartArduino ESPP4-A modules; no source disclosure obligation. Applies to archive, embedded radio firmware and accompanying adaptation files. Preserve full vendor license; never modify the archive, bypass module authorization or use on other boards."
+  },
+  {
+    "root": "toolchain",
+    "archive_pattern": "riscv32\\-esp\\-elf/lib/rv32imafc_zicsr_zmmul_zaamo_zalrsc_zca_zcf/ilp32f/no\\-rtti/libnosys\\.a",
+    "archive_sha256": "a6b3ed7652ad096fcf37c1c68c04c508cc3bfb66f4ad3bd056c460495a69f102",
+    "license": "share/licenses/newlib/COPYING.LIBGLOSS",
+    "license_sha256": "4ef33c7bdd57f5fa8fbe3bdc0200245ab91c564c2ef530d95bbe7fd4070757cd",
+    "selected": "BSD permissive libnosys stubs",
+    "evidence": "Exact RISC-V bare-metal no-RTTI multilib libnosys archive only. COPYING.LIBGLOSS Red Hat BSD grant applies to syscall stubs. Its GPL runtime exception section (16) is explicitly limited to sparc-leon/crx/cr16 and is not used by riscv32-esp-elf. No other libgloss library is admitted."
   }
 ]

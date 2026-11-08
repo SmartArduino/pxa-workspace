@@ -157,6 +157,8 @@
 
 #if defined(CONFIG_IDF_TARGET_ESP32S31)
 #define PXA_ESP_HOST_TARGET "esp32-s31"
+#elif defined(CONFIG_IDF_TARGET_ESP32P4)
+#define PXA_ESP_HOST_TARGET "esp32-p4"
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
 #define PXA_ESP_HOST_TARGET "esp32-s3"
 #else
@@ -991,6 +993,50 @@ static bool store_inventory_visit(const pxa_esp_package_record_t *record,
     return true;
 }
 
+/* Store requests are serialized by the runtime. Keep Flash I/O on an
+ * internal stack; selected boards reserve it before SRAM fragmentation. */
+#if CONFIG_PXA_STORE_WORKER_RESERVED_STACK
+static DRAM_ATTR StackType_t g_store_worker_stack[
+    PXA_STORE_WORKER_STACK_BYTES / sizeof(StackType_t)];
+static DRAM_ATTR StaticTask_t g_store_worker_control;
+static DRAM_ATTR StaticQueue_t g_store_worker_queue_control;
+static DRAM_ATTR uint8_t g_store_worker_queue_storage[sizeof(pxa_esp_store_job_t *)];
+static QueueHandle_t g_store_worker_queue;
+static TaskHandle_t g_store_worker_task;
+
+static void reserved_store_worker(void *context) {
+    (void)context;
+    for (;;) {
+        pxa_esp_store_job_t *job = NULL;
+        if (xQueueReceive(g_store_worker_queue, &job, portMAX_DELAY) == pdTRUE) {
+            /* A cancellation during HTTP may leave a wakeup behind. The new
+             * job has not shown a prompt yet; its cancelled flag is retained. */
+            (void)ulTaskNotifyTake(pdTRUE, 0);
+            pxa_esp_store_run_job(job);
+        }
+    }
+}
+#endif
+
+static BaseType_t store_start_worker(pxa_esp_store_job_t *job) {
+#if CONFIG_PXA_STORE_WORKER_RESERVED_STACK
+    if (!g_store_worker_queue)
+        g_store_worker_queue = xQueueCreateStatic(1, sizeof(job),
+            g_store_worker_queue_storage, &g_store_worker_queue_control);
+    if (!g_store_worker_queue) return pdFAIL;
+    if (!g_store_worker_task)
+        g_store_worker_task = xTaskCreateStatic(reserved_store_worker,
+            "pxa-store-install", PXA_STORE_WORKER_STACK_BYTES, NULL, 3,
+            g_store_worker_stack, &g_store_worker_control);
+    if (!g_store_worker_task) return pdFAIL;
+    job->worker = g_store_worker_task;
+    return xQueueSendToBack(g_store_worker_queue, &job, 0);
+#else
+    return xTaskCreate(pxa_esp_store_worker, "pxa-store-install",
+                      PXA_STORE_WORKER_STACK_BYTES, job, 3, &job->worker);
+#endif
+}
+
 static pxa_status_t store_begin_request(pxa_runtime_t *runtime,
                                         pxa_component_t component,
                                         const pxa_message_view_t *message,
@@ -1201,9 +1247,7 @@ static pxa_status_t host_store_install_control(
         job->separate = 2u;
         job->notify = store_install_notify;
         g_store_install = job;
-        if (xTaskCreate(pxa_esp_store_worker, "pxa-store-install",
-                        PXA_STORE_WORKER_STACK_BYTES,
-                        job, 3, &job->worker) != pdPASS) {
+        if (store_start_worker(job) != pdPASS) {
             g_store_install = NULL;
             status = pxa_request_complete(runtime, component,
                                           message->request_token,
@@ -1249,9 +1293,7 @@ static pxa_status_t host_store_install_control(
     ESP_LOGI(PXA_ESP_HOST_TAG, "Store worker start: internal_free=%u largest=%u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-    if (xTaskCreate(pxa_esp_store_worker, "pxa-store-install",
-                    PXA_STORE_WORKER_STACK_BYTES,
-                    job, 3, &job->worker) != pdPASS) {
+    if (store_start_worker(job) != pdPASS) {
         ESP_LOGW(PXA_ESP_HOST_TAG,
                  "Store worker allocation failed: internal_free=%u largest=%u",
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
@@ -2154,6 +2196,7 @@ static int drain_active_events(void) {
         if (g_host.activation.services.assets) pxa_assets_service_poll(g_host.activation.services.assets);
         if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
         if (g_host.activation.services.storage) pxa_storage_service_poll(g_host.activation.services.storage);
+        if (g_host.activation.services.fs) pxa_fs_service_poll(g_host.activation.services.fs);
         poll_sensors();
 #if PXA_ENABLE_VOICE_TRIGGER
         if (g_host.activation.services.voice_trigger)
@@ -2184,6 +2227,7 @@ static int drain_active_events(void) {
     }
     pxa_esp_fs_roots_poll(g_host.activation.services.fs_roots);
     if (g_host.activation.services.storage) pxa_storage_service_poll(g_host.activation.services.storage);
+    if (g_host.activation.services.fs) pxa_fs_service_poll(g_host.activation.services.fs);
     /* Guest callbacks can start/cancel decoding even on the final drain round.
      * A ready file needs another owner turn; a blocked stream waits for its
      * native I/O wake. No Guest timer or image-specific worker is required. */
@@ -3113,6 +3157,7 @@ static void resume_store_install_after_stop(uint64_t instance,pxa_stop_reason_t 
 }
 
 static void stop_active(pxa_stop_reason_t reason) {
+    const uint64_t stop_started = host_now_us(NULL);
     pxa_esp_host_public_state_t public_state;
     char stopped_identity[PXA_ESP_HOST_MAX_APP_ID];
     const uint64_t stopped_instance=g_host.activation.active_instance_id;
@@ -3169,6 +3214,7 @@ static void stop_active(pxa_stop_reason_t reason) {
     if (g_host.activation.coordinator != NULL) {
         pxa_activation_deactivate_all(g_host.activation.coordinator, reason);
     }
+    const uint64_t stop_components_done = host_now_us(NULL);
     g_host.activation.coordinator = NULL;
     g_host.activation.coordinator_workspace = NULL;
     g_host.activation.plan_workspace = NULL;
@@ -3176,6 +3222,7 @@ static void stop_active(pxa_stop_reason_t reason) {
     g_host.activation.services.window = NULL;
     pxa_lvgl_ui_reset(g_host.ui_adapter);
     pxa_esp_ui_assets_clear();
+    const uint64_t stop_ui_done = host_now_us(NULL);
     g_host.activation.active_manifest = NULL;
     g_host.activation.active_package_root[0] = '\0';
     g_host.activation.manifest_workspace_keep = NULL;
@@ -3218,6 +3265,7 @@ static void stop_active(pxa_stop_reason_t reason) {
      * the free PSRAM needed by the next guest's pinned linear memory/AOT. */
     pxa_esp_audio_deinitialize();
     destroy_services();
+    const uint64_t stop_services_done = host_now_us(NULL);
     /* A snapshot first created by a running guest can also pin a hole in
      * PSRAM. Reload the next identity's persisted grants when needed. */
     pxa_esp_permission_store_release_cache();
@@ -3248,9 +3296,19 @@ static void stop_active(pxa_stop_reason_t reason) {
     if (public_state.main_active)
         notify_runtime_event(PXA_HOST_RUNTIME_STOPPED, stopped_identity,
                              public_state.main_instance_id, reason);
+    if (public_state.main_active)
+        ESP_LOGI(PXA_ESP_HOST_TAG,
+            "Stop timing: id=%s components_us=%llu ui_us=%llu services_us=%llu storage_us=%llu total_us=%llu",
+            stopped_identity,
+            (unsigned long long)(stop_components_done-stop_started),
+            (unsigned long long)(stop_ui_done-stop_components_done),
+            (unsigned long long)(stop_services_done-stop_ui_done),
+            (unsigned long long)(host_now_us(NULL)-stop_services_done),
+            (unsigned long long)(host_now_us(NULL)-stop_started));
 }
 
 static int start_verified(const char *identity) {
+    uint64_t launch_phase[7] = {host_now_us(NULL)};
     if(g_store_install && g_store_install->self_update &&
         !strcmp(identity,g_store_install->preview.id)) {
         pxa_esp_ui_shell_post_toast(pxa_esp_host_locale_is_chinese()?
@@ -3271,7 +3329,6 @@ static int start_verified(const char *identity) {
     size_t manifest_workspace_size;
     size_t encoded_size;
     size_t plan_size;
-    size_t workspace_size;
     size_t index;
     uint64_t main_instance;
     pxa_status_t status = PXA_STATUS_INTERNAL;
@@ -3289,45 +3346,21 @@ static int start_verified(const char *identity) {
                  identity);
         return 0;
     }
-    encoded_size =
-        pxa_esp_package_store_installed_manifest_size(identity);
-    if (encoded_size == 0) {
-        ESP_LOGE(PXA_ESP_HOST_TAG,
-                 "Package store did not provide manifest size for %s",
-                 identity);
-        return 0;
-    }
-    workspace_size =
-        pxa_esp_package_store_installed_manifest_workspace_size(identity);
-    manifest_workspace_size = workspace_size;
-    if (workspace_size == 0) {
-        ESP_LOGE(PXA_ESP_HOST_TAG,
-                 "Package store did not provide manifest workspace for %s",
-                 identity);
-        return 0;
-    }
-    encoded = esp_alloc(encoded_size);
-    if (encoded == NULL) return 0;
-    manifest_workspace = esp_alloc(workspace_size);
-    if (manifest_workspace == NULL) {
-        free(encoded);
-        return 0;
-    }
-    if (!pxa_esp_package_store_load_installed(
-            identity, root, sizeof(root), manifest_workspace,
-            workspace_size, encoded, encoded_size,
-            &manifest)) {
-        free(manifest_workspace);
-        free(encoded);
+    pxa_posix_installer_result_t verification = {
+        .struct_size = sizeof(verification), .manifest = &manifest,
+        .root = root, .root_capacity = sizeof(root)};
+    if (!pxa_esp_package_store_prepare_launch(identity, &verification)) {
         pxa_esp_ui_shell_post_toast("应用信息读取失败", 1800);
         return 0;
     }
+    encoded = verification.encoded;
+    encoded_size = verification.encoded_capacity;
+    manifest_workspace = verification.manifest_workspace;
+    manifest_workspace_size = verification.manifest_workspace_size;
+    launch_phase[1] = host_now_us(NULL);
     stop_active(PXA_STOP_REPLACED);
+    launch_phase[2] = host_now_us(NULL);
     if(g_host.retired_storage) {free(manifest_workspace);free(encoded);return 0;}
-    pxa_posix_installer_result_t verification={
-        .struct_size=sizeof(verification),.manifest_workspace=manifest_workspace,
-        .manifest_workspace_size=manifest_workspace_size,.encoded=encoded,
-        .encoded_capacity=encoded_size,.manifest=&manifest,.root=root,.root_capacity=sizeof(root)};
     const char *storage_stage="open";
     status=pxa_esp_package_store_open_storage(identity,&app_storage,&media_mount_epoch,
         media_relative,sizeof(media_relative),&verification);
@@ -3341,6 +3374,7 @@ static int start_verified(const char *identity) {
         if(app_storage)g_host.retired_storage=app_storage;
         free(manifest_workspace);free(encoded);return 0;
     }
+    launch_phase[3] = host_now_us(NULL);
     host_log_heap_usage("launch-begin");
     if (!activation_memory_begin(manifest_workspace, manifest_workspace_size,
                                  encoded, encoded_size)) {
@@ -3569,7 +3603,7 @@ static int start_verified(const char *identity) {
                 service_capabilities[index].features = PXA_ASSETS_FEATURE_IMAGE_DECODE | PXA_ASSETS_FEATURE_IMAGE_FRAMES;
             if (service_capabilities[index].service == PXA_FS_SERVICE_ID)
                 service_capabilities[index].features = pxa_esp_fs_roots_features(
-                    g_host.activation.services.fs_roots);
+                    g_host.activation.services.fs_roots) | (g_host.activation.services.fs ? PXA_FS_FEATURE_ASYNC_ATOMIC_WRITE : 0);
             if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
                 service_capabilities[index].features =
                     PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS |
@@ -3654,9 +3688,11 @@ static int start_verified(const char *identity) {
     }
     pxa_esp_audio_set_suspended(true);
     main_instance = allocate_instance_id();
+    launch_phase[4] = host_now_us(NULL);
     status = activate_component_profiled(
         (pxa_bytes_t){(const uint8_t *)"main", 4}, main_instance,
         &g_host.activation.active_component);
+    launch_phase[5] = host_now_us(NULL);
     if (status != PXA_STATUS_OK) {
         pxa_esp_ui_shell_post_toast("应用启动失败", 1800);
         toast_posted = 1;
@@ -3692,6 +3728,17 @@ static int start_verified(const char *identity) {
     host_log_heap_usage("launch-ready");
     host_log_wamr_usage();
     ESP_LOGI(PXA_ESP_HOST_TAG, "Started verified Package %s", identity);
+    launch_phase[6] = host_now_us(NULL);
+    ESP_LOGI(PXA_ESP_HOST_TAG,
+        "Launch timing: id=%s manifest_us=%llu previous_stop_us=%llu storage_us=%llu setup_us=%llu main_us=%llu startup_events_us=%llu total_us=%llu",
+        identity,
+        (unsigned long long)(launch_phase[1]-launch_phase[0]),
+        (unsigned long long)(launch_phase[2]-launch_phase[1]),
+        (unsigned long long)(launch_phase[3]-launch_phase[2]),
+        (unsigned long long)(launch_phase[4]-launch_phase[3]),
+        (unsigned long long)(launch_phase[5]-launch_phase[4]),
+        (unsigned long long)(launch_phase[6]-launch_phase[5]),
+        (unsigned long long)(launch_phase[6]-launch_phase[0]));
     return 1;
 
 failed:
@@ -4732,6 +4779,7 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
     }
     if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
     if (g_host.activation.services.storage) pxa_storage_service_poll(g_host.activation.services.storage);
+    if (g_host.activation.services.fs) pxa_fs_service_poll(g_host.activation.services.fs);
     poll_sensors();
 #if PXA_ENABLE_VOICE_TRIGGER
     if (g_host.activation.services.voice_trigger)
@@ -6368,6 +6416,7 @@ void pxa_esp_host_set_audio_music_sink(const pxa_host_audio_music_sink_t *sink) 
     pxa_esp_audio_set_music_sink(sink);
 }
 void pxa_esp_host_audio_notify(void) { on_assets_completion_ready(NULL); }
+void pxa_esp_host_io_notify(void) { on_assets_completion_ready(NULL); }
 
 void pxa_esp_host_set_audio_asset_sink(
     pxa_host_audio_asset_play_fn play,

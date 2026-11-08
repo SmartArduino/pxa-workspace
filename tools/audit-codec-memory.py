@@ -19,6 +19,11 @@ ARCHIVES = {
 }
 ARCHIVES_BY_TARGET = {
     "esp32s3": ARCHIVES,
+    "esp32p4": {
+        "libesp_audio_codec.a": "1fda41dc09d46f1ed8bbe2d687fb6ccad3a5e2ac6726f5d15804f4f0c8a6f0c2",
+        "libesp_audio_simple_dec.a": "7cbc14248f4e5746eaeca3c8177c62f903b6388892902fe25ceef3b2469d915f",
+    },
+
     "esp32s31": {
         "libesp_audio_codec.a": "1fda41dc09d46f1ed8bbe2d687fb6ccad3a5e2ac6726f5d15804f4f0c8a6f0c2",
         "libesp_audio_simple_dec.a": "7cbc14248f4e5746eaeca3c8177c62f903b6388892902fe25ceef3b2469d915f",

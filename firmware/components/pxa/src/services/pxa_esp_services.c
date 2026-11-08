@@ -2,6 +2,9 @@
 #include "pxa_esp_services.h"
 #include "pxa/pxa_esp_sensor.h"
 #include "pxa/pxa_esp_haptics.h"
+#if PXA_ENABLE_WIFI_LOCATION
+extern pxa_status_t pxa_esp_wifi_location_read(void *, pxa_wl_snapshot_t *);
+#endif
 
 #if defined(ESP_PLATFORM)
 
@@ -29,6 +32,7 @@
 #include "pxa_esp_assets.h"
 #include "pxa_esp_resource_memory.h"
 #include "pxa_esp_storage_worker.h"
+#include "pxa_esp_fs_worker.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "pxa/pxa_esp_surface.h"
@@ -76,6 +80,9 @@
 
 #if defined(CONFIG_IDF_TARGET_ESP32S31)
 #define PXA_DEVICE_TARGET "esp32-s31"
+#define PXA_DEVICE_ARCH "riscv32"
+#elif defined(CONFIG_IDF_TARGET_ESP32P4)
+#define PXA_DEVICE_TARGET "esp32-p4"
 #define PXA_DEVICE_ARCH "riscv32"
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
 #define PXA_DEVICE_TARGET "esp32-s3"
@@ -370,6 +377,12 @@ static pxa_status_t private_root_for_services(char *root,size_t capacity,const p
     strcpy(root,resolved);return PXA_STATUS_OK;
 }
 
+static void fs_backend_enter(void *context) {
+    pxa_esp_services_t *s=context;pthread_mutex_lock(&s->fs_mutex);
+}
+static void fs_backend_leave(void *context) {
+    pxa_esp_services_t *s=context;pthread_mutex_unlock(&s->fs_mutex);
+}
 static pxa_status_t initialize_fs(
     pxa_esp_services_t *services, const pxa_esp_services_config_t *host,
     pxa_esp_services_result_t *result) {
@@ -442,7 +455,30 @@ static pxa_status_t initialize_fs(
     status = pxa_fs_service_init(services->fs_workspace, workspace_size,
                                  host->runtime, &service_config,
                                  &services->fs);
-    if(status==PXA_STATUS_OK) pxa_esp_fs_roots_bind(services->fs_roots,services->fs);
+    if(status==PXA_STATUS_OK) {
+        pthread_mutexattr_t attr;
+        if(pthread_mutexattr_init(&attr)!=0)return PXA_STATUS_RESOURCE_LIMIT;
+        int error=pthread_mutexattr_settype(&attr,PTHREAD_MUTEX_RECURSIVE);
+        if(!error)error=pthread_mutex_init(&services->fs_mutex,&attr);
+        pthread_mutexattr_destroy(&attr);
+        if(error)return PXA_STATUS_RESOURCE_LIMIT;
+        services->fs_mutex_ready=1;
+        /* Atomic sessions share the ordinary file budget. A one-handle Host
+         * must still initialize FS, with one bounded copy buffer instead of
+         * failing activation while reserving two sessions. */
+        const uint16_t sessions = service_config.max_open_resources < 2 ?
+            service_config.max_open_resources : 2;
+        workspace_size=pxa_fs_service_atomic_workspace_size(sessions);
+        status=allocate_workspace(host,workspace_size,&services->fs_atomic_workspace,result,"allocate-fs-atomic");
+        if(status==PXA_STATUS_OK) {
+            status=pxa_esp_fs_worker_begin(host->assets_notify,host->assets_notify_context);
+            if(status==PXA_STATUS_OK)services->fs_worker_active=1;
+        }
+        if(status==PXA_STATUS_OK)status=pxa_fs_service_enable_async_atomic(services->fs,
+            services->fs_atomic_workspace,workspace_size,sessions,pxa_posix_fs_close_checked,pxa_esp_fs_worker_submit,NULL,
+            fs_backend_enter,fs_backend_leave,services);
+        if(status==PXA_STATUS_OK)pxa_esp_fs_roots_bind(services->fs_roots,services->fs);
+    }
     return status == PXA_STATUS_OK
                ? status
                : fail(result, "initialize-fs-service", status,
@@ -1147,6 +1183,10 @@ static pxa_status_t register_services(
         PXA_REGISTER(pxa_vt_service_register(services->voice_trigger),
                      "register-voice-trigger-extension");
 #endif
+#if PXA_ENABLE_WIFI_LOCATION
+    if (services->wifi_location)
+        PXA_REGISTER(pxa_wl_register(services->wifi_location), "register-wifi-location");
+#endif
 #undef PXA_REGISTER
     return PXA_STATUS_OK;
 }
@@ -1169,6 +1209,15 @@ pxa_status_t pxa_esp_services_initialize(
     }
     pxa_esp_services_destroy(services);
     status = initialize_permission(services, config, result);
+#if PXA_ENABLE_WIFI_LOCATION
+    if (status == PXA_STATUS_OK) {
+        size_t size = pxa_wl_workspace_size();
+        status = allocate_workspace(config, size, &services->wifi_location_workspace, result, "allocate-wifi-location");
+        if (status == PXA_STATUS_OK)
+            status = pxa_wl_init(services->wifi_location_workspace, size, config->runtime, services->permission,
+                pxa_esp_wifi_location_read, NULL, &services->wifi_location);
+    }
+#endif
 #if PXA_ENABLE_PERIPHERALS
     if (status == PXA_STATUS_OK && pxa_esp_peripherals_backend()) {
         size_t size = pxa_peripherals_service_workspace_size();
@@ -1213,6 +1262,9 @@ void pxa_esp_services_destroy(pxa_esp_services_t *services) {
     if (services == NULL) return;
     /* Backend/arena pointers remain alive until every committed KV operation
      * is durable. The runtime may already be gone: no completion is polled. */
+    pxa_fs_service_atomic_shutdown_begin(services->fs);
+    if(services->fs_worker_active)pxa_esp_fs_worker_end();
+    pxa_fs_service_atomic_shutdown_finish(services->fs);
     if (services->storage_worker_active) pxa_esp_storage_worker_end();
 #if PXA_ENABLE_VOICE_TRIGGER
     pxa_vt_service_deinit(services->voice_trigger);
@@ -1226,6 +1278,7 @@ void pxa_esp_services_destroy(pxa_esp_services_t *services) {
         pxa_posix_storage_deinit(services->posix_storage);
     }
     if (services->storage_mutex_ready) pthread_mutex_destroy(&services->storage_mutex);
+    if (services->fs_mutex_ready) pthread_mutex_destroy(&services->fs_mutex);
     if (services->posix_fs != NULL) {
         pxa_posix_fs_deinit(services->posix_fs);
     }

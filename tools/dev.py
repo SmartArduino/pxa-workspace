@@ -207,10 +207,11 @@ class Developer:
             command.extend(["--port", self.args.port])
         if self.args.mode == "device":
             baud = self.args.baud
-            # CH343P UART on DOIT GameKit runs PXADB at 2 Mbaud. Explicit
-            # --baud and PXADB_BAUD retain precedence over this board default.
+            # Apply board UART rates unless --baud or PXADB_BAUD overrides them.
             if baud is None and self.args.board in ("doit-gamekit", "doit-gamekit-1") and not os.environ.get("PXADB_BAUD"):
                 baud = 2000000
+            if baud is None and self.args.board == "doit-esp32s31-devkit" and not os.environ.get("PXADB_BAUD"):
+                baud = 921600
             if baud is not None:
                 command.extend(["--baud", str(baud)])
         return command

@@ -9,7 +9,16 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#ifdef PXA_TEST_FS_WORKER
+#include "../src/services/pxa_esp_fs_worker.c"
+#define pxa_esp_storage_worker_begin pxa_esp_fs_worker_begin
+#define pxa_esp_storage_worker_submit pxa_esp_fs_worker_submit
+#define pxa_esp_storage_worker_end pxa_esp_fs_worker_end
+constexpr unsigned QueueSlots=2;
+#else
 #include "../src/services/pxa_esp_storage_worker.c"
+constexpr unsigned QueueSlots=4;
+#endif
 
 struct Queue {
     std::mutex mutex;
@@ -76,25 +85,26 @@ static void completion_ready(void *context) {
 }
 int main() {
     assert(pxa_esp_storage_worker_begin(nullptr, nullptr) == PXA_STATUS_INVALID_ARGUMENT);
-    Generation first; Job jobs[6];
-    for (unsigned i = 0; i < 6; ++i) jobs[i] = {&first, i, i == 0};
+    Generation first; Job jobs[QueueSlots+2];
+    for (unsigned i = 0; i < QueueSlots+2; ++i) jobs[i] = {&first, i, i == 0};
     assert(pxa_esp_storage_worker_begin(completion_ready, &first) == PXA_STATUS_OK);
     assert(pxa_esp_storage_worker_submit(nullptr, write_checkpoint, &jobs[0]) == PXA_STATUS_OK);
     { std::unique_lock lock(first.mutex); first.changed.wait(lock, [&]{ return first.blocked; }); }
-    for (unsigned i = 1; i < 5; ++i)
+    for (unsigned i = 1; i < QueueSlots+1; ++i)
         assert(pxa_esp_storage_worker_submit(nullptr, write_checkpoint, &jobs[i]) == PXA_STATUS_OK);
-    assert(pxa_esp_storage_worker_submit(nullptr, write_checkpoint, &jobs[5]) == PXA_STATUS_WOULD_BLOCK);
+    assert(pxa_esp_storage_worker_submit(nullptr, write_checkpoint, &jobs[QueueSlots+1]) == PXA_STATUS_WOULD_BLOCK);
     // The runtime owner keeps processing turns while the first disk call is
     // explicitly held. Closing then waits for that call and every queued save.
     unsigned owner_turns = 0; for (; owner_turns < 100; ++owner_turns) assert(first.notifications == 0);
     std::thread release([&]{ std::this_thread::sleep_for(std::chrono::milliseconds(20));
         std::lock_guard lock(first.mutex); first.release = true; first.changed.notify_one(); });
     pxa_esp_storage_worker_end(); release.join();
-    assert(owner_turns == 100 && first.notifications == 5);
-    assert((first.completed == std::vector<unsigned>{0, 1, 2, 3, 4}));
+    assert(owner_turns == 100 && first.notifications == QueueSlots+1);
+    assert(first.completed.size()==QueueSlots+1);
+    for(unsigned i=0;i<first.completed.size();++i)assert(first.completed[i]==i);
     first.alive = false;
-    assert(pxa_esp_storage_worker_submit(nullptr, write_checkpoint, &jobs[5]) == PXA_STATUS_BAD_STATE);
-    for (unsigned i = 0; i < 64; ++i) {
+    assert(pxa_esp_storage_worker_submit(nullptr, write_checkpoint, &jobs[QueueSlots+1]) == PXA_STATUS_BAD_STATE);
+    for (unsigned i = 0; i < QueueSlots+24; ++i) {
         Generation next; Job job{&next, i, false};
         assert(pxa_esp_storage_worker_begin(completion_ready, &next) == PXA_STATUS_OK);
         assert(pxa_esp_storage_worker_submit(nullptr, write_checkpoint, &job) == PXA_STATUS_OK);
@@ -106,5 +116,5 @@ int main() {
     { std::lock_guard lock(q->mutex); q->closing = true; q->changed.notify_one(); }
     worker_thread->join(); delete worker_thread; delete q;
     delete static_cast<Semaphore *>(g_drained);
-    puts("KV worker: blocked disk leaves owner runnable, FIFO/backpressure, close drains callbacks, and 64 activation handoffs have no late access");
+    puts("Native I/O worker: blocked disk leaves owner runnable, FIFO/backpressure, close drains callbacks, and 64 activation handoffs have no late access");
 }

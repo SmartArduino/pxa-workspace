@@ -507,6 +507,18 @@ bool DirectFrameEligible(const pxa_esp_surface_frame_t& frame) {
     return true;
 }
 
+bool NativeFrameEligible(const pxa_esp_surface_frame_t& frame) {
+    const auto visible = [](const pxa_esp_surface_ui_alpha_plane_t& plane) {
+        return plane.visible && plane.opacity;
+    };
+    return DirectFrameEligible(frame) &&
+        frame.width == WATCHER_DISPLAY_WIDTH &&
+        frame.height == WATCHER_DISPLAY_HEIGHT &&
+        frame.stride_bytes == WATCHER_DISPLAY_WIDTH * sizeof(uint16_t) &&
+        (frame.suppress_guest_alpha || !visible(frame.ui_alpha_plane)) &&
+        !visible(frame.system_alpha_plane);
+}
+
 ComposedFrameInfo ComposeFrame(const pxa_esp_surface_frame_t& frame,
                                const lv_area_t* area, uint8_t* pixels) {
     CompositePixels(frame, area, pixels);

@@ -41,7 +41,18 @@ PCF8563（0x51）是系统时钟的保留 UTC 来源，显示时区由系统处�
 ## 接口边界
 
 电池/充电、输入、网络和时间使用已有系统接口，SD 使用标准 Storage/FS，
-声音使用标准 Audio。本板没有已接入的加速度计或陀螺仪，不提供虚构的运动数据。
+声音使用标准 Audio。原厂硬件没有板载加速度计或陀螺仪，应用不应启用体感操作。
+TLS 动态内存使用 PSRAM，避免显示、音频和任务栈占用内部 SRAM 时 HTTPS 握手失败。
+安装线程预留并复用 10 KiB 内部栈，避免运行后的 SRAM 碎片阻止创建安装任务。
+该栈必须留在内部 RAM，因为安装会擦写 Flash；其他板型可通过
+`CONFIG_PXA_STORE_WORKER_RESERVED_STACK` 选择是否预留。
+
+标准 Sensor 服务额外提供 `chip-temperature`（毫摄氏度，最短 1 秒）和
+`battery-voltage`（微伏，最短 2 秒）。前者是 ESP32 芯片结温，不能当作环境温度；
+后者使用已校准的电池端 ADC，读取失败时返回不可用。USB 供电时仍可读取；
+该电压不表示电池是否在位，不使用外部供电检测信号拦截采样。
+应用通过现有 C/C++ Sensor SDK 枚举，申请对应精确 scope 的 `sensor.read`
+权限后订阅。温度传感器随首个订阅启用、最后一个订阅关闭，不额外创建采样线程。
 RGB 灯（GPIO40）通过仓库 `org.doit.peripherals` 扩展枚举为
 `indicator.rgb`，种类 RGB=5、模式 RGB=6，写入三个 RGB 字节。应用必须完成
 UUID/版本协商，取得该精确 scope 的权限后打开；退出、进入后台或撤权时由
@@ -83,3 +94,5 @@ bash firmware/boards/sensecap-watcher/tests/test_host.sh
 
 该测试覆盖显示合成/IO 和 RTC 日历边界。SD 实卡读写、麦克风电气路由和掉电
 计时仍需对应实物验证；无卡启动通过不等于完成实卡读写验证。
+
+Native fullscreen RGB565 guest-mapped Surfaces can be packed directly into the existing SRAM DMA bands. The presenter retains the Surface lease until final DMA completion; trusted UI alpha and scaled surfaces keep the composed path. This avoids a whole-frame PSRAM mirror copy without changing buffer ownership or capture serialization.

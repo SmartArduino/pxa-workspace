@@ -28,7 +28,7 @@ pxa run hello
 
 工具自动校验发行签名并安装 DevKit，只配置项目内的技能与 MCP，不增加设备运行开销。首次系统安装、浏览器登录和必要的 BOOT/RESET 仍需用户操作。
 
-Windows/macOS 可使用 [跨平台工具](tools/portable/README.md)：容器负责构建和无界面模拟器，宿主机 PXADB 直接连接 USB 串口；无需 USB 转发。
+Windows x64 可按 [原生构建说明](tools/portable/windows/README.md) 编译工具链、模拟器和调试工具。Windows/macOS 也可使用 [跨平台工具](tools/portable/README.md)：容器负责构建和无界面模拟器，宿主机 PXADB 直接连接 USB 串口；无需 USB 转发。
 
 以下命令面向修改系统或板级驱动的开发者，在本仓库根目录运行：
 
@@ -80,6 +80,12 @@ ES8311 播放和原生 USB CDC。硬件版本识别、ESP-IDF main 环境与当�
 FT6336U 触摸、14 个按键、MAX98357A 和原生四线 SDMMC，新增 MENU/RETURN
 系统键。构建命令为 `tools/firmware.sh doit-gamekit-1 build`；接线、屏幕参数
 和首次烧录见 [板级说明](firmware/boards/doit-gamekit-1/README.md)。
+
+`doit-esp32s31-devkit` 适配 8 MiB Flash 的 DOIT ESP32-S31 DevKit、480×854
+ST7102 RGB 屏幕及触摸、ES8311 音频与四线 SDMMC。构建命令为
+`tools/firmware.sh doit-esp32s31-devkit build`；USB-Uart 默认 921600，
+共享总线、BOOT/LCD 片选及摄像头接线限制见
+[板级说明](firmware/boards/doit-esp32s31-devkit/README.md)。
 
 ```sh
 tools/firmware.sh pai-touch build

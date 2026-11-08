@@ -65,8 +65,12 @@ static void collect_visible_networks(const wifi_ap_record_t* records,
         const auto existing = std::find_if(
             networks->begin(), networks->end(),
             [ssid](const WifiNetwork& network) { return network.ssid == ssid; });
-        if (existing == networks->end())
-            networks->push_back({ssid, record.rssi, record.authmode});
+        if (existing == networks->end()) {
+            WifiNetwork network{ssid, record.rssi, record.authmode};
+            std::memcpy(network.bssid, record.bssid, sizeof(network.bssid));
+            network.observed_at_us = esp_timer_get_time();
+            networks->push_back(std::move(network));
+        }
     }
 }
 

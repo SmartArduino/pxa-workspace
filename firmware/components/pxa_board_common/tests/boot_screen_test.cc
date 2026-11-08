@@ -11,15 +11,18 @@ struct Capture {
     std::vector<uint16_t> pixels;
 };
 
-static void Check(unsigned width, unsigned height) {
+static void Check(unsigned width, unsigned height, bool full = false) {
     auto* display = lv_display_create(width, height);
     Capture capture{width, std::vector<uint16_t>(width * height, 0xffff)};
-    const size_t bytes = width * 16 * sizeof(uint16_t);
+    const size_t bytes = width * (full ? height : 16) * sizeof(uint16_t);
     void* draw = aligned_alloc(64, bytes);
+    void* draw2 = full ? aligned_alloc(64, bytes) : nullptr;
     assert(draw);
+    assert(!full || draw2);
     lv_display_set_user_data(display, &capture);
     lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_buffers(display, draw, nullptr, bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(display, draw, draw2, bytes,
+        full ? LV_DISPLAY_RENDER_MODE_FULL : LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(display, [](lv_display_t* d, const lv_area_t* area, uint8_t* p) {
         auto& c = *static_cast<Capture*>(lv_display_get_user_data(d));
         const unsigned stride = lv_draw_buf_width_to_stride(
@@ -69,6 +72,7 @@ static void Check(unsigned width, unsigned height) {
     assert(size_t(std::count(capture.pixels.begin(), capture.pixels.end(), dark)) == capture.pixels.size());
     lv_display_delete(display);
     free(draw);
+    free(draw2);
     std::printf("Boot first frame %ux%u: PXA v1 logo + startup text; repeated show/hide and UI handover passed\n",
         width, height);
 }
@@ -81,5 +85,6 @@ int main() {
     Check(240, 240);
     Check(296, 240);
     Check(412, 412);
+    Check(480, 854, true); // ESPP4-A's full-frame double-buffered path.
     lv_deinit();
 }

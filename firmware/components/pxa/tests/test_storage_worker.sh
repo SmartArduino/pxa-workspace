@@ -10,3 +10,9 @@ mkdir -p "$out"
   -I"$tests_dir/audio_stubs" -I"$project_dir/deps/pxa-system/libpxa/include" \
   "$tests_dir/pxa_esp_storage_worker_test.cc" -o "$out/kv-worker-test"
 "$out/kv-worker-test"
+
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -g -O1 -pthread \
+  -fsanitize=address,undefined -fno-omit-frame-pointer -DPXA_TEST_FS_WORKER \
+  -I"$tests_dir/audio_stubs" -I"$project_dir/deps/pxa-system/libpxa/include" \
+  "$tests_dir/pxa_esp_storage_worker_test.cc" -o "$out/fs-worker-test"
+"$out/fs-worker-test"

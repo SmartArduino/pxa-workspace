@@ -92,6 +92,12 @@ inactivity. A truncated frame drains to a zero delimiter before text is parsed;
 the client sends that delimiter automatically during cancellation and HELLO.
 Storage writes, decompression and verification count as active work: the control
 session's idle window starts again after the binary-frame acknowledgement.
+After an isolated failure, an offset-capable peer can negotiate one smaller
+binary retry per file (half the previous chunk, at least 256 bytes). The client
+cancels data mode and confirms the receiver's position first, including a rewind
+or an already-completed upload. A second failure or unavailable retry negotiation
+falls back to bounded text chunks within the device's advertised limit. This
+does not increase the device's transfer buffer or change checksum validation.
 
 Without `fs_fast`, firmware advertising `fs_bulk_cobs=1` uses checked binary batches up to its
 `max_bulk` limit (currently 2048 bytes), with an admission handshake before each

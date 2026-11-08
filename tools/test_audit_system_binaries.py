@@ -54,4 +54,24 @@ class BinaryPolicyTest(unittest.TestCase):
         for library in ('libquadmath.a','libgomp.a','libiberty.a','libfoo.a'):
             path='picolibc/lib/gcc/riscv32-esp-elf/16.1.0/rv32/ilp32f/no-rtti/'+library
             self.assertFalse(any(re.fullmatch(rule['archive_pattern'],path) for rule in rules))
+
+    def test_espp4_vendor_and_newlib_rules_are_pinned_and_scoped(self):
+        import json,re
+        rules=json.loads(Path(__file__).with_name('system-binary-licenses.json').read_text())
+        vendor=[r for r in rules if r['selected']=='LicenseRef-SmartArduino-ESPP4-A']
+        self.assertEqual(len(vendor),1)
+        self.assertTrue(vendor[0].get('archive_sha256'))
+        self.assertTrue(re.fullmatch(vendor[0]['archive_pattern'],
+            'boards/espp4-a/vendor/p4_wireless/lib/libp4_wireless.a'))
+        self.assertIsNone(re.fullmatch(vendor[0]['archive_pattern'],
+            'boards/other/vendor/p4_wireless/lib/libp4_wireless.a'))
+        runtime=[r for r in rules if r['license'].startswith('share/licenses/newlib/')]
+        self.assertEqual(len(runtime),3)
+        directory='riscv32-esp-elf/lib/rv32imafc_zicsr_zmmul_zaamo_zalrsc_zca_zcf/ilp32f/no-rtti/'
+        for library in ('libc.a','libm.a','libnosys.a'):
+            matches=[r for r in runtime if re.fullmatch(r['archive_pattern'],directory+library)]
+            self.assertEqual(len(matches),1)
+            self.assertTrue(matches[0].get('archive_sha256'))
+        for library in ('libgomp.a','libquadmath.a','libiberty.a'):
+            self.assertFalse(any(re.fullmatch(r['archive_pattern'],directory+library) for r in runtime))
 if __name__=='__main__':unittest.main()

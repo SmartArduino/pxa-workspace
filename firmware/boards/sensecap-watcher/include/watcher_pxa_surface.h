@@ -33,6 +33,9 @@ struct ComposedFrameInfo {
 };
 ComposedFrameInfo ComposeFlushArea(const lv_area_t* area, uint8_t* pixels);
 bool DirectFrameEligible(const pxa_esp_surface_frame_t& frame);
+// Native RGB565 can be packed straight into the SRAM DMA bands. The caller
+// keeps its Surface lease through completion, including guest-mapped frames.
+bool NativeFrameEligible(const pxa_esp_surface_frame_t& frame);
 ComposedFrameInfo ComposeFrame(const pxa_esp_surface_frame_t& frame,
                               const lv_area_t* area, uint8_t* pixels);
 
