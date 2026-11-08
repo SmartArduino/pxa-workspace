@@ -109,6 +109,13 @@ def build_board(args, name: str, version: str) -> dict:
     chip = flash['extra_esptool_args']['chip']
     if chip not in ('esp32s3', 'esp32s31', 'esp32p4'):
         raise ValueError(f'Unsupported firmware CPU: {chip}')
+    # Firmware version alone cannot prove that discovery advertises the right
+    # capability snapshot. Fail before packaging an obsolete or absent profile.
+    platform = {'esp32s3': 'esp32-s3', 'esp32s31': 'esp32-s31', 'esp32p4': 'esp32-p4'}[chip]
+    profile = f'{platform}-pxa-{args.store_host_profile_release}'
+    application = (build / 'pxa_esp_platform.bin').read_bytes()
+    if b'X-PXA-Host-Profile\0' not in application or profile.encode() + b'\0' not in application:
+        raise ValueError(f'Firmware Store profile is absent or stale: {name}, expected {profile}')
     target = chip
     package = args.packages / target / 'pxa-store'
     container = package.with_suffix('.pxa')
@@ -186,6 +193,7 @@ def build_board(args, name: str, version: str) -> dict:
                   pxa_version=(ROOT / 'deps/pxa-system/VERSION').read_text().strip(),
                   store=store, store_container_sha256=sha(container), regions=regions,
                   font=dict(file=font_name, bytes=font_source.stat().st_size, sha256=sha(font_source)),
+                  store_host_profile=profile,
                   merged=dict(file=merged.name, bytes=merged.stat().st_size, sha256=sha(merged)),
                   application=dict(file=app_name, bytes=app_region['size'], sha256=app_region['sha256']))
     (destination / 'flash-map.json').write_text(json.dumps(record, indent=2) + '\n')
@@ -247,6 +255,8 @@ def main():
     parser.add_argument('--packages', type=Path, required=True)
     parser.add_argument('--boards', nargs='+', choices=BOARDS, default=BOARDS)
     parser.add_argument('--skip-build', action='store_true')
+    parser.add_argument('--store-host-profile-release', default=(ROOT / 'deps/pxa-system/VERSION').read_text().strip(),
+                        help='published capability snapshot; explicitly pin this when a patch retains an older snapshot')
     parser.add_argument('--build-root', type=Path, default=ROOT / 'build/firmware')
     parser.add_argument('--idf-python', type=Path, default=Path(sys.executable))
     parser.add_argument('--littlefs-python', type=Path, default=ROOT / '.pxa-tools/littlefs-venv/bin/littlefs-python')
