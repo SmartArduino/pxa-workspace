@@ -320,5 +320,6 @@ c++ "${cxx_flags[@]}" -pthread \
   "$libpxa_build/libpxa.a" -o "$build_dir/codec_memory"
 "$build_dir/codec_memory"
 python3 "$project_dir/tools/test-audit-codec-memory.py"
+python3 "$tests_dir/test_system_font.py"
 
 echo "PXA ESP adapter host tests passed"

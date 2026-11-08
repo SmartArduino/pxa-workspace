@@ -35,6 +35,7 @@ int __wrap_fsync(int fd) { return getenv("FAIL_SYNC")?-1:__real_fsync(fd); }
 int __real_rename(const char *,const char *);
 int __wrap_rename(const char *a,const char *b) { return getenv("FAIL_RENAME")?-1:__real_rename(a,b); }
 int main(int argc,char **argv) {
+    if(argc==2) { puts(pxa_esp_system_font_path()); return 0; }
     if(argc!=3) return 2;
     int ok=pxa_esp_system_font_prepare(argv[1],atoi(argv[2])!=0);
     printf("%d\n%s\n",ok,pxa_esp_system_font_path()); return 0;
@@ -54,17 +55,17 @@ int main(int argc,char **argv) {
         (internal / "system").mkdir(parents=True)
         shutil.copytree(original, internal / "system/fonts")
         sd.mkdir()
-    def run(ok, reclaim=True, **faults):
+    def run(ok, reclaim=True, expected_filename=None, **faults):
         result = subprocess.run([str(work / "test"), str(sd), str(int(reclaim))],
             env={**os.environ, **faults}, text=True, capture_output=True, check=True)
         lines = result.stdout.splitlines()
         assert lines[0] == str(int(ok)), result.stdout
         expected = destination if ok else internal / "system/fonts"
-        assert lines[1] == str(expected / filename), result.stdout
+        assert lines[1] == str(expected / (expected_filename or filename)), result.stdout
     reset()
     run(True)
     assert not (internal / "system/fonts" / filename).exists()
-    for name in [filename, "NOTICE", "OFL.txt"]:
+    for name in [filename, "NOTICE", "OFL.txt", "OFL-Latin.txt"]:
         assert (destination / name).read_bytes() == (original / name).read_bytes()
     run(True)  # Reboot with only the SD font remaining.
     (destination / filename).write_bytes(b"tampered")
@@ -85,4 +86,21 @@ int main(int argc,char **argv) {
     reset(); (internal / "system/fonts" / filename).write_bytes(b"custom font")
     run(False)
     assert (internal / "system/fonts" / filename).read_bytes() == b"custom font"
+    reset()
+    (internal / "system/fonts" / filename).unlink()
+    filename = "pxa_sans_sc_common.woff"
+    packed = ROOT / "factory/variants/compact-fonts" / filename
+    shutil.copyfile(packed, internal / "system/fonts" / filename)
+    result = subprocess.run([str(work / "test"), "--path"], capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == str(internal / "system/fonts" / filename)
+    run(False, FAIL_SYNC="1")
+    assert (internal / "system/fonts" / filename).read_bytes() == packed.read_bytes()
+    run(True)
+    assert (destination / filename).read_bytes() == packed.read_bytes()
+    assert not (internal / "system/fonts" / filename).exists()
+    for name in ["NOTICE", "OFL.txt", "OFL-Latin.txt"]:
+        assert (destination / name).read_bytes() == (original / name).read_bytes()
+    run(True)
+    (destination / filename).write_bytes(b"tampered")
+    run(False, expected_filename="noto_sans_cjk_common.ttf")
 print("System font migration: copy, hash, reboot, tamper, rollback and no-card tests passed")

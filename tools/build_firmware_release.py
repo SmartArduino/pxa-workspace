@@ -128,6 +128,8 @@ def build_board(args, name: str, version: str) -> dict:
                           if line.strip() and not line.lstrip().startswith('#')):
         partitions.append(dict(name=row[0].strip(), offset=byte_size(row[3]), size=byte_size(row[4])))
     storage = next(row for row in partitions if row['name'] == label)
+    font_name = 'pxa_sans_sc_common.woff' if storage['size'] < 4 * 1024**2 else 'noto_sans_cjk_common.ttf'
+    font_source = ROOT / ('factory/variants/compact-fonts' if font_name.endswith('.woff') else 'factory/base/system/fonts') / font_name
     name_max = int(config(board, 'CONFIG_LITTLEFS_OBJ_NAME_LEN', '192'))
     with tempfile.TemporaryDirectory(prefix='pxa-release-factory-') as temporary:
         files = Path(temporary)
@@ -138,7 +140,8 @@ def build_board(args, name: str, version: str) -> dict:
         shutil.copytree(package, files / package_root / package.name)
         fonts = files / 'system/fonts'
         fonts.mkdir(parents=True)
-        for filename in ('noto_sans_cjk_common.ttf', 'NOTICE', 'OFL.txt'):
+        shutil.copyfile(font_source, fonts / font_name)
+        for filename in ('NOTICE', 'OFL.txt', 'OFL-Latin.txt'):
             shutil.copyfile(ROOT / 'factory/base/system/fonts' / filename, fonts / filename)
         subprocess.run([str(args.littlefs_python), 'create', str(files), str(destination / 'pxa-data.bin'),
                         f'--fs-size={storage["size"]}', f'--name-max={name_max}', '--block-size=4096'], check=True)
@@ -182,6 +185,7 @@ def build_board(args, name: str, version: str) -> dict:
                   system_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT / 'deps/pxa-system', text=True).strip(),
                   pxa_version=(ROOT / 'deps/pxa-system/VERSION').read_text().strip(),
                   store=store, store_container_sha256=sha(container), regions=regions,
+                  font=dict(file=font_name, bytes=font_source.stat().st_size, sha256=sha(font_source)),
                   merged=dict(file=merged.name, bytes=merged.stat().st_size, sha256=sha(merged)),
                   application=dict(file=app_name, bytes=app_region['size'], sha256=app_region['sha256']))
     (destination / 'flash-map.json').write_text(json.dumps(record, indent=2) + '\n')

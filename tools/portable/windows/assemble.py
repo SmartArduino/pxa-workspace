@@ -193,7 +193,7 @@ def main():
     for name in ('pxsys_desktop_simulator', 'pxsys_product_simulator', 'pxsys_package_installer'):
         copy(args.simulator / (name + '.exe'), root / 'simulator/bin' / (name + '.exe'))
     copy(WORKSPACE / 'simulator/profiles', root / 'share/pxa/profiles')
-    for name in ('noto_sans_cjk_common.ttf', 'OFL.txt', 'NOTICE'):
+    for name in ('noto_sans_cjk_common.ttf', 'OFL.txt', 'OFL-Latin.txt', 'NOTICE'):
         copy(WORKSPACE / 'factory/base/system/fonts' / name, root / 'share/pxa/fonts' / name)
     copy(args.licenses, root / 'licenses')
     copy(SYSTEM / 'LICENSE', root / 'licenses/PXA-LICENSE')

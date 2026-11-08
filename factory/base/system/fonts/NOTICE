@@ -32,6 +32,13 @@ Latin TTF SHA-256: 478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3
 Output SHA-256: ad9ace369f9ed2a2c440e1001c18686197e37bbd680ae5ff7e4214a1dc9f9b0d
 Output bytes: 2,788,052. Character mappings: 9,975.
 
+The lossless WOFF1 wrapper for small Flash devices is built with
+ tools/fonts/compress_system_font.py and stored at
+ factory/variants/compact-fonts/pxa_sans_sc_common.woff.
+It preserves the complete character mappings, outlines, metrics and names.
+WOFF1 SHA-256: ef15764a9b4034c6b6d5007bba7b982765054421c3347123c10f95be079dcd21
+WOFF1 bytes: 1,777,356. The same two OFL licenses apply.
+
 Optional language profiles and additional application corpora can be built
 instead; see tools/fonts/README.md. Traditional profiles may use three rare
 OFL Unifont outlines, whose separate license and provenance are under

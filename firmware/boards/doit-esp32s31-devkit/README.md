@@ -4,6 +4,10 @@ Board ID：`doit-esp32s31-devkit`。使用 ESP-IDF 6.2、ESP32-S31、8 MiB Flash
 CPU 320 MHz、16 MiB Octal PSRAM 250 MHz。按 `docs/ESPS31-32_DevKit_v1.0.pdf`
 接线，屏幕为 ST7102、480×854、4.96 英寸，显示密度 198 DPI。
 
+8 MiB Flash 的工厂镜像使用完整系统字库的无损 WOFF1 封装，保留 9,975 个字符映射，
+为商城和应用留出空间。FreeType 已包含所需的 zlib 支持；字库解压占用 PSRAM。
+安装资源较多的应用前查询实际剩余容量，也可使用下表接线对应的 SDMMC 存储。
+
 ## 接线与共享引脚
 
 | 功能 | GPIO |
