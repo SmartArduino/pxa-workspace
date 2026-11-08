@@ -28,7 +28,8 @@ OS_DLLS = set(('kernel32 user32 gdi32 advapi32 shell32 ole32 oleaut32 uuid '
               'dwmapi uxtheme shlwapi rpcrt4 bcrypt crypt32 secur32 wldap32 '
               'normaliz iphlpapi ntdll msvcrt ucrtbase powrprof cfgmgr32 '
               'comdlg32 comctl32 winspool winhttp netapi32 userenv psapi '
-              'dnsapi mswsock ncrypt cabinet wintrust authz dbghelp').split())
+              'dnsapi mswsock ncrypt cabinet wintrust authz dbghelp '
+              'msvcp140 vcruntime140 vcruntime140_1').split())
 
 
 def imports(path, objdump):
@@ -127,9 +128,13 @@ def main():
         copy(WORKSPACE / 'factory/base/system/fonts' / name, root / 'share/pxa/fonts' / name)
     copy(args.licenses, root / 'licenses')
     copy(SYSTEM / 'LICENSE', root / 'licenses/PXA-LICENSE')
-    collect_dlls(root, args.dll_directory, args.objdump)
+    collect_dlls(root, [*args.dll_directory, args.python, args.wasi], args.objdump)
     (root / 'README.md').write_text(f'''# PXA DevKit {version} for Windows x64
 
+Install Microsoft's Visual C++ 2015-2022 x64 runtime once if not already present:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+The upstream Windows WASI SDK needs MSVCP140/VCRUNTIME140. These OS prerequisites
+are not replaced with Wine or MinGW implementations in this package.
 Extract to a writable folder. Add bin to PATH, then run pxa init hello and
 pxa run hello --offline. Compiler, SDK, simulator and Python are included.
 USB: pxa device devices, then pxa device info --port COM7. Enable Settings /
@@ -161,6 +166,7 @@ window/audio/USB-driver acceptance. Windows 10 build 18362+; Windows 11 recommen
                   for name, checkout in [('workspace', WORKSPACE), ('system', SYSTEM)]}
     manifest = dict(schema='pxa-distribution-1', version=version, platform='windows-x86_64',
                     source=provenance, minimum_windows_build=18362, validation=args.validation,
+                    prerequisites=['Microsoft Visual C++ 2015-2022 x64 runtime (MSVCP140/VCRUNTIME140)'],
                     sdk=sdk_identity(root), components=components,
                     devkit=dict(file=aggregate.name, size=aggregate.stat().st_size, sha256=sha(aggregate)),
                     toolchain=json.loads((SYSTEM / 'config/wamr.json').read_text()),
