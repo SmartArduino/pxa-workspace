@@ -19,8 +19,20 @@ typedef struct {
 static pxa_esp_package_entry_t entry;
 static struct {void *metadata_lock,*transaction_lock;pxa_package_limits_t limits;} store,*g_store=&store;
 static int metadata,transaction,allocations,fail_allocation,live,reads,short_read;
+static int update_before_transaction;
+static void *failed_lock;
 static bool store_is_initialized(void) {return true;}
-static bool take_lock(void *lock) {int *held=lock;assert(!*held);*held=1;return true;}
+static bool take_lock(void *lock) {
+    int *held=lock;assert(!*held);
+    if(lock==failed_lock)return false;
+    if(lock==store.transaction_lock && update_before_transaction) {
+        /* An update can finish while the loader waits for its transaction
+         * lease. The catalog then points at the new generation only. */
+        assert(!metadata);assert(rename("package","package-next")==0);
+        strcpy(entry.root,"package-next");update_before_transaction=0;
+    }
+    *held=1;return true;
+}
 static void release_lock(void *lock) {int *held=lock;assert(*held);*held=0;}
 static pxa_esp_package_entry_t *find_entry(const char *id) {return !strcmp(id,"test")?&entry:NULL;}
 static void *esp_alloc(size_t n) {
@@ -65,6 +77,12 @@ int main(void) {
         assert(reads==1 && live==2 && manifest && !strcmp(root,entry.root));
         assert(manifest->app_id.size==strlen(entry.id));discard(&r);assert(!live);
     }
+    update_before_transaction=1;
+    assert(pxa_esp_package_store_prepare_launch("test",&r));
+    assert(!strcmp(root,"package-next"));discard(&r);
+    assert(rename("package-next","package")==0);strcpy(entry.root,"package");
+    failed_lock=store.transaction_lock;rejected(&r);
+    failed_lock=store.metadata_lock;rejected(&r);failed_lock=NULL;
     for(int fail=1;fail<=2;++fail) {allocations=0;fail_allocation=fail;rejected(&r);}
     fail_allocation=0;
     strcpy(entry.id,"wrong-app");rejected(&r);strcpy(entry.id,"launch-fixture");
@@ -80,5 +98,5 @@ int main(void) {
     reads=0;rejected(&r);assert(!reads);
     assert(truncate("package/manifest.pxm",0)==0);rejected(&r);
     assert(unlink("package/manifest.pxm")==0);rejected(&r);
-    puts("PASS: one-read launch manifest, identity, bounds, allocation and I/O failure cleanup");
+    puts("PASS: current launch generation, lock ordering, one-read manifest and failure cleanup");
 }

@@ -4040,20 +4040,30 @@ static bool load_installed(
         return false;
     }
     *manifest = NULL;
-    if (!take_lock(g_store->metadata_lock)) return false;
+    /* Acquire the installation lease before choosing a catalog generation.
+     * An updater can replace/delete the old root while we wait for this lock.
+     * Keep the same transaction -> metadata order used by store mutations. */
+    if (!take_lock(g_store->transaction_lock)) return false;
+    if (!take_lock(g_store->metadata_lock)) {
+        release_lock(g_store->transaction_lock);
+        return false;
+    }
     entry = find_entry(identity);
     if (entry == NULL || !entry->installed || !entry->has_publisher_key_id || entry->ambiguous) {
         release_lock(g_store->metadata_lock);
+        release_lock(g_store->transaction_lock);
         return false;
     }
     app_id_size = strlen(entry->id);
     if (app_id_size == 0 || app_id_size >= PXA_ESP_PACKAGE_MAX_ID) {
         release_lock(g_store->metadata_lock);
+        release_lock(g_store->transaction_lock);
         return false;
     }
     if (snprintf(package_root, sizeof(package_root), "%s", entry->root) >=
         (int)sizeof(package_root)) {
         release_lock(g_store->metadata_lock);
+        release_lock(g_store->transaction_lock);
         return false;
     }
     memcpy(publisher_key_id, entry->publisher_key_id, sizeof(publisher_key_id));
@@ -4062,9 +4072,9 @@ static bool load_installed(
     if (root_capacity == 0 ||
         snprintf(root, root_capacity, "%s", package_root) >=
             (int)root_capacity) {
+        release_lock(g_store->transaction_lock);
         return false;
     }
-    if (!take_lock(g_store->transaction_lock)) return false;
     {
         int path_size = snprintf(manifest_path, sizeof(manifest_path),
                                  "%s/manifest.pxm", package_root);
