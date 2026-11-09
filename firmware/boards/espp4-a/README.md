@@ -120,6 +120,9 @@ tools/factory.sh image espp4-a --profile factory/profiles/generic.toml \
 项目的 PXA 应用交付流程迁移；不要把工厂镜像当作日常应用安装方式。
 后续使用 PXADB 安装独立的 `.pxa` 应用。设备目标是 `esp32-p4`，AOT
 产物必须匹配此目标；不能安装 S3 或 S31 的专用机器码。
+像素游戏应使用 `pxa build ./game --target esp32p4 --aot-only` 构建 P4 原生包。
+仅提供通用 WASM 时会使用解释执行，安装兼容不代表具有原生包的帧率。
+比较板卡性能时应固定游戏版本、场景和画布尺寸，并统计实际完成显示的帧。
 
 ## 无线与许可证
 
