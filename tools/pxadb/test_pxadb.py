@@ -248,6 +248,16 @@ class BulkUploadTest(unittest.TestCase):
 
 
 class UsbRuntimeGuardTest(unittest.TestCase):
+    def test_explicit_baud_does_not_read_or_change_shared_environment(self):
+        port = SimpleNamespace(dtr=True, rts=True, port=None, open=mock.Mock(), close=mock.Mock())
+        with mock.patch.object(pxadb, "serial_upload_profile", return_value="uart"), \
+                mock.patch.object(pxadb, "_hold_usb_awake", return_value=None), \
+                mock.patch.object(pxadb.serial, "Serial", return_value=port) as create, \
+                mock.patch.dict(pxadb.os.environ, {"PXADB_BAUD": "invalid"}):
+            pxadb.PxaDbClient("COM7", baudrate=460800)
+            self.assertEqual(create.call_args.kwargs['baudrate'], 460800)
+            self.assertEqual(pxadb.os.environ['PXADB_BAUD'], "invalid")
+
     def test_uart_deasserts_reset_and_boot_before_open(self):
         port = SimpleNamespace(dtr=True, rts=True, port=None, open=mock.Mock(), close=mock.Mock())
         def opened():

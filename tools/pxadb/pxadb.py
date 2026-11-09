@@ -305,7 +305,8 @@ class PxaDbClient:
     log_callback: Callable[[Frame], None] | None = None
     raw_callback: Callable[[bytes], None] | None = None
 
-    def __init__(self, port: str, timeout: float = 2.0) -> None:
+    def __init__(self, port: str, timeout: float = 2.0, *,
+                 baudrate: int | None = None) -> None:
         self._usb_awake_fd: int | None = None
         self.binary_transport: BinarySocketTransport | None = None
         self.tcp_token = ""
@@ -322,7 +323,7 @@ class PxaDbClient:
         if serial is None:
             raise PxaDbError("pyserial is required; install with: pip install -e tools/pxadb")
         try:
-            baudrate = int(os.environ.get("PXADB_BAUD", "115200"))
+            baudrate = int(os.environ.get("PXADB_BAUD", "115200")) if baudrate is None else baudrate
         except ValueError:
             raise PxaDbError("PXADB_BAUD must be an integer baud rate")
         self.upload_profile = serial_upload_profile(port)
@@ -752,8 +753,9 @@ class PxaDbClient:
                 pass
 
 
-def open_client(port: str, timeout: float, stream_logs: bool = False) -> PxaDbClient:
-    client = PxaDbClient(port, timeout)
+def open_client(port: str, timeout: float, stream_logs: bool = False, *,
+                baudrate: int | None = None) -> PxaDbClient:
+    client = PxaDbClient(port, timeout) if baudrate is None else PxaDbClient(port, timeout, baudrate=baudrate)
     try:
         client.device_info = client.hello()
         if stream_logs:
@@ -2321,7 +2323,8 @@ def existing_package_volume(client: PxaDbClient, source: pathlib.Path,
 
 
 def command_package_install(arguments: argparse.Namespace,
-                            connection: PxaDbClient | None = None) -> int:
+                            connection: PxaDbClient | None = None, *,
+                            quiet: bool = False) -> int:
     """Install once, optionally borrowing a caller-owned live connection.
 
     Borrowing keeps UART bridge reset circuits out of multi-step workflows.
@@ -2391,7 +2394,8 @@ def command_package_install(arguments: argparse.Namespace,
                             client.request("FSABORT", timeout=40)
                         except Exception:
                             pass
-                print(f"installed: {identity}")
+                if not quiet:
+                    print(f"installed: {identity}")
                 return 0
             staged = False
             try:
@@ -2404,7 +2408,8 @@ def command_package_install(arguments: argparse.Namespace,
             finally:
                 if staged:
                     clear_staged_source(client, identity)
-        print(f"installed: {identity}")
+        if not quiet:
+            print(f"installed: {identity}")
         return 0
 
     if arguments.identity:
@@ -2415,7 +2420,8 @@ def command_package_install(arguments: argparse.Namespace,
           open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
                       arguments.timeout, arguments.logcat)) as client:
         deploy(client, arguments.package)
-    print(f"install: {arguments.package}")
+    if not quiet:
+        print(f"install: {arguments.package}")
     return 0
 
 

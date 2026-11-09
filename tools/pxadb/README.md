@@ -27,6 +27,15 @@ The deployment ID comes from the signed package manifest, so a renamed `.pxa`
 file still installs under the correct App ID. An explicit `--identity` must
 match that manifest ID; a mismatch is rejected before upload.
 
+Python callers can borrow an existing `PxaDbClient` using
+`command_package_install(arguments, connection=client, quiet=True)`. The caller
+owns and closes that connection. `open_client(port, timeout, baudrate=2000000)`
+selects a serial rate without changing process-wide environment variables.
+Use one connection for installation and subsequent activation/state queries on
+UART bridges whose reset circuitry reacts to opening the port. A stale mount
+epoch from a previous connection is not an installation selector; refresh the
+volumes or select `internal`/`sd` on the current connection.
+
 New firmware advertises `package_receive=1` and `package_directory_adopt=1`
 in `INFO`. CLI/GUI installation uploads into an invisible receiving candidate,
 then verifies and deploys on the same connection. Directory packages are moved
