@@ -35,6 +35,21 @@ OS_DLLS = set(('kernel32 user32 gdi32 advapi32 shell32 ole32 oleaut32 uuid '
               'msvcp140 vcruntime140 vcruntime140_1 propsys msi').split())
 
 
+def zip_archive(root, destination):
+    """Preserve the complete SDK tree, including compiler marker directories."""
+    with zipfile.ZipFile(destination, 'w', compression=zipfile.ZIP_DEFLATED,
+                         compresslevel=6) as zipped:
+        for path in [root, *sorted(root.rglob('*'))]:
+            directory = path.is_dir()
+            if not directory and not path.is_file():
+                continue
+            name = path.relative_to(root.parent).as_posix() + ('/' if directory else '')
+            info = zipfile.ZipInfo(name, (2026, 11, 8, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = ((0o40755 << 16) | 0x10 if directory else 0o100644 << 16)
+            zipped.writestr(info, b'' if directory else path.read_bytes())
+
+
 def enable_utf8_paths(path):
     """Opt unsigned OpenSSL into Windows UTF-8 without changing executable code."""
     import lief  # Apache-2.0, build-only; see requirements.txt.
@@ -230,12 +245,7 @@ window/audio/USB-driver acceptance. Windows 10 build 18362+; Windows 11 recommen
         archive(root, paths, path, epoch)
         components.append(dict(name=name, file=path.name, size=path.stat().st_size, sha256=sha(path)))
     aggregate = output / (root.name + '.zip')
-    with zipfile.ZipFile(aggregate, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zipped:
-        for path in sorted(root.rglob('*')):
-            if path.is_file():
-                info = zipfile.ZipInfo(path.relative_to(root.parent).as_posix(), (2026, 11, 8, 0, 0, 0))
-                info.compress_type = zipfile.ZIP_DEFLATED
-                zipped.writestr(info, path.read_bytes())
+    zip_archive(root, aggregate)
     sys.path.insert(0, str(SYSTEM / 'tools'))
     from pxa_tools.project import sdk_identity
     provenance = {name: {'commit': subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip(), 'dirty': False}
