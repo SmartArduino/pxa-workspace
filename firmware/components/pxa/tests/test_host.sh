@@ -18,6 +18,7 @@ python3 "$tests_dir/test_graceful_stop.py"
 python3 "$tests_dir/test_stop_cleanup.py"
 python3 "$tests_dir/test_store_self_update.py"
 python3 "$tests_dir/test_runtime_info.py"
+python3 "$project_dir/firmware/components/pxa_system_esp/tests/test_launch_queue.py"
 bash "$tests_dir/test_storage_worker.sh"
 
 cc_flags=(-std=c99 -Wall -Wextra -Wpedantic -Werror)

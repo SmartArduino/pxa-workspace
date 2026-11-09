@@ -9,6 +9,12 @@ portable registries used by native applications. Requests are copied to the
 system owner thread and completions or reliable events are queued back to the
 PXA worker, with caller identity derived from the verified manifest.
 
+PXADB launch requests copy the resolved publisher/app identity into an owned
+queue entry. Only the LVGL owner reads or refreshes the application registry;
+it can register a just-installed package before starting it, even if the
+asynchronous catalog refresh has not run yet. A queued acknowledgement is not
+startup confirmation: inspect the active package state and runtime events.
+
 The bridge also observes the portable theme service and maps its effective
 light/dark scheme into the standard PXA UI environment for both active and
 subsequently launched Guests.

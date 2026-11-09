@@ -1458,6 +1458,13 @@ static void perform_launch_request(void* context) {
     if (request == NULL) return;
     if (bridge_valid(request->bridge) &&
         request->bridge->generation == request->generation) {
+        /* Installation commits before its queued catalog refresh runs. Both
+         * registry lookup and refresh belong to this LVGL owner, never the
+         * PXADB task that submitted the request. */
+        if (pxsys_app_registry_find(
+                pxsys_standard_system_apps(request->bridge->system),
+                &request->target) == NULL)
+            (void)pxsys_esp_pxa_bridge_sync(request->bridge);
         intent.struct_size = sizeof(intent);
         intent.action = pxsys_string_from_cstr("system.intent.main");
         intent.target = &request->target;
@@ -1477,30 +1484,24 @@ static bool launch_requested(void* context,
                              const char* identity) {
     pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
     pending_launch_t* request;
-    size_t index;
-    if (!bridge_valid(bridge) || identity == NULL)
+    size_t size;
+    if (!bridge_valid(bridge) || publisher_root == NULL || identity == NULL)
         return false;
-    for (index = 0; index < bridge->tracked_count; ++index) {
-        if (memcmp(bridge->tracked[index].identity.publisher_root, publisher_root,
-                   PXSYS_PUBLISHER_ROOT_BYTES) != 0 ||
-            strcmp(bridge->tracked[index].app_id, identity) != 0)
-            continue;
-        request = (pending_launch_t*)calloc(1, sizeof(*request));
-        if (request == NULL) return false;
-        request->bridge = bridge;
-        request->generation = bridge->generation;
-        request->target = bridge->tracked[index].identity;
-        snprintf(request->app_id, sizeof(request->app_id), "%s",
-                 bridge->tracked[index].app_id);
-        request->target.app_id = pxsys_string_from_cstr(request->app_id);
-        if (schedule_on_lvgl_owner(perform_launch_request, request) !=
-            LV_RESULT_OK) {
-            free(request);
-            return false;
-        }
-        return true;
+    size = strnlen(identity, PXA_HOST_APP_ID_MAX);
+    if (size == 0 || size >= PXA_HOST_APP_ID_MAX) return false;
+    request = (pending_launch_t*)calloc(1, sizeof(*request));
+    if (request == NULL) return false;
+    request->bridge = bridge;
+    request->generation = bridge->generation;
+    memcpy(request->target.publisher_root, publisher_root,
+           PXSYS_PUBLISHER_ROOT_BYTES);
+    memcpy(request->app_id, identity, size + 1);
+    request->target.app_id = pxsys_string_from_cstr(request->app_id);
+    if (schedule_on_lvgl_owner(perform_launch_request, request) != LV_RESULT_OK) {
+        free(request);
+        return false;
     }
-    return false;
+    return true;
 }
 
 void pxsys_esp_pxa_bridge_config_init(pxsys_esp_pxa_bridge_config_t* config) {
