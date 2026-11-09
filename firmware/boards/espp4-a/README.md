@@ -7,7 +7,7 @@ SmartArduino ESPP4-A / ESP32-P4 DevKit v1.1 的 PXA 板级适配。
 | 资源 | 接线 / 配置 |
 | --- | --- |
 | 主控 | ESP32-P4，400 MHz，16 MB Flash，Hex PSRAM 250 MHz |
-| 显示 | ST7102，480×854，约 6×11 cm，200 DPI，RGB565，DSI 两线 440 Mbps，像素时钟 36 MHz |
+| 显示 | ST7102，480×854，约 6.1×11 cm，物理密度约 200 DPI，RGB565，DSI 两线 440 Mbps，像素时钟 36 MHz |
 | 触摸 | ST7123 兼容，I2C1 SDA49 / SCL48，7 位地址 0x55 |
 | 屏幕复位 / 触摸复位 | GPIO46 / GPIO47；初始化后不再复位触摸，以免同时重置屏幕 |
 | 背光 | GPIO24，高有效，LEDC PWM |
@@ -18,6 +18,11 @@ SmartArduino ESPP4-A / ESP32-P4 DevKit v1.1 的 PXA 板级适配。
 | 无线 | 模组专用 `p4_wireless`，SDMMC1，GPIO14…19 / 54 由厂商驱动占用 |
 | BOOT | GPIO35：短按返回，长按后松开回桌面；休眠时先唤醒 |
 | 调试 | UART0 TX37 / RX38，2000000；连接板载 CH340X 的 UART-DEBUG Type-C |
+
+默认界面显示密度为 240 DPI，使文字、间距和控件相对 200 DPI 放大约 20%，
+便于在这块屏幕上阅读。应用通过显示环境获取密度；像素画布仍按应用自己的缩放策略显示。
+二级缓存使用 128 KiB，为无线 DMA、TLS 和应用安装线程保留足够的内部 RAM。
+改变缓存大小时需同时更新 bootloader 与应用固件；分区表和用户数据无需重写。
 
 显示在板级完成合成：LVGL 以 FULL 模式直接绘制两个 DSI DMA 帧缓冲，随后
 合成 PXA Surface 和透明层，免去整屏 UI 复制。DMA 在帧边界切换缓冲后允许

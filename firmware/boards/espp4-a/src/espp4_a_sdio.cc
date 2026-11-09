@@ -23,7 +23,20 @@ esp_err_t TransferRadio(sdmmc_card_t* card, uint32_t function, uint32_t address,
     if (card->host.slot != 1 ||
         card->host.check_buffer_alignment(card->host.slot, data, aligned_size))
         return transfer(card, function, address, data, size);
-    auto* bounce = heap_caps_aligned_alloc(128, aligned_size,
+    // P4 SDMMC can DMA cache-aligned PSRAM. Large radio reads must not compete
+    // with TLS, task stacks and DMA descriptors for scarce internal SRAM.
+    // Ask the actual host before using external memory; byte transfers that
+    // do not span complete cache lines keep the original internal fallback.
+    void* bounce = nullptr;
+    if (aligned_size >= 512 && aligned_size % 128 == 0) {
+        bounce = heap_caps_aligned_alloc(128, aligned_size,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+        if (bounce && !card->host.check_buffer_alignment(card->host.slot, bounce, aligned_size)) {
+            heap_caps_free(bounce);
+            bounce = nullptr;
+        }
+    }
+    if (!bounce) bounce = heap_caps_aligned_alloc(128, aligned_size,
         MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
     if (!bounce) return ESP_ERR_NO_MEM;
     if constexpr (Write) std::memcpy(bounce, data, size);

@@ -18,6 +18,17 @@
 #define WIFI_EVENT_SCAN_DONE_BIT BIT2
 #define MAX_RECONNECT_COUNT 5
 
+ESP_EVENT_DEFINE_BASE(PXA_WIFI_CONTROL_EVENT);
+namespace {
+constexpr int32_t kConnectRequest = 1;
+struct ConnectRequest {
+    WifiStation* owner;
+    uint32_t generation;
+    char ssid[33];
+    char password[65];
+};
+}
+
 WifiStation::WifiStation() {
     // Create the event group
     event_group_ = xEventGroupCreate();
@@ -79,6 +90,12 @@ bool WifiStation::ScanNetworks(std::vector<WifiNetwork>* networks, bool force_re
     networks->clear();
     {
         std::lock_guard<std::mutex> lock(manual_scan_mutex_);
+        // A scan during association can interrupt the module's connection.
+        // Keep the last visible list until the connection attempt completes.
+        if (manual_connect_pending_.load()) {
+            *networks = cached_scan_results_;
+            return true;
+        }
         if (!force_refresh && !cached_scan_results_.empty() && cached_scan_at_us_ > 0 &&
             esp_timer_get_time() - cached_scan_at_us_ < 15 * 1000 * 1000) {
             *networks = cached_scan_results_;
@@ -121,6 +138,40 @@ bool WifiStation::ScanNetworks(std::vector<WifiNetwork>* networks, bool force_re
 
 bool WifiStation::Connect(const std::string& ssid, const std::string& password) {
     if (ssid.empty() || ssid.size() > 32 || password.size() > 64) return false;
+    bool expected = false;
+    if (!manual_connect_pending_.compare_exchange_strong(expected, true)) return false;
+    ConnectRequest request = {};
+    request.owner = this;
+    request.generation = ++connect_generation_;
+    std::memcpy(request.ssid, ssid.data(), ssid.size());
+    std::memcpy(request.password, password.data(), password.size());
+    // The event loop owns radio transitions and copies the request. NVS and
+    // synchronous remote-driver calls must never run under the UI/display lock.
+    const esp_err_t result = esp_event_post(PXA_WIFI_CONTROL_EVENT,
+        kConnectRequest, &request, sizeof(request), 0);
+    if (result != ESP_OK) manual_connect_pending_ = false;
+    return result == ESP_OK;
+}
+
+void WifiStation::ControlEventHandler(void* context, esp_event_base_t,
+                                    int32_t event_id, void* data) {
+    if (event_id != kConnectRequest || data == nullptr) return;
+    auto* station = static_cast<WifiStation*>(context);
+    const auto* request = static_cast<const ConnectRequest*>(data);
+    if (request->owner != station ||
+        request->generation != station->connect_generation_.load()) return;
+    station->ConnectNow(request->ssid, request->password);
+}
+
+void WifiStation::ConnectNow(const std::string& ssid, const std::string& password) {
+    if (IsConnected() && ssid == ssid_ && password == password_) {
+        manual_connect_pending_ = false;
+        return;
+    }
+    xEventGroupClearBits(event_group_, WIFI_EVENT_CONNECTED);
+    // Cancel a scheduled automatic scan before changing the selected network.
+    if (timer_handle_ != nullptr) (void)esp_timer_stop(timer_handle_);
+    (void)esp_wifi_scan_stop();
     AddAuth(std::string(ssid), std::string(password));
     wifi_config_t wifi_config = {};
     std::strncpy(reinterpret_cast<char*>(wifi_config.sta.ssid), ssid.c_str(),
@@ -128,20 +179,41 @@ bool WifiStation::Connect(const std::string& ssid, const std::string& password) 
     std::strncpy(reinterpret_cast<char*>(wifi_config.sta.password),
                  password.c_str(), sizeof(wifi_config.sta.password) - 1);
     wifi_config.sta.listen_interval = 10;
-    if (esp_wifi_set_config(WIFI_IF_STA, &wifi_config) != ESP_OK) return false;
+    const esp_err_t configured = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (configured != ESP_OK) {
+        ESP_LOGW(TAG, "Could not configure selected network: %s", esp_err_to_name(configured));
+        manual_connect_pending_ = false;
+        return;
+    }
     ssid_ = ssid;
     password_ = password;
     reconnect_count_ = 0;
     connect_queue_.clear();
     if (on_connect_) on_connect_(ssid_);
-    (void)esp_wifi_disconnect();
-    return esp_wifi_connect() == ESP_OK;
+    manual_disconnect_pending_ = true;
+    if (esp_wifi_disconnect() != ESP_OK) manual_disconnect_pending_ = false;
+    connecting_ = true;
+    const esp_err_t result = esp_wifi_connect();
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "Could not start selected connection: %s", esp_err_to_name(result));
+        manual_connect_pending_ = false;
+        connecting_ = false;
+    }
 }
 
 void WifiStation::Stop() {
     ESP_LOGI(TAG, "Stopping WiFi station");
     
     // Unregister event handlers FIRST to prevent scan done from triggering connect
+    if (instance_control_ != nullptr) {
+        esp_event_handler_instance_unregister(PXA_WIFI_CONTROL_EVENT,
+            kConnectRequest, instance_control_);
+        instance_control_ = nullptr;
+    }
+    manual_connect_pending_ = false;
+    manual_disconnect_pending_ = false;
+    connecting_ = false;
+    ++connect_generation_;
     if (instance_any_id_ != nullptr) {
         esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, instance_any_id_);
         instance_any_id_ = nullptr;
@@ -206,6 +278,10 @@ void WifiStation::Start() {
     // Create the default WiFi station interface
     station_netif_ = esp_netif_create_default_wifi_sta();
 
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(PXA_WIFI_CONTROL_EVENT,
+        kConnectRequest, &WifiStation::ControlEventHandler, this,
+        &instance_control_));
+
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
                                                         &WifiStation::WifiEventHandler,
@@ -265,6 +341,14 @@ void WifiStation::HandleScanResult() {
         ESP_LOGI(TAG, "Background scan found %u networks",
                  (unsigned)cached_scan_results_.size());
     }
+
+    // A late scan completion must not reconnect a healthy station or replace
+    // the network explicitly selected by a user.
+    if (IsConnected() || manual_connect_pending_.load()) {
+        free(ap_records);
+        return;
+    }
+    connect_queue_.clear();
 
     auto& ssid_manager = SsidManager::GetInstance();
     auto ssid_list = ssid_manager.GetSsidList();
@@ -340,6 +424,7 @@ void WifiStation::StartConnect() {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
 
     reconnect_count_ = 0;
+    connecting_ = true;
     ESP_ERROR_CHECK(esp_wifi_connect());
 }
 
@@ -446,6 +531,12 @@ void WifiStation::WifiEventHandler(void* arg, esp_event_base_t event_base, int32
         if (was_connected && this_->on_disconnected_) {
             this_->on_disconnected_(event->reason);
         }
+
+        const bool intentional = this_->manual_disconnect_pending_ &&
+            event->reason == WIFI_REASON_ASSOC_LEAVE;
+        this_->manual_disconnect_pending_ = false;
+        if (intentional) return; // ConnectNow already queued the replacement.
+        if (!was_connected && !this_->connecting_) return;
         
         if (this_->reconnect_count_ < MAX_RECONNECT_COUNT) {
             esp_wifi_connect();
@@ -461,6 +552,8 @@ void WifiStation::WifiEventHandler(void* arg, esp_event_base_t event_base, int32
         
         ESP_LOGI(TAG, "No more AP to connect, next scan in %d seconds", 
                  this_->scan_current_interval_microseconds_ / 1000 / 1000);
+        this_->manual_connect_pending_ = false;
+        this_->connecting_ = false;
         esp_timer_start_once(this_->timer_handle_, this_->scan_current_interval_microseconds_);
         this_->UpdateScanInterval();
     } else if (event_id == WIFI_EVENT_STA_CONNECTED) {
@@ -477,6 +570,9 @@ void WifiStation::IpEventHandler(void* arg, esp_event_base_t event_base, int32_t
     ESP_LOGI(TAG, "Got IP: %s", this_->ip_address_.c_str());
     
     xEventGroupSetBits(this_->event_group_, WIFI_EVENT_CONNECTED);
+    this_->manual_connect_pending_ = false;
+    this_->manual_disconnect_pending_ = false;
+    this_->connecting_ = false;
     this_->was_connected_ = true;  // Mark as connected for disconnect notification
     if (this_->on_connected_) {
         this_->on_connected_(this_->ssid_);

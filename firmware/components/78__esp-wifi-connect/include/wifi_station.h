@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 #include <mutex>
+#include <atomic>
 
 #include <esp_event.h>
 #include <esp_timer.h>
@@ -51,6 +52,8 @@ public:
 
     void AddAuth(const std::string &&ssid, const std::string &&password);
     bool ScanNetworks(std::vector<WifiNetwork>* networks, bool force_refresh = false);
+    // Enqueue a copied request; true means accepted. OnConnected/IP reports
+    // readiness later, without blocking the caller on NVS or the radio driver.
     bool Connect(const std::string& ssid, const std::string& password);
     void Start();
     void Stop();
@@ -73,6 +76,11 @@ private:
     esp_timer_handle_t timer_handle_ = nullptr;
     esp_event_handler_instance_t instance_any_id_ = nullptr;
     esp_event_handler_instance_t instance_got_ip_ = nullptr;
+    esp_event_handler_instance_t instance_control_ = nullptr;
+    std::atomic<bool> manual_connect_pending_{false};
+    std::atomic<uint32_t> connect_generation_{0};
+    bool manual_disconnect_pending_ = false;
+    bool connecting_ = false;
     esp_netif_t* station_netif_ = nullptr;
     std::string ssid_;
     std::string password_;
@@ -100,6 +108,8 @@ private:
     void HandleScanResult();
     void HandleManualScanResult();
     void StartConnect();
+    void ConnectNow(const std::string& ssid, const std::string& password);
+    static void ControlEventHandler(void*, esp_event_base_t, int32_t, void*);
     void UpdateScanInterval();  // Exponential backoff for scan interval
     static void WifiEventHandler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
     static void IpEventHandler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);

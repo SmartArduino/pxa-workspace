@@ -632,7 +632,8 @@ const pxa_board_port_t port = {
     .initialize = [](void*) { return board.Initialize(); },
     .display = [](void*) { return board.display(); },
     .display_profile = [](void*, pxsys_display_profile_t* p) {
-        pxsys_display_profile_init(p, kWidth, kHeight); p->density_dpi = 200;
+        // 120% UI scale for the approximately 200-DPI physical panel.
+        pxsys_display_profile_init(p, kWidth, kHeight); p->density_dpi = 240;
         p->shape = PXSYS_DISPLAY_SHAPE_RECTANGLE;
     },
     .set_network_enabled = [](void*, pxsys_network_type_t type, uint8_t on) {
