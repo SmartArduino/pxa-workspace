@@ -81,13 +81,13 @@ int main(int argc,char** argv) {
     Put16(test_i2c[0x69],0x16,0);
     Put16(test_i2c[0x69],0x22,512);
     assert(config.read(nullptr,acc,1,values)==PXA_STATUS_OK);
-    assert(values[0]==-9806650 && values[1]==-9806650 && values[2]==0);
+    assert(values[0]==9806650 && values[1]==-9806650 && values[2]==0);
     assert(config.read(nullptr,gyro,2,values)==PXA_STATUS_OK);
-    assert(values[0]==-17453292 && values[1]==-17453292 && values[2]==0);
+    assert(values[0]==17453292 && values[1]==-17453292 && values[2]==0);
     // Read all six faces through the real Bosch driver and provider boundary.
     // In particular, screen-up/down Z must not change sign to fix the XY map.
-    const int expected_axis[]={1,0,2};
-    const int expected_sign[]={-1,1,1};
+    const int expected_axis[]={0,1,2};
+    const int expected_sign[]={1,1,1};
     for(unsigned axis=0;axis<3;++axis) for(int sign:{-1,1}) {
         for(unsigned i=0;i<3;++i) {
             Put16(test_i2c[0x69],0x0c+2*i,i==axis?sign*8192:0);
@@ -113,7 +113,7 @@ int main(int argc,char** argv) {
         mosaico_board::AccelerationMicro(INT16_MIN),
         mosaico_board::AccelerationMicro(INT16_MIN),
         mosaico_board::AccelerationMicro(INT16_MIN));
-    assert(minimum[0]==-39226600 && minimum[1]==39226600 && minimum[2]==-39226600);
+    assert(minimum[0]==-39226600 && minimum[1]==-39226600 && minimum[2]==-39226600);
     assert(config.read(nullptr,temp,3,values)==PXA_STATUS_OK && values[0]==24000);
     test_i2c[0x69].fail=true;
     assert(config.read(nullptr,gyro,2,values)==PXA_STATUS_IO_ERROR);

@@ -22,7 +22,8 @@ import xml.etree.ElementTree as ET
 WORKSPACE = Path(__file__).resolve().parents[3]
 SYSTEM = WORKSPACE / 'deps/pxa-system'
 sys.path.insert(0, str(SYSTEM / 'tools/release'))
-from assemble import archive, copy, sha
+from compact import compact_python, compact_toolchain, strip_compiler
+from assemble import archive, copy, host_c_abi, sha
 
 # OS libraries remain replaceable and are never copied into the DevKit.
 OS_DLLS = set(('kernel32 user32 gdi32 advapi32 shell32 ole32 oleaut32 uuid '
@@ -148,8 +149,10 @@ def main():
     for name in ('simulator', 'wamrc', 'wasi', 'python', 'cmake', 'ninja', 'openssl', 'licenses', 'output', 'signing-key'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--dll-directory', type=Path, action='append', default=[])
-    parser.add_argument('--objdump', default='x86_64-w64-mingw32-objdump')
+    parser.add_argument('--objdump', default='objdump' if os.name == 'nt' else 'x86_64-w64-mingw32-objdump')
     parser.add_argument('--validation', choices=('windows', 'wine'), required=True)
+    parser.add_argument('--toolchain-profile', choices=('pxa', 'full'), default='pxa')
+    parser.add_argument('--strip', default='strip' if os.name == 'nt' else 'x86_64-w64-mingw32-strip')
     args = parser.parse_args()
     for checkout in (WORKSPACE, SYSTEM):
         if subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain'], text=True).strip():
@@ -176,7 +179,11 @@ def main():
         copy(SYSTEM / 'bin' / name, root / 'bin' / name)
     copy(args.wamrc, root / 'bin/wamrc.exe')
     copy(args.wasi, root / 'toolchains/wasi-sdk', ignore=ignore)
+    compact = {'toolchain': compact_toolchain(root / 'toolchains/wasi-sdk',
+        profile=args.toolchain_profile, windows=True, objdump=args.objdump),
+        'wamrc': strip_compiler(root / 'bin/wamrc.exe', args.strip)}
     copy(args.python, root / 'runtime/python', ignore=ignore)
+    compact['python'] = compact_python(root / 'runtime/python')
     for path in (root / 'runtime/python').glob('*._pth'):
         # Embeddable Python deliberately ignores PYTHONPATH. Add only this kit.
         entries = [line for line in path.read_text().splitlines()
@@ -234,7 +241,8 @@ window/audio/USB-driver acceptance. Windows 10 build 18362+; Windows 11 recommen
     provenance = {name: {'commit': subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip(), 'dirty': False}
                   for name, checkout in [('workspace', WORKSPACE), ('system', SYSTEM)]}
     manifest = dict(schema='pxa-distribution-1', version=version, platform='windows-x86_64',
-                    source=provenance, minimum_windows_build=18362, validation=args.validation,
+                    host_c_abi=host_c_abi(SYSTEM),
+                    source=provenance, payload=compact, minimum_windows_build=18362, validation=args.validation,
                     prerequisites=['Microsoft Visual C++ 2015-2022 x64 runtime (MSVCP140/VCRUNTIME140)'],
                     sdk=sdk_identity(root), components=components,
                     devkit=dict(file=aggregate.name, size=aggregate.stat().st_size, sha256=sha(aggregate)),

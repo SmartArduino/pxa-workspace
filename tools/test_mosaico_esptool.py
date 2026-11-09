@@ -17,6 +17,9 @@ def usb_port(device="/dev/ttyACM3", product=tool.APP_PRODUCT, mac=MAC, vid=tool.
 
 class UsbDownloadTests(unittest.TestCase):
     def setUp(self):
+        access = patch.object(tool.os, 'access', return_value=True)
+        self.access = access.start()
+        self.addCleanup(access.stop)
         self.arguments = ["--chip", "esp32s31", "-p", "/dev/ttyACM3", "-b", "460800",
                           "--before=default-reset", "--after=hard-reset", "--no-stub",
                           "write-flash", "@flash_args", "--skip-flashed"]
@@ -119,6 +122,17 @@ class UsbDownloadTests(unittest.TestCase):
     def test_reconnect_timeout(self, ports, sleep, monotonic):
         with self.assertRaisesRegex(RuntimeError, "Timed out"):
             tool.wait_for_download(MAC)
+
+    @unittest.skipUnless(tool.os.name == 'posix', 'POSIX device permissions')
+    @patch.object(tool.time, 'sleep')
+    @patch.object(tool.list_ports, 'comports')
+    def test_matching_rom_waits_for_udev_permissions_without_opening(self, ports, sleep):
+        ports.return_value = [usb_port('/dev/rom', product=tool.ROM_PRODUCT)]
+        self.access.side_effect = [False, False, True]
+        with patch.object(tool.serial, 'Serial') as serial:
+            self.assertEqual(tool.wait_for_download(MAC), '/dev/rom')
+            serial.assert_not_called()
+        self.assertEqual(ports.call_count, 3)
 
     def test_replaces_supported_port_spellings(self):
         for option in (["-p", "old"], ["--port", "old"], ["--port=old"], ["-pold"]):

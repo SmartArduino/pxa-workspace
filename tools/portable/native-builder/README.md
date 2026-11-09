@@ -17,6 +17,11 @@ Use the final image for all remaining steps. Configure the desktop simulator wit
 `CURL_NO_CURL_CMAKE=ON`,
 `CURL_LIBRARY_RELEASE=/native/lib/libcurl.so`,
 `CURL_LIBRARY_DEBUG=/native/lib/libcurl.so` and `CURL_INCLUDE_DIR=/native/include`.
+The product workspace's `tools/release.py` reads the reviewed image ID from
+`sources.json`, checks that it is installed locally, and uses these settings and
+the runtime auditor automatically. It keeps native build directories separate
+by release version while reusing compiler caches. Commit any reviewed builder
+update and its inspected ID before preparing an official release.
 Run the normal source license gate and CTest suite. Seed copies of
 `/native/lib/libcurl.so.4` `/native/lib/libSDL2-2.0.so.0` and `/native/lib/libarchive.so.13` in a `native-runtime/`
 subdirectory of the simulator build before assembly so distro CMake cannot pull

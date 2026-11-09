@@ -25,10 +25,12 @@
 #include <inttypes.h>
 #include <new>
 #include "pai_touch_display_dma.h"
+#include <pxa/display_rotation.h>
 
 namespace zuowei_pai_touch {
 
-// Direct-mode RGB565 output for the board's fixed 270-degree orientation.
+// Direct-mode RGB565 output with the board's fixed panel mounting correction
+// and an additional App-requested quarter-turn rotation.
 // LVGL only redraws dirty logical regions. On the last flush, two cores rotate
 // the complete logical frame into one of two physical buffers. A separate task
 // serializes TE-synchronized SPI transfers. Rotation can fill one physical
@@ -205,14 +207,11 @@ public:
                                   void* release_context,
                                   uint32_t raster_ready_tick_us = 0) {
         auto* context = GetContext();
-        const uint8_t scale =
-            context == nullptr ? 0 : DirectFrameScale(context, width, height);
-        if (context == nullptr || pixels == nullptr || scale == 0) {
+        if (context == nullptr || pixels == nullptr) return false;
+        if (xSemaphoreTake(context->rotation_lock, pdMS_TO_TICKS(100)) != pdTRUE)
             return false;
-        }
-        if (xSemaphoreTake(context->rotation_lock, pdMS_TO_TICKS(100)) != pdTRUE) {
-            return false;
-        }
+        const uint8_t scale = DirectFrameScale(context, width, height);
+        if (!scale) { xSemaphoreGive(context->rotation_lock); return false; }
         if (!context->direct_scanout_active) {
             xSemaphoreGive(context->rotation_lock);
             return false;
@@ -223,7 +222,7 @@ public:
             xSemaphoreGive(context->rotation_lock);
             return false;
         }
-        uint16_t* output = context->outputs[output_index];
+        uint16_t* output = RenderOutput(context, output_index);
 #if CONFIG_PXA_ENABLED
         const uint32_t rotation_started_us =
             static_cast<uint32_t>(esp_timer_get_time());
@@ -236,6 +235,7 @@ public:
 #endif
         if (copied) {
             CompositePerformanceOverlay(context, output);
+            FinishRotation(context, output_index);
             context->output_frame_id[output_index] = frame_id;
             context->output_source[output_index] = kFrameSourceSurface;
             context->output_input_timestamp_us[output_index] =
@@ -306,9 +306,45 @@ public:
         if (context == nullptr || width == nullptr || height == nullptr) {
             return false;
         }
-        *width = static_cast<uint32_t>(context->logical_width);
-        *height = static_cast<uint32_t>(context->logical_height);
+        const uint8_t r = context->app_rotation.load();
+        *width = pxa_display_logical_width(context->native_height, context->native_width, r);
+        *height = pxa_display_logical_height(context->native_height, context->native_width, r);
         return true;
+    }
+
+    // Caller holds the LVGL owner locks; the rotation lock excludes both
+    // compositor and direct Surface producers while geometry changes.
+    static bool SetRotation(uint8_t rotation) {
+        auto* c = GetContext();
+        if (!c || rotation > 3) return false;
+        if (xSemaphoreTake(c->rotation_lock, pdMS_TO_TICKS(1000)) != pdTRUE) return false;
+        bool ok = true;
+        if (rotation && !c->rotation_stage) {
+            c->rotation_stage = static_cast<uint16_t*>(heap_caps_aligned_alloc(
+                kOutputDmaAlignment, c->output_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+            ok = c->rotation_stage != nullptr;
+        }
+        if (ok) ok = WaitForPendingTransfers(pdMS_TO_TICKS(1000));
+        if (ok) {
+            c->direct_scanout_active = false;
+#if CONFIG_PXA_ENABLED
+            // The first new Surface frame must re-enter direct scanout even
+            // when a half-turn leaves its dimensions unchanged. Otherwise a
+            // static App can lose its only redraw after the rotation.
+            c->pxa_direct_scanout_active.store(false);
+#endif
+            c->logical_width = pxa_display_logical_width(c->native_height, c->native_width, rotation);
+            c->logical_height = pxa_display_logical_height(c->native_height, c->native_width, rotation);
+            c->split_column = AlignSplit(c->logical_width / 2, c->logical_width);
+            c->last_completed_output.store(-1);
+            c->app_rotation.store(rotation);
+        }
+        xSemaphoreGive(c->rotation_lock);
+        if (ok) {
+            lv_display_set_resolution(c->display, c->logical_width, c->logical_height);
+            lv_obj_invalidate(lv_display_get_screen_active(c->display));
+        }
+        return ok;
     }
 
     /* Copies the most recently completed SPI output frame into logical
@@ -354,12 +390,25 @@ public:
                 std::memory_order_acquire);
             if (index >= 0 && index < kOutputBufferCount) {
                 const uint16_t* physical = context->outputs[index];
-                copied = pxa_surface_capture_rgb565_270_to_logical(
-                    physical, output,
-                    static_cast<uint16_t>(context->logical_width),
-                    static_cast<uint16_t>(context->logical_height),
-                    static_cast<uint32_t>(context->logical_height),
-                    static_cast<uint32_t>(context->logical_width), true);
+                if (!context->app_rotation.load()) {
+                    copied = pxa_surface_capture_rgb565_270_to_logical(
+                        physical, output,
+                        static_cast<uint16_t>(context->logical_width),
+                        static_cast<uint16_t>(context->logical_height),
+                        static_cast<uint32_t>(context->logical_height),
+                        static_cast<uint32_t>(context->logical_width), true);
+                } else {
+                    const uint8_t total = (1 + context->app_rotation.load()) & 3;
+                    for (uint32_t y = 0; y < uint32_t(context->logical_height); ++y)
+                        for (uint32_t x = 0; x < uint32_t(context->logical_width); ++x) {
+                            uint32_t nx, ny;
+                            pxa_display_logical_to_native(context->native_width,
+                                context->native_height, total, x, y, &nx, &ny);
+                            output[size_t(y) * context->logical_width + x] =
+                                __builtin_bswap16(physical[size_t(ny) * context->native_width + nx]);
+                        }
+                    copied = true;
+                }
                 if (copied) {
                     info->width =
                         static_cast<uint32_t>(context->logical_width);
@@ -439,6 +488,8 @@ private:
         esp_lcd_panel_io_handle_t panel_io = nullptr;
         esp_lcd_panel_handle_t panel = nullptr;
         uint16_t* outputs[kOutputBufferCount] = {};
+        uint16_t* rotation_stage = nullptr;
+        std::atomic<uint8_t> app_rotation{0};
         size_t output_bytes = 0;
         int32_t logical_width = 0;
         int32_t logical_height = 0;
@@ -493,7 +544,7 @@ private:
         TaskHandle_t pxa_presenter_task = nullptr;
         pxa_esp_surface_frame_t surface_frame = {};
         bool has_surface_frame = false;
-        bool pxa_direct_scanout_active = false;
+        std::atomic<bool> pxa_direct_scanout_active{false};
         uint64_t pxa_direct_lease = 0;
         uint32_t pxa_direct_frame_count = 0;
         uint32_t pxa_direct_rotate_total_us = 0;
@@ -575,15 +626,21 @@ private:
 
     static uint8_t DirectFrameScale(const Context* context, uint32_t width,
                                     uint32_t height) {
-        if (context == nullptr || width > UINT16_MAX || height > UINT16_MAX ||
-            context->logical_width > UINT16_MAX ||
-            context->logical_height > UINT16_MAX) {
+        if (context == nullptr || width > UINT16_MAX || height > UINT16_MAX)
             return 0;
-        }
-        return pxa_surface_integer_scale(
-            static_cast<uint16_t>(width), static_cast<uint16_t>(height),
-            static_cast<uint16_t>(context->logical_width),
-            static_cast<uint16_t>(context->logical_height));
+        const uint8_t r = context->app_rotation.load();
+        return pxa_surface_integer_scale(width, height,
+            pxa_display_logical_width(context->native_height, context->native_width, r),
+            pxa_display_logical_height(context->native_height, context->native_width, r));
+    }
+
+    static uint16_t* RenderOutput(Context* c, uint8_t index) {
+        return c->app_rotation.load() ? c->rotation_stage : c->outputs[index];
+    }
+    static void FinishRotation(Context* c, uint8_t index) {
+        if (const uint8_t r = c->app_rotation.load())
+            pxa_display_rgb565_to_native(c->rotation_stage, c->outputs[index],
+                c->native_width, c->native_height, r);
     }
 
     static uint8_t GlyphRow(char character, uint8_t row) {
@@ -619,7 +676,7 @@ private:
             return;
         const int32_t physical_x = context->logical_height - 1 - y;
         const int32_t physical_y = x;
-        output[static_cast<size_t>(physical_y) * context->native_width +
+        output[static_cast<size_t>(physical_y) * context->logical_height +
                physical_x] = __builtin_bswap16(color);
     }
 
@@ -713,6 +770,7 @@ private:
         if (context->rotation_lock != nullptr) {
             vSemaphoreDelete(context->rotation_lock);
         }
+        heap_caps_free(context->rotation_stage);
         for (auto*& output : context->outputs) {
             if (output != nullptr) {
                 heap_caps_free(output);
@@ -1557,7 +1615,7 @@ private:
         }
 
         const auto* source = reinterpret_cast<const uint16_t*>(color_map);
-        uint16_t* output = context->outputs[buffer_index];
+        uint16_t* output = RenderOutput(context, buffer_index);
         context->source_is_direct = false;
 #if CONFIG_PXA_ENABLED
         context->has_surface_frame =
@@ -1648,6 +1706,7 @@ private:
 #endif
 
         CompositePerformanceOverlay(context, output);
+        FinishRotation(context, buffer_index);
 
         uint8_t output_source = kFrameSourceLvgl;
         uint64_t output_frame_id = 0;

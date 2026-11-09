@@ -34,6 +34,8 @@ public:
     void ShowInitialFrame();
     bool ConfigurePxadbControls();
     bool RequestPowerOff();
+    bool SetDisplayRotation(uint8_t rotation);
+    void DisplaySize(uint16_t* width, uint16_t* height) const;
 
     lv_display_t* display() const { return display_; }
     uint8_t brightness() const { return brightness_.load(); }
@@ -84,6 +86,8 @@ private:
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
     lv_display_t* display_ = nullptr;
+    bool parallel_rotation_ = false;
+    std::atomic<uint8_t> display_rotation_{0};
     pxa_board_common::BootScreen boot_screen_;
     esp_lcd_touch_handle_t touch_ = nullptr;
     lv_indev_t* physical_pointers_[kTouchMaxPointers] = {};
@@ -98,6 +102,9 @@ private:
     // Synthetic input borrows the existing contact slots; all three fields
     // are protected by touch_lock_. Physical input resumes after final read.
     bool injected_mode_ = false;
+    bool rotation_touch_blocked_ = false;
+    pxadb::TestControlTakeoverCallback input_takeover_ = nullptr;
+    void* input_takeover_context_ = nullptr;
     uint8_t injected_pending_samples_ = 0;
     uint8_t injected_cancels_ = 0;
     std::atomic<bool> touch_irq_pending_{false};

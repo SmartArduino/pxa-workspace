@@ -7,7 +7,6 @@
 #include <pxa/pxa_surface_transform.h>
 #include <pxa_board_common/surface_rgb565_rows.h>
 namespace espp4_a {
-constexpr int kWidth = 480, kHeight = 854;
 using PixelPair = uint32_t __attribute__((may_alias));
 inline uint16_t BlendArgb(uint16_t background, uint32_t argb) {
     const unsigned alpha = argb >> 24;
@@ -129,17 +128,18 @@ static bool ComposeScaledRows(const pxa_esp_surface_frame_t& frame, uint16_t* pi
 
 // Compose into the off-screen RGB565 DMA buffer using one immutable Surface.
 void Compose(const pxa_esp_surface_frame_t& frame, uint16_t* pixels,
-                    int tile_x, int tile_y, int width, int height, size_t stride) {
+                    int tile_x, int tile_y, int width, int height, size_t stride,
+                    int display_width, int display_height) {
     const size_t bpp = frame.format == PXA_SURFACE_FORMAT_RGB565 ? 2 : 4;
     if (!pixels || !frame.visible || !frame.pixels || !frame.width || !frame.height ||
         stride < size_t(width) || frame.stride_bytes < frame.width * bpp ||
         (frame.format != PXA_SURFACE_FORMAT_RGB565 &&
          frame.format != PXA_SURFACE_FORMAT_ARGB8888_PREMULTIPLIED)) return;
-    const int scale = std::max(1, int(pxa_surface_fit_scale(frame.width, frame.height, kWidth, kHeight)));
+    const int scale = std::max(1, int(pxa_surface_fit_scale(frame.width, frame.height, display_width, display_height)));
     int origin_x = frame.x, origin_y = frame.y;
-    if (!origin_x && !origin_y && (frame.width * scale < kWidth || frame.height * scale < kHeight)) {
-        origin_x = (kWidth - frame.width * scale) / 2;
-        origin_y = (kHeight - frame.height * scale) / 2;
+    if (!origin_x && !origin_y && (frame.width * scale < display_width || frame.height * scale < display_height)) {
+        origin_x = (display_width - frame.width * scale) / 2;
+        origin_y = (display_height - frame.height * scale) / 2;
     }
     if (pxa::board::ComposeRgb565Rows(frame, pixels, tile_x, tile_y, width, height,
                                     stride, origin_x, origin_y, scale)) return;

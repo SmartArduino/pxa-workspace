@@ -5,8 +5,10 @@ project_dir="$(cd "$tests_dir/../../../.." && pwd)"
 build_dir="$(mktemp -d "${TMPDIR:-/tmp}/board-performance.XXXXXX")"
 trap 'rm -rf -- "$build_dir"' EXIT
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -g -pthread \
+  -ffunction-sections -fdata-sections -Wl,--gc-sections \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   -I"$tests_dir/stubs" -I"$tests_dir/../include" \
+  -I"$project_dir/deps/pxa-system/libpxa/include" \
   -I"$project_dir/firmware/components/pxa_system_clock/include" \
   -I"$project_dir/deps/pxa-system/system/core/include" \
   -I"$project_dir/deps/pxa-system/system/standard/include" \

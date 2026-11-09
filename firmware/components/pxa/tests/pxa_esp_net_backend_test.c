@@ -37,6 +37,12 @@ static void *checked_calloc(size_t count, size_t bytes) {
 #undef free
 #undef calloc
 
+/* HTTP transport fixture: the optional LAN provider has its own socket tests. */
+int pxa_lan_native_create(const pxa_lan_native_config_t *config, pxa_lan_backend_t *backend) {
+    (void)config; (void)backend;
+    return 0;
+}
+
 int xTaskCreate(void (*fn)(void *), const char *name, unsigned stack,
     void *context, unsigned priority, TaskHandle_t *task) {
     (void)fn; (void)name; (void)stack; (void)context; (void)priority; (void)task;
@@ -382,6 +388,7 @@ static void test_stream(pxa_net_backend_t *b) {
 }
 
 int main(void) {
+    assert(pxa_esp_lan_backend() == NULL);
     pxa_net_backend_t backend;
     pxa_net_request_t request = {0};
     pxa_net_response_t response = {0};

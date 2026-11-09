@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import json
 import pathlib
 import struct
 import subprocess
@@ -43,6 +44,22 @@ class SimulatorFileCommandTest(unittest.TestCase):
         path = self.service.state_root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
+
+    def test_runtime_inventory_uses_actual_control_data_and_only_explicit_unknown_fallback(self):
+        snapshot={'schema':'1','core':'2.1','service_count':'1',
+                  'services':[{'id':'3','version':'0.8','features':'123'}]}
+        with patch.object(self.service,'control',return_value=json.dumps(snapshot).encode()) as control:
+            self.service.dispatch(self.connection,1,'RUNTIME',['INFO'])
+            control.assert_called_once_with('RUNTIME INFO')
+        self.assertEqual(self.connection.decoded(),[
+            ('DATA','id=3;version=0.8;features=123'),('OK','schema=1;core=2.1;service_count=1')])
+        self.connection.frames.clear()
+        with patch.object(self.service,'control',side_effect=simulator_pxadb.ServiceError('runtime_info_unavailable')):
+            self.service.dispatch(self.connection,2,'RUNTIME',['INFO'])
+        self.assertEqual(self.connection.decoded(),[('OK','schema=0;reason=runtime_info_unavailable')])
+        with patch.object(self.service,'control',side_effect=simulator_pxadb.ServiceError('transport_timed_out')):
+            with self.assertRaisesRegex(simulator_pxadb.ServiceError,'transport_timed_out'):
+                self.service.dispatch(self.connection,3,'RUNTIME',['INFO'])
 
     @staticmethod
     def encoded(relative: str) -> str:

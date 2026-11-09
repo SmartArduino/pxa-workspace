@@ -52,7 +52,20 @@ typedef struct {
     /* Optional: board initialization can show a boot frame before mounting
      * storage. Such a board must not depend on mounted product files here. */
     bool initialize_before_storage;
+    /* Quarter turns from the board's native reading orientation. The setter
+     * runs under lock_display + LVGL lock and must finish input cancellation
+     * and buffer handoff before returning. Zero mask means native-only. */
+    uint8_t supported_rotations;
+    bool (*set_display_rotation)(void* context, uint8_t rotation);
 } pxa_board_port_t;
+
+typedef struct {
+    uint32_t native_width, native_height;
+    uint8_t rotation, supported_rotations;
+} pxa_board_display_state_t;
+bool pxa_board_display_get_state(pxa_board_display_state_t* output);
+bool pxa_board_display_set_orientation(uint8_t preference);
+void pxa_board_display_attach_system(pxsys_standard_system_t* system);
 
 bool pxa_board_register(const pxa_board_port_t* port);
 const pxa_board_port_t* pxa_board_current(void);

@@ -1,4 +1,5 @@
 #include "pxa_board_api.h"
+#include "pxa/display_rotation.h"
 
 #include <nvs.h>
 #include <esp_log.h>
@@ -6,6 +7,52 @@
 #include <stdatomic.h>
 
 static const pxa_board_port_t* g_board_port;
+static _Atomic uint8_t g_display_rotation;
+static pxsys_standard_system_t* g_display_system;
+
+void pxa_board_display_attach_system(pxsys_standard_system_t* system) {
+    g_display_system = system;
+}
+
+bool pxa_board_display_get_state(pxa_board_display_state_t* output) {
+    if (!g_board_port || !output) return false;
+    pxsys_display_profile_t profile;
+    g_board_port->display_profile(g_board_port->context, &profile);
+    output->native_width = profile.width;
+    output->native_height = profile.height;
+    output->rotation = g_display_rotation;
+    output->supported_rotations = g_board_port->supported_rotations
+        ? g_board_port->supported_rotations : 1;
+    return profile.width && profile.height;
+}
+
+bool pxa_board_display_set_orientation(uint8_t preference) {
+    pxa_board_display_state_t state;
+    uint8_t rotation;
+    if (!pxa_board_display_get_state(&state) ||
+        !pxa_display_resolve_rotation(state.native_width, state.native_height,
+            0, state.rotation, preference, state.supported_rotations, &rotation)) return false;
+    if (rotation == state.rotation) return true;
+    const pxa_board_port_t* board = g_board_port;
+    if (!board->set_display_rotation) return false;
+    if (board->lock_display && !board->lock_display(board->context, 1500)) return false;
+    lv_lock();
+    bool ok = board->set_display_rotation(board->context, rotation);
+    if (ok) {
+        g_display_rotation = rotation;
+        if (g_display_system) {
+            pxsys_display_profile_t profile;
+            board->display_profile(board->context, &profile);
+            pxsys_display_profile_t rotated;
+            if (pxsys_display_profile_rotated(&profile, rotation, &rotated) == PXSYS_STATUS_OK)
+                profile = rotated;
+            (void)pxsys_display_service_update(pxsys_standard_system_display(g_display_system), &profile);
+        }
+    }
+    lv_unlock();
+    if (board->unlock_display) board->unlock_display(board->context);
+    return ok;
+}
 static _Atomic uint8_t g_performance_loaded;
 static _Atomic uint8_t g_performance_overlay;
 static _Atomic uint8_t g_performance_log;

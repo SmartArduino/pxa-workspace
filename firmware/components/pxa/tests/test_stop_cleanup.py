@@ -42,7 +42,7 @@ struct Host {
     Activation activation;
     void *engine, *ui_adapter, *engine_workspace, *runtime_workspace, *retired_storage;
     unsigned graceful_stop_active, ui_foreground_requested, lifecycle_effective;
-    unsigned lifecycle_delivered, ime_only_runtime;
+    unsigned lifecycle_delivered, ime_only_runtime, window_orientation_foreground;
     char deferred_launch_identity[130];
 } g_host;
 struct Job {
@@ -132,6 +132,7 @@ static void reset(bool active) {
     g_host.activation.coordinator=token(4095);
     g_host.engine=token(ENGINE);g_host.engine_workspace=token(ENGINE_WORK);
     g_host.runtime_workspace=token(RUNTIME_WORK);
+    g_host.window_orientation_foreground=1;
     live=4095;notifications=closed_storage=resources_retired=worker_notifications=0;
     defer_storage=start_in_callback=new_work=false;
 }
@@ -139,6 +140,7 @@ int main() {
     for (auto reason : {PXA_STOP_NORMAL,PXA_STOP_FAULT,PXA_STOP_REPLACED,PXA_STOP_SHUTDOWN}) {
         reset(true);expected_reason=reason;start_in_callback=true;
         stop_active(reason);
+        assert(!g_host.window_orientation_foreground);
         assert(notifications==1 && new_work && g_host.engine==token(4096));
     }
     reset(true);expected_reason=PXA_STOP_NORMAL;defer_storage=true;

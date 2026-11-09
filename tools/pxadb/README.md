@@ -148,6 +148,37 @@ cover only allocations routed through that budget; they must not be added to
 ESP heap usage or treated as the full app memory total. The query does no
 work in the frame or audio callback.
 
+Retained UI diagnostics use `UI INSPECT` on firmware advertising `ui-inspect`
+(with PXADB test control enabled), and the corresponding desktop control bridge:
+
+```sh
+pxadb ui inspect --port /dev/ttyACM0 --baud 2000000
+pxadb ui tap --type button --text Start --simulator pai-touch@INSTANCE
+pxadb ui wait-for --type text --text Done --timeout-ms 3000 --simulator pai-touch@INSTANCE
+pxadb ui expect --type progress --value 0 --simulator pai-touch@INSTANCE
+```
+
+The JSON contains actual Guest node IDs/parents, widget types, text, values,
+visibility/enabled/clickable state, resolved bounds and rectangular clipping in
+Surface pixels. Display metadata separates physical safe margins, visible chrome
+and gesture input. Password values are redacted; text is bounded to 4096 UTF-8
+bytes with a truncation flag and is not then used for exact matching. Exports
+fail explicitly above 4096 nodes or the transport's byte limit (desktop 1 MiB,
+firmware 256 KiB); partial trees are never reported as complete. Transfer offsets,
+length and SHA-256 are checked before parsing.
+
+Selectors accept `--node`, `--surface`, `--type` and exact `--text`.
+A typed button can match its descendant text; a text node tap resolves its nearest
+clickable ancestor. Hidden, disabled, empty or ambiguous targets fail instead of
+choosing an arbitrary match. The tap uses actual pointer input, so system overlays
+can still intercept it; assert the resulting state. `expect` / `wait-for` support
+`--visible true|false`, `--enabled true|false`, integer `--value`, `--count` (default
+one) and `--within X Y W H` for full-bounds containment. Visible matches are the
+default; `--count 0` asserts their absence. A failed assertion exits nonzero with
+candidate diagnostics. Rectangular geometry does not verify occlusion, physical
+masks, contrast, glyph rendering or Surface-only content; review real screenshots.
+Old Hosts without this debugger return an error, not an inferred passing result.
+
 The `surface` scope separately counts ESP heap blocks owned by the Surface
 backend: frame buffers, raster scratch, DrawList mailboxes and the optional
 performance probe. These allocations are outside the shared resource budget
@@ -467,3 +498,28 @@ verified backup, conflict checks and resource migration.
 The capabilities are `package-storage` and `package-move-data`. These are cold
 Host administration commands, with no new Guest ABI, rendering buffers or
 per-frame allocations.
+## 安装前兼容性检查
+
+先构建目标 CPU 的交付包，再比较二进制清单中的实际要求：
+
+```sh
+pxadb runtime-info --port /dev/ttyUSB1
+pxadb compatibility dist/my-app.pxa --port /dev/ttyUSB1
+pxadb package install dist/my-app.pxa --port /dev/ttyUSB1 --yes --strict-compatibility
+```
+
+结果为 `compatible`、`incompatible` 或 `unknown`。比较 Core 下限、组件服务版本范围与功能位、
+执行模式、CPU/AOT 引擎 ABI、内存模型和容器格式/压缩；固件 release 与 SDK release 编号不同本身
+不代表不兼容。`compatibility` 是只读命令，不上传文件；`--report-only` 便于读取不兼容报告并返回 0。
+默认遇到已知不兼容时返回非零；加 `--strict-compatibility` 也将未知项视为失败。
+
+安装和暂存本地包会在写入前执行同一检查。默认会阻止已知不兼容；旧固件未报告的项目保留为
+未知并提示，由设备执行最终验证。需要完整预检时选严格模式。不要删 `pxa.lock`、伪造包下限或
+根据设备发行号猜测兼容性；可改用兼容的应用 API/SDK，或明确升级已识别板型的固件。
+签名、文件内容、权限、存储空间与最终激活仍由设备校验，预检成功不代表应用已运行。
+
+新固件在 HELLO 广告 `runtime-info`，`RUNTIME INFO` 逐项返回 `DATA id=...;version=...;features=...`，
+最终 `OK schema=1;core=...;target=...;engine=...;engine_abi=...;memory_model=...;artifact_kinds=...;artifact_features=...;execution_models=...;manifest_max=...;service_count=...`。
+服务 ID 唯一，数量须匹配；未上报的服务与功能不会当成零。依赖应用权限/卷的 FS 功能位是 `unknown`。
+模拟器使用实际激活配置；没有运行中的 Guest 或旧模拟器不能提供完整信息时返回 `schema=0;reason=...`，
+客户端保留未知。连接失败、报文损坏与重复/缺失记录是错误，不会降为旧版未知结果。

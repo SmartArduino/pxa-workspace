@@ -383,10 +383,21 @@ TestControlAdapter s_test_control;
 #endif
 
 #if CONFIG_PXADB_TEST_CONTROL
+void TestControlDisplaySize(uint16_t& width, uint16_t& height) {
+    width = s_test_control.width;
+    height = s_test_control.height;
+    if (s_test_control.display_size)
+        s_test_control.display_size(s_test_control.context, &width, &height);
+}
+
 bool TestControlAvailable() {
+    /* Serial and input workers run concurrently. Keep the registered adapter
+     * immutable, and read one coherent size pair into each caller's locals. */
+    uint16_t width, height;
+    TestControlDisplaySize(width, height);
     return s_input_task_active.load() &&
            s_test_control.struct_size >= sizeof(TestControlAdapter) &&
-           s_test_control.width != 0 && s_test_control.height != 0 &&
+           width != 0 && height != 0 &&
            s_test_control.route_pointer_down != nullptr &&
            s_test_control.inject_pointer != nullptr &&
            s_test_control.cancel_pointer != nullptr &&
@@ -1594,6 +1605,18 @@ void SendHello(unsigned long sequence) {
 #endif
     const char* kPowerCapabilities =
         PowerControlAvailable() ? ",poweroff" : "";
+    const char* kUiCapability =
+#if CONFIG_PXA_ENABLED && CONFIG_PXADB_TEST_CONTROL
+        ",ui-inspect";
+#else
+        "";
+#endif
+    const char* kRuntimeCapability =
+#if CONFIG_PXA_ENABLED
+        ",runtime-info";
+#else
+        "";
+#endif
     const char* kGrayCapability =
 #if CONFIG_PXADB_TEST_CONTROL
         TestControlAvailable() && s_test_control.capture_gray4_rle != nullptr
@@ -1615,8 +1638,8 @@ void SendHello(unsigned long sequence) {
         "";
 #endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;max_fast=3840;package_stream=2;package_legacy=%u;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;package_location=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
-             kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability, kGrayCapability,
+             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;max_fast=3840;package_stream=2;package_legacy=%u;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;package_location=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
+             kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability, kGrayCapability, kUiCapability, kRuntimeCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
              static_cast<unsigned>(PXA_ENABLE_LEGACY_CONTAINER),
              CONFIG_IDF_TARGET, DeviceSerial(), app == nullptr ? "unknown" : app->version,
@@ -1676,10 +1699,12 @@ void SendInfo(unsigned long sequence) {
 #endif
 #if CONFIG_PXADB_TEST_CONTROL
     if (TestControlAvailable()) {
+        uint16_t width, height;
+        TestControlDisplaySize(width, height);
         const size_t used = strlen(payload);
         snprintf(payload + used, sizeof(payload) - used,
                  ";width=%u;height=%u;debug_max_pointers=%u;debug_controller_mask=%u",
-                 unsigned(s_test_control.width), unsigned(s_test_control.height),
+                 unsigned(width), unsigned(height),
                  unsigned(s_test_control.max_pointers), s_test_control.inject_controller ? 4095u : 0u);
     }
     if (TestControlAvailable() && s_test_control.presentation_fps_x10 != nullptr) {
@@ -1704,6 +1729,45 @@ void SendInfo(unsigned long sequence) {
     snprintf(payload + identity_offset, sizeof(payload) - identity_offset,
              ";elf_sha256=%s", elf_sha256);
     SendFrame(sequence, "OK", payload);
+}
+
+void SendRuntimeInfo(unsigned long sequence) {
+#if CONFIG_PXA_ENABLED
+    pxa_host_runtime_info_t info = {};
+    if (!pxa_host_runtime_info(&info) || !info.artifact_kinds) {
+        // Host initialization can still be in progress. Missing data stays
+        // unknown; querying capabilities must never initialize a Guest engine.
+        SendFrame(sequence,"OK","schema=0;reason=runtime_not_initialized");
+        return;
+    }
+    char payload[kMaxFramePayload] = {};
+    for (size_t i=0;i<info.activation.service_count;++i) {
+        const auto& service = info.services[i];
+        char features[24];
+        if (info.unknown_features & (UINT32_C(1) << i))
+            snprintf(features,sizeof(features),"unknown");
+        else snprintf(features,sizeof(features),"%" PRIu64,service.features);
+        snprintf(payload,sizeof(payload),"id=%u;version=%u.%u;features=%s",
+                 unsigned(service.service),unsigned(service.version.major),
+                 unsigned(service.version.minor),features);
+        SendFrame(sequence,"DATA",payload);
+    }
+    const char* kinds = (info.artifact_kinds & (1u << PXA_ARTIFACT_WASM))
+        ? ((info.artifact_kinds & (1u << PXA_ARTIFACT_AOT)) ? "1,2" : "1") : "2";
+    const int length = snprintf(payload,sizeof(payload),
+        "schema=1;core=%u.%u;target=%.*s;engine=%.*s;engine_abi=%.*s;memory_model=%u;artifact_kinds=%s;artifact_features=%" PRIu64 ";execution_models=%" PRIu32 ";manifest_max=%u.%u;service_count=%u",
+        unsigned(info.activation.core_version.major),unsigned(info.activation.core_version.minor),
+        int(info.host.target.size),reinterpret_cast<const char*>(info.host.target.data),
+        int(info.host.engine.size),reinterpret_cast<const char*>(info.host.engine.data),
+        int(info.host.engine_abi.size),reinterpret_cast<const char*>(info.host.engine_abi.data),
+        unsigned(info.host.memory_model),kinds,info.host.supported_features,
+        info.activation.execution_models,unsigned(info.manifest_major),unsigned(info.manifest_minor),
+        unsigned(info.activation.service_count));
+    SendFrame(sequence,length < 0 || size_t(length) >= sizeof(payload) ? "ERR" : "OK",
+              length < 0 || size_t(length) >= sizeof(payload) ? "runtime_capabilities_too_large" : payload);
+#else
+    SendFrame(sequence,"ERR","runtime_capabilities_unavailable");
+#endif
 }
 
 void SendMemory(unsigned long sequence, bool finish = true) {
@@ -2000,13 +2064,15 @@ void SendInputCapabilities(unsigned long sequence) {
         return;
     }
     char payload[256] = {};
+    uint16_t width, height;
+    TestControlDisplaySize(width, height);
     TestControlInputState state = {};
     const bool physical_known = s_test_control.physical_input_state &&
         s_test_control.physical_input_state(s_test_control.context, &state);
     snprintf(payload, sizeof(payload),
              "protocol=1;width=%d;height=%d;max_pointers=%u;keys=back,home,volume-up,volume-down;coordinates=logical;controller_mask=%u;physical_state=%s;physical_buttons=%lu;physical_active=%u",
-             static_cast<int>(s_test_control.width),
-             static_cast<int>(s_test_control.height),
+             static_cast<int>(width),
+             static_cast<int>(height),
              static_cast<unsigned>(s_test_control.max_pointers),
              s_test_control.inject_controller ? 4095u : 0u,
              physical_known ? "available" : "unavailable",
@@ -2028,8 +2094,8 @@ void HandleInput(unsigned long sequence, char* const* arguments,
         SendFrame(sequence, "ERR", "input_unavailable");
         return;
     }
-    const uint16_t width = s_test_control.width;
-    const uint16_t height = s_test_control.height;
+    uint16_t width, height;
+    TestControlDisplaySize(width, height);
     InputCommand command;
     command.request_sequence = static_cast<uint32_t>(sequence);
     command.event_sequence = s_next_input_event.fetch_add(1);
@@ -2253,20 +2319,22 @@ void SendScreenshot(unsigned long sequence, bool after_present, bool jpeg, bool 
         SendFrame(sequence, "ERR", "screenshot_unavailable");
         return;
     }
+    uint16_t width, height;
+    TestControlDisplaySize(width, height);
     if (gray4) {
         if (s_test_control.capture_gray4_rle == nullptr) {
             SendFrame(sequence, "ERR", "screenshot_gray4_unavailable");
             return;
         }
-        const size_t stride = (size_t(s_test_control.width) + 1) / 2;
-        const size_t capacity = stride * s_test_control.height * 2;
+        const size_t stride = (size_t(width) + 1) / 2;
+        const size_t capacity = stride * height * 2;
         auto* bytes = static_cast<uint8_t*>(heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
         size_t count = 0;
         TestControlCaptureInfo info;
         const bool ready = bytes && s_test_control.capture_gray4_rle(
             s_test_control.context, bytes, capacity, &count, after_present, &info);
-        if (!ready || !count || count > capacity || info.width != s_test_control.width ||
-            info.height != s_test_control.height || info.stride_bytes != stride) {
+        if (!ready || !count || count > capacity || info.width != width ||
+            info.height != height || info.stride_bytes != stride) {
             if (bytes) heap_caps_free(bytes);
             SendFrame(sequence, "ERR", "screenshot_failed");
             return;
@@ -2276,8 +2344,7 @@ void SendScreenshot(unsigned long sequence, bool after_present, bool jpeg, bool 
         heap_caps_free(bytes);
         return;
     }
-    const size_t pixel_count = static_cast<size_t>(s_test_control.width) *
-                               static_cast<size_t>(s_test_control.height);
+    const size_t pixel_count = static_cast<size_t>(width) * static_cast<size_t>(height);
     const size_t byte_count = pixel_count * sizeof(uint16_t);
     /* The encoder uses word-sized loads on ESP32-S3, so the capture buffer
      * keeps the 16-byte alignment the vendor examples require. */
@@ -2291,8 +2358,8 @@ void SendScreenshot(unsigned long sequence, bool after_present, bool jpeg, bool 
         SendFrame(sequence, "ERR", "screenshot_failed");
         return;
     }
-    if (info.width != static_cast<uint32_t>(s_test_control.width) ||
-        info.height != static_cast<uint32_t>(s_test_control.height) ||
+    if (info.width != static_cast<uint32_t>(width) ||
+        info.height != static_cast<uint32_t>(height) ||
         info.stride_bytes != info.width * sizeof(uint16_t)) {
         heap_caps_free(pixels);
         SendFrame(sequence, "ERR", "screenshot_layout_changed");
@@ -2318,12 +2385,52 @@ void SendScreenshot(unsigned long sequence, bool after_present, bool jpeg, bool 
         ESP_LOGE(kTag, "PXADB screenshot transmit failed");
     heap_caps_free(pixels);
 }
+
+void SendUiInspection(unsigned long sequence) {
+#if CONFIG_PXA_ENABLED
+    size_t bytes = 0;
+    const pxa_status_t status = pxa_host_inspect_ui(nullptr, 0, &bytes);
+    if (status == PXA_STATUS_RESOURCE_LIMIT || bytes > 256u * 1024u) {
+        SendFrame(sequence, "ERR", "ui_inspection_too_large");
+        return;
+    }
+    if (status != PXA_STATUS_OK) {
+        SendFrame(sequence, "ERR", "ui_inspection_unavailable");
+        return;
+    }
+    if (!bytes || bytes > 256u * 1024u) {
+        SendFrame(sequence, "ERR", "ui_inspection_too_large");
+        return;
+    }
+    const size_t capacity = bytes + 1;
+    auto* json = static_cast<char*>(heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!json) json = static_cast<char*>(heap_caps_malloc(capacity, MALLOC_CAP_8BIT));
+    if (!json) {
+        SendFrame(sequence, "ERR", "no_memory");
+        return;
+    }
+    if (pxa_host_inspect_ui(json, capacity, &bytes) != PXA_STATUS_OK)
+        SendFrame(sequence, "ERR", "ui_inspection_changed");
+    else {
+        TestControlCaptureInfo info;
+        info.source = "retained-ui";
+        if (!SendCaptureFrames(sequence, reinterpret_cast<const uint8_t*>(json), bytes, "json", info, 0))
+            ESP_LOGE(kTag, "PXADB UI inspection transmit failed");
+    }
+    heap_caps_free(json);
+#else
+    SendFrame(sequence, "ERR", "ui_inspection_unavailable");
+#endif
+}
 #else
 void HandleInput(unsigned long sequence, char* const*, size_t) {
     SendFrame(sequence, "ERR", "test_control_disabled");
 }
 
 void SendScreenshot(unsigned long sequence, bool, bool, bool) {
+    SendFrame(sequence, "ERR", "test_control_disabled");
+}
+void SendUiInspection(unsigned long sequence) {
     SendFrame(sequence, "ERR", "test_control_disabled");
 }
 #endif
@@ -2712,8 +2819,14 @@ void HandleCommand(char* line) {
         SendFrame(sequence, "OK", "pong");
     } else if (strcmp(command, "INFO") == 0) {
         SendInfo(sequence);
+    } else if (strcmp(command,"RUNTIME") == 0) {
+        if (argument_count == 1 && strcmp(argument,"INFO") == 0) SendRuntimeInfo(sequence);
+        else SendFrame(sequence,"ERR","invalid_runtime_command");
     } else if (strcmp(command,"VOLUMES")==0) {
         HandleVolumes(sequence);
+    } else if (strcmp(command, "UI") == 0) {
+        if (argument_count == 1 && strcmp(argument, "INSPECT") == 0) SendUiInspection(sequence);
+        else SendFrame(sequence, "ERR", "invalid_ui_command");
     } else if (strcmp(command, "MEMORY") == 0) {
         if (argument_count == 0) {
             SendMemory(sequence);
@@ -3288,6 +3401,8 @@ esp_err_t ConfigureTestControl(const TestControlAdapter* adapter) {
     s_test_control.struct_size = sizeof(TestControlAdapter);
     s_test_control.max_pointers = adapter->max_pointers;
     s_test_control.context = adapter->context;
+    if (adapter->struct_size >= offsetof(TestControlAdapter, display_size) + sizeof(adapter->display_size))
+        s_test_control.display_size = adapter->display_size;
     s_test_control.width = adapter->width;
     s_test_control.height = adapter->height;
     s_test_control.route_pointer_down = adapter->route_pointer_down;

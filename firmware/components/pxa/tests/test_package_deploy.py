@@ -114,5 +114,7 @@ def main():
             '-fsanitize=address,undefined','-fno-omit-frame-pointer',
             '-I'+str(ROOT/'firmware/components/pxa/src/package'),'-I'+str(ROOT/'deps/pxa-system/libpxa/include'),
             '-I'+str(ROOT/'deps/pxa-system/libpxa/adapters/include'),str(unit),'-o',str(binary)],check=True)
-        subprocess.run([str(binary),str(work)],check=True)
+        # Model the device's short mount paths independently of the host's
+        # checkout/TMPDIR length; all fixture files still live under work.
+        subprocess.run([str(binary),'.'],cwd=work,check=True)
 if __name__=='__main__':main()

@@ -28,6 +28,7 @@
 #include <mutex>
 
 #include "wifi_station.h"
+#include "wifi_rssi_cache.h"
 
 class WifiStation;
 class WifiConfigurationAp;
@@ -72,6 +73,7 @@ public:
     bool IsConnected() const;
     std::string GetSsid() const;
     std::string GetIpAddress() const;
+    // Five-second samples; connection transitions invalidate the cached RSSI.
     int GetRssi() const;
     int GetChannel() const;
     std::string GetMacAddress() const;
@@ -117,6 +119,7 @@ private:
 
     std::function<void(WifiEvent, const std::string&)> event_callback_;
     mutable std::string mac_address_;
+    mutable WifiRssiCache rssi_cache_;
 };
 
 #endif // _WIFI_MANAGER_H_

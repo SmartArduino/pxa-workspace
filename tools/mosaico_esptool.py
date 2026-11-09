@@ -57,15 +57,22 @@ def request_download(device):
 
 def wait_for_download(mac, timeout=15):
     deadline = time.monotonic() + timeout
+    inaccessible = None
     while time.monotonic() < deadline:
         matches = [p for p in list_ports.comports()
                    if p.vid == USB_VID and p.product == ROM_PRODUCT
                    and (p.serial_number or "").lower() == mac]
         if len(matches) == 1:
-            # Give udev time to finish setting device permissions.
-            time.sleep(0.2)
-            return matches[0].device
+            endpoint = matches[0].device
+            # Enumeration can precede Linux udev's group/ACL update under load.
+            # Do not open the port to probe it: DTR/RTS can change boot mode.
+            if os.name != 'posix' or os.access(endpoint, os.R_OK | os.W_OK):
+                time.sleep(0.2)
+                return endpoint
+            inaccessible = endpoint
         time.sleep(0.1)
+    if inaccessible:
+        raise RuntimeError(f"ROM detected, but serial port permissions are not ready: {inaccessible}")
     raise RuntimeError(f"Timed out waiting for ESP32-S31 download USB with MAC {mac}")
 
 

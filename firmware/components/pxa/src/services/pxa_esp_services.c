@@ -1118,6 +1118,10 @@ static pxa_status_t initialize_window_ui(
     config.display_shape = host->display_shape;
     for (uint8_t index = 0; index < 4; ++index)
         config.corner_radii[index] = host->corner_radii[index];
+    for (uint8_t index = 0; index < 4; ++index)
+        config.system_bar_insets[index] = host->system_bar_insets[index];
+    for (uint8_t index = 0; index < 4; ++index)
+        config.system_gesture_insets[index] = host->system_gesture_insets[index];
     config.color_scheme = host->color_scheme;
     workspace_size = pxa_ui_service_workspace_size();
     status = allocate_workspace(host, workspace_size, &services->ui_workspace,

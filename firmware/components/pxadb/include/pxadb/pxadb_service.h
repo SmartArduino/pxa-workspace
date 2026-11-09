@@ -65,6 +65,8 @@ struct TestControlAdapter {
     // Optional read-only diagnostic. It never releases or overrides physical
     // input; physical_buttons uses the board's own switch bit assignment.
     bool (*physical_input_state)(void* context, TestControlInputState* output) = nullptr;
+    // Atomic logical viewport query, including live display rotation.
+    void (*display_size)(void* context, uint16_t* width, uint16_t* height) = nullptr;
 };
 
 esp_err_t ConfigureTestControl(const TestControlAdapter* adapter);

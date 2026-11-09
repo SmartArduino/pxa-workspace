@@ -61,6 +61,11 @@ public:
     }
 
     bool pending(size_t slot) const { return queues_[slot].pending(); }
+    void ResetForRotation(int64_t timestamp_us) {
+        ReleaseAll(timestamp_us);
+        slots_.Update(nullptr, 0);
+        injected_ = false;
+    }
 
     size_t Points(EspMosaicoTouchPoint (&points)[kPointers]) const {
         size_t count = 0;

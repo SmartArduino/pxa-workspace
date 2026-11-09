@@ -114,6 +114,8 @@ int pxa_esp_net_backend(pxa_net_backend_t *output,
     return 1;
 }
 
+const pxa_lan_backend_t *pxa_esp_lan_backend(void) { return NULL; }
+
 void pxa_esp_net_reset_requests(void) {}
 
 void pxa_esp_audio_backend(pxa_audio_backend_t *output) {
@@ -210,7 +212,7 @@ static void test_display_startup(pxa_runtime_t *runtime) {
         pxa_ui_backend_t backend = {0};
         pxa_ui_environment_t environment;
         pxa_component_t component;
-        uint8_t encoded[128]; size_t encoded_size;
+        uint8_t encoded[PXA_UI_ENVIRONMENT_WIRE_BYTES]; size_t encoded_size;
         host.runtime = runtime; host.allocate = test_allocate;
         host.primary_width = host.primary_height = 480;
         host.density_q16 = variant ? 124928u : 0; // Mosaico 305 DPI / legacy default.

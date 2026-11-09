@@ -170,7 +170,8 @@ def main():
             '-I'+str(ROOT/'firmware/components/pxa/src/services'),
             '-I'+str(ROOT/'deps/pxa-system/libpxa/adapters/include'),str(unit),
             str(ROOT/'firmware/components/pxa/src/package/pxa_app_locators.c'),'-lcrypto','-o',str(binary)],check=True)
-        subprocess.run([str(binary),str(work)],check=True)
+        # Device path buffers describe its short mounts, not a host checkout.
+        subprocess.run([str(binary),'.'],cwd=work,check=True)
 
 
 if __name__=='__main__':

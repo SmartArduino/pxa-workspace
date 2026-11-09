@@ -726,6 +726,15 @@ void TestInputOwnership() {
     assert(input.Read(0).event.pressed);
     assert(!input.UpdatePhysical(nullptr, 0, 210, true));
     assert(!input.Read(0).event.pressed && !input.Read(1).event.pressed);
+    assert(input.Inject(0, 60, 70, true, 220));
+    assert(input.Inject(1, 90, 100, true, 221));
+    input.ResetForRotation(230);
+    for (size_t slot = 0; slot < 2; ++slot) {
+        const auto release = input.Read(slot);
+        assert(release.cancelled && !release.event.pressed);
+    }
+    assert(input.Points(points) == 0);
+    assert(input.Inject(1, 110, 120, true, 240));
 }
 
 void TestBatteryMonitor() {

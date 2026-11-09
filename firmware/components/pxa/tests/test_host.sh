@@ -17,6 +17,7 @@ python3 "$tests_dir/test_package_deploy.py"
 python3 "$tests_dir/test_graceful_stop.py"
 python3 "$tests_dir/test_stop_cleanup.py"
 python3 "$tests_dir/test_store_self_update.py"
+python3 "$tests_dir/test_runtime_info.py"
 bash "$tests_dir/test_storage_worker.sh"
 
 cc_flags=(-std=c99 -Wall -Wextra -Wpedantic -Werror)
@@ -38,13 +39,16 @@ adapter_includes=(
   -I"$project_dir/firmware/components/pxa_render_accel/include"
   -I"$pxa_system_dir/libpxa/include"
   -I"$pxa_system_dir/libpxa/adapters/include"
+  -I"$pxa_system_dir/libpxa/adapters/network"
 )
 
 build_and_run() {
   local name=$1
   shift
   cc "${cc_flags[@]}" "$@" -o "$build_dir/$name"
-  "$build_dir/$name"
+  # Device mount buffers are intentionally small. Run fixtures inside the
+  # artifact directory with short relative mounts, even with a long TMPDIR.
+  (cd "$build_dir" && "./$name")
 }
 
 build_and_run ui_event_text \
@@ -111,7 +115,7 @@ build_and_run store_policy \
 build_and_run storage_path_policy \
     "$tests_dir/pxa_esp_storage_path_policy_test.c"
 build_and_run legacy_permissions -DESP_PLATFORM=1 \
-  "-DCONFIG_PXA_MOUNT_POINT=\"$build_dir/legacy-permissions\"" \
+  '-DCONFIG_PXA_MOUNT_POINT="legacy-permissions"' \
   '-DCONFIG_PXA_STATE_ROOT="pxa-state"' \
   "${adapter_includes[@]}" "$tests_dir/pxa_esp_legacy_permission_test.c" -lmbedcrypto -pthread
 build_and_run media_path \
@@ -122,7 +126,7 @@ build_and_run install_space \
   "$tests_dir/pxa_install_space_test.c"
 for legacy_container in 0 1; do
 build_and_run "store_download_$legacy_container" -DESP_PLATFORM=1 -DPXA_ENABLE_LEGACY_CONTAINER="$legacy_container" \
-  "-DCONFIG_PXA_MOUNT_POINT=\"$build_dir/store-download\"" \
+  '-DCONFIG_PXA_MOUNT_POINT="store-download"' \
   "${adapter_includes[@]}" "$tests_dir/pxa_esp_store_download_test.c" \
   "$pxa_system_dir/libpxa/src/package/container.c" "$pxa_system_dir/libpxa/src/core/wire.c" -lmbedcrypto
 done

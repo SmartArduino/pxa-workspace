@@ -40,6 +40,9 @@ void WifiManager::NotifyEvent(WifiEvent event, const std::string& data) {
     std::function<void(WifiEvent, const std::string&)> callback;
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (event == WifiEvent::Connected || event == WifiEvent::Disconnected ||
+            event == WifiEvent::Connecting || event == WifiEvent::ConfigModeEnter)
+            rssi_cache_.Reset();
         callback = event_callback_;
     }
     if (callback) {
@@ -191,8 +194,11 @@ std::string WifiManager::GetIpAddress() const {
 
 int WifiManager::GetRssi() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!station_active_ || !station_ || !station_->IsConnected()) return 0;
-    return station_->GetRssi();
+    if (!station_active_ || !station_ || !station_->IsConnected()) {
+        rssi_cache_.Reset();
+        return WifiRssiCache::kUnavailable;
+    }
+    return rssi_cache_.Get(esp_timer_get_time(), [this] { return station_->GetRssi(); });
 }
 
 int WifiManager::GetChannel() const {

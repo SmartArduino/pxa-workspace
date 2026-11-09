@@ -169,7 +169,7 @@ set(PXA_PRIV_REQUIRES
     pthread
     freertos)
 list(APPEND PXA_PRIV_REQUIRES lz4)
-set(PXA_REQUIRES lvgl esp_timer esp_mm pxa_render_accel)
+set(PXA_REQUIRES lvgl esp_timer esp_mm pxa_render_accel pxa_board_api)
 idf_build_get_property(PXA_WIFI_LOCATION_ENABLED PXA_ENABLE_WIFI_LOCATION)
 get_filename_component(PXA_WIFI_LOCATION_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../extensions/wifi-location" ABSOLUTE)
 if(PXA_WIFI_LOCATION_ENABLED)

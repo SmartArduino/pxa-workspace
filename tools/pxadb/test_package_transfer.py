@@ -13,6 +13,49 @@ import test_pxadb as fixtures
 
 
 class PackageTransferTest(unittest.TestCase):
+    def test_borrowed_uart_connection_is_never_reopened_closed_or_retried(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = fixtures.PackageStorageTest.container(pathlib.Path(folder))
+            args = pxadb.build_parser().parse_args([
+                "package", "install", str(source), "--yes", "--volume", "internal"])
+            for error in (None, pxadb.PxaDbError("uncertain commit")):
+                client = mock.MagicMock()
+                client.request.return_value = []
+                with self.subTest(error=error), \
+                     mock.patch.object(pxadb, "open_client") as opened, \
+                     mock.patch.object(pxadb, "resolve_pxadb_port") as discover, \
+                     mock.patch.object(pxadb, "stage_package_on_volume",
+                                       return_value=(42, "candidate", "serial")) as stream:
+                    if error:
+                        client.request.side_effect = lambda command, **kw: (
+                            (_ for _ in ()).throw(error) if command.startswith("PACKAGE install-volume") else [])
+                        with self.assertRaisesRegex(pxadb.PxaDbError, "uncertain commit"):
+                            pxadb.command_package_install(args, connection=client)
+                    else:
+                        self.assertEqual(pxadb.command_package_install(args, connection=client), 0)
+                    opened.assert_not_called()
+                    discover.assert_not_called()
+                    client.close.assert_not_called()
+                    client.__exit__.assert_not_called()
+                    stream.assert_called_once()
+                    self.assertEqual(sum(call.args[0].startswith("PACKAGE install-volume")
+                                         for call in client.request.call_args_list), 1)
+
+    def test_composite_identity_uses_bounded_root_and_original_key_lineage(self):
+        record=lambda tag,value:struct.pack('<HH',tag,len(value))+value
+        root,signer=b'a'*32,b'b'*32
+        lineage=b'PXKL'+struct.pack('<HHHHI',0,1,16,1,80)+struct.pack('<II',1,0)+root+signer+bytes(8)
+        body=record(1,signer)+record(2,b'pxa-test')+record(10,lineage)
+        manifest=b'PXAM'+struct.pack('<HHI',0,7,len(body))+body
+        with mock.patch.object(pxadb,'read_package_manifest',return_value=manifest):
+            self.assertEqual(pxadb.package_composite_identity(pathlib.Path('candidate')),root.hex()+':pxa-test')
+        for bad in (record(1,b'x'*31)+record(2,b'pxa-test'),
+                    record(1,root)+record(1,signer)+record(2,b'pxa-test'),
+                    record(1,root)+record(2,b'bad id'),
+                    record(1,root)+record(2,b'pxa-test')+record(10,b'broken')):
+            with self.subTest(body=bad),mock.patch.object(pxadb,'read_package_manifest',return_value=b'x'*12+bad),self.assertRaises(pxadb.PxaDbError):
+                pxadb.package_composite_identity(pathlib.Path('candidate'))
+
     def test_update_volume_uses_complete_publisher_identity_and_keeps_legacy(self):
         source = pathlib.Path("candidate.pxa")
         root, other = bytes(range(32)), bytes(reversed(range(32)))
@@ -222,6 +265,7 @@ class PackageTransferTest(unittest.TestCase):
             struct.pack_into("<I", data, 56, 48)
             source.write_bytes(data + bytes(400))
             client = mock.Mock(device_info="package_stream=2;package_stream_volume=1")
+            client.request.return_value=[]
             with mock.patch.object(pxadb, "select_install_volume", return_value=self.volume(free="1")), \
                     mock.patch.object(pxadb, "fetch_package_stream") as fetch, \
                     mock.patch.object(pxadb, "NormalFsClient") as fs:
@@ -240,6 +284,7 @@ class PackageTransferTest(unittest.TestCase):
             client.request.side_effect = [[], pxadb.PxaDbRejectedError("commit_failed"), []]
             remote = "sdcard/PXA/cache/store/.stream-12345678"
             with mock.patch.object(pxadb, "open_client", return_value=client), \
+                    mock.patch.object(pxadb, "package_compatibility",return_value={'status':'compatible','checks':[]}), \
                     mock.patch.object(pxadb, "stage_package_on_volume", return_value=(2, remote, "serial")), \
                     mock.patch.object(pxadb, "clear_staged_source") as inbox:
                 with self.assertRaisesRegex(pxadb.PxaDbError, "commit_failed"):
@@ -297,8 +342,9 @@ class LargePackageDeadlineTest(unittest.TestCase):
     def test_explicit_staging_uses_decoded_size_deadline(self):
         with tempfile.TemporaryDirectory() as folder:
             source = self.container(pathlib.Path(folder))
-            fs = mock.Mock()
+            fs = mock.Mock(client=mock.Mock(device_info='package_stream=2;package_codecs=0,1,2'))
             with mock.patch.object(pxadb, "check_package_storage", return_value={"package_receive": "1"}), \
+                    mock.patch.object(pxadb, "package_compatibility",return_value={'status':'compatible','checks':[]}), \
                     mock.patch.object(pxadb, "_stage_package_files"):
                 pxadb.stage_package_files(fs, source, "probe", 10)
             fs.client.request.assert_called_once_with("PACKAGE publish probe", timeout=542)

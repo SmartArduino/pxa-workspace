@@ -43,6 +43,7 @@ public:
     void IdleScreenOff();
     bool CaptureDisplayedRgb565(uint16_t* pixels, size_t pixel_count);
     bool ConfigurePxadbControls();
+    bool SetDisplayRotation(uint8_t rotation);
     lv_display_t* display() const { return display_; }
 
 private:
@@ -126,6 +127,8 @@ private:
     button_handle_t button_ = nullptr;
     button_handle_t boot_button_ = nullptr;
     lv_display_t* display_ = nullptr;
+    std::atomic<uint8_t> display_rotation_{0};
+    uint16_t* rotation_pixels_ = nullptr;
     pxsys_standard_system_t* system_ = nullptr;
     pxsys_reference_lvgl_t* reference_ui_ = nullptr;
     SemaphoreHandle_t transfer_done_ = nullptr;

@@ -2,6 +2,11 @@
 
 本目录提供 Windows x64 源码构建入口，生成标准 UI 模拟器、Guest 运行器、包安装器和带 Xtensa/RISC-V 后端的固定版本 `wamrc.exe`。应用 CLI 使用 `deps\pxa-system\bin\pxa.cmd`，PXADB CLI/GUI 继续使用本机 Python 和 COM 串口。
 
+应用开发优先下载已经构建的原生 DevKit，无需本机编译 LLVM。组装默认选择
+`--toolchain-profile pxa`，保留 `wasm32-wasip1` 编译链和检查工具；`full` 保留
+完整上游工具。组件归档可保留相同 EXE 的硬链接，ZIP 解压仍可能产生独立副本。
+许可证随包保留。仅在构建副本中裁剪，发行清单记录实际 profile 和文件体积。
+
 最低系统为 Windows 10 1903，推荐 Windows 11 x64。当前构建使用原生 MinGW-w64（包括 MSYS2 UCRT64 环境里的原生编译器）；不支持以 MSVC 编译整套 Host。MSYS2 只用于安装开发环境，生成的程序不链接 `msys-2.0.dll` 或 `cygwin1.dll`。
 
 ## 准备
@@ -67,7 +72,7 @@ Windows CLI 输出已签名的 `.pxa` 文件和对应 provenance/build 元数据
 
 Host 文件系统使用 `NtCreateFile` 的目录句柄相对访问，拒绝重解析点、路径越界和 ADS；文件锁使用 Win32 字节锁。文件数据会在发布前 flush。Windows 没有等价的用户态目录 `fsync`，掉电后的目录持久性由文件系统管理。此差异不应作为 Windows 上完整掉电恢复保证。
 
-Linux 到 Windows 的交叉编译工具链为 `deps/pxa-system/cmake/windows-mingw-x64.cmake`；交叉构建需提供对应 Windows 依赖前缀、宿主 Python 和 pkg-config。交叉编译生成的 PE 文件可在 Wine 中验证，仍需 Windows 实机确认窗口、音频、COM 驱动和完整首次构建流程后再发布正式 Windows DevKit。
+Linux 到 Windows 的交叉编译工具链为 `deps/pxa-system/cmake/windows-mingw-x64.cmake`；交叉构建需提供对应 Windows 依赖前缀、宿主 Python 和 pkg-config。交叉编译生成的 PE 文件可在 Wine 中验证，并提供明确标注 Wine 验证范围的预编译包；Windows 窗口、音频、COM 驱动和完整首次构建流程的实机验收需单独完成，不能把 Wine 结果写成已通过这些验收。
 
 ## 发布预编译包
 

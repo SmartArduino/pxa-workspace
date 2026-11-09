@@ -7,6 +7,7 @@
 #include "pai_touch_hardware.h"
 #include "parallel_sw_rotation_flush.h"
 #include "pxa_board_api.h"
+#include <esp_lvgl_port.h>
 
 namespace {
 PaiTouchHardware g_hardware;
@@ -101,6 +102,12 @@ const pxa_board_port_t kPort = {
     .capture_displayed_rgb565 = CaptureDisplayedRgb565,
     .set_idle_dim = SetIdleDim,
     .idle_screen_off = IdleScreenOff,
+    .lock_display = [](void*, uint32_t timeout) { return lvgl_port_lock(timeout); },
+    .unlock_display = [](void*) { lvgl_port_unlock(); },
+    .supported_rotations = 15,
+    .set_display_rotation = [](void*, uint8_t rotation) {
+        return g_hardware.SetDisplayRotation(rotation);
+    },
 };
 }  // namespace
 

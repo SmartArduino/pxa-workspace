@@ -894,6 +894,142 @@ def command_info(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def runtime_profile(client: PxaDbClient) -> dict:
+    """Only query advertised telemetry; transport failures are never legacy fallback."""
+    from package_compatibility import target_name
+    properties = info_properties(client.device_info)
+    for frame in client.request('INFO'):
+        if frame.kind == 'OK':
+            properties.update(info_properties(frame.payload))
+    def version(value):
+        if value is None:
+            return None
+        if not re.fullmatch(r'[0-9]{1,5}\.[0-9]{1,5}', value):
+            raise ValueError('Malformed runtime version')
+        pair = list(map(int,value.split('.')))
+        if max(pair) > 65535:
+            raise ValueError('Runtime version out of range')
+        return pair
+    result = {'source':'legacy-info','board':properties.get('board'),
+              'firmware_release':properties.get('pxa_version'),
+              'ready':properties.get('pxa'),'target':target_name(properties.get('target')),
+              'core':version(properties.get('pxa_core')),'services':[], 'services_complete':False}
+    versions = []
+    if properties.get('package_stream') == '2':
+        versions.append([0,2])
+    if properties.get('package_legacy') == '1':
+        versions.append([0,1])
+    result.update(container_versions=versions if versions or 'package_legacy' in properties else None,
+                  codecs=list(map(int,properties['package_codecs'].split(','))) if 'package_codecs' in properties else None,
+                  max_block=int(properties['package_max_block']) if 'package_max_block' in properties else None)
+    if 'runtime-info' not in properties.get('capabilities','').split(','):
+        return result
+    frames = client.request('RUNTIME INFO')
+    def runtime_fields(payload):
+        values = {}
+        for field in payload.split(';'):
+            if not field:
+                continue
+            key,separator,value = field.partition('=')
+            if not separator or not key or not value or key in values:
+                raise ValueError('Malformed or duplicate runtime capability field')
+            values[key] = value
+        return values
+    terminal = runtime_fields(frames[-1].payload)
+    if terminal.get('schema') == '0':
+        result['runtime_details_unavailable'] = terminal.get('reason','unreported')
+        return result
+    if terminal.get('schema') != '1':
+        raise ValueError('Unsupported runtime capability schema')
+    def integer(value, maximum=0xffffffffffffffff):
+        value = int(value,0)
+        if not 0 <= value <= maximum:
+            raise ValueError('Runtime capability out of range')
+        return value
+    services, seen = [], set()
+    for frame in frames:
+        if frame.kind != 'DATA':
+            continue
+        values = runtime_fields(frame.payload)
+        identity = integer(values['id'],65535)
+        if not identity or identity in seen or len(services) >= 64:
+            raise ValueError('Invalid or duplicate runtime service')
+        seen.add(identity)
+        services.append({'id':identity,'version':version(values['version']),
+                         'features':None if values['features'] == 'unknown' else integer(values['features'])})
+    if integer(terminal['service_count'],64) != len(services):
+        raise ValueError('Incomplete runtime service inventory')
+    core = version(terminal['core'])
+    if result['core'] is not None and result['core'] != core:
+        raise ValueError('Runtime and INFO report different Core versions')
+    target = terminal['target']
+    if result['target'] is not None and result['target'] != target:
+        raise ValueError('Runtime and INFO report different execution targets')
+    for name in ('target','engine','engine_abi'):
+        if not re.fullmatch(r'[A-Za-z0-9._-]{1,80}',terminal[name]):
+            raise ValueError('Malformed runtime '+name)
+    result.update(source='runtime-info-1',core=core,target=target,
+                  engine=terminal['engine'],engine_abi=terminal['engine_abi'],
+                  memory_model=integer(terminal['memory_model'],255),
+                  artifact_kinds=[integer(value,255) for value in terminal['artifact_kinds'].split(',')],
+                  artifact_features=integer(terminal['artifact_features']),
+                  execution_models=integer(terminal['execution_models'],0xffffffff),
+                  manifest_max=version(terminal['manifest_max']),services=services,services_complete=True)
+    return result
+
+
+def package_compatibility(client: PxaDbClient, source: pathlib.Path) -> dict:
+    from package_compatibility import requirements, evaluate
+    try:
+        container = None
+        if source.is_file():
+            with source.open('rb') as stream:
+                header = stream.read(64)
+            if len(header) != 64 or header[:4] != b'PXAC':
+                raise ValueError('Invalid container header')
+            major,minor = struct.unpack_from('<HH',header,4)
+            container = {'version':[major,minor]}
+            if (major,minor) == (0,2):
+                codec,bits = struct.unpack_from('<HH',header,12)
+                if bits not in (12,14,15):
+                    raise ValueError('Invalid container block size')
+                container.update(codec=codec,block_bytes=1 << bits)
+        return evaluate(requirements(read_package_manifest(source),container),runtime_profile(client))
+    except (ValueError,KeyError,TypeError) as error:
+        raise PxaDbError('Invalid package/runtime compatibility data: '+str(error)) from error
+
+
+def compatibility_admission(report, *, strict=False):
+    problems = [item for item in report['checks'] if item['status'] != 'compatible']
+    detail = '; '.join(item['subject']+': '+item['message']+
+        (' (required='+json.dumps(item['required'])+', actual='+json.dumps(item['actual'])+')'
+         if 'required' in item else '') for item in problems)
+    if report['status'] == 'incompatible' or strict and report['status'] == 'unknown':
+        raise PxaDbError('Package compatibility '+report['status']+': '+detail+
+            '. No package was uploaded. Use a compatible app/SDK, or explicitly update the correct board firmware; do not delete the project lock.')
+    if report['status'] == 'unknown':
+        print('Compatibility unknown: '+detail+'. Unreported checks remain device-side; --strict-compatibility blocks unknowns.',file=sys.stderr)
+
+
+def command_runtime_info(arguments):
+    with open_client(resolve_pxadb_port(arguments.port,arguments.timeout),arguments.timeout) as client:
+        try:
+            result = runtime_profile(client)
+        except (ValueError,KeyError,TypeError) as error:
+            raise PxaDbError('Invalid runtime capability data: '+str(error)) from error
+    print(json.dumps(result,sort_keys=True))
+    return 0
+
+
+def command_compatibility(arguments):
+    source,_ = package_source(arguments.package,None)
+    with open_client(resolve_pxadb_port(arguments.port,arguments.timeout),arguments.timeout) as client:
+        result = package_compatibility(client,source)
+    print(json.dumps(result,sort_keys=True))
+    return 0 if arguments.report_only else (2 if result['status'] == 'incompatible' else
+            3 if arguments.strict_compatibility and result['status'] == 'unknown' else 0)
+
+
 def command_perf(arguments: argparse.Namespace) -> int:
     with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
                      arguments.timeout, arguments.logcat) as client:
@@ -942,6 +1078,55 @@ def command_memory(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def command_ui(arguments: argparse.Namespace) -> int:
+    from ui_query import (UiQueryError, decode_snapshot, expect, tap_target,
+                          validate_selector, validate_expectation)
+    action = arguments.ui_action
+    selector = {key: getattr(arguments, name) for key, name in
+                [('id', 'node_id'), ('surface', 'surface'), ('type', 'node_type'), ('text', 'text')]
+                if getattr(arguments, name, None) is not None}
+    expected = {key: getattr(arguments, key) for key in ('visible', 'enabled', 'value', 'count', 'within')
+                if getattr(arguments, key, None) is not None}
+    try:
+        if action != 'inspect':
+            validate_selector(selector)
+            validate_expectation(expected)
+        timeout_ms = getattr(arguments, 'timeout_ms', 0)
+        if not 0 <= timeout_ms <= 60000:
+            raise UiQueryError('UI wait timeout must be 0..60000 ms')
+        deadline = time.monotonic() + timeout_ms / 1000
+        with open_client(resolve_pxadb_port(arguments.port, arguments.timeout), arguments.timeout) as client:
+            while True:
+                tree = decode_snapshot(client.request('UI INSPECT'))
+                if action == 'inspect':
+                    result = tree
+                    break
+                if action == 'tap':
+                    result = tap_target(tree, selector)
+                    frames = client.request(f"INPUT TAP {result['x']} {result['y']}")
+                    if any('status=rejected' in frame.payload for frame in frames):
+                        raise PxaDbError('UI tap rejected by Host')
+                    result['input_ack'] = frames[-1].payload
+                    break
+                try:
+                    result = expect(tree, selector, expected)
+                    break
+                except UiQueryError:
+                    if action != 'wait-for' or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(min(0.1, max(0, deadline - time.monotonic())))
+        encoded = json.dumps(result, ensure_ascii=False, indent=2)
+        destination = getattr(arguments, 'output', None)
+        if destination:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(encoded + '\n', encoding='utf-8')
+        else:
+            print(encoded)
+    except UiQueryError as error:
+        raise PxaDbError(str(error)) from error
+    return 0
+
+
 def command_doctor(arguments: argparse.Namespace) -> int:
     port = resolve_pxadb_port(arguments.port, arguments.timeout)
     with open_client(port, arguments.timeout) as client:
@@ -978,7 +1163,14 @@ def command_package_list(arguments: argparse.Namespace) -> int:
 def command_package_action(arguments: argparse.Namespace) -> int:
     with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
                      arguments.timeout, arguments.logcat) as client:
-        client.request(f"PACKAGE {arguments.package_action} {arguments.identity}")
+        # Recursive NAND/SD deletion can outlast an ordinary control request.
+        # Keep discovery/HELLO short and give only the one mutation a bounded
+        # completion budget. Never resend a destructive command after timeout.
+        timeout = arguments.timeout
+        if arguments.package_action in {"archive", "uninstall", "clear-data"}:
+            timeout = max(timeout, 120.0)
+        client.request(f"PACKAGE {arguments.package_action} {arguments.identity}",
+                       timeout=timeout)
     print(f"{arguments.package_action}: {arguments.identity}")
     return 0
 
@@ -1760,6 +1952,8 @@ def stage_package_files(client: "NormalFsClient", source: pathlib.Path,
     defer publication until PACKAGE deploy on this same connection, so losing
     the connection also discards a complete but uncommitted upload.
     """
+    check_container_features(client.client,source)
+    compatibility_admission(package_compatibility(client.client,source))
     properties = check_package_storage(client, source)
     receiving = properties.get("package_receive") == "1"
     try:
@@ -1996,6 +2190,7 @@ def stage_package_on_volume(client: PxaDbClient, source: pathlib.Path, selector:
     if info_properties(client.device_info).get("package_stream_volume") != "1":
         raise PxaDbError("direct volume installation requires newer device firmware")
     check_container_features(client, source)
+    compatibility_admission(package_compatibility(client,source))
     volume = select_install_volume(client, selector)
     epoch = int(volume["epoch"])
     unit = max(4096, int(volume.get("unit", "4096")))
@@ -2063,11 +2258,8 @@ def clear_staged_source(client: PxaDbClient, identity: str) -> None:
             pass
 
 
-def existing_package_volume(client: PxaDbClient, source: pathlib.Path,
-                            app_id: str) -> str | None:
-    """Keep a signed identity's installed volume before receiving any bytes."""
-    if info_properties(client.device_info).get("package_location") != "1":
-        return None
+def package_publisher_root(source: pathlib.Path) -> bytes | None:
+    """Read stable publisher metadata; callers still verify the signature."""
     fields = {}
     for tag, value in manifest_records(read_package_manifest(source)[12:]):
         if tag in {1, 10}:
@@ -2081,14 +2273,34 @@ def existing_package_volume(client: PxaDbClient, source: pathlib.Path,
         raise PxaDbError("invalid publisher key in manifest")
     lineage = fields.get(10)
     if lineage is not None:
-        # Placement is only a hint; firmware verifies the complete lineage and
-        # signature before committing. The first link carries the stable root.
+        # The first link carries the stable root. Metadata alone is not proof
+        # of key ownership: verify the complete package before using it to stop
+        # an installed application or to authorize an update.
         if (len(lineage) < 96 or lineage[:8] != b"PXKL\x00\x00\x01\x00"
                 or struct.unpack_from("<H", lineage, 8)[0] != 16
                 or struct.unpack_from("<H", lineage, 10)[0] == 0
                 or struct.unpack_from("<I", lineage, 12)[0] != len(lineage) - 16):
             raise PxaDbError("invalid publisher lineage in manifest")
         root = lineage[24:56]
+    return root
+
+
+def package_composite_identity(source: pathlib.Path) -> str:
+    root = package_publisher_root(source)
+    app_id = package_manifest_identity(source)
+    if root is None or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", app_id):
+        raise PxaDbError("package has no valid publisher/application identity")
+    return root.hex() + ":" + app_id
+
+
+def existing_package_volume(client: PxaDbClient, source: pathlib.Path,
+                            app_id: str) -> str | None:
+    """Keep a signed identity's installed volume before receiving any bytes."""
+    if info_properties(client.device_info).get("package_location") != "1":
+        return None
+    root = package_publisher_root(source)
+    if root is None:
+        return None
     identity = root.hex() + ":" + app_id
     for frame in client.request("PACKAGES"):
         if frame.kind != "PKG":
@@ -2108,7 +2320,13 @@ def existing_package_volume(client: PxaDbClient, source: pathlib.Path,
     return None
 
 
-def command_package_install(arguments: argparse.Namespace) -> int:
+def command_package_install(arguments: argparse.Namespace,
+                            connection: PxaDbClient | None = None) -> int:
+    """Install once, optionally borrowing a caller-owned live connection.
+
+    Borrowing keeps UART bridge reset circuits out of multi-step workflows.
+    The caller remains responsible for closing the connection.
+    """
     def approve_replacement(client: PxaDbClient, identity: str) -> None:
         packages = client.request("PACKAGES")
         installed = any(
@@ -2144,8 +2362,11 @@ def command_package_install(arguments: argparse.Namespace) -> int:
         # A slow SD verification must not extend device discovery or ordinary
         # control requests. Only the commit receives the decoded-size budget.
         control_timeout = max(arguments.timeout, 60.0)
-        with open_client(resolve_pxadb_port(arguments.port, control_timeout),
-                         control_timeout, arguments.logcat) as client:
+        with (contextlib.nullcontext(connection) if connection is not None else
+              open_client(resolve_pxadb_port(arguments.port, control_timeout),
+                          control_timeout, arguments.logcat)) as client:
+            compatibility_admission(package_compatibility(client,local_package),
+                                    strict=getattr(arguments,'strict_compatibility',False))
             volume = arguments.volume
             if not volume and local_package.is_file():
                 volume = existing_package_volume(client, local_package, identity)
@@ -2153,37 +2374,46 @@ def command_package_install(arguments: argparse.Namespace) -> int:
                     print("updating on the existing installation volume", file=sys.stderr, flush=True)
             if volume:
                 approve_replacement(client, identity)
+                received = False
                 try:
                     print(f"receiving and unpacking: {identity}", file=sys.stderr, flush=True)
                     epoch, remote, _ = stage_package_on_volume(
                         client, local_package, volume, arguments.via)
+                    received = True
                     print(f"verifying and installing: {identity}", file=sys.stderr, flush=True)
                     client.request(f"PACKAGE install-volume {epoch} {client_encode_path(remote)}",
                                    timeout=deploy_timeout)
                 finally:
                     # Release the candidate and its volume lease on every exit,
                     # including cancellation before the installation commit.
-                    try:
-                        client.request("FSABORT", timeout=40)
-                    except Exception:
-                        pass
+                    if received:
+                        try:
+                            client.request("FSABORT", timeout=40)
+                        except Exception:
+                            pass
                 print(f"installed: {identity}")
                 return 0
+            staged = False
             try:
                 print(f"staging: {identity}", file=sys.stderr, flush=True)
                 stage_package_files(NormalFsClient(client), local_package, identity,
                                     arguments.timeout, publish=False)
+                staged = True
                 print(f"verifying and installing: {identity}", file=sys.stderr, flush=True)
                 deploy(client, identity, deploy_timeout)
             finally:
-                clear_staged_source(client, identity)
+                if staged:
+                    clear_staged_source(client, identity)
         print(f"installed: {identity}")
         return 0
 
     if arguments.identity:
         raise PxaDbError("--identity is only valid when installing a local package")
-    with open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
-                     arguments.timeout, arguments.logcat) as client:
+    if getattr(arguments,'strict_compatibility',False):
+        raise PxaDbError('Strict compatibility requires the local package manifest; supply a .pxa file or signed package directory. No device changes were made.')
+    with (contextlib.nullcontext(connection) if connection is not None else
+          open_client(resolve_pxadb_port(arguments.port, arguments.timeout),
+                      arguments.timeout, arguments.logcat)) as client:
         deploy(client, arguments.package)
     print(f"install: {arguments.package}")
     return 0
@@ -2635,6 +2865,15 @@ def build_parser() -> argparse.ArgumentParser:
     info = subcommands.add_parser("info", help="print device information")
     add_connection_arguments(info)
     info.set_defaults(handler=command_info)
+    runtime = subcommands.add_parser('runtime-info', help='read actual Host ABI/service/engine capabilities; legacy omissions stay unknown')
+    add_connection_arguments(runtime)
+    runtime.set_defaults(handler=command_runtime_info)
+    compatibility = subcommands.add_parser('compatibility', help='compare a local signed package with the device without uploading')
+    add_connection_arguments(compatibility)
+    compatibility.add_argument('package')
+    compatibility.add_argument('--report-only',action='store_true',help='return JSON for incompatible results with exit 0')
+    compatibility.add_argument('--strict-compatibility',action='store_true',help='also fail for unreported requirements')
+    compatibility.set_defaults(handler=command_compatibility)
 
     volumes = subcommands.add_parser("volumes", help="list device installation volumes and mount epochs")
     add_connection_arguments(volumes)
@@ -2647,6 +2886,32 @@ def build_parser() -> argparse.ArgumentParser:
     memory = subcommands.add_parser("memory", help="read ESP heap and PXA resource memory statistics")
     add_connection_arguments(memory, allow_logcat=False)
     memory.set_defaults(handler=command_memory)
+
+    ui = subcommands.add_parser('ui', help='inspect the real Guest UI and assert visible state')
+    ui_commands = ui.add_subparsers(dest='ui_action', required=True)
+    for action in ('inspect', 'expect', 'wait-for', 'tap'):
+        cmd = ui_commands.add_parser(action)
+        add_connection_arguments(cmd, allow_logcat=False)
+        cmd.set_defaults(handler=command_ui)
+        if action == 'inspect':
+            cmd.add_argument('--output', type=pathlib.Path)
+            continue
+        cmd.add_argument('--node', dest='node_id', type=int)
+        cmd.add_argument('--surface', type=int)
+        cmd.add_argument('--type', dest='node_type')
+        cmd.add_argument('--text', help='exact UTF-8 label, no substring or OCR matching')
+        if action != 'tap':
+            def boolean(value):
+                if value not in ('true', 'false'):
+                    raise argparse.ArgumentTypeError('use true or false')
+                return value == 'true'
+            cmd.add_argument('--visible', type=boolean, metavar='{true,false}')
+            cmd.add_argument('--enabled', type=boolean, metavar='{true,false}')
+            cmd.add_argument('--value', type=int)
+            cmd.add_argument('--count', type=int)
+            cmd.add_argument('--within', type=int, nargs=4, metavar=('X', 'Y', 'W', 'H'))
+        if action == 'wait-for':
+            cmd.add_argument('--timeout-ms', type=int, default=5000)
 
     doctor = subcommands.add_parser("doctor", help="diagnose a PXADB connection")
     add_connection_arguments(doctor, allow_logcat=False)
@@ -2776,6 +3041,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="confirm replacement or downgrade without an interactive prompt"
     )
     install.add_argument("--volume", help="receive directly on sd, internal, or a mount epoch (PXA 0.2)")
+    install.add_argument('--strict-compatibility',action='store_true',help='block unknown requirements as well as known incompatibility before upload')
     install.add_argument("--via", choices=("auto", "serial", "usb", "wifi"), default="auto",
                          help="data transport with --volume; auto prefers native USB, otherwise Wi-Fi then cable")
     install.set_defaults(handler=command_package_install)
