@@ -25,6 +25,8 @@ FIXTURE=r"""
 #define PXSYS_STATUS_PENDING 1
 #define PXSYS_STATUS_INTERNAL -1
 #define PXSYS_STATUS_NOT_FOUND -2
+#define PXSYS_STATUS_TIMEOUT -3
+#define PXSYS_STATUS_NO_MEMORY -4
 #define LV_RESULT_OK 0
 typedef int pxsys_status_t;
 typedef int pxsys_instance_ref_t;
@@ -32,9 +34,12 @@ typedef struct {const char* data;size_t size;} pxsys_string_t;
 typedef struct {uint8_t publisher_root[32];pxsys_string_t app_id;}pxsys_app_identity_t;
 typedef struct {unsigned struct_size;pxsys_string_t action;const pxsys_app_identity_t*target;}pxsys_intent_t;
 typedef struct {pxsys_app_identity_t identity;char app_id[65];}tracked_t;
-typedef struct {int valid;uint32_t generation;void*system;size_t tracked_count;tracked_t tracked[1];}pxsys_esp_pxa_bridge_t;
+typedef struct esp_pxa_instance {struct esp_pxa_instance*next;uint8_t publisher_root[32];char app_id[65],identity_key[140];uint64_t host_instance_id;}esp_pxa_instance_t;
+typedef struct {int valid;uint32_t generation;void*system;size_t tracked_count;tracked_t tracked[1];esp_pxa_instance_t*instances;}pxsys_esp_pxa_bridge_t;
+static pxsys_esp_pxa_bridge_t*g_bridge;
 typedef int pxsys_app_registry_t;
 static int owner,registered,can_register=1,queue_fails,starts,syncs;
+static int host_active,timer_fails;static uint32_t tick;
 static void(*pending)(void*);static void*pending_context;
 static uint8_t last_root[32];static char last_id[65];
 static pxsys_string_t pxsys_string_from_cstr(const char*s){return(pxsys_string_t){s,strlen(s)};}
@@ -53,10 +58,23 @@ static pxsys_status_t pxsys_task_manager_start(void*s,const pxsys_intent_t*i,pxs
 static int schedule_on_lvgl_owner(void(*callback)(void*),void*context){
  assert(!pending);if(queue_fails)return -1;pending=callback;pending_context=context;return 0;
 }
+typedef struct lv_timer {void*context;void(*callback)(struct lv_timer*);}lv_timer_t;
+static lv_timer_t timer;
+static int pxa_host_runtime_is_instance_active(const char*id,uint64_t generation){assert(owner&&id&&generation==8);return host_active;}
+static uint32_t lv_tick_get(void){return tick;}
+static uint32_t lv_tick_elaps(uint32_t start){return tick-start;}
+static void*lv_timer_get_user_data(lv_timer_t*t){return t->context;}
+static void fire_timer(void*context){lv_timer_t*t=context;tick+=20;t->callback(t);}
+static lv_timer_t*lv_timer_create(void(*callback)(lv_timer_t*),uint32_t ms,void*context){
+ assert(owner&&!pending&&ms==20);if(timer_fails)return NULL;
+ timer.context=context;timer.callback=callback;pending=fire_timer;pending_context=&timer;return &timer;
+}
+static void lv_timer_set_repeat_count(lv_timer_t*t,int count){assert(t==&timer&&count==1);}
 // PRODUCTION
 static void drain(void){assert(pending);owner=1;void(*cb)(void*)=pending;void*ctx=pending_context;pending=NULL;cb(ctx);owner=0;}
 int main(void){
  int system=0;pxsys_esp_pxa_bridge_t bridge={.valid=1,.generation=7,.system=&system};
+ g_bridge=&bridge;
  uint8_t root[32];memset(root,42,32);char id[65]="pxa-just-installed";
  /* Empty tracked snapshot reproduces the install->immediate launch race. */
  assert(launch_requested(&bridge,root,id));assert(!syncs&&!starts);
@@ -71,14 +89,33 @@ int main(void){
  memset(id,'a',sizeof(id));assert(!launch_requested(&bridge,root,id));
  registered=0;can_register=0;strcpy(id,"pxa-gone-before-start");
  assert(launch_requested(&bridge,root,id));drain();assert(syncs==2&&starts==3&&!registered);
- puts("Queued launch: owner-only catalog, newly installed app, copied identity, cancellation and queue failure passed");
+ registered=1;esp_pxa_instance_t old={.host_instance_id=8};
+ memcpy(old.publisher_root,root,32);strcpy(old.app_id,id);strcpy(old.identity_key,"full:identity");bridge.instances=&old;
+ assert(launch_requested(&bridge,root,id));drain();assert(starts==3&&pending);
+ drain();assert(starts==3&&pending); /* Still waiting: never deliver to a retired Host instance. */
+ bridge.instances=NULL;drain();assert(starts==4&&!pending); /* STOPPED processed, one new start. */
+ bridge.instances=&old;host_active=1;
+ assert(launch_requested(&bridge,root,id));drain();assert(starts==5&&!pending);
+ host_active=0;tick=UINT32_MAX-10;
+ assert(launch_requested(&bridge,root,id));drain();drain();assert(starts==5&&pending);
+ tick+=3000;drain();assert(starts==5&&!pending);
+ timer_fails=1;assert(launch_requested(&bridge,root,id));drain();assert(starts==5&&!pending);timer_fails=0;
+ assert(launch_requested(&bridge,root,id));drain();++bridge.generation;drain();assert(starts==5&&!pending);
+ old.publisher_root[0]^=1;
+ assert(launch_requested(&bridge,root,id));drain();assert(starts==6&&!pending);
+ pxsys_esp_pxa_bridge_t*retired=malloc(sizeof(*retired));assert(retired);*retired=bridge;g_bridge=retired;
+ assert(launch_requested(retired,root,id));g_bridge=NULL;free(retired);drain();assert(starts==6&&!pending);
+ puts("Queued launch: fresh catalog, owner-only lookup, stop completion, timeout, cancellation and allocation failure passed");
 }
 """
 def main():
  source=(ROOT/'firmware/components/pxa_system_esp/src/esp_pxa_bridge.c').read_text()
  begin=source.index('typedef struct {',source.index('/* A launch request may arrive'))
  end=source.index('} pending_launch_t;',begin)+len('} pending_launch_t;')
- body=source[begin:end]+'\n'+function(source,'static void perform_launch_request(')+'\n'+function(source,'static bool launch_requested(')
+ timer='static void continue_launch_request(lv_timer_t* timer) {'
+ body=source[begin:end]+'\nstatic void perform_launch_request(void* context);\n'
+ if timer in source:body+=function(source,timer)+'\n'
+ body+=function(source,'static void perform_launch_request(')+'\n'+function(source,'static bool launch_requested(')
  with tempfile.TemporaryDirectory(prefix='pxa-launch-')as d:
   p=Path(d);(p/'test.c').write_text(FIXTURE.replace('// PRODUCTION',body))
   subprocess.run([os.environ.get('CC','cc'),'-std=c99','-Wall','-Wextra','-Werror','-Wno-unused-function','-fsanitize=address,undefined','-fno-omit-frame-pointer',str(p/'test.c'),'-o',str(p/'test')],check=True)

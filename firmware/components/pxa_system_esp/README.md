@@ -14,6 +14,10 @@ queue entry. Only the LVGL owner reads or refreshes the application registry;
 it can register a just-installed package before starting it, even if the
 asynchronous catalog refresh has not run yet. A queued acknowledgement is not
 startup confirmation: inspect the active package state and runtime events.
+During rapid stop/start, an inactive Host instance can still await its system
+STOPPED notification. Launch processing yields to that notification with a
+bounded owner-thread timer before reusing or creating an instance; it does not
+block LVGL or retire the previous instance early.
 
 The bridge also observes the portable theme service and maps its effective
 light/dark scheme into the standard PXA UI environment for both active and

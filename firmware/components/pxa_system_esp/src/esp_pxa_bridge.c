@@ -1448,7 +1448,11 @@ typedef struct {
     uint32_t generation;
     pxsys_app_identity_t target;
     char app_id[PXA_HOST_APP_ID_MAX];
+    uint32_t first_wait_tick;
+    uint8_t waiting;
 } pending_launch_t;
+
+static void continue_launch_request(lv_timer_t* timer);
 
 static void perform_launch_request(void* context) {
     pending_launch_t* request = (pending_launch_t*)context;
@@ -1456,8 +1460,37 @@ static void perform_launch_request(void* context) {
     pxsys_instance_ref_t instance;
     pxsys_status_t status = PXSYS_STATUS_INTERNAL;
     if (request == NULL) return;
-    if (bridge_valid(request->bridge) &&
+    if (request->bridge == g_bridge && bridge_valid(g_bridge) &&
         request->bridge->generation == request->generation) {
+        /* Host retirement and its owner-thread STOPPED notification are
+         * separate steps. Do not deliver to the old single-instance entry
+         * while that notification is queued. Yield so it can finish instead
+         * of blocking LVGL or prematurely destroying the old instance. */
+        for (esp_pxa_instance_t* previous = request->bridge->instances;
+             previous != NULL; previous = previous->next) {
+            if (memcmp(previous->publisher_root, request->target.publisher_root,
+                       PXSYS_PUBLISHER_ROOT_BYTES) != 0 ||
+                strcmp(previous->app_id, request->app_id) != 0 ||
+                pxa_host_runtime_is_instance_active(
+                    previous->identity_key, previous->host_instance_id))
+                continue;
+            if (!request->waiting) {
+                request->waiting = 1;
+                request->first_wait_tick = lv_tick_get();
+            }
+            if (lv_tick_elaps(request->first_wait_tick) < 3000) {
+                lv_timer_t* timer = lv_timer_create(
+                    continue_launch_request, 20, request);
+                if (timer != NULL) {
+                    lv_timer_set_repeat_count(timer, 1);
+                    return;
+                }
+                status = PXSYS_STATUS_NO_MEMORY;
+            } else {
+                status = PXSYS_STATUS_TIMEOUT;
+            }
+            goto done;
+        }
         /* Installation commits before its queued catalog refresh runs. Both
          * registry lookup and refresh belong to this LVGL owner, never the
          * PXADB task that submitted the request. */
@@ -1472,11 +1505,16 @@ static void perform_launch_request(void* context) {
             pxsys_standard_system_tasks(request->bridge->system), &intent,
             &instance);
     }
+done:
     if (status != PXSYS_STATUS_OK && status != PXSYS_STATUS_PENDING) {
         ESP_LOGW(PXSYS_ESP_PXA_TAG, "Launch request failed: %s status=%d",
                  request->app_id, (int)status);
     }
     free(request);
+}
+
+static void continue_launch_request(lv_timer_t* timer) {
+    perform_launch_request(lv_timer_get_user_data(timer));
 }
 
 static bool launch_requested(void* context,
