@@ -12,6 +12,8 @@ typedef struct _lv_font_t lv_font_t;
 #ifdef __cplusplus
 extern "C" {
 #endif
+pxa_status_t pxa_esp_host_inspect_ui(char *output, size_t capacity, size_t *size);
+bool pxa_esp_host_runtime_info(pxa_host_runtime_info_t *info);
 
 /* ESP32 runtime host on the C stack: WAMR engine (C adapter), all C
  * services with ESP backends (LittleFS permission policy and private

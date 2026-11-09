@@ -79,6 +79,10 @@ const pxa_board_port_t kPort = {
     .lock_display = LockDisplay,
     .unlock_display = UnlockDisplay,
     .initialize_before_storage = true,
+    .supported_rotations = 15,
+    .set_display_rotation = [](void*, uint8_t rotation) {
+        return g_hardware.SetDisplayRotation(rotation);
+    },
 };
 
 }

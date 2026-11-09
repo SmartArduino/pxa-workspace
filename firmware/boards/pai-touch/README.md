@@ -39,6 +39,34 @@ Behaviour measured on the device, which the link is built around:
 The two CST826 contacts are exposed as independent LVGL pointer devices, so PXA
 apps receive stable `pointer_id` values for simultaneous touches.
 
+Window 0.5 supports live App rotation at 0/90/180/270 degrees. Native means the
+normal 296×240 reading view, after the fixed 240×296 panel mounting correction;
+odd quarter turns expose 240×296. The native fast path retains its tiled dual-core
+converter. Other angles reuse one 139 KiB PSRAM staging frame before the existing
+SPI submission queue. Physical touch is transformed once using the combined
+mounting/App angle; PXADB coordinates and screenshots remain logical. Direction
+changes cancel old physical and injected contacts, and Home restores native.
+LVGL rotation stays zero because this port owns the pixel/input transformation.
+
+Some deployed units use a rescue/OTA layout with an `assets` LittleFS partition.
+Inspect the actual partition table and identify the running App by its ELF hash
+before an app-only update. Build with `CONFIG_PXA_STORAGE_PARTITION_LABEL="assets"`
+and preserve the existing built-in package root (`system/pxa/builtin` on older
+units). Disable formatting on mount failure and write only the existing App slot
+when the image fits. Preserve
+their bootloader, rescue slot, partition table and storage; do not write a factory
+image at 0x10000 onto that layout.
+
+`tests/apps/static-surface` is a device regression fixture: it retains one
+direct Surface through a half-turn, draws its red/green/blue/white quadrants
+exactly once, then stays static. After installing it, run
+`python3 firmware/boards/pai-touch/tests/static_surface_device.py --port PORT
+--output local/artifacts/rotation/RUN` from the workspace. The test checks the
+completed panel frame and quadrant colors, then stops only its own fixture.
+`bash firmware/boards/pai-touch/tests/test_rotation.sh` runs the host-side
+pixel conversion and inverse touch tests with ASan/UBSan at all four angles
+and 1×/2×/4× scales.
+
 The top performance HUD updates about once a second. `FPS` counts completed LCD
 transfers; `R` is the average rotation/conversion/composition time across ordinary
 UI and direct game frames, and `M` is the average panel submission/completion time.

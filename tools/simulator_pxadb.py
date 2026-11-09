@@ -7,6 +7,7 @@ import argparse
 import base64
 import hashlib
 import hmac
+import json
 import os
 import pathlib
 import re
@@ -35,6 +36,7 @@ MAX_FRAME_BYTES = 1024 * 1024
 MAX_UPLOAD_BYTES = 128 * 1024 * 1024
 MAX_CHUNK_BYTES = 64 * 1024
 MAX_SCREENSHOT_BYTES = 32 * 1024 * 1024
+MAX_UI_INSPECTION_BYTES = 1024 * 1024
 # One FSREAD response carries this many raw bytes, split into DATA frames.
 FS_READ_WINDOW_BYTES = 4 * MAX_CHUNK_BYTES
 
@@ -128,21 +130,23 @@ class SimulatorPxaDb:
             header, remainder = bytes(response).split(b"\n", 1)
             if header.startswith(b"ERR "):
                 raise ServiceError(header[4:].decode("ascii", "replace"))
-            if header.startswith(b"PNG "):
+            if header.startswith((b"PNG ", b"JSON ")):
+                inspection = header.startswith(b"JSON ")
+                label = "ui_inspection" if inspection else "screenshot"
                 try:
-                    size = int(header[4:])
+                    size = int(header.split(b" ", 1)[1])
                 except ValueError as error:
-                    raise ServiceError("simulator_screenshot_invalid") from error
-                if size <= 0 or size > MAX_SCREENSHOT_BYTES:
-                    raise ServiceError("simulator_screenshot_invalid")
+                    raise ServiceError(f"simulator_{label}_invalid") from error
+                if size <= 0 or size > (MAX_UI_INSPECTION_BYTES if inspection else MAX_SCREENSHOT_BYTES):
+                    raise ServiceError(f"simulator_{label}_invalid")
                 data = bytearray(remainder)
                 while len(data) < size:
                     part = connection.recv(size - len(data))
                     if not part:
-                        raise ServiceError("simulator_screenshot_truncated")
+                        raise ServiceError(f"simulator_{label}_truncated")
                     data.extend(part)
                 if len(data) != size:
-                    raise ServiceError("simulator_screenshot_invalid")
+                    raise ServiceError(f"simulator_{label}_invalid")
                 return bytes(data)
             if header.startswith(b"OK "):
                 return header[3:] + remainder
@@ -511,11 +515,12 @@ class SimulatorPxaDb:
                  command: str, arguments: list[str]) -> None:
         if command == "HELLO":
             transport = "tcp" if connection.server.require_token else "unix"  # type: ignore[attr-defined]
+            runtime = ';capabilities=runtime-info' if self.control_socket is not None else ''
             self.send(connection, sequence, "OK",
                       f"protocol=2;transport={transport};fs_offset=1;"
                       f"fs_sha256=1;max_chunk={MAX_CHUNK_BYTES};binary=1;"
                       f"{self.package_capabilities};"
-                      "simulator=1;screenshot=png;input=pointer,key")
+                      "simulator=1;screenshot=png;input=pointer,key" + runtime)
         elif command == "INFO":
             self.send(connection, sequence, "OK",
                       "kind=simulator;package_installer=posix;protocol=2;debug_control=1;"
@@ -531,6 +536,40 @@ class SimulatorPxaDb:
             self.screenshot(connection, sequence)
         elif command == "INPUT":
             self.send(connection, sequence, "OK", self.input(arguments))
+        elif command == "UI" and arguments == ["INSPECT"]:
+            snapshot = self.control("UI INSPECT")
+            self.send(connection, sequence, "META",
+                      f"format=json;bytes={len(snapshot)};sha256={hashlib.sha256(snapshot).hexdigest()};source=simulator")
+            for offset in range(0, len(snapshot), MAX_CHUNK_BYTES):
+                data = base64.b64encode(snapshot[offset:offset + MAX_CHUNK_BYTES]).decode("ascii")
+                self.send(connection, sequence, "DATA", f"{offset}\t{data}")
+            self.send(connection, sequence, "OK")
+        elif command == 'RUNTIME' and arguments == ['INFO']:
+            try:
+                data = self.control('RUNTIME INFO')
+            except ServiceError as error:
+                if str(error) not in {'runtime_info_unavailable','invalid_control_command','simulator_control_unavailable'}:
+                    raise
+                self.send(connection,sequence,'OK','schema=0;reason='+str(error))
+                return
+            try:
+                if len(data) > 16384:
+                    raise ValueError('runtime inventory too large')
+                document = json.loads(data)
+                if not isinstance(document,dict):
+                    raise ValueError('invalid runtime inventory')
+                services = document.pop('services')
+                if not isinstance(services,list) or len(services) > 64:
+                    raise ValueError('invalid service inventory')
+                for values in [document,*services]:
+                    if not isinstance(values,dict) or any(not isinstance(value,str) or
+                            any(character in value for character in ';=\r\n') for value in values.values()):
+                        raise ValueError('invalid runtime fields')
+                for service in services:
+                    self.send(connection,sequence,'DATA',';'.join(f'{key}={service[key]}' for key in ('id','version','features')))
+                self.send(connection,sequence,'OK',';'.join(f'{key}={value}' for key,value in document.items()))
+            except (ValueError,KeyError,TypeError) as error:
+                raise ServiceError('invalid_runtime_inventory') from error
         elif command == "FSPUT":
             self.begin_upload(connection, sequence, arguments)
         elif command == "FSABORT" and not arguments:

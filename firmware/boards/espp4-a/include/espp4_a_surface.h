@@ -3,5 +3,6 @@
 #include <pxa/pxa_esp_surface.h>
 namespace espp4_a {
 void Compose(const pxa_esp_surface_frame_t&, uint16_t* pixels,
-             int x, int y, int width, int height, size_t stride);
+             int x, int y, int width, int height, size_t stride,
+             int display_width = 480, int display_height = 854);
 }

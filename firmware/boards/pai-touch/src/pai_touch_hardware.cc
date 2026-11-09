@@ -345,16 +345,56 @@ bool PaiTouchHardware::InitializeDisplay() {
     display_ = lvgl_port_add_disp(&display_config);
     if (display_ != nullptr) {
         lv_display_set_rotation(display_, LV_DISPLAY_ROTATION_270);
-        if (!zuowei_pai_touch::ParallelSoftwareRotationFlush::Install(
-                display_, panel_io_, panel_)) {
+        parallel_rotation_ = zuowei_pai_touch::ParallelSoftwareRotationFlush::Install(
+                display_, panel_io_, panel_);
+        if (!parallel_rotation_) {
             ESP_LOGW(kTag, "Parallel display rotation unavailable");
             lv_display_set_render_mode(display_, LV_DISPLAY_RENDER_MODE_FULL);
+        } else {
+            // Board code owns mounting and App rotations, including input.
+            lv_display_set_rotation(display_, LV_DISPLAY_ROTATION_0);
+            lv_display_set_resolution(display_, PAI_DISPLAY_WIDTH, PAI_DISPLAY_HEIGHT);
         }
     }
     lv_unlock();
     lvgl_port_unlock();
     ESP_LOGI(kTag, "JD9853 display initialized as 296x240");
     return display_ != nullptr;
+}
+
+void PaiTouchHardware::DisplaySize(uint16_t* width, uint16_t* height) const {
+    const uint8_t r = display_rotation_.load();
+    *width = pxa_display_logical_width(PAI_DISPLAY_WIDTH, PAI_DISPLAY_HEIGHT, r);
+    *height = pxa_display_logical_height(PAI_DISPLAY_WIDTH, PAI_DISPLAY_HEIGHT, r);
+}
+
+bool PaiTouchHardware::SetDisplayRotation(uint8_t rotation) {
+    if (rotation > 3 || !parallel_rotation_) return false;
+    if (rotation == display_rotation_.load()) return true;
+    if (!zuowei_pai_touch::ParallelSoftwareRotationFlush::SetRotation(rotation)) return false;
+    portENTER_CRITICAL(&touch_lock_);
+    bool physical = false;
+    for (int i = 0; i < kTouchMaxPointers; ++i) {
+        physical |= !injected_mode_ && touch_slot_pressed_[i];
+        // Preserve the last physical report until the controller reports a
+        // release. Clearing it here would unblock a held finger on a read
+        // callback that runs before the next I2C poll.
+        if (injected_mode_) touch_slot_pressed_[i] = false;
+        touch_logged_pressed_[i] = false;
+    }
+    injected_mode_ = false;
+    injected_pending_samples_ = injected_cancels_ = 0;
+    rotation_touch_blocked_ = physical;
+    display_rotation_.store(rotation);
+    const auto cancel = input_takeover_;
+    void* cancel_context = input_takeover_context_;
+    portEXIT_CRITICAL(&touch_lock_);
+    for (auto* input : physical_pointers_) if (input) {
+        lv_indev_reset(input, nullptr);
+        if (physical) lv_indev_wait_release(input);
+    }
+    if (cancel) cancel(cancel_context);
+    return true;
 }
 
 bool PaiTouchHardware::InitializeTouch() {
@@ -690,11 +730,22 @@ void PaiTouchHardware::ReadPhysicalPointer(lv_indev_t* indev,
 
     portENTER_CRITICAL(&self->touch_lock_);
     injected = self->injected_mode_;
-    const bool pressed =
-        self->touch_slot_pressed_[slot] && self->screen_enabled_.load();
+    bool any_physical = false;
+    for (int i = 0; i < kTouchMaxPointers; ++i)
+        any_physical |= self->touch_slot_pressed_[i];
+    if (!injected && !any_physical) self->rotation_touch_blocked_ = false;
+    const bool pressed = self->touch_slot_pressed_[slot] &&
+        !self->rotation_touch_blocked_ && self->screen_enabled_.load();
     const bool transition = pressed != self->touch_logged_pressed_[slot];
     self->touch_logged_pressed_[slot] = pressed;
     data->point = self->touch_slot_point_[slot];
+    if (!injected && self->parallel_rotation_) {
+        uint32_t x, y;
+        pxa_display_native_to_logical(PAI_DISPLAY_HEIGHT, PAI_DISPLAY_WIDTH,
+            (1 + self->display_rotation_.load()) & 3,
+            data->point.x, data->point.y, &x, &y);
+        data->point = {int32_t(x), int32_t(y)};
+    }
     data->state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
     const uint8_t bit = uint8_t{1} << slot;
     const bool cancelled = (self->injected_cancels_ & bit) != 0;
@@ -795,12 +846,13 @@ bool PaiTouchHardware::RouteInjectedPointerDown() {
 
 bool PaiTouchHardware::InjectPointer(uint8_t id, uint16_t x, uint16_t y,
                                      bool pressed) {
+    uint16_t width, height;
+    DisplaySize(&width, &height);
     if (display_ == nullptr || id >= kTouchMaxPointers ||
-        physical_pointers_[id] == nullptr || x >= PAI_DISPLAY_WIDTH ||
-        y >= PAI_DISPLAY_HEIGHT) return false;
-    // LVGL rotates physical samples after ReadPhysicalPointer. Convert the
-    // debug protocol's logical pixels back to the same raw controller space.
-    const display_input::Point raw = display_input::LogicalToRaw(
+        physical_pointers_[id] == nullptr || x >= width || y >= height) return false;
+    // The parallel pipeline accepts logical debug pixels directly. Only the
+    // legacy LVGL rotation fallback expects raw controller coordinates.
+    const display_input::Point raw = parallel_rotation_ ? display_input::Point{x, y} : display_input::LogicalToRaw(
         x, y, lv_display_get_original_horizontal_resolution(display_),
         lv_display_get_original_vertical_resolution(display_),
         display_input::Rotation::k270);
@@ -912,6 +964,17 @@ bool PaiTouchHardware::ConfigurePxadbControls() {
     adapter.width = PAI_DISPLAY_WIDTH;
     adapter.height = PAI_DISPLAY_HEIGHT;
     adapter.max_pointers = kTouchMaxPointers;
+    adapter.display_size = [](void* context, uint16_t* width, uint16_t* height) {
+        static_cast<PaiTouchHardware*>(context)->DisplaySize(width, height);
+    };
+    adapter.set_input_takeover_callback = [](void* context,
+        pxadb::TestControlTakeoverCallback callback, void* callback_context) {
+        auto* self = static_cast<PaiTouchHardware*>(context);
+        portENTER_CRITICAL(&self->touch_lock_);
+        self->input_takeover_ = callback;
+        self->input_takeover_context_ = callback_context;
+        portEXIT_CRITICAL(&self->touch_lock_);
+    };
     adapter.route_pointer_down = [](void* context) {
         return static_cast<PaiTouchHardware*>(context)
             ->RouteInjectedPointerDown();

@@ -57,6 +57,7 @@
 #include "pxa/wasi.h"
 #include "pxa/window.h"
 #include "pxa_host_window_metrics.h"
+#include "pxa_board_api.h"
 #include "pxa/wire.h"
 #include "pxa_esp_package_store.h"
 #include "pxa_esp_store_download.h"
@@ -277,6 +278,7 @@ typedef struct {
     uint8_t display_interactive;     /* guarded by g_process_state_lock */
     uint8_t shutdown_complete;       /* guarded by g_process_state_lock */
     uint8_t lifecycle_effective;     /* runtime task only */
+    uint8_t window_orientation_foreground; /* runtime task only */
     uint8_t lifecycle_delivered;     /* 2 means not yet delivered */
     uint64_t shutdown_deadline_us;   /* runtime task only */
     uint8_t graceful_stop_active;    /* runtime task only */
@@ -2325,6 +2327,11 @@ static pxa_status_t esp_lvgl_execute(
     return PXA_STATUS_OK;
 }
 
+pxa_status_t pxa_esp_host_inspect_ui(char *output, size_t capacity, size_t *size) {
+    if (!g_host.initialized || !g_host.ui_adapter) return PXA_STATUS_BAD_STATE;
+    return pxa_lvgl_ui_inspect_json(g_host.ui_adapter, output, capacity, size);
+}
+
 static bool provide_ui_alpha_plane(
     void *context, pxa_esp_surface_ui_alpha_plane_t *output) {
     pxa_lvgl_ui_alpha_plane_t plane;
@@ -2468,12 +2475,40 @@ static void on_ui_event(uint32_t surface, uint32_t node,
 static void update_window_snapshot(
     pxa_component_t component, const pxa_window_configuration_t *configuration);
 
+static void split_display_insets(const pxa_window_insets_t *combined,
+                                uint32_t bars[4], uint32_t gestures[4]) {
+    pxa_host_window_split_ui_insets(combined, bars, gestures,
+#if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
+        1,
+#else
+        0,
+#endif
+#if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES && CONFIG_PXSYS_REFERENCE_UI_BACK_GESTURE
+        1
+#else
+        0
+#endif
+    );
+}
+
 static pxa_status_t host_window_apply(
     void *context, const pxa_window_configuration_t *configuration) {
     pxa_host_window_changed_fn callback;
     void *callback_context;
     (void)context;
     if (configuration == NULL) return PXA_STATUS_INVALID_ARGUMENT;
+    pxa_board_display_state_t state;
+    uint8_t resolved;
+    if (!pxa_board_display_get_state(&state) ||
+        !pxa_display_resolve_rotation(state.native_width, state.native_height, 0,
+            state.rotation, configuration->orientation_preference,
+            state.supported_rotations, &resolved)) return PXA_STATUS_UNSUPPORTED;
+    portENTER_CRITICAL(&g_process_state_lock);
+    const uint8_t foreground = g_host.ui_foreground_requested;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    if (!pxa_board_display_set_orientation(foreground
+            ? configuration->orientation_preference : PXA_ORIENTATION_SYSTEM))
+        return PXA_STATUS_UNSUPPORTED;
     portENTER_CRITICAL(&g_window_changed_lock);
     callback = g_window_changed_callback;
     callback_context = g_window_changed_context;
@@ -2483,6 +2518,16 @@ static pxa_status_t host_window_apply(
     /* configure() commits its candidate after this callback returns. Publish
      * that candidate now; periodic refreshes below read the committed value. */
     update_window_snapshot(g_host.activation.active_component, configuration);
+    /* Apply UI metrics after configure() commits and the Guest callback exits.
+     * Retain a newer board/profile update if one is already pending. */
+    portENTER_CRITICAL(&g_process_state_lock);
+    if (!g_host.window_insets_pending) {
+        g_host.pending_safe_insets = g_host.safe_insets;
+        g_host.pending_system_bar_insets = g_host.system_bar_insets;
+    }
+    g_host.window_insets_pending = 1;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    wake_runtime_thread();
     return PXA_STATUS_OK;
 }
 
@@ -2536,10 +2581,25 @@ static int host_window_snapshot(pxa_window_snapshot_t *snapshot) {
         snapshot->orientation = PXA_WINDOW_ORIENTATION_PORTRAIT;
     }
     snapshot->focused = 1;
+    {
+        pxa_board_display_state_t state;
+        if (pxa_board_display_get_state(&state)) {
+            snapshot->rotation = state.rotation;
+            snapshot->supported_rotations = state.supported_rotations;
+            snapshot->native_width = state.native_width;
+            snapshot->native_height = state.native_height;
+            /* Window coordinates are logical LVGL pixels (density 1), even
+             * when the panel's physical-resolution getter remains native. */
+            snapshot->pixel_width = snapshot->logical_width;
+            snapshot->pixel_height = snapshot->logical_height;
+        }
+        snapshot->orientation = pxa_display_shape(snapshot->logical_width,
+                                                   snapshot->logical_height);
+    }
     portENTER_CRITICAL(&g_process_state_lock);
     if (g_host.window_insets_valid) {
-        snapshot->safe_insets = g_host.safe_insets;
-        snapshot->system_bar_insets = g_host.system_bar_insets;
+        snapshot->safe_insets = g_host.window_insets_pending ? g_host.pending_safe_insets : g_host.safe_insets;
+        snapshot->system_bar_insets = g_host.window_insets_pending ? g_host.pending_system_bar_insets : g_host.system_bar_insets;
     }
     portEXIT_CRITICAL(&g_process_state_lock);
     return 1;
@@ -2558,8 +2618,13 @@ static void update_window_snapshot(
         pxa_window_get_configuration(g_host.activation.services.window, component, &current) ==
             PXA_STATUS_OK)
         configuration = &current;
-    if (configuration != NULL)
-        pxa_host_window_apply_bar_mode(&snapshot, configuration);
+    if (configuration != NULL) {
+#if CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
+        pxa_host_window_apply_bar_mode(&snapshot, configuration, 1);
+#else
+        pxa_host_window_apply_bar_mode(&snapshot, configuration, 0);
+#endif
+    }
     status = pxa_window_update_snapshot(g_host.activation.services.window, component, &snapshot);
     if (status != PXA_STATUS_OK && status != PXA_STATUS_NOT_FOUND) {
         ESP_LOGW(PXA_ESP_HOST_TAG,
@@ -3217,6 +3282,7 @@ static void stop_active(pxa_stop_reason_t reason) {
     g_host.ui_foreground_requested = 0;
     portEXIT_CRITICAL(&g_process_state_lock);
     g_host.lifecycle_effective = 0;
+    g_host.window_orientation_foreground = 0;
     g_host.lifecycle_delivered = 2;
     dismiss_runtime_permission_prompt();
     dismiss_unresponsive_prompt();
@@ -3317,6 +3383,108 @@ static void stop_active(pxa_stop_reason_t reason) {
             (unsigned long long)(stop_services_done-stop_ui_done),
             (unsigned long long)(host_now_us(NULL)-stop_services_done),
             (unsigned long long)(host_now_us(NULL)-stop_started));
+}
+
+/* Shared by activation and the read-only PXADB runtime inventory. */
+static void host_service_capabilities(pxa_package_activation_profile_t *capabilities,
+    pxa_package_service_capability_t *service_capabilities, uint64_t fs_features) {
+    size_t index;
+    memset(capabilities, 0, sizeof(*capabilities));
+    {
+#define HOST_SERVICE_VERSION(name) \
+    { PXA_##name##_SERVICE_ID, \
+      { PXA_##name##_SERVICE_MAJOR, PXA_##name##_SERVICE_MINOR }, 0 }
+        static const pxa_package_service_capability_t registered_versions[] = {
+            HOST_SERVICE_VERSION(CORE),
+            HOST_SERVICE_VERSION(WINDOW),
+            HOST_SERVICE_VERSION(UI),
+            HOST_SERVICE_VERSION(CLOCK),
+            HOST_SERVICE_VERSION(FS),
+            HOST_SERVICE_VERSION(STORAGE),
+            HOST_SERVICE_VERSION(IPC),
+            HOST_SERVICE_VERSION(SENSOR),
+            HOST_SERVICE_VERSION(HAPTICS),
+            HOST_SERVICE_VERSION(NET),
+            HOST_SERVICE_VERSION(AUDIO),
+            HOST_SERVICE_VERSION(PERMISSION),
+            HOST_SERVICE_VERSION(WORK),
+            HOST_SERVICE_VERSION(SURFACE),
+            HOST_SERVICE_VERSION(GAME_RENDER),
+            HOST_SERVICE_VERSION(ASSETS),
+            HOST_SERVICE_VERSION(LOG),
+#ifdef CONFIG_PXA_WASI_LIBC
+            HOST_SERVICE_VERSION(WASI),
+#endif
+            HOST_SERVICE_VERSION(DEVICE),
+            HOST_SERVICE_VERSION(HOST_SYSTEM),
+            HOST_SERVICE_VERSION(STORE_INSTALL),
+            {PXA_IME_SERVICE_ID,{0,1},PXA_IME_FEATURE_ALL},
+        };
+#undef HOST_SERVICE_VERSION
+        memcpy(service_capabilities, registered_versions,
+               sizeof(registered_versions));
+        capabilities->core_version.major = PXA_CORE_VERSION_MAJOR;
+        capabilities->core_version.minor = PXA_CORE_VERSION_MINOR;
+        capabilities->execution_models = pxa_wamr_engine_execution_models(g_host.engine);
+        capabilities->services = service_capabilities;
+        capabilities->service_count =
+            (uint16_t)(sizeof(registered_versions) /
+                       sizeof(registered_versions[0]));
+        for (index = 0; index < capabilities->service_count; ++index) {
+#ifdef CONFIG_PXA_WASI_LIBC
+            if (service_capabilities[index].service == PXA_WASI_SERVICE_ID) {
+                service_capabilities[index].features =
+                    PXA_WASI_FEATURE_CLOCKS | PXA_WASI_FEATURE_RANDOM;
+            }
+#endif
+            if (service_capabilities[index].service == PXA_STORE_INSTALL_SERVICE_ID)
+                service_capabilities[index].features = PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT | PXA_STORE_CAP_INDEXED_CONTAINER;
+            if (service_capabilities[index].service == PXA_CLOCK_SERVICE_ID)
+                service_capabilities[index].features = PXA_CLOCK_FEATURE_TIMING;
+            if (service_capabilities[index].service == PXA_ASSETS_SERVICE_ID)
+                service_capabilities[index].features = PXA_ASSETS_FEATURE_IMAGE_DECODE | PXA_ASSETS_FEATURE_IMAGE_FRAMES;
+            if (service_capabilities[index].service == PXA_FS_SERVICE_ID)
+                service_capabilities[index].features = fs_features;
+            if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
+                service_capabilities[index].features =
+                    PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS |
+                    PXA_GAME_RENDER_FEATURE_BORROWED_INDEXED_BLIT;
+            if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {
+                service_capabilities[index].features =
+                    PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
+        PXA_UI_FEATURE_GRID |
+                    PXA_UI_FEATURE_RGB565_BITMAP |
+                    PXA_UI_FEATURE_CONTROLLER_INPUT |
+                    PXA_UI_FEATURE_CANVAS_STREAM_IO |
+                    PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT |
+                    PXA_UI_FEATURE_PASSWORD_INPUT | PXA_UI_FEATURE_FONT_GLYPH;
+#if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
+                service_capabilities[index].features |= PXA_UI_FEATURE_SIZED_TEXT;
+#endif
+            }
+        }
+    }
+}
+
+bool pxa_esp_host_runtime_info(pxa_host_runtime_info_t *info) {
+    if (!info || !g_host.initialized || !g_host.engine) return false;
+    memset(info,0,sizeof(*info));
+    _Static_assert(PXA_ESP_HOST_MAX_SERVICES <= PXA_HOST_RUNTIME_SERVICES_MAX,
+                   "Runtime inventory must fit every activation service");
+    host_service_capabilities(&info->activation,info->services,0);
+    info->host.target=(pxa_bytes_t){(const uint8_t *)PXA_ESP_HOST_TARGET,sizeof(PXA_ESP_HOST_TARGET)-1};
+    info->host.engine=(pxa_bytes_t){(const uint8_t *)"wamr",4};
+    info->host.engine_abi=(pxa_bytes_t){(const uint8_t *)PXSYS_WAMR_ENGINE_ABI,sizeof(PXSYS_WAMR_ENGINE_ABI)-1};
+    info->host.memory_model=PXA_MEMORY_WASM32;
+    info->artifact_kinds=pxa_wamr_engine_artifact_kinds(g_host.engine);
+    info->manifest_major=PXA_PACKAGE_MANIFEST_FORMAT_MAJOR;
+    info->manifest_minor=PXA_PACKAGE_MANIFEST_FORMAT_MINOR;
+    for (size_t i=0;i<info->activation.service_count;++i)
+        /* App-scoped FS features depend on its permission/volume roots. Do not
+         * expose the foreground app's roots as a promise to another package. */
+        if(info->services[i].service == PXA_FS_SERVICE_ID)
+            info->unknown_features |= UINT32_C(1) << i;
+    return true;
 }
 
 static int start_verified(const char *identity) {
@@ -3500,6 +3668,8 @@ static int start_verified(const char *identity) {
             services_config.safe_insets[1] = g_host.safe_insets.right;
             services_config.safe_insets[2] = g_host.safe_insets.bottom;
             services_config.safe_insets[3] = g_host.safe_insets.left;
+            split_display_insets(&g_host.system_bar_insets,
+                services_config.system_bar_insets, services_config.system_gesture_insets);
         }
         services_config.display_shape = g_host.display_shape;
         memcpy(services_config.corner_radii, g_host.corner_radii,
@@ -3559,82 +3729,9 @@ static int start_verified(const char *identity) {
     host_profile.memory_model = PXA_MEMORY_WASM32;
     pxa_esp_ime_attach(g_host.activation.runtime,g_host.engine,&g_host.engine_ops,
         &host_profile,allocate_instance_id,post_command,wake_runtime_thread);
-    memset(&capabilities, 0, sizeof(capabilities));
-    {
-#define HOST_SERVICE_VERSION(name) \
-    { PXA_##name##_SERVICE_ID, \
-      { PXA_##name##_SERVICE_MAJOR, PXA_##name##_SERVICE_MINOR }, 0 }
-        static const pxa_package_service_capability_t registered_versions[] = {
-            HOST_SERVICE_VERSION(CORE),
-            HOST_SERVICE_VERSION(WINDOW),
-            HOST_SERVICE_VERSION(UI),
-            HOST_SERVICE_VERSION(CLOCK),
-            HOST_SERVICE_VERSION(FS),
-            HOST_SERVICE_VERSION(STORAGE),
-            HOST_SERVICE_VERSION(IPC),
-            HOST_SERVICE_VERSION(SENSOR),
-            HOST_SERVICE_VERSION(HAPTICS),
-            HOST_SERVICE_VERSION(NET),
-            HOST_SERVICE_VERSION(AUDIO),
-            HOST_SERVICE_VERSION(PERMISSION),
-            HOST_SERVICE_VERSION(WORK),
-            HOST_SERVICE_VERSION(SURFACE),
-            HOST_SERVICE_VERSION(GAME_RENDER),
-            HOST_SERVICE_VERSION(ASSETS),
-            HOST_SERVICE_VERSION(LOG),
-#ifdef CONFIG_PXA_WASI_LIBC
-            HOST_SERVICE_VERSION(WASI),
-#endif
-            HOST_SERVICE_VERSION(DEVICE),
-            HOST_SERVICE_VERSION(HOST_SYSTEM),
-            HOST_SERVICE_VERSION(STORE_INSTALL),
-            {PXA_IME_SERVICE_ID,{0,1},PXA_IME_FEATURE_ALL},
-        };
-#undef HOST_SERVICE_VERSION
-        memcpy(service_capabilities, registered_versions,
-               sizeof(registered_versions));
-        capabilities.core_version.major = PXA_CORE_VERSION_MAJOR;
-        capabilities.core_version.minor = PXA_CORE_VERSION_MINOR;
-        capabilities.execution_models = pxa_wamr_engine_execution_models(g_host.engine);
-        capabilities.services = service_capabilities;
-        capabilities.service_count =
-            (uint16_t)(sizeof(registered_versions) /
-                       sizeof(registered_versions[0]));
-        for (index = 0; index < capabilities.service_count; ++index) {
-#ifdef CONFIG_PXA_WASI_LIBC
-            if (service_capabilities[index].service == PXA_WASI_SERVICE_ID) {
-                service_capabilities[index].features =
-                    PXA_WASI_FEATURE_CLOCKS | PXA_WASI_FEATURE_RANDOM;
-            }
-#endif
-            if (service_capabilities[index].service == PXA_STORE_INSTALL_SERVICE_ID)
-                service_capabilities[index].features = PXA_STORE_CAP_RESOURCE_INSTALL | PXA_STORE_CAP_VOLUME_PLACEMENT | PXA_STORE_CAP_INDEXED_CONTAINER;
-            if (service_capabilities[index].service == PXA_CLOCK_SERVICE_ID)
-                service_capabilities[index].features = PXA_CLOCK_FEATURE_TIMING;
-            if (service_capabilities[index].service == PXA_ASSETS_SERVICE_ID)
-                service_capabilities[index].features = PXA_ASSETS_FEATURE_IMAGE_DECODE | PXA_ASSETS_FEATURE_IMAGE_FRAMES;
-            if (service_capabilities[index].service == PXA_FS_SERVICE_ID)
-                service_capabilities[index].features = pxa_esp_fs_roots_features(
-                    g_host.activation.services.fs_roots) | (g_host.activation.services.fs ? PXA_FS_FEATURE_ASYNC_ATOMIC_WRITE : 0);
-            if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
-                service_capabilities[index].features =
-                    PXA_GAME_RENDER_FEATURE_ASSET_BINDINGS |
-                    PXA_GAME_RENDER_FEATURE_BORROWED_INDEXED_BLIT;
-            if (service_capabilities[index].service == PXA_UI_SERVICE_ID) {
-                service_capabilities[index].features =
-                    PXA_UI_FEATURE_CANVAS | PXA_UI_FEATURE_VIRTUAL_LIST |
-        PXA_UI_FEATURE_GRID |
-                    PXA_UI_FEATURE_RGB565_BITMAP |
-                    PXA_UI_FEATURE_CONTROLLER_INPUT |
-                    PXA_UI_FEATURE_CANVAS_STREAM_IO |
-                    PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT |
-                    PXA_UI_FEATURE_PASSWORD_INPUT | PXA_UI_FEATURE_FONT_GLYPH;
-#if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
-                service_capabilities[index].features |= PXA_UI_FEATURE_SIZED_TEXT;
-#endif
-            }
-        }
-    }
+    host_service_capabilities(&capabilities, service_capabilities,
+        pxa_esp_fs_roots_features(g_host.activation.services.fs_roots) |
+        (g_host.activation.services.fs ? PXA_FS_FEATURE_ASYNC_ATOMIC_WRITE : 0));
     plan_size =
         pxa_activation_plan_workspace_size(manifest->component_count);
     g_host.activation.plan_workspace = activation_alloc(plan_size);
@@ -3723,6 +3820,7 @@ static int start_verified(const char *identity) {
     portEXIT_CRITICAL(&g_clock_slots_lock);
     rearm_clock_timer();
     g_host.lifecycle_effective = 0;
+    g_host.window_orientation_foreground = 0;
     /* Startup is suspended until System foregrounds this instance. There is
      * no background transition to report before its first foreground. */
     g_host.lifecycle_delivered = PXA_HOST_SYSTEM_LIFECYCLE_BACKGROUND;
@@ -4070,7 +4168,7 @@ static void apply_ui_palette(const uint32_t rgba[PXA_UI_THEME_ROLE_COUNT]) {
  * onStart and on profile changes: the adapter is constructed before the
  * integration publishes the board profile, so its initial values can be stale.
  * Surface sizes/insets stay in pixels; UI lengths and Canvas pointers use dp. */
-static void read_display_environment(pxa_ui_environment_t *environment) {
+static void read_display_environment(pxa_ui_environment_t *environment, pxa_component_t component) {
     lv_display_t *display;
     lv_lock();
     display = lv_display_get_default();
@@ -4089,11 +4187,23 @@ static void read_display_environment(pxa_ui_environment_t *environment) {
         environment->safe_insets[1] = g_host.safe_insets.right;
         environment->safe_insets[2] = g_host.safe_insets.bottom;
         environment->safe_insets[3] = g_host.safe_insets.left;
+        split_display_insets(&g_host.system_bar_insets,
+            environment->system_bar_insets, environment->system_gesture_insets);
     }
     environment->display_shape = g_host.display_shape;
     memcpy(environment->corner_radii, g_host.corner_radii,
            sizeof(environment->corner_radii));
     portEXIT_CRITICAL(&g_process_state_lock);
+    pxa_window_configuration_t config;
+    if (g_host.activation.services.window != NULL && component != PXA_COMPONENT_INVALID &&
+        pxa_window_get_configuration(g_host.activation.services.window, component, &config) == PXA_STATUS_OK) {
+        if (config.status_bar_mode != PXA_WINDOW_BAR_VISIBLE)
+            environment->system_bar_insets[0] = 0;
+#if !CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
+        if (config.navigation_bar_mode != PXA_WINDOW_BAR_VISIBLE)
+            environment->system_bar_insets[2] = 0;
+#endif
+    }
 }
 
 static void apply_window_insets(const pxa_window_insets_t *safe_insets,
@@ -4111,7 +4221,7 @@ static void apply_window_insets(const pxa_window_insets_t *safe_insets,
                                PXA_UI_PRIMARY_SURFACE, &environment) !=
             PXA_STATUS_OK)
         return;
-    read_display_environment(&environment);
+    read_display_environment(&environment, g_host.activation.ui_component);
     (void)pxa_ui_update_environment(g_host.activation.services.ui,
                                     g_host.activation.ui_component,
                                     &environment);
@@ -4646,6 +4756,15 @@ static void sync_ui_lifecycle(void) {
     interactive = g_host.display_interactive;
     portEXIT_CRITICAL(&g_process_state_lock);
     effective = requested && interactive;
+    /* Home restores the system direction; resuming the task reapplies its
+     * retained preference. Display sleep alone must not change direction. */
+    if (g_host.window_orientation_foreground != requested) {
+        pxa_window_configuration_t configuration;
+        if (pxa_window_get_configuration(g_host.activation.services.window,
+                component, &configuration) == PXA_STATUS_OK &&
+            host_window_apply(NULL, &configuration) == PXA_STATUS_OK)
+            g_host.window_orientation_foreground = requested;
+    }
     pxa_haptics_service_set_foreground(g_host.activation.services.haptics,
         effective ? component : PXA_COMPONENT_INVALID);
 #if PXA_ENABLE_PERIPHERALS
@@ -5334,7 +5453,7 @@ static pxa_status_t set_ui_startup_config(
     uint64_t instance_id, pxa_component_t component) {
     uint8_t config[PXA_WAMR_ENGINE_MAX_CONFIG_BYTES];
     uint8_t payload[8];
-    uint8_t environment_bytes[128];
+    uint8_t environment_bytes[PXA_UI_ENVIRONMENT_WIRE_BYTES];
     uint8_t system_environment[4u + PXA_SYSTEM_LOCALE_MAX_BYTES + 5u];
     char locale[PXA_SYSTEM_LOCALE_MAX_BYTES + 1u];
     uint8_t locale_size;
@@ -5346,7 +5465,7 @@ static pxa_status_t set_ui_startup_config(
     pxa_status_t status = pxa_ui_get_environment(
         g_host.activation.services.ui, component, PXA_UI_PRIMARY_SURFACE, &environment);
     if (status != PXA_STATUS_OK) return status;
-    read_display_environment(&environment);
+    read_display_environment(&environment, component);
     status = pxa_ui_encode_environment(
         &environment, environment_bytes, sizeof(environment_bytes),
         &environment_size);
@@ -5404,6 +5523,9 @@ static pxa_status_t prepare_start(void *context, pxa_component_t component,
         ESP_LOGE(PXA_ESP_HOST_TAG, "Prepare window bind status=%ld", (long)status);
         return status;
     }
+    /* on_start may request the extended snapshot immediately. Seed the
+     * current display before entering Guest code, just like desktop/browser. */
+    update_window_snapshot(component, NULL);
     status = pxa_ui_bind(g_host.activation.services.ui, component, &g_host.ui_backend);
     if (status != PXA_STATUS_OK) {
         ESP_LOGE(PXA_ESP_HOST_TAG, "Prepare UI bind status=%ld", (long)status);
@@ -5415,7 +5537,7 @@ static pxa_status_t prepare_start(void *context, pxa_component_t component,
         status = pxa_ui_get_environment(g_host.activation.services.ui, component,
                                         PXA_UI_PRIMARY_SURFACE, &environment);
         if (status == PXA_STATUS_OK) {
-            read_display_environment(&environment);
+            read_display_environment(&environment, component);
             pxa_esp_ime_environment(&environment,&g_host.ui_theme);
             /* The component is STARTING: no event can be posted yet. Its UI
              * service was seeded above, and onStart receives the snapshot. */
@@ -5527,7 +5649,7 @@ bool pxa_esp_host_initialize(void) {
     ui_config.primary_environment.surface = PXA_UI_PRIMARY_SURFACE;
     ui_config.primary_environment.density_q16 = UINT32_C(1) << 16;
     ui_config.primary_environment.font_scale_q16 = UINT32_C(1) << 16;
-    read_display_environment(&ui_config.primary_environment);
+    read_display_environment(&ui_config.primary_environment, PXA_COMPONENT_INVALID);
     pxa_lvgl_ui_theme_init(&ui_config.theme);
     g_host.ui_caption_font = load_ui_font(12, pxa_esp_ui_shell_text_font());
     g_host.ui_label_font = load_ui_font(14, pxa_esp_ui_shell_text_font());

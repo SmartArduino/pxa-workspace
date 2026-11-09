@@ -1090,6 +1090,7 @@ class PxaDbLogStreamingTest(unittest.TestCase):
             (artifacts / "main.wasm").write_bytes(b"wasm")
             client = mock.MagicMock()
             with mock.patch.object(pxadb, "open_file_client", return_value=client), \
+                    mock.patch.object(pxadb, "package_compatibility",return_value={'status':'compatible','checks':[]}), \
                     mock.patch.object(pxadb, "fs_remove") as remove:
                 pxadb.stage_package(source, "pxa-example", "/dev/ttyACM0", 1.0)
         root = "pxa-state/inbox/pxa-example"
@@ -1505,7 +1506,7 @@ class PackageStorageTest(unittest.TestCase):
             fs = mock.Mock(client=peer)
             with self.assertRaisesRegex(pxadb.PxaDbError, "Upload has not started"):
                 pxadb.stage_package_files(fs, source, "pxa-storage-test", 10)
-            peer.request.assert_called_once_with("INFO")
+            self.assertEqual(peer.request.call_args_list,[mock.call('INFO'),mock.call('INFO')])
             fs.put.assert_not_called()
             fs.mkdir.assert_not_called()
             fs.remove.assert_not_called()
@@ -1564,7 +1565,7 @@ class PackageReceiveTest(unittest.TestCase):
         return package
 
     def client(self):
-        peer = mock.Mock()
+        peer = mock.Mock(device_info='')
         def request(command, **kwargs):
             return [pxadb.Frame(1, "OK", "storage_free=10000000;package_receive=1;package_directory_adopt=1"
                                 if command == "INFO" else "")]

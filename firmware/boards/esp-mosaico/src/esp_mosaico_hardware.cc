@@ -7,6 +7,7 @@
 #include "esp_mosaico_peripherals.h"
 
 #include <algorithm>
+#include <pxa/display_rotation.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -593,6 +594,41 @@ void EspMosaicoHardware::FlushDisplay(lv_display_t* display,
     lv_display_flush_ready(display);
 }
 
+bool EspMosaicoHardware::SetDisplayRotation(uint8_t rotation) {
+    if (rotation > 3) return false;
+    if (rotation == display_rotation_) return true;
+    WaitForUiSnapshot();
+    if (rotation && !rotation_pixels_) {
+        rotation_pixels_ = static_cast<uint16_t*>(heap_caps_aligned_alloc(64,
+            size_t(mosaico_board::kWidth) * mosaico_board::kHeight * 2,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!rotation_pixels_) return false;
+    }
+    WaitForFlush();
+    xSemaphoreTake(panel_mutex_, portMAX_DELAY);
+    portENTER_CRITICAL(&touch_lock_);
+    EspMosaicoTouchPoint points[EspMosaicoInput::kPointers];
+    const bool pressed = input_.Points(points) != 0;
+    input_.ResetForRotation(esp_timer_get_time());
+    const auto cancel_input = input_takeover_;
+    void* cancel_context = input_takeover_context_;
+    display_rotation_ = rotation;
+    portEXIT_CRITICAL(&touch_lock_);
+    for (auto* pointer : {touch_input_, secondary_touch_input_}) if (pointer) {
+        lv_indev_reset(pointer, nullptr);
+        if (pressed) lv_indev_wait_release(pointer);
+    }
+    /* The square logical viewport is unchanged. Pixel/touch rotation belongs
+     * to this port; setting LVGL rotation would transform input twice. */
+    displayed_frame_valid_ = false;
+    displayed_frame_initialized_ = false;
+    redraw_pending_ = true;
+    lv_obj_invalidate(lv_display_get_screen_active(display_));
+    xSemaphoreGive(panel_mutex_);
+    if (cancel_input) cancel_input(cancel_context);
+    return true;
+}
+
 bool EspMosaicoHardware::TransferArea(
     const lv_area_t& dirty, const uint8_t* frame, uint32_t source_stride,
     bool last, uint64_t timestamp, const char* source_name, uint64_t frame_id) {
@@ -605,6 +641,19 @@ bool EspMosaicoHardware::TransferArea(
         return false;
     }
     lv_area_t area = dirty;
+    const uint8_t rotation = display_rotation_;
+    if (rotation) {
+        pxa_display_rgb565_to_native(reinterpret_cast<const uint16_t*>(frame),
+            rotation_pixels_, mosaico_board::kWidth, mosaico_board::kHeight, rotation);
+        uint32_t x, y, ex, ey;
+        pxa_display_logical_to_native(mosaico_board::kWidth, mosaico_board::kHeight,
+            rotation, dirty.x1, dirty.y1, &x, &y);
+        pxa_display_logical_to_native(mosaico_board::kWidth, mosaico_board::kHeight,
+            rotation, dirty.x2, dirty.y2, &ex, &ey);
+        area = {int32_t(std::min(x, ex)), int32_t(std::min(y, ey)),
+                int32_t(std::max(x, ex)), int32_t(std::max(y, ey))};
+        frame = reinterpret_cast<const uint8_t*>(rotation_pixels_);
+    }
     const int64_t te_wait_started = esp_timer_get_time();
     WaitForTe(&area);
     te_wait_us_ = esp_timer_get_time() - te_wait_started;
@@ -1017,6 +1066,12 @@ void EspMosaicoHardware::PollTouch(void* context) {
         }
         const int64_t timestamp_us = esp_timer_get_time();
         portENTER_CRITICAL(&self->touch_lock_);
+        for (uint8_t index = 0; index < count; ++index) {
+            uint32_t x, y;
+            pxa_display_native_to_logical(mosaico_board::kWidth, mosaico_board::kHeight,
+                self->display_rotation_, points[index].x, points[index].y, &x, &y);
+            points[index].x = x; points[index].y = y;
+        }
         self->touch_state_.Update(status == ESP_OK, points, count, timestamp_us);
         const size_t active = self->touch_state_.Snapshot(timestamp_us, points,
             EspMosaicoTouchState::kMaxPoints);

@@ -183,10 +183,11 @@ BMI270 at I2C address `0x69` exposes `motion.acceleration` (X/Y/Z, micrometres/s
 `motion.angular-velocity` (X/Y/Z, microradians/s) and `imu-temperature` (millidegrees C).
 The IMU uses ±4 g and ±2000 degrees/s at 100 Hz. Temperature is the chip's
 die temperature. Both motion channels are converted by the board Provider
-before Sensor delivery: device `(X,Y,Z) = (chip Y,-chip X,chip Z)`.
-With the panel in its normal orientation, device +X points toward the top
-edge, +Y toward the left edge and +Z out of the screen. This is a right-handed
-frame; the same proper rotation applies to acceleration and angular velocity.
+before Sensor delivery: device `(X,Y,Z) = (chip X,chip Y,chip Z)`.
+With the panel in its native orientation, device +X points toward the right
+edge, +Y toward the top edge and +Z out of the screen, matching Android.
+This fixed right-handed frame applies to acceleration and angular velocity
+and does not follow UI rotation.
 Screen-up stationary acceleration is approximately +9.81 m/s² on Z;
 screen-down is approximately -9.81 m/s². Angular velocity follows the right-hand
 rule, so counterclockwise rotation viewed from the screen side is positive Z.
@@ -703,3 +704,13 @@ Runtime health is logged every five seconds (`mosaico_hw`): reset reason,
 uptime, completed refreshes, SPI errors, touch read/report/error counts,
 active touch coordinates, TE edge/period/timeout metrics and internal
 free memory. Read it with `python3 tools/pxadb/pxadb.py logcat --port /dev/ttyACM0`.
+
+## 应用屏幕方向
+
+Window 0.5 支持显式 0°/90°/180°/270°，同步变换显示和物理触摸。
+480×480 在所有角度都属于方屏；应用请求“横屏”或“竖屏”时保持当前角度，
+需要改变阅读方向时请求显式角度。非零角度首次分配一个 450 KiB PSRAM
+旋转缓冲，复用原有 TE/SPI 提交流程；0° 保留原来的快路径。
+截图与 PXADB 注入输入使用逻辑坐标。Home/退出恢复系统方向。
+运动传感器仍使用原生设备坐标，不随屏幕旋转；需要跟随画面的重力操作
+可使用 SDK 的 `pxa_display_motion_to_screen`，避免重复转换。

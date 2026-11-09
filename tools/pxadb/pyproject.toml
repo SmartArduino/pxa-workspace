@@ -13,4 +13,4 @@ dependencies = ["pyserial>=3.5"]
 pxadb = "pxadb:main"
 
 [tool.setuptools]
-py-modules = ["pxadb", "pxa_local_socket"]
+py-modules = ["pxadb", "pxa_local_socket", "ui_query", "package_compatibility"]

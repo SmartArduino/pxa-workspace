@@ -12,7 +12,8 @@ static bool allocation_failure, aligned;
 static const void* transferred;
 static uint32_t reg;
 void* heap_caps_aligned_alloc(size_t alignment, size_t size, unsigned caps) {
-    assert(caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
+    assert(caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT) ||
+           caps == (MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
     ++allocations;
     if (allocation_failure) return nullptr;
     void* p = nullptr;

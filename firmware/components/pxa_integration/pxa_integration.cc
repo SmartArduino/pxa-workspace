@@ -1206,7 +1206,7 @@ void PublishDisplayProfile(void*, const pxsys_display_profile_t* display) {
         bars.bottom = display->height - layout.navigation_bar.y;
 #endif
 #endif
-#if CONFIG_PXSYS_REFERENCE_UI_BACK_GESTURE
+#if CONFIG_PXSYS_REFERENCE_UI_BACK_GESTURE && CONFIG_PXSYS_REFERENCE_UI_NAVIGATION_GESTURES
         // The actual input strip covers the safe margin as well as the edge
         // width (reference_lvgl.c). Publish its absolute panel inset.
         bars.left = static_cast<uint32_t>(layout.safe_area.x) +
@@ -1432,6 +1432,7 @@ bool CreateSystem(const pxa_board_port_t* board,
     if (status != PXSYS_STATUS_OK) return false;
     g_display_observer_registered = true;
     PublishDisplayProfile(nullptr, &system_config.initial_display);
+    pxa_board_display_attach_system(g_system);
     if (board->system_ready != nullptr)
         board->system_ready(board->context, g_system, g_reference_ui);
     status = pxsys_theme_service_subscribe(
@@ -1589,6 +1590,7 @@ extern "C" void pxa_integration_stop(void) {
         g_bridge = nullptr;
     }
     if (g_system != nullptr) {
+        pxa_board_display_attach_system(nullptr);
         (void)pxsys_standard_system_destroy(g_system);
         g_system = nullptr;
     }

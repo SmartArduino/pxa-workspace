@@ -222,6 +222,7 @@ class PackageTransferTest(unittest.TestCase):
             struct.pack_into("<I", data, 56, 48)
             source.write_bytes(data + bytes(400))
             client = mock.Mock(device_info="package_stream=2;package_stream_volume=1")
+            client.request.return_value=[]
             with mock.patch.object(pxadb, "select_install_volume", return_value=self.volume(free="1")), \
                     mock.patch.object(pxadb, "fetch_package_stream") as fetch, \
                     mock.patch.object(pxadb, "NormalFsClient") as fs:
@@ -240,6 +241,7 @@ class PackageTransferTest(unittest.TestCase):
             client.request.side_effect = [[], pxadb.PxaDbRejectedError("commit_failed"), []]
             remote = "sdcard/PXA/cache/store/.stream-12345678"
             with mock.patch.object(pxadb, "open_client", return_value=client), \
+                    mock.patch.object(pxadb, "package_compatibility",return_value={'status':'compatible','checks':[]}), \
                     mock.patch.object(pxadb, "stage_package_on_volume", return_value=(2, remote, "serial")), \
                     mock.patch.object(pxadb, "clear_staged_source") as inbox:
                 with self.assertRaisesRegex(pxadb.PxaDbError, "commit_failed"):
@@ -297,8 +299,9 @@ class LargePackageDeadlineTest(unittest.TestCase):
     def test_explicit_staging_uses_decoded_size_deadline(self):
         with tempfile.TemporaryDirectory() as folder:
             source = self.container(pathlib.Path(folder))
-            fs = mock.Mock()
+            fs = mock.Mock(client=mock.Mock(device_info='package_stream=2;package_codecs=0,1,2'))
             with mock.patch.object(pxadb, "check_package_storage", return_value={"package_receive": "1"}), \
+                    mock.patch.object(pxadb, "package_compatibility",return_value={'status':'compatible','checks':[]}), \
                     mock.patch.object(pxadb, "_stage_package_files"):
                 pxadb.stage_package_files(fs, source, "probe", 10)
             fs.client.request.assert_called_once_with("PACKAGE publish probe", timeout=542)

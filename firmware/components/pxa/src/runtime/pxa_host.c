@@ -25,6 +25,9 @@
 #define PXA_HOST_TAG "PxaHost"
 
 static bool g_host_ready;
+bool pxa_host_runtime_info(pxa_host_runtime_info_t *info) {
+    return g_host_ready && pxa_esp_host_runtime_info(info);
+}
 static bool g_window_insets_valid;
 static pxa_window_insets_t g_safe_insets;
 static pxa_window_insets_t g_system_bar_insets;
@@ -444,6 +447,10 @@ bool pxa_host_set_app_permission(const char *identity_key,
 
 bool pxa_host_ready(void) {
     return g_host_ready;
+}
+
+pxa_status_t pxa_host_inspect_ui(char *output, size_t capacity, size_t *size) {
+    return g_host_ready ? pxa_esp_host_inspect_ui(output, capacity, size) : PXA_STATUS_BAD_STATE;
 }
 
 bool pxa_host_resource_memory_snapshot(

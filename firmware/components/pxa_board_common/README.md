@@ -43,3 +43,19 @@ for the duration of the existing Surface lease.
 `lcd_render_trace.h` reports LVGL render/draw, composition, copy, output-buffer
 wait, rotation and drained SPI transfer times when the existing Performance log
 setting is enabled. Logging off avoids timer reads in the display hot path.
+
+Window 0.5 separates native panel dimensions, logical shape and clockwise
+quarter turns. Ports implementing live rotation must convert physical input
+exactly once, cancel both board queues and PXADB pointer ownership, and return
+logical screenshots. The ESPP4-A, ESP-Mosaico and Pai-Touch ports keep LVGL rotation at 0
+because they own this conversion; LVGL otherwise rotates pointer input again.
+Safe areas, corners and cutouts rotate through `pxsys_display_profile_rotated`.
+Unimplemented ports advertise native-only support instead of faking rotation.
+
+Install `deps/pxa-system/sdk/guest-cpp/examples/orientation` on an authorized
+test device, then run `tests/rotation_device.py --port PORT --board BOARD
+--width NATIVE_W --height NATIVE_H --output local/artifacts/rotation/RUN`
+from the workspace. Optional `--elf PATH` verifies the running firmware hash;
+`--identity` selects the installed fixture. The test exercises real controls,
+held-pointer cancellation, shape preferences, Home/resume and screenshots.
+It stops the selected fixture when complete and does not erase application data.

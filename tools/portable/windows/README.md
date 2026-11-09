@@ -2,6 +2,11 @@
 
 本目录提供 Windows x64 源码构建入口，生成标准 UI 模拟器、Guest 运行器、包安装器和带 Xtensa/RISC-V 后端的固定版本 `wamrc.exe`。应用 CLI 使用 `deps\pxa-system\bin\pxa.cmd`，PXADB CLI/GUI 继续使用本机 Python 和 COM 串口。
 
+应用开发优先下载已经构建的原生 DevKit，无需本机编译 LLVM。组装默认选择
+`--toolchain-profile pxa`，保留 `wasm32-wasip1` 编译链和检查工具；`full` 保留
+完整上游工具。组件归档可保留相同 EXE 的硬链接，ZIP 解压仍可能产生独立副本。
+许可证随包保留。仅在构建副本中裁剪，发行清单记录实际 profile 和文件体积。
+
 最低系统为 Windows 10 1903，推荐 Windows 11 x64。当前构建使用原生 MinGW-w64（包括 MSYS2 UCRT64 环境里的原生编译器）；不支持以 MSVC 编译整套 Host。MSYS2 只用于安装开发环境，生成的程序不链接 `msys-2.0.dll` 或 `cygwin1.dll`。
 
 ## 准备

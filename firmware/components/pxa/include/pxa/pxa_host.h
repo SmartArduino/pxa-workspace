@@ -10,6 +10,7 @@
 #include "pxa/audio_playback.h"
 #include "pxa/audio.h"
 #include "pxa/resource_budget.h"
+#include "pxa/package.h"
 
 #if defined(ESP_PLATFORM)
 
@@ -29,6 +30,17 @@ extern "C" {
 #define PXA_HOST_PUBLISHER_ROOT_BYTES 32
 #define PXA_HOST_COMPONENT_ID_MAX 65
 #define PXA_HOST_SYSTEM_SERVICE_ID UINT16_C(17)
+#define PXA_HOST_RUNTIME_SERVICES_MAX 32
+/* Borrowed immutable engine strings and copied admission capabilities. */
+typedef struct {
+    pxa_package_host_profile_t host;
+    pxa_package_activation_profile_t activation;
+    pxa_package_service_capability_t services[PXA_HOST_RUNTIME_SERVICES_MAX];
+    uint32_t artifact_kinds;
+    uint32_t unknown_features; /* Bits refer to service array indices. */
+    uint16_t manifest_major, manifest_minor;
+} pxa_host_runtime_info_t;
+bool pxa_host_runtime_info(pxa_host_runtime_info_t *info);
 #define PXA_HOST_SYSTEM_SERVICE_MAJOR UINT16_C(0)
 #define PXA_HOST_SYSTEM_SERVICE_MINOR UINT16_C(1)
 #define PXA_HOST_SYSTEM_INTENT_START UINT16_C(1)
@@ -289,6 +301,9 @@ size_t pxa_host_list_app_permissions(const char *identity_key,
 bool pxa_host_set_app_permission(const char *identity_key,
                                  size_t permission_index, bool granted);
 bool pxa_host_ready(void);
+/* Read-only, bounded retained UI diagnostics. NULL/0 queries size; actual
+ * bytes exclude the terminating NUL. Password values are never exported. */
+pxa_status_t pxa_host_inspect_ui(char *output, size_t capacity, size_t *size);
 bool pxa_host_resource_memory_snapshot(
     pxa_host_resource_memory_snapshot_t *snapshot);
 bool pxa_host_is_active(const char *identity_key);

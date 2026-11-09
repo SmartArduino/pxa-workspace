@@ -28,6 +28,7 @@
 #include <esp_wifi.h>
 #include <pxa/pxa_host.h>
 #include <pxa_board_api.h>
+#include <pxa/display_rotation.h>
 #include <pxa_board_common/boot_screen.h>
 #include <pxa_board_common/ledc_backlight.h>
 #include <pxa_board_common/sd_volume.h>
@@ -76,6 +77,14 @@ public:
     }
     bool Capture(uint16_t*, size_t, bool, pxadb::TestControlCaptureInfo* = nullptr);
     bool Diagnostics();
+    bool SetRotation(uint8_t rotation);
+    uint32_t LogicalWidth() const { return pxa_display_logical_width(kWidth, kHeight, rotation_.load()); }
+    uint32_t LogicalHeight() const { return pxa_display_logical_height(kWidth, kHeight, rotation_.load()); }
+    void DisplaySize(uint16_t* w, uint16_t* h) const {
+        const uint8_t r = rotation_.load();
+        *w = pxa_display_logical_width(kWidth, kHeight, r);
+        *h = pxa_display_logical_height(kWidth, kHeight, r);
+    }
 private:
     bool Touch();
     bool Pointers();
@@ -101,6 +110,8 @@ private:
     espp4_a::TouchReport physical_{};
     esp_lv_decoder_handle_t decoder_ = nullptr;
     uint16_t* frames_[2]{};
+    uint16_t* rotation_pixels_ = nullptr;
+    std::atomic<uint8_t> rotation_{0};
     portMUX_TYPE scan_lock_ = portMUX_INITIALIZER_UNLOCKED;
     espp4_a::ScanoutClock scan_clock_;
     struct Presentation {
@@ -229,15 +240,28 @@ void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
     auto* b = static_cast<Board*>(lv_display_get_user_data(display));
     b->CollectCompletions();
     auto* output = reinterpret_cast<uint16_t*>(data);
-    const unsigned next = output == b->frames_[0] ? 0 : 1;
-    if (output != b->frames_[next] || b->pending_count_ == b->pending_.size()) abort();
+    unsigned next;
+    const uint8_t rotation = b->rotation_;
+    if (rotation) {
+        // Logical LVGL pixels are separate from physical DMA scanout.
+        while (b->pending_count_) { b->WaitScan(); b->CollectCompletions(); }
+        next = b->front_ ^ 1u;
+    } else {
+        next = output == b->frames_[0] ? 0 : 1;
+        if (output != b->frames_[next] || b->pending_count_ == b->pending_.size()) abort();
+    }
+    const int width = b->LogicalWidth(), height = b->LogicalHeight();
     pxa_esp_surface_frame_t frame{};
     const bool acquired = pxa_esp_surface_acquire_latest(&frame);
     if (!acquired && pxa_esp_surface_has_visible_surface()) ++b->missed_surfaces_;
-    if (acquired) espp4_a::Compose(frame, output, 0, 0, kWidth, kHeight, kWidth);
+    if (acquired) espp4_a::Compose(frame, output, 0, 0, width, height, width, width, height);
     if (pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY))
-        pxa_board_performance_draw_rgb565(output, kWidth, kHeight, kWidth,
-            0, 0, kWidth, kHeight, false);
+        pxa_board_performance_draw_rgb565(output, width, height, width,
+            0, 0, width, height, false);
+    if (rotation) {
+        pxa_display_rgb565_to_native(output, b->frames_[next], kWidth, kHeight, rotation);
+        output = b->frames_[next];
+    }
     const uint64_t frame_id = acquired ? frame.frame_id : 0;
     const uint64_t input_us = acquired ? frame.input_timestamp_us : 0;
     const uint32_t raster_us = acquired ? frame.raster_ready_tick_us : 0;
@@ -408,6 +432,32 @@ void Board::Sd() {
     } else ESP_LOGW(kTag, "SD card unavailable (%s); contents preserved", esp_err_to_name(result));
 }
 
+bool Board::SetRotation(uint8_t rotation) {
+    if (rotation > 3) return false;
+    if (rotation == rotation_) return true;
+    if (rotation && !rotation_pixels_) {
+        rotation_pixels_ = static_cast<uint16_t*>(heap_caps_aligned_alloc(64, kBytes,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!rotation_pixels_) return false;
+    }
+    CancelPointers();
+    touch_blocked_ = pressed_;
+    for (auto* pointer : pointers_) if (pointer) lv_indev_reset(pointer, nullptr);
+    while (pending_count_) { WaitScan(); CollectCompletions(); }
+    rotation_ = rotation;
+    /* This port owns pixel/input rotation. Keep LVGL's rotation at zero:
+     * its pointer processor otherwise rotates already-logical input again. */
+    lv_display_set_resolution(display_, LogicalWidth(), LogicalHeight());
+    lv_display_set_buffers(display_, rotation ? rotation_pixels_ : frames_[front_ ^ 1u],
+        rotation ? nullptr : frames_[front_], kBytes, LV_DISPLAY_RENDER_MODE_FULL);
+    frame_valid_ = false;
+    lv_obj_invalidate(lv_display_get_screen_active(display_));
+    surface_dirty_ = true;
+    /* Drop PXADB's accepted pointer ownership as well as the board queues. */
+    if (takeover_) takeover_(takeover_context_);
+    if (ui_task_) xTaskNotifyGive(ui_task_);
+    return true;
+}
 bool Board::Wake() {
     const bool woke = !screen_on_;
     screen_on_ = true; ApplyBacklight();
@@ -422,6 +472,11 @@ void Board::Input() {
             return esp_lcd_panel_io_rx_param(touch_io_, reg, p, n) == ESP_OK;
         }, touch_slots_, kWidth, kHeight, report);
         if (ok) {
+            for (auto& point : report) {
+                uint32_t x, y;
+                pxa_display_native_to_logical(kWidth, kHeight, rotation_, point.x, point.y, &x, &y);
+                point.x = x; point.y = y;
+            }
             touch_success_ms_ = now;
             const bool any = std::any_of(report.begin(), report.end(),
                 [](const auto& p) { return p.pressed; });
@@ -567,9 +622,16 @@ bool Board::Capture(uint16_t* pixels, size_t count, bool after, pxadb::TestContr
     CollectCompletions();
     while (pending_count_) { WaitScan(); CollectCompletions(); }
     if (frame_valid_) {
-        std::memcpy(pixels, frames_[front_], kBytes);
+        const uint8_t rotation = rotation_;
+        const uint32_t width = LogicalWidth(), height = LogicalHeight();
+        if (!rotation) std::memcpy(pixels, frames_[front_], kBytes);
+        else for (uint32_t y = 0; y < height; ++y) for (uint32_t x = 0; x < width; ++x) {
+            uint32_t nx, ny;
+            pxa_display_logical_to_native(kWidth, kHeight, rotation, x, y, &nx, &ny);
+            pixels[size_t(y) * width + x] = frames_[front_][size_t(ny) * kWidth + nx];
+        }
         if (info) {
-            info->width = kWidth; info->height = kHeight; info->stride_bytes = kWidth * 2;
+            info->width = width; info->height = height; info->stride_bytes = width * 2;
             info->frame_id = completed_; info->completed_timestamp_us = completed_us_;
             info->source = "st7102-dsi-completed";
         }
@@ -581,6 +643,9 @@ bool Board::Diagnostics() {
     pxadb::TestControlAdapter adapter;
     adapter.context = this; adapter.width = kWidth; adapter.height = kHeight;
     adapter.max_pointers = espp4_a::kTouchPointers;
+    adapter.display_size = [](void* c, uint16_t* w, uint16_t* h) {
+        static_cast<Board*>(c)->DisplaySize(w, h);
+    };
     adapter.route_pointer_down = [](void* c) {
         auto* b = static_cast<Board*>(c);
         if (!b->Lock(1000)) return false;
@@ -588,7 +653,8 @@ bool Board::Diagnostics() {
     };
     adapter.inject_pointer = [](void* c, uint8_t id, uint16_t x, uint16_t y, bool down) {
         auto* b = static_cast<Board*>(c);
-        if (id >= espp4_a::kTouchPointers || x >= kWidth || y >= kHeight || !b->Lock(1000)) return false;
+        if (id >= espp4_a::kTouchPointers || !b->Lock(1000)) return false;
+        if (x >= b->LogicalWidth() || y >= b->LogicalHeight()) { b->Unlock(); return false; }
         const bool accepted = !b->pressed_ && !b->button_down_ && b->samples_.Push(id, x, y, down);
         b->Unlock(); return accepted;
     };
@@ -652,6 +718,8 @@ const pxa_board_port_t port = {
     .idle_screen_off = [](void*) { board.ScreenOff(); },
     .lock_display = [](void*, uint32_t ms) { return board.Lock(ms); },
     .unlock_display = [](void*) { board.Unlock(); },
+    .supported_rotations = 15,
+    .set_display_rotation = [](void*, uint8_t rotation) { return board.SetRotation(rotation); },
 };
 }
 extern "C" bool pxa_board_register_selected(void) { return pxa_board_register(&port); }
