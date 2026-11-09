@@ -18,6 +18,8 @@ p.add_argument('--height', type=int, required=True)
 p.add_argument('--output', type=Path, required=True)
 p.add_argument('--elf', type=Path)
 p.add_argument('--identity', default='pxa-cpp-orientation')
+p.add_argument('--unlock-reference-ui', action='store_true',
+               help='Wake and swipe up on the reference lock screen before testing')
 a = p.parse_args()
 out = a.output.resolve()
 out.mkdir(parents=True, exist_ok=True)
@@ -40,6 +42,15 @@ with (out / 'console.log').open('w', buffering=1) as raw, pxadb.open_client(a.po
             if str(e) != 'package_not_running':
                 raise
         time.sleep(0.5)
+        if a.unlock_reference_ui:
+            c.request('INPUT CANCEL')
+            c.request('INPUT KEY HOME')
+            c.request('INPUT SYNC')
+            time.sleep(0.4)
+            c.request(f'INPUT SWIPE {a.width // 2} {a.height * 7 // 8} '
+                      f'{a.width // 2} {a.height // 5} 300 16')
+            c.request('INPUT SYNC')
+            time.sleep(0.3)
         c.request('PACKAGE run ' + identity)
 
         def tree():
