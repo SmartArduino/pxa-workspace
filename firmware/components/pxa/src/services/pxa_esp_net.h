@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "pxa/net.h"
+#include "pxa/lan.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,6 +35,7 @@ typedef struct {
 
 int pxa_esp_net_backend(pxa_net_backend_t *output,
                         pxa_esp_net_notify_fn notify, void *notify_context);
+const pxa_lan_backend_t *pxa_esp_lan_backend(void);
 void pxa_esp_net_reset_requests(void);
 void pxa_esp_net_snapshot(pxa_esp_net_snapshot_t *output);
 

@@ -958,4 +958,32 @@ void pxa_esp_net_snapshot(pxa_esp_net_snapshot_t *output) {
     portEXIT_CRITICAL(&g_net_lock);
 }
 
-#endif
+#include "pxa_lan_native.h"
+static pxa_lan_backend_t esp_lan;
+static int esp_lan_interface(void *context, uint32_t *address, uint32_t *mask) {
+    (void)context;
+    esp_netif_t *netif = esp_netif_get_default_netif();
+    esp_netif_ip_info_t ip = {0};
+    if (!netif || !esp_netif_is_netif_up(netif) ||
+        esp_netif_get_ip_info(netif, &ip) != ESP_OK || !ip.ip.addr)
+        return 0;
+    *address = ip.ip.addr;
+    *mask = ip.netmask.addr;
+    return 1;
+}
+static void esp_lan_notify(void *context) {
+    (void)context;
+    if (g_lazy_notify)
+        g_lazy_notify(g_lazy_notify_context);
+}
+const pxa_lan_backend_t *pxa_esp_lan_backend(void) {
+    if (!esp_lan.struct_size) {
+        pxa_lan_native_config_t c = {NULL, esp_lan_interface, esp_lan_notify,
+                                     16, 16384};
+        if (!pxa_lan_native_create(&c, &esp_lan))
+            return NULL;
+    }
+    return &esp_lan;
+}
+
+#endif /* ESP_PLATFORM */

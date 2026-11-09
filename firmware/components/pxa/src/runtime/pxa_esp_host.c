@@ -1543,13 +1543,25 @@ static pxa_status_t request_runtime_permission_prompt(
         if (strcmp(prompt.permission_name, "net.client") == 0)
             snprintf(prompt.permission_name, sizeof(prompt.permission_name),
                      "网络访问 (net.client)");
+        else if (strcmp(prompt.permission_name, "net.socket") == 0)
+            snprintf(prompt.permission_name, sizeof(prompt.permission_name), "TCP/TLS 连接");
+        else if (strcmp(prompt.permission_name, "net.listen") == 0)
+            snprintf(prompt.permission_name, sizeof(prompt.permission_name), "接入连接监听");
+        else if (strcmp(prompt.permission_name, "net.datagram") == 0)
+            snprintf(prompt.permission_name, sizeof(prompt.permission_name), "UDP 数据报通信");
+        else if (strcmp(prompt.permission_name, "net.discovery") == 0)
+            snprintf(prompt.permission_name, sizeof(prompt.permission_name), "局域网服务发现");
         else if (strcmp(prompt.permission_name, "device.identity") == 0)
             snprintf(prompt.permission_name, sizeof(prompt.permission_name),
                      "设备标识 (device.identity)");
         else if (strcmp(prompt.permission_name, "audio.playback") == 0)
             snprintf(prompt.permission_name, sizeof(prompt.permission_name),
                      "音频播放");
-        if (strcmp(prompt.scope, "media") == 0)
+        if (strcmp(prompt.scope, "local-network") == 0)
+            snprintf(prompt.scope, sizeof(prompt.scope), "当前局域网");
+        else if (strcmp(prompt.scope, "network") == 0)
+            snprintf(prompt.scope, sizeof(prompt.scope), "所有 IPv4 网络");
+        else if (strcmp(prompt.scope, "media") == 0)
             snprintf(prompt.scope, sizeof(prompt.scope), "媒体音频");
     }
     g_host.activation.permission_prompt.prompt_id = prompt_id;
@@ -5378,16 +5390,23 @@ static pxa_status_t prepare_start(void *context, pxa_component_t component,
     pxa_status_t status;
     (void)context;
     status = pxa_esp_ime_prepare(component,instance_id);
-    if (status != PXA_STATUS_NOT_FOUND) return status;
+    if (status != PXA_STATUS_NOT_FOUND) {
+        if (status) ESP_LOGE(PXA_ESP_HOST_TAG, "Prepare IME status=%ld", (long)status);
+        return status;
+    }
     if (kind != 1) return PXA_STATUS_OK;
     memset(&backend, 0, sizeof(backend));
     backend.struct_size = sizeof(backend);
     backend.apply = host_window_apply;
     backend.show_toast = host_window_toast;
     status = pxa_window_bind(g_host.activation.services.window, component, &backend);
-    if (status != PXA_STATUS_OK) return status;
+    if (status != PXA_STATUS_OK) {
+        ESP_LOGE(PXA_ESP_HOST_TAG, "Prepare window bind status=%ld", (long)status);
+        return status;
+    }
     status = pxa_ui_bind(g_host.activation.services.ui, component, &g_host.ui_backend);
     if (status != PXA_STATUS_OK) {
+        ESP_LOGE(PXA_ESP_HOST_TAG, "Prepare UI bind status=%ld", (long)status);
         (void)pxa_window_unbind(g_host.activation.services.window, component);
         return status;
     }
@@ -5405,6 +5424,7 @@ static pxa_status_t prepare_start(void *context, pxa_component_t component,
                     g_host.ui_backend.context, &environment);
         }
         if (status != PXA_STATUS_OK) {
+            ESP_LOGE(PXA_ESP_HOST_TAG, "Prepare UI environment status=%ld", (long)status);
             (void)pxa_ui_unbind(g_host.activation.services.ui, component);
             (void)pxa_window_unbind(g_host.activation.services.window, component);
             return status;
@@ -5412,6 +5432,7 @@ static pxa_status_t prepare_start(void *context, pxa_component_t component,
     }
     status = set_ui_startup_config(instance_id, component);
     if (status != PXA_STATUS_OK) {
+        ESP_LOGE(PXA_ESP_HOST_TAG, "Prepare UI startup config status=%ld", (long)status);
         (void)pxa_ui_unbind(g_host.activation.services.ui, component);
         (void)pxa_window_unbind(g_host.activation.services.window, component);
         return status;

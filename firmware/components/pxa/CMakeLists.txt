@@ -114,6 +114,7 @@ endif()
 set(PXA_C_CORE_ROOT "${PXSYS_ROOT}/libpxa")
 include("${PXA_C_CORE_ROOT}/cmake/pxaSources.cmake")
 pxa_collect_sources(PXA_LIB_SOURCES "${PXA_C_CORE_ROOT}")
+list(APPEND PXA_LIB_SOURCES "${PXA_C_CORE_ROOT}/adapters/network/pxa_lan_native.c")
 list(APPEND PXA_SRCS
     ${PXA_LIB_SOURCES}
     "${PXA_C_CORE_ROOT}/adapters/esp/pxa_esp_mbedtls.c"
@@ -201,7 +202,7 @@ set_property(SOURCE "src/services/pxa_esp_fs_roots.c" APPEND PROPERTY
     COMPILE_DEFINITIONS PXA_FS_IMPORT_LVGL=1)
 idf_component_register(
     SRCS ${PXA_SRCS}
-    INCLUDE_DIRS "include" "${PXA_C_CORE_ROOT}/include"
+    INCLUDE_DIRS "${PXA_C_CORE_ROOT}/adapters/network" "include" "${PXA_C_CORE_ROOT}/include"
     PRIV_INCLUDE_DIRS "src/runtime"
                       "src/services"
                       "src/package"

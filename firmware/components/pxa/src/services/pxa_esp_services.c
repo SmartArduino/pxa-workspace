@@ -754,8 +754,8 @@ static pxa_status_t initialize_bounded_services(
     memset(&net_config, 0, sizeof(net_config));
     net_config.struct_size = sizeof(net_config);
     net_config.max_pending_requests = PXA_ESP_NET_MAX_PENDING;
-    net_config.max_requests_per_component = 2;
-    net_config.max_response_streams = PXA_ESP_NET_MAX_PENDING;
+    net_config.max_requests_per_component = 12;
+    net_config.max_response_streams = 16;
     net_config.max_response_bytes = PXA_ESP_NET_MAX_RESPONSE_BYTES;
     net_config.max_headers = PXA_NET_MAX_HEADERS;
     net_config.max_inline_body_bytes = PXA_ESP_NET_MAX_INLINE_BODY_BYTES;
@@ -766,6 +766,7 @@ static pxa_status_t initialize_bounded_services(
     net_config.max_timeout_ms = PXA_NET_MAX_STREAM_TIMEOUT_MS;
     net_config.backend = net_backend;
     net_config.permissions = services->permission;
+    net_config.local = pxa_esp_lan_backend();
     workspace_size = pxa_net_service_workspace_size(&net_config);
     status = allocate_workspace(host, workspace_size, &services->net_workspace,
                                 result, "allocate-net-service");
