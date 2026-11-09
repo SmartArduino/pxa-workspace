@@ -572,24 +572,26 @@ class PxaDbLogStreamingTest(unittest.TestCase):
                             for value in timeouts))
 
     def test_uart_allows_bridge_reset_boot_without_changing_native_deadline(self):
-        for profile in ("uart", "usb"):
+        for profile, budget, boots in (("uart", 2.0, True), ("usb", 2.0, False),
+                                       ("uart", .6, False)):
             client = fake_client([])
             client.upload_profile = profile
-            client.timeout = 2.0
+            client.timeout = budget
             clock = [0.0]
             def request(command, timeout):
                 clock[0] += timeout
-                if clock[0] < 3.0:
+                if clock[0] < 8.0:
                     raise pxadb.PxaDbError("application is still booting")
                 return [pxadb.Frame(1, "OK", "ready")]
             client.request = request
             with mock.patch.object(pxadb.time, "monotonic", side_effect=lambda: clock[0]), \
                     mock.patch.object(pxadb.time, "sleep", side_effect=lambda t: clock.__setitem__(0, clock[0]+t)):
-                if profile == "uart":
+                if boots:
                     self.assertEqual(client.hello(), "ready")
                 else:
                     with self.assertRaises(pxadb.PxaDbError): client.hello()
-            self.assertEqual(client.timeout, 2.0)
+            self.assertEqual(client.timeout, budget)
+            self.assertLessEqual(clock[0], budget + (10 if boots else 0) + .001)
 
     def test_close_tolerates_a_dead_port(self) -> None:
         class DeadPortError(Exception):

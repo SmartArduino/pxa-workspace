@@ -667,11 +667,13 @@ class PxaDbClient:
     def hello(self, attempts: int = 3) -> str:
         error: PxaDbError | None = None
         deadline = time.monotonic() + self.timeout
-        if getattr(self, "upload_profile", "unknown") == "uart":
+        if getattr(self, "upload_profile", "unknown") == "uart" and self.timeout >= 1.0:
             # Some bridges pulse EN while the OS opens the tty, before modem
             # outputs can be deasserted. Allow the application to boot once;
             # ordinary request deadlines and native USB stay unchanged.
-            deadline += 5.0
+            # P4's normal boot with an existing app catalog can exceed seven
+            # seconds. Sub-second discovery probes retain their short budget.
+            deadline += 10.0
         for attempt in range(attempts):
             remaining = deadline - time.monotonic()
             if remaining <= 0:

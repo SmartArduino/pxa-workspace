@@ -35,6 +35,10 @@ Use one connection for installation and subsequent activation/state queries on
 UART bridges whose reset circuitry reacts to opening the port. A stale mount
 epoch from a previous connection is not an installation selector; refresh the
 volumes or select `internal`/`sd` on the current connection.
+UART connections with request timeouts of at least one second allow an extra
+ten seconds for the initial HELLO after an adapter-induced reset. Subsequent
+request deadlines stay unchanged; sub-second discovery probes keep their short
+budget. Use an explicit longer timeout for products with slower startup.
 
 New firmware advertises `package_receive=1` and `package_directory_adopt=1`
 in `INFO`. CLI/GUI installation uploads into an invisible receiving candidate,
