@@ -8,10 +8,18 @@ mkdir -p "$test_build"
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     -I"$test_dir/../include" -I"$project_dir/firmware/components/pxa/include" \
     -I"$project_dir/firmware/components/pxa_board_common/include" \
+    -I"$project_dir/firmware/components/pxa_render_accel/include" \
     -I"$project_dir/deps/pxa-system/libpxa/include" \
     "$test_dir/surface_test.cc" "$test_dir/../src/espp4_a_surface.cc" \
+    "$test_dir/../src/espp4_a_pixels.cc" "$project_dir/firmware/components/pxa_render_accel/pixels.c" \
     -o "$test_build/surface_test"
 "$test_build/surface_test"
+"${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
+    -fsanitize=address,undefined -fno-omit-frame-pointer \
+    -I"$test_dir/../include" -I"$project_dir/firmware/components/pxa_render_accel/include" \
+    "$test_dir/pixels_test.cc" "$test_dir/../src/espp4_a_pixels.cc" \
+    "$project_dir/firmware/components/pxa_render_accel/pixels.c" -o "$test_build/pixels_test"
+"$test_build/pixels_test"
 "${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     -I"$test_dir/../include" -I"$project_dir/firmware/components/pxa_board_common/include" \
@@ -31,9 +39,14 @@ mkdir -p "$test_build"
 "$test_build/touch_test"
 "${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
-    -I"$test_dir/sdio_stubs" "$test_dir/sdio_test.cc" \
+    -pthread -I"$test_dir/../include" -I"$test_dir/sdio_stubs" "$test_dir/sdio_test.cc" \
     "$test_dir/../src/espp4_a_sdio.cc" -o "$test_build/sdio_test"
 "$test_build/sdio_test"
+"${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
+    -fsanitize=address,undefined -fno-omit-frame-pointer \
+    -I"$test_dir/sdio_stubs" -I"$test_dir/../include" \
+    "$test_dir/sd_test.cc" "$test_dir/../src/espp4_a_sd.cc" -o "$test_build/sd_test"
+"$test_build/sd_test"
 "${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     -I"$test_dir/../include" "$test_dir/camera_buffers_test.cc" \

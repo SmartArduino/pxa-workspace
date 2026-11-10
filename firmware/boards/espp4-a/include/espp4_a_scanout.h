@@ -25,6 +25,12 @@ public:
     }
     Stats TakeStats() { const auto result = stats_; stats_ = {}; return result; }
     uint32_t Fence() const { return epoch_ + 2; }
+    // At the first future EOF the driver has switched to the submitted
+    // buffer. The other native buffer is reusable while this one scans;
+    // frame statistics/captures still wait for its second EOF via Timestamp.
+    bool Latched(uint32_t completion_fence) const {
+        return int32_t(epoch_ - (completion_fence - 1)) >= 0;
+    }
     bool Timestamp(uint32_t fence, uint64_t observed_us, uint64_t& completed_us) const {
         if (int32_t(epoch_ - fence) < 0) return false;
         // A long task stall can overwrite the ring. Use the latest actual EOF

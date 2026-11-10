@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "espp4_a_surface.h"
+#include "espp4_a_pixels.h"
 #include <algorithm>
 #include <cstring>
 #include <array>
@@ -8,6 +9,63 @@
 #include <pxa_board_common/surface_rgb565_rows.h>
 namespace espp4_a {
 using PixelPair = uint32_t __attribute__((may_alias));
+bool IsOpaqueSurface(const pxa_esp_surface_frame_t& frame) {
+    return frame.visible && frame.pixels && frame.width && frame.height &&
+        frame.format == PXA_SURFACE_FORMAT_RGB565 && !frame.opaque_ui_region_count &&
+        frame.stride_bytes >= uint32_t(frame.width) * 2 && !(frame.stride_bytes % 2) &&
+        (frame.suppress_guest_alpha || !frame.ui_alpha_plane.visible) &&
+        !frame.system_alpha_plane.visible;
+}
+
+bool UniformBackground(const uint16_t* pixels, size_t count, uint16_t& color) {
+    if (!pixels || !count) return false;
+    const uint16_t first = pixels[0];
+    for (size_t i = 1; i < count; ++i) if (pixels[i] != first) return false;
+    color = first;
+    return true;
+}
+
+bool CoversDisplayOpaque(const pxa_esp_surface_frame_t& frame, int width, int height) {
+    if (width <= 0 || height <= 0 || !IsOpaqueSurface(frame) || frame.x || frame.y) return false;
+    const int scale = pxa_surface_fit_scale(frame.width, frame.height, width, height);
+    return scale && frame.width * scale == width && frame.height * scale == height;
+}
+
+// Full opaque 2x frames need no retained LVGL pixels. Read two aligned source
+// pixels together and write both expanded scanlines, avoiding a second pass
+// over PSRAM and byte loads for every individual source pixel.
+static bool ComposeOpaque2x(const pxa_esp_surface_frame_t& frame, uint16_t* pixels,
+                            int width, int height) {
+    if (frame.width * 2 != width || frame.height * 2 != height ||
+        (reinterpret_cast<uintptr_t>(pixels) & 3u) ||
+        (reinterpret_cast<uintptr_t>(frame.pixels) & 1u) ||
+        !CoversDisplayOpaque(frame, width, height)) return false;
+    for (unsigned y = 0; y < frame.height; ++y) {
+        const auto* source = frame.pixels + size_t(y) * frame.stride_bytes;
+        auto* first = reinterpret_cast<PixelPair*>(pixels + size_t(y * 2) * width);
+        auto* second = reinterpret_cast<PixelPair*>(pixels + size_t(y * 2 + 1) * width);
+        unsigned remaining = frame.width;
+        const auto single = [&] {
+            uint16_t color; std::memcpy(&color, source, 2);
+            const uint32_t pair = uint32_t(color) * UINT32_C(0x00010001);
+            *first++ = pair; *second++ = pair;
+            source += 2; --remaining;
+        };
+        if (reinterpret_cast<uintptr_t>(source) & 3u) single();
+        const auto* pairs = reinterpret_cast<const PixelPair*>(source);
+        while (remaining >= 2) {
+            const uint32_t colors = *pairs++;
+            const uint32_t low = (colors & 0xffffu) * UINT32_C(0x00010001);
+            const uint32_t high = (colors >> 16) * UINT32_C(0x00010001);
+            first[0] = second[0] = low;
+            first[1] = second[1] = high;
+            first += 2; second += 2; remaining -= 2;
+        }
+        source = reinterpret_cast<const uint8_t*>(pairs);
+        if (remaining) single();
+    }
+    return true;
+}
 inline uint16_t BlendArgb(uint16_t background, uint32_t argb) {
     const unsigned alpha = argb >> 24;
     if (!alpha) return background;
@@ -121,12 +179,8 @@ static bool ComposeRgbRows(const pxa_esp_surface_frame_t& frame, uint16_t* pixel
                 std::memcpy(destination, source + size_t(first-origin_x)*2, size_t(last-first)*2);
             } else if (scale == 2 && !((first-origin_x)&1) && !((last-first)&1) &&
                        !(reinterpret_cast<uintptr_t>(destination)&3u)) {
-                auto* pairs = reinterpret_cast<PixelPair*>(destination);
                 source += size_t((first-origin_x)/2)*2;
-                for (int pair=0; pair<(last-first)/2; ++pair) {
-                    uint16_t color; std::memcpy(&color,source+pair*2,2);
-                    pairs[pair] = uint32_t(color) * UINT32_C(0x00010001);
-                }
+                espp4_a_expand_rgb565(destination, source, (last-first)/2, 2);
             } else for (int column=first; column<last;) {
                 const int offset = column-origin_x;
                 const int count = std::min(scale-offset%scale, last-column);
@@ -160,6 +214,8 @@ void Compose(const pxa_esp_surface_frame_t& frame, uint16_t* pixels,
         stride < size_t(width) || frame.stride_bytes < frame.width * bpp ||
         (frame.format != PXA_SURFACE_FORMAT_RGB565 &&
          frame.format != PXA_SURFACE_FORMAT_ARGB8888_PREMULTIPLIED)) return;
+    if (!tile_x && !tile_y && width == display_width && height == display_height &&
+        stride == size_t(width) && ComposeOpaque2x(frame, pixels, width, height)) return;
     const int scale = std::max(1, int(pxa_surface_fit_scale(frame.width, frame.height, display_width, display_height)));
     int origin_x = frame.x, origin_y = frame.y;
     if (!origin_x && !origin_y && (frame.width * scale < display_width || frame.height * scale < display_height)) {

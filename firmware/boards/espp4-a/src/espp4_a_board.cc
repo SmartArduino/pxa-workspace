@@ -2,6 +2,8 @@
 #include "pxa_board.h"
 #include "espp4_a_panel.h"
 #include "espp4_a_audio.h"
+#include "espp4_a_pixels.h"
+#include "espp4_a_sd.h"
 #include "espp4_a_camera.h"
 #include "espp4_a_images.h"
 #include "espp4_a_surface.h"
@@ -104,6 +106,8 @@ private:
     void Status();
     void CollectCompletions();
     void WaitScan();
+    void Submit(unsigned buffer, const pxa_esp_surface_frame_t& frame);
+    bool PresentOpaqueSurface();
     void ApplyBacklight();
     static bool IRAM_ATTR FrameComplete(esp_lcd_panel_handle_t, esp_lcd_dpi_panel_event_data_t*, void*);
     static void Flush(lv_display_t*, const lv_area_t*, uint8_t*);
@@ -113,6 +117,9 @@ private:
     esp_lcd_touch_handle_t touch_ = nullptr;
     esp_lcd_panel_io_handle_t touch_io_ = nullptr;
     uint8_t touch_slots_ = 0;
+    std::atomic<uint32_t> touch_pending_{1}, touch_irq_count_{0}, touch_irq_observed_{0};
+    espp4_a::TouchSchedule touch_schedule_;
+    uint32_t touch_reads_ = 0, touch_errors_ = 0;
     uint32_t touch_success_ms_ = 0;
     espp4_a::TouchReport physical_{};
     esp_lv_decoder_handle_t decoder_ = nullptr;
@@ -129,7 +136,7 @@ private:
     };
     std::array<Presentation, 4> pending_{};
     unsigned pending_head_ = 0, pending_count_ = 0;
-    unsigned front_ = 0;
+    unsigned front_ = 0, scanout_buffer_ = 0;
     uint64_t completed_ = 0, completed_us_ = 0;
     bool frame_valid_ = false, capture_refresh_ = false;
     std::atomic<bool> backlight_ready_{false};
@@ -137,6 +144,17 @@ private:
     unsigned missed_surfaces_ = 0;
     espp4_a::RotationEngine rotation_engine_;
     uint64_t compose_us_ = 0, rotation_us_ = 0;
+    uint64_t acquire_us_ = 0, submit_us_ = 0, scan_wait_us_ = 0;
+    uint64_t paint_started_us_ = 0, paint_us_ = 0;
+    uint32_t painted_frames_ = 0;
+    uint32_t direct_frames_ = 0;
+    uint32_t direct_native_frames_ = 0, direct_backdrop_frames_ = 0;
+    uint32_t lvgl_revision_ = 0, painted_revision_ = UINT32_MAX;
+    uint16_t backdrop_color_ = 0;
+    bool backdrop_uniform_ = false;
+    uint64_t lvgl_timer_us_ = 0, input_poll_us_ = 0;
+    uint32_t ui_passes_ = 0, lvgl_timer_max_us_ = 0;
+    uint32_t direct_acquire_misses_ = 0, direct_coverage_misses_ = 0;
     uint32_t composed_frames_ = 0, rotated_frames_ = 0;
     uint8_t compose_masks_ = 0, compose_guest_plane_ = 0, compose_system_plane_ = 0;
     std::atomic<uint32_t> light_state_{UINT32_MAX};
@@ -194,11 +212,19 @@ bool Board::Initialize() {
     if (esp_lcd_dpi_panel_register_event_callbacks(panel_, &callbacks, this) != ESP_OK ||
         esp_lcd_panel_init(panel_) != ESP_OK) return false;
     lv_init();
+#if PXA_ESPP4_PIXEL_SELFTEST
+    if (!espp4_a_pixels_device_test()) return false;
+#endif
     lv_tick_set_cb([]() -> uint32_t { return esp_timer_get_time() / 1000; });
     display_ = lv_display_create(kWidth, kHeight);
     if (!display_) return false;
     lv_display_set_color_format(display_, LV_COLOR_FORMAT_RGB565);
     lv_display_set_user_data(display_, this);
+    lv_display_add_event_cb(display_, [](lv_event_t* event) {
+        // Public invalidation notifications cover dialogs, status changes,
+        // animations and app transitions, including changes before a flush.
+        ++static_cast<Board*>(lv_event_get_user_data(event))->lvgl_revision_;
+    }, LV_EVENT_INVALIDATE_AREA, this);
     // LVGL redraws the complete trusted UI before guest composition. Render
     // directly into the two DMA buffers, starting away from scanout buffer 0.
     // FULL mode is required: a retained partial background would contain guests.
@@ -215,6 +241,9 @@ bool Board::Initialize() {
     audio_ready_ = audio_.Initialize();
     if (!audio_ready_) ESP_LOGW(kTag, "Audio unavailable");
     if (!Espp4AInitializeCamera()) ESP_LOGW(kTag, "Camera worker unavailable");
+#if PXA_ESPP4_PPA_FILL
+    pxa_esp_surface_set_fill_bands_callback(espp4_a_fill_bands, nullptr);
+#endif
     pxa_esp_surface_set_frame_ready_callback([](void* c) {
         auto* board = static_cast<Board*>(c);
         board->surface_dirty_.store(true);
@@ -249,14 +278,23 @@ bool Board::Initialize() {
 
 void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
     auto* b = static_cast<Board*>(lv_display_get_user_data(display));
+    const int64_t flush_started = esp_timer_get_time();
+    if (b->paint_started_us_) {
+        b->paint_us_ += flush_started - b->paint_started_us_;
+        ++b->painted_frames_; b->paint_started_us_ = 0;
+    }
     b->CollectCompletions();
     auto* output = reinterpret_cast<uint16_t*>(data);
     unsigned next;
     const uint8_t rotation = b->rotation_;
+    while (b->pending_count_ == b->pending_.size()) {
+        b->WaitScan(); b->CollectCompletions();
+    }
     if (rotation) {
-        // Logical LVGL pixels are separate from physical DMA scanout.
-        while (b->pending_count_) { b->WaitScan(); b->CollectCompletions(); }
-        next = b->front_ ^ 1u;
+        // The last Flush waited until scanout switched buffers. Compose and
+        // rotate into the released native buffer while the other one scans.
+        // Completed-frame bookkeeping is independent and remains two EOFs.
+        next = b->scanout_buffer_ ^ 1u;
     } else {
         next = output == b->frames_[0] ? 0 : 1;
         if (output != b->frames_[next] || b->pending_count_ == b->pending_.size()) abort();
@@ -270,7 +308,9 @@ void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
     }
 #endif
     pxa_esp_surface_frame_t frame{};
+    const int64_t acquire_started = esp_timer_get_time();
     const bool acquired = pxa_esp_surface_acquire_latest(&frame);
+    b->acquire_us_ += esp_timer_get_time() - acquire_started;
     if (acquired) {
         b->compose_masks_ = frame.opaque_ui_region_count;
         b->compose_guest_plane_ = frame.ui_alpha_plane.visible;
@@ -278,6 +318,9 @@ void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
     }
     if (!acquired && pxa_esp_surface_has_visible_surface()) ++b->missed_surfaces_;
     const int64_t compose_start = esp_timer_get_time();
+    b->painted_revision_ = b->lvgl_revision_;
+    b->backdrop_uniform_ = acquired && espp4_a::IsOpaqueSurface(frame) &&
+        espp4_a::UniformBackground(output, size_t(width) * height, b->backdrop_color_);
     if (acquired) espp4_a::Compose(frame, output, 0, 0, width, height, width, width, height);
     if (pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY))
         pxa_board_performance_draw_rgb565(output, width, height, width,
@@ -289,30 +332,104 @@ void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
         b->rotation_engine_.Rotate(output, b->frames_[next], kWidth, kHeight, rotation);
         b->rotation_us_ += esp_timer_get_time() - compose_end;
         ++b->rotated_frames_;
-        output = b->frames_[next];
     }
-    const uint64_t frame_id = acquired ? frame.frame_id : 0;
-    const uint64_t input_us = acquired ? frame.input_timestamp_us : 0;
-    const uint32_t raster_us = acquired ? frame.raster_ready_tick_us : 0;
     if (acquired) pxa_esp_surface_release_frame(frame.lease);
-    const auto result = esp_lcd_panel_draw_bitmap(b->panel_, 0, 0, kWidth, kHeight, output);
+    b->Submit(next, frame);
+    lv_display_flush_ready(display);
+}
+
+// Both LVGL and the opaque fullscreen path retain identical DMA ownership,
+// complete-scan timestamps, input latency accounting and screenshot fences.
+void Board::Submit(unsigned next, const pxa_esp_surface_frame_t& frame) {
+    const int64_t submit_started = esp_timer_get_time();
+    const auto result = esp_lcd_panel_draw_bitmap(panel_, 0, 0, kWidth, kHeight, frames_[next]);
+    const int64_t submitted = esp_timer_get_time();
+    submit_us_ += submitted - submit_started;
     if (result != ESP_OK) {
         ESP_LOGE(kTag, "DSI presentation failed: %s", esp_err_to_name(result));
         abort(); // Buffer ownership is unknown after a failed presentation.
     }
-    portENTER_CRITICAL(&b->scan_lock_);
-    const uint32_t fence = b->scan_clock_.Fence();
-    portEXIT_CRITICAL(&b->scan_lock_);
-    b->pending_[(b->pending_head_ + b->pending_count_++) % b->pending_.size()] =
-        {frame_id, input_us, raster_us, fence, next, b->capture_refresh_};
+    portENTER_CRITICAL(&scan_lock_);
+    const uint32_t fence = scan_clock_.Fence();
+    portEXIT_CRITICAL(&scan_lock_);
+    pending_[(pending_head_ + pending_count_++) % pending_.size()] =
+        {frame.frame_id, frame.input_timestamp_us, frame.raster_ready_tick_us,
+         fence, next, capture_refresh_};
     // Follow esp_lvgl_port's DSI FULL-buffer ownership handoff: the first
     // future EOF releases the old buffer, so LVGL can draw the next frame.
     // Count this submission only at its later complete-scan fence.
-    while (xSemaphoreTake(b->frame_done_, 0) == pdTRUE) {}
-    b->WaitScan();
-    b->CollectCompletions();
-    b->ApplyBacklight();
-    lv_display_flush_ready(display);
+    for (;;) {
+        portENTER_CRITICAL(&scan_lock_);
+        const bool latched = scan_clock_.Latched(fence);
+        portEXIT_CRITICAL(&scan_lock_);
+        if (latched) break;
+        WaitScan();
+    }
+    scanout_buffer_ = next;
+    scan_wait_us_ += esp_timer_get_time() - submitted;
+    CollectCompletions();
+    ApplyBacklight();
+}
+
+bool Board::PresentOpaqueSurface() {
+    // Keep LVGL processing inputs and trusted UI. Skip painting only after a
+    // completed clean LVGL frame; any later invalidation forces normal paint.
+    const uint8_t rotation = rotation_;
+    if ((rotation && !rotation_pixels_) || painted_revision_ != lvgl_revision_)
+        return false;
+    CollectCompletions();
+    while (pending_count_ == pending_.size()) { WaitScan(); CollectCompletions(); }
+    pxa_esp_surface_frame_t frame{};
+    const int64_t acquire_started = esp_timer_get_time();
+    (void)pxa_esp_surface_prepare_latest_raster();
+    // This alpha-aware acquisition atomically checks the fresh-frame resume
+    // barrier and rejects incomplete modal snapshots. The coverage predicate
+    // below additionally requires an empty visible plane stack.
+    if (!pxa_esp_surface_acquire_prepared_with_alpha(&frame)) {
+        ++direct_acquire_misses_; return false;
+    }
+    const int64_t acquired = esp_timer_get_time();
+    const int width = LogicalWidth(), height = LogicalHeight();
+    const bool covers_display = espp4_a::CoversDisplayOpaque(frame, width, height);
+    if (!covers_display && (!backdrop_uniform_ || !espp4_a::IsOpaqueSurface(frame))) {
+        if (++direct_coverage_misses_ == 1)
+            ESP_LOGI(kTag, "Opaque fallback: source=%ux%u stride=%lu xy=%ld,%ld format=%u masks=%u alpha=%u/%u target=%dx%d",
+                unsigned(frame.width), unsigned(frame.height), static_cast<unsigned long>(frame.stride_bytes),
+                static_cast<long>(frame.x), static_cast<long>(frame.y), unsigned(frame.format),
+                unsigned(frame.opaque_ui_region_count), unsigned(frame.ui_alpha_plane.visible),
+                unsigned(frame.system_alpha_plane.visible), width, height);
+        pxa_esp_surface_release_frame(frame.lease);
+        return false;
+    }
+    const unsigned next = scanout_buffer_ ^ 1u;
+    auto* output = rotation ? rotation_pixels_ : frames_[next];
+    acquire_us_ += acquired - acquire_started;
+    if (!covers_display) {
+        espp4_a_fill_rgb565(output, uint32_t(width) * height, backdrop_color_);
+        ++direct_backdrop_frames_;
+    }
+    espp4_a::Compose(frame, output, 0, 0, width, height, width, width, height);
+    if (pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY))
+        pxa_board_performance_draw_rgb565(output, width, height, width,
+            0, 0, width, height, false);
+    const int64_t composed = esp_timer_get_time();
+    compose_us_ += composed - acquired; ++composed_frames_;
+    if (rotation) {
+        rotation_engine_.Rotate(output, frames_[next], kWidth, kHeight, rotation);
+        rotation_us_ += esp_timer_get_time() - composed; ++rotated_frames_;
+    } else ++direct_native_frames_;
+    ++direct_frames_;
+    compose_masks_ = compose_guest_plane_ = compose_system_plane_ = 0;
+    pxa_esp_surface_release_frame(frame.lease);
+    Submit(next, frame);
+    if (!rotation) {
+        // Submit waited for the DMA latch. Only the old scanout buffer is
+        // writable now. Rebind LVGL through its public buffer API so its next
+        // FULL repaint also starts in that released buffer, including captures.
+        lv_display_set_buffers(display_, frames_[next ^ 1u], frames_[next], kBytes,
+            LV_DISPLAY_RENDER_MODE_FULL);
+    }
+    return true;
 }
 
 bool IRAM_ATTR Board::FrameComplete(esp_lcd_panel_handle_t, esp_lcd_dpi_panel_event_data_t*, void* c) {
@@ -396,10 +513,23 @@ bool Board::Touch() {
     if (esp_lcd_new_panel_io_i2c(bus, &io_config, &touch_io_) != ESP_OK) return false;
     esp_lcd_touch_config_t touch_config{};
     touch_config.x_max = kWidth; touch_config.y_max = kHeight;
-    touch_config.rst_gpio_num = GPIO_NUM_NC; touch_config.int_gpio_num = GPIO_NUM_NC;
+    touch_config.rst_gpio_num = GPIO_NUM_NC; touch_config.int_gpio_num = GPIO_NUM_52;
+    touch_config.user_data = this;
+    touch_config.interrupt_callback = [](esp_lcd_touch_handle_t touch) {
+        auto* board = static_cast<Board*>(touch->config.user_data);
+        board->touch_pending_.store(1, std::memory_order_relaxed);
+        board->touch_irq_observed_.store(1, std::memory_order_relaxed);
+        board->touch_irq_count_.fetch_add(1, std::memory_order_relaxed);
+        if (board->ui_task_) {
+            BaseType_t woken = pdFALSE;
+            vTaskNotifyGiveFromISR(board->ui_task_, &woken);
+            if (woken) portYIELD_FROM_ISR();
+        }
+    };
     if (esp_lcd_touch_new_i2c_st7123(touch_io_, &touch_config, &touch_) != ESP_OK ||
         esp_lcd_panel_io_rx_param(touch_io_, 9, &touch_slots_, 1) != ESP_OK ||
         !touch_slots_ || touch_slots_ > espp4_a::kTouchPointers) return false;
+    if (gpio_set_pull_mode(GPIO_NUM_52, GPIO_PULLUP_ONLY) != ESP_OK) return false;
     touch_success_ms_ = lv_tick_get();
     ESP_LOGI(kTag, "ST7123 touch ready at I2C1 0x55: %u independent fingers", touch_slots_);
     return true;
@@ -435,8 +565,19 @@ void Board::CancelPointers() {
 }
 
 void Board::Sd() {
+    // Q1 is a high-side P-MOSFET: high switches VDD33 off. Discharge the
+    // card through the CMD/D0-D3 pull-ups, then release its signals.
+    // Merely resetting P4 does not reset a card left in a failed transfer.
     const gpio_config_t power = {.pin_bit_mask = 1ULL << 4, .mode = GPIO_MODE_OUTPUT};
-    if (gpio_config(&power) != ESP_OK || gpio_set_level(GPIO_NUM_4, 0) != ESP_OK) return;
+    if (gpio_set_level(GPIO_NUM_4, 1) != ESP_OK || gpio_config(&power) != ESP_OK) return;
+    constexpr uint64_t signals = (1ULL << 39) | (1ULL << 40) | (1ULL << 41) |
+        (1ULL << 42) | (1ULL << 43) | (1ULL << 44);
+    const gpio_config_t discharge = {.pin_bit_mask = signals, .mode = GPIO_MODE_OUTPUT};
+    if (gpio_config(&discharge) != ESP_OK) return;
+    for (int pin = 39; pin <= 44; ++pin) gpio_set_level(gpio_num_t(pin), 0);
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    const gpio_config_t release = {.pin_bit_mask = signals, .mode = GPIO_MODE_INPUT};
+    if (gpio_config(&release) != ESP_OK || gpio_set_level(GPIO_NUM_4, 0) != ESP_OK) return;
     vTaskDelay(pdMS_TO_TICKS(50));
     const gpio_config_t detect = {.pin_bit_mask = 1ULL << 45, .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE};
@@ -444,10 +585,13 @@ void Board::Sd() {
         ESP_LOGI(kTag, "No SD card inserted"); return;
     }
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    host.slot = SDMMC_HOST_SLOT_0; host.max_freq_khz = 5000;
-    host.flags = SDMMC_HOST_FLAG_1BIT | SDMMC_HOST_FLAG_DEINIT_ARG;
+    // Four-bit multi-block transfers are retained. Higher clocks currently
+    // fail the card's write/CRC tests on this board; use the verified timing.
+    host.slot = SDMMC_HOST_SLOT_0; host.max_freq_khz = 2500;
+    host.do_transaction = espp4_a_sd_transaction;
+    host.flags = SDMMC_HOST_FLAG_1BIT | SDMMC_HOST_FLAG_4BIT | SDMMC_HOST_FLAG_DEINIT_ARG;
     sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
-    slot.width = 1; slot.clk = GPIO_NUM_43; slot.cmd = GPIO_NUM_44;
+    slot.width = 4; slot.clk = GPIO_NUM_43; slot.cmd = GPIO_NUM_44;
     slot.d0 = GPIO_NUM_39; slot.d1 = GPIO_NUM_40; slot.d2 = GPIO_NUM_41; slot.d3 = GPIO_NUM_42;
     slot.cd = GPIO_NUM_45; slot.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
     const esp_vfs_fat_sdmmc_mount_config_t mount = {.format_if_mount_failed = false,
@@ -458,12 +602,18 @@ void Board::Sd() {
         sdmmc_card_print_info(stdout, card);
         const auto registered = pxa_board::RegisterSdVolume(CONFIG_PXA_MOUNT_POINT "/sdcard", card);
         ESP_LOGI(kTag, "SDMMC0 volume: %ld", long(registered));
+        ESP_LOGI(kTag, "TF bus: %u-bit, %d kHz, external 3.3 V", 1u << card->log_bus_width, card->max_freq_khz);
+#ifdef PXA_ESPP4_SD_SELFTEST
+        espp4_a_sd_device_test(CONFIG_PXA_MOUNT_POINT "/sdcard");
+#endif
     } else ESP_LOGW(kTag, "SD card unavailable (%s); contents preserved", esp_err_to_name(result));
 }
 
 bool Board::SetRotation(uint8_t rotation) {
     if (rotation > 3) return false;
     if (rotation == rotation_) return true;
+    backdrop_uniform_ = false;
+    painted_revision_ = UINT32_MAX;
     if (rotation && !rotation_pixels_) {
         rotation_pixels_ = static_cast<uint16_t*>(heap_caps_aligned_alloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE, kBytes,
             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -495,11 +645,26 @@ bool Board::Wake() {
 }
 void Board::Input() {
     const uint32_t now = lv_tick_get();
-    if (touch_ && touch_slots_) {
+    if (touch_pending_.exchange(0, std::memory_order_relaxed)) touch_schedule_.Request();
+    if (touch_ && touch_slots_ && touch_schedule_.Due(now, pressed_, !gpio_get_level(GPIO_NUM_52),
+            touch_irq_observed_.load(std::memory_order_relaxed))) {
+        touch_schedule_.Begin(now);
+        ++touch_reads_;
         espp4_a::TouchReport report;
         const bool ok = espp4_a::ReadTouch([this](int reg, uint8_t* p, size_t n) {
-            return esp_lcd_panel_io_rx_param(touch_io_, reg, p, n) == ESP_OK;
+            const auto status = esp_lcd_panel_io_rx_param(touch_io_, reg, p, n);
+            if (status != ESP_OK) {
+                static int64_t last_error_us;
+                const int64_t now_us = esp_timer_get_time();
+                if (now_us - last_error_us >= 1000000) {
+                    last_error_us = now_us;
+                    ESP_LOGW(kTag, "Touch I2C error: %s", esp_err_to_name(status));
+                }
+            }
+            return status == ESP_OK;
         }, touch_slots_, kWidth, kHeight, report);
+        touch_schedule_.Complete(ok);
+        if (!ok) ++touch_errors_;
         if (ok) {
             for (auto& point : report) {
                 uint32_t x, y;
@@ -532,10 +697,11 @@ void Board::Input() {
                 }
             }
             physical_ = report; pressed_ = any;
-        } else if (pressed_ && now - touch_success_ms_ >= 150) {
-            CancelPointers(); physical_ = {}; pressed_ = false; touch_blocked_ = true;
-            ESP_LOGW(kTag, "Touch read timed out; all fingers cancelled until release");
         }
+    }
+    if (touch_schedule_.Failed() && pressed_ && now - touch_success_ms_ >= 150) {
+        CancelPointers(); physical_ = {}; pressed_ = false; touch_blocked_ = true;
+        ESP_LOGW(kTag, "Touch read timed out; all fingers cancelled until release");
     }
     const bool down = gpio_get_level(GPIO_NUM_35) == 0;
     if (down && !button_down_) {
@@ -564,13 +730,18 @@ void Board::Loop() {
     for (;;) {
         Lock(0); lv_lock();
         CollectCompletions();
+        const int64_t input_started = esp_timer_get_time();
         Input();
-        if (surface_dirty_.exchange(false)) {
+        input_poll_us_ += esp_timer_get_time() - input_started;
+        ++ui_passes_;
+        if (surface_dirty_.exchange(false) && !PresentOpaqueSurface()) {
             lv_obj_invalidate(lv_display_get_screen_active(display_));
             // A completed guest frame must not wait for a second, unrelated
             // LVGL refresh period. Keep the normal trusted-UI composition and
             // DMA ownership; only advance its pending refresh to this wake.
+            paint_started_us_ = esp_timer_get_time();
             lv_refr_now(display_);
+            paint_started_us_ = 0;
         }
         if (lv_tick_elaps(status_tick) >= 1000) {
             status_tick = lv_tick_get(); Status(); (void)pxa_board_performance_refresh();
@@ -585,6 +756,22 @@ void Board::Loop() {
                 static_cast<unsigned long>(stats.max_interval_us), missed_surfaces_, unsigned(uxTaskGetStackHighWaterMark(nullptr)));
             missed_surfaces_ = 0;
             const auto rotations = rotation_engine_.TakeStats();
+            ESP_LOGI(kTag, "Display stages: paint=%llu acquire=%llu compose=%llu rotate=%llu submit=%llu scan_wait=%llu us direct=%lu",
+                static_cast<unsigned long long>(painted_frames_ ? paint_us_ / painted_frames_ : 0),
+                static_cast<unsigned long long>(composed_frames_ ? acquire_us_ / composed_frames_ : 0),
+                static_cast<unsigned long long>(composed_frames_ ? compose_us_ / composed_frames_ : 0),
+                static_cast<unsigned long long>(rotated_frames_ ? rotation_us_ / rotated_frames_ : 0),
+                static_cast<unsigned long long>(composed_frames_ ? submit_us_ / composed_frames_ : 0),
+                static_cast<unsigned long long>(composed_frames_ ? scan_wait_us_ / composed_frames_ : 0),
+                static_cast<unsigned long>(direct_frames_));
+            ESP_LOGI(kTag, "Opaque fallback counts: acquire=%lu coverage=%lu",
+                static_cast<unsigned long>(direct_acquire_misses_), static_cast<unsigned long>(direct_coverage_misses_));
+            ESP_LOGI(kTag, "UI work: passes=%lu input_total_us=%llu lvgl_total_us=%llu lvgl_max_us=%lu native_direct=%lu backdrop_direct=%lu",
+                (unsigned long)ui_passes_, (unsigned long long)input_poll_us_,
+                (unsigned long long)lvgl_timer_us_, (unsigned long)lvgl_timer_max_us_,
+                (unsigned long)direct_native_frames_, (unsigned long)direct_backdrop_frames_);
+            ESP_LOGI(kTag, "Touch work: irq=%lu reads=%lu errors=%lu",
+                (unsigned long)touch_irq_count_.exchange(0), (unsigned long)touch_reads_, (unsigned long)touch_errors_);
             ESP_LOGI(kTag, "Compose: frames=%lu mean_us=%llu rotation_mean_us=%llu ppa=%lu software=%lu masks=%u guest_plane=%u system_plane=%u",
                 static_cast<unsigned long>(composed_frames_),
                 static_cast<unsigned long long>(composed_frames_ ? compose_us_ / composed_frames_ : 0),
@@ -592,8 +779,18 @@ void Board::Loop() {
                 static_cast<unsigned long>(rotations.hardware), static_cast<unsigned long>(rotations.software),
                 unsigned(compose_masks_), unsigned(compose_guest_plane_), unsigned(compose_system_plane_));
             compose_us_ = rotation_us_ = 0; composed_frames_ = rotated_frames_ = 0;
+            acquire_us_ = submit_us_ = scan_wait_us_ = paint_us_ = 0; painted_frames_ = 0;
+            direct_frames_ = 0;
+            direct_native_frames_ = direct_backdrop_frames_ = 0;
+            input_poll_us_ = lvgl_timer_us_ = 0; ui_passes_ = lvgl_timer_max_us_ = 0;
+            touch_reads_ = touch_errors_ = 0;
+            direct_acquire_misses_ = direct_coverage_misses_ = 0;
         }
+        const int64_t timer_started = esp_timer_get_time();
         const uint32_t delay = lv_timer_handler();
+        const uint32_t timer_us = esp_timer_get_time() - timer_started;
+        lvgl_timer_us_ += timer_us;
+        lvgl_timer_max_us_ = std::max(lvgl_timer_max_us_, timer_us);
         lv_unlock(); Unlock();
         (void)ulTaskNotifyTake(pdTRUE,
             pdMS_TO_TICKS(std::max<uint32_t>(1, std::min<uint32_t>(delay, 10))));

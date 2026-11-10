@@ -7,11 +7,15 @@ int main() {
     espp4_a::ScanoutClock clock;
     uint64_t time = 0;
     const auto first = clock.Fence();
+    assert(!clock.Latched(first));
     assert(!clock.Timestamp(first, 100, time));
     clock.Complete(100);
+    assert(clock.Latched(first)); // Old buffer reusable during the new scan.
     assert(!clock.Timestamp(first, 150, time)); // Latched, not fully scanned.
     const auto second = clock.Fence();
+    assert(!clock.Latched(second));
     clock.Complete(200);
+    assert(clock.Latched(second));
     assert(clock.Timestamp(first, 250, time) && time == 200);
     assert(!clock.Timestamp(second, 250, time));
     clock.Complete(300);
@@ -23,7 +27,9 @@ int main() {
     // DMA event counter and ISR microsecond timestamp wrap independently.
     espp4_a::ScanoutClock wrap(UINT32_MAX - 1);
     const auto fence = wrap.Fence();
+    assert(!wrap.Latched(fence));
     wrap.Complete(UINT32_MAX - 10);
+    assert(wrap.Latched(fence));
     assert(!wrap.Timestamp(fence, UINT64_C(0x100000020), time));
     wrap.Complete(16);
     assert(wrap.Timestamp(fence, UINT64_C(0x100000020), time) && time == UINT64_C(0x100000010));

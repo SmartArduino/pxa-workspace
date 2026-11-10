@@ -2,16 +2,24 @@
 #include <sdmmc_cmd.h>
 #include <esp_heap_caps.h>
 #include <cstring>
+#include "espp4_a_sd_bus.h"
+#ifdef ESP_PLATFORM
+#include <driver/gpio.h>
+#endif
 
 // Current IDF requires cache-aligned DMA buffers for SDIO block transfers.
 // The supplier's unchanged driver uses ordinary malloc. Adapt only the public
-// SDMMC API boundary for its Slot 1; the storage card on Slot 0 is unaffected.
+// SDMMC API boundary for its Slot 1; DMA adaptation leaves Slot 0 unchanged.
+// The protocol guard is shared with TF operations on Slot 0.
 // Byte counts, address increment/fixed-address flags and errors stay intact.
 extern "C" {
 esp_err_t __real_sdmmc_io_read_bytes(sdmmc_card_t*, uint32_t, uint32_t, void*, size_t);
 esp_err_t __real_sdmmc_io_write_bytes(sdmmc_card_t*, uint32_t, uint32_t, const void*, size_t);
 esp_err_t __real_sdmmc_io_read_blocks(sdmmc_card_t*, uint32_t, uint32_t, void*, size_t);
 esp_err_t __real_sdmmc_io_write_blocks(sdmmc_card_t*, uint32_t, uint32_t, const void*, size_t);
+esp_err_t __real_sdmmc_io_read_byte(sdmmc_card_t*, uint32_t, uint32_t, uint8_t*);
+esp_err_t __real_sdmmc_io_write_byte(sdmmc_card_t*, uint32_t, uint32_t, uint8_t, uint8_t*);
+esp_err_t __real_sdmmc_card_init(const sdmmc_host_t*, sdmmc_card_t*);
 }
 namespace {
 template<bool Write, class Transfer>
@@ -20,6 +28,7 @@ esp_err_t TransferRadio(sdmmc_card_t* card, uint32_t function, uint32_t address,
     if (!card || !data || !size) return ESP_ERR_INVALID_ARG;
     const size_t aligned_size = (size + 3u) & ~size_t(3);
     if (aligned_size < size) return ESP_ERR_INVALID_SIZE;
+    espp4_a::SdBusGuard guard;
     if (card->host.slot != 1 ||
         card->host.check_buffer_alignment(card->host.slot, data, aligned_size))
         return transfer(card, function, address, data, size);
@@ -45,6 +54,40 @@ esp_err_t TransferRadio(sdmmc_card_t* card, uint32_t function, uint32_t address,
     heap_caps_free(bounce);
     return result;
 }
+}
+extern "C" esp_err_t __wrap_sdmmc_io_read_byte(sdmmc_card_t* c, uint32_t f, uint32_t a, uint8_t* p) {
+    espp4_a::SdBusGuard guard;
+    return __real_sdmmc_io_read_byte(c, f, a, p);
+}
+extern "C" esp_err_t __wrap_sdmmc_io_write_byte(sdmmc_card_t* c, uint32_t f, uint32_t a, uint8_t v, uint8_t* p) {
+    espp4_a::SdBusGuard guard;
+    return __real_sdmmc_io_write_byte(c, f, a, v, p);
+}
+extern "C" esp_err_t __wrap_sdmmc_card_init(const sdmmc_host_t* host, sdmmc_card_t* card) {
+    espp4_a::SdBusGuard guard;
+#ifdef ESP_PLATFORM
+    // IDF selects maximum drive for these IOMUX pins. On this board/card the
+    // default produces CRC errors even at 2.5 MHz; level 1 passes bulk writes.
+    // Do this after slot initialization, before the card or filesystem uses it.
+    if (host && host->slot == 0) {
+        for (int pin = 39; pin <= 44; ++pin) {
+            const auto result = gpio_set_drive_capability(gpio_num_t(pin), GPIO_DRIVE_CAP_1);
+            if (result != ESP_OK) return result;
+        }
+    }
+#endif
+    // The current legacy host otherwise leaves the slot frequency in INIT.
+    // It then reprograms the clock before every command, re-enabling clock
+    // gating even inside ACMD41's mandatory continuous-clock interval.
+    // Configure the probing frequency through the public host API first.
+    if (host && host->slot == 0 && host->set_card_clk && host->get_real_freq) {
+        auto result = host->set_card_clk(host->slot, SDMMC_FREQ_PROBING);
+        if (result != ESP_OK) return result;
+        int frequency = 0;
+        result = host->get_real_freq(host->slot, &frequency);
+        if (result != ESP_OK) return result;
+    }
+    return __real_sdmmc_card_init(host, card);
 }
 extern "C" esp_err_t __wrap_sdmmc_io_read_bytes(sdmmc_card_t* c, uint32_t f, uint32_t a, void* p, size_t n) {
     return TransferRadio<false>(c, f, a, p, n, __real_sdmmc_io_read_bytes);

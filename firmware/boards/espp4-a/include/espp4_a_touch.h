@@ -12,6 +12,29 @@ struct TouchContact {
 };
 using TouchReport = std::array<TouchContact, kTouchPointers>;
 
+// IRQs wake the UI immediately; active contacts retain a bounded polling
+// fallback. Idle controllers need only a health read, and NACKs back off.
+class TouchSchedule {
+public:
+    void Request() { requested_ = true; }
+    bool Due(uint32_t now, bool active, bool asserted, bool irq_observed = true) const {
+        const uint32_t elapsed = now - attempted_;
+        if (retry_ms_) return requested_ && elapsed >= retry_ms_;
+        return elapsed >= (requested_ ? 5u : active || asserted || !irq_observed ? 16u : 500u);
+    }
+    void Begin(uint32_t now) { attempted_ = now; requested_ = false; }
+    void Complete(bool success) {
+        if (success) { retry_ms_ = 0; return; }
+        requested_ = true;
+        retry_ms_ = retry_ms_ ? (retry_ms_ < 80 ? retry_ms_ * 2 : 160) : 10;
+    }
+    bool Failed() const { return retry_ms_ != 0; }
+private:
+    uint32_t attempted_ = 0;
+    uint16_t retry_ms_ = 0;
+    bool requested_ = true;
+};
+
 // ST7123 1.0.2 register layout from Espressif's Apache-2.0 driver. Register
 // 0x14 contains fixed seven-byte finger slots. Keep their indices: compacting
 // valid records loses identity when an earlier finger lifts or fingers cross.

@@ -6,6 +6,31 @@
 #include <cstdio>
 
 int main() {
+    {
+        espp4_a::TouchSchedule schedule;
+        assert(schedule.Due(1000, false, false));
+        schedule.Begin(1000); schedule.Complete(true);
+        assert(!schedule.Due(1499, false, false));
+        assert(schedule.Due(1016, false, false, false)); // Poll until IRQ wiring proves active.
+        assert(schedule.Due(1500, false, false));
+        assert(!schedule.Due(1015, true, false));
+        assert(schedule.Due(1016, true, false));
+        assert(schedule.Due(1016, false, true));
+        schedule.Request(); assert(schedule.Due(1005, false, false));
+        schedule.Begin(1005);
+        schedule.Request(); // A second IRQ during a read must survive it.
+        schedule.Complete(true); assert(schedule.Due(1010, false, false));
+        schedule.Begin(1010); schedule.Complete(false);
+        assert(schedule.Failed() && !schedule.Due(1019, true, true));
+        assert(schedule.Due(1020, false, false));
+        schedule.Begin(1020); schedule.Complete(false);
+        assert(!schedule.Due(1039, true, true) && schedule.Due(1040, true, true));
+        for (unsigned i=0;i<10;++i) {schedule.Begin(2000);schedule.Complete(false);}
+        assert(!schedule.Due(2159, true, true) && schedule.Due(2160, false, false));
+        schedule.Begin(UINT32_MAX-4); schedule.Complete(true);
+        schedule.Request(); assert(schedule.Due(0, false, false));
+        assert(!schedule.Failed());
+    }
     std::array<uint8_t, 35> bytes{};
     auto finger = [&](unsigned slot, uint16_t x, uint16_t y, bool down) {
         auto* p = bytes.data() + slot * 7;

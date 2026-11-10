@@ -6,6 +6,87 @@
 #include <vector>
 
 int main() {
+    // A letterboxed direct frame may use a fill only after the entire painted
+    // background, including its final pixel, has been proven uniform.
+    for (size_t count : {size_t(1),size_t(2),size_t(3),size_t(32),size_t(513)}) {
+        std::vector<uint16_t> background(count + 2, 0x2468);
+        uint16_t color = 0x9999;
+        assert(espp4_a::UniformBackground(background.data() + 1, count, color));
+        assert(color == 0x2468);
+        if (count == 1) continue; // Every single-pixel background is uniform.
+        for (size_t mismatch : {size_t(0), count / 2, count - 1}) {
+            background[mismatch + 1] ^= 1; color = 0x9999;
+            assert(!espp4_a::UniformBackground(background.data() + 1, count, color));
+            assert(color == 0x9999);
+            background[mismatch + 1] ^= 1;
+        }
+    }
+    {
+        uint16_t color = 0x9999;
+        assert(!espp4_a::UniformBackground(nullptr, 1, color));
+        assert(!espp4_a::UniformBackground(&color, 0, color));
+        assert(color == 0x9999);
+        constexpr unsigned sw = 320, sh = 240, dw = 480, dh = 854;
+        std::vector<uint16_t> source(sw * sh), output(dw * dh + 2, 0x2468);
+        for (size_t i = 0; i < source.size(); ++i) source[i] = uint16_t(i * 101u);
+        pxa_esp_surface_frame_t frame{};
+        frame.visible=1;frame.pixels=reinterpret_cast<const uint8_t*>(source.data());
+        frame.width=sw;frame.height=sh;frame.stride_bytes=sw*2;frame.format=PXA_SURFACE_FORMAT_RGB565;
+        assert(espp4_a::IsOpaqueSurface(frame));
+        assert(!espp4_a::CoversDisplayOpaque(frame,dw,dh));
+        espp4_a::Compose(frame,output.data()+1,0,0,dw,dh,dw,dw,dh);
+        for (unsigned y=0;y<dh;++y) for (unsigned x=0;x<dw;++x) {
+            const bool inside=x>=(dw-sw)/2 && x<(dw+sw)/2 && y>=(dh-sh)/2 && y<(dh+sh)/2;
+            assert(output[1+y*dw+x]==(inside?source[(y-(dh-sh)/2)*sw+x-(dw-sw)/2]:0x2468));
+        }
+        assert(output.front()==0x2468 && output.back()==0x2468);
+        frame.system_alpha_plane.visible=1;assert(!espp4_a::IsOpaqueSurface(frame));
+        frame.system_alpha_plane.visible=0;frame.ui_alpha_plane.visible=1;
+        assert(!espp4_a::IsOpaqueSurface(frame));
+        frame.ui_alpha_plane.visible=0;frame.opaque_ui_region_count=1;
+        assert(!espp4_a::IsOpaqueSurface(frame));
+    }
+    // Odd source widths/strides alternate 32-bit alignment. Compare the full
+    // panel against nearest-neighbor math, including unaligned fallback and
+    // sentinel pixels surrounding both source and destination buffers.
+    for (unsigned source_offset : {0u,1u}) for (unsigned output_offset : {0u,1u}) {
+        constexpr unsigned sw=427,sh=240,pitch=429,dw=sw*2,dh=sh*2;
+        std::vector<uint16_t> source(pitch*sh+2),output(dw*dh+2,0x5abc);
+        for(size_t i=0;i<source.size();++i)source[i]=uint16_t(i*1009u^(i>>5));
+        pxa_esp_surface_frame_t f{};
+        f.visible=1;f.pixels=reinterpret_cast<const uint8_t*>(source.data()+source_offset);
+        f.width=sw;f.height=sh;f.stride_bytes=pitch*2;f.format=PXA_SURFACE_FORMAT_RGB565;
+        espp4_a::Compose(f,output.data()+output_offset,0,0,dw,dh,dw,dw,dh);
+        for(unsigned y=0;y<dh;++y)for(unsigned x=0;x<dw;++x)
+            assert(output[output_offset+y*dw+x]==source[source_offset+(y/2)*pitch+x/2]);
+        if(output_offset)assert(output.front()==0x5abc);
+        assert(output.back()==0x5abc);
+    }
+    // Skipping LVGL paint is safe only when opaque guest pixels replace
+    // every pixel, with no trusted chrome, alpha or unfilled edge to retain.
+    {
+        uint16_t pixel = 0;
+        pxa_esp_surface_frame_t f{};
+        f.visible=1;f.pixels=reinterpret_cast<const uint8_t*>(&pixel);
+        f.width=427;f.height=240;f.stride_bytes=856;f.format=PXA_SURFACE_FORMAT_RGB565;
+        assert(espp4_a::CoversDisplayOpaque(f,854,480));
+        assert(!espp4_a::CoversDisplayOpaque(f,480,854));
+        f.ui_alpha_plane.visible=1;assert(!espp4_a::CoversDisplayOpaque(f,854,480));
+        f.suppress_guest_alpha=1;assert(espp4_a::CoversDisplayOpaque(f,854,480));
+        f.system_alpha_plane.visible=1;assert(!espp4_a::CoversDisplayOpaque(f,854,480));
+        f.system_alpha_plane.visible=0;f.opaque_ui_region_count=1;
+        assert(!espp4_a::CoversDisplayOpaque(f,854,480));
+        f.opaque_ui_region_count=0;f.width=426;
+        assert(!espp4_a::CoversDisplayOpaque(f,854,480)); // Two missing columns.
+        f.width=427;f.x=1;assert(!espp4_a::CoversDisplayOpaque(f,854,480));
+        f.x=0;f.format=PXA_SURFACE_FORMAT_ARGB8888_PREMULTIPLIED;
+        assert(!espp4_a::CoversDisplayOpaque(f,854,480));
+        f.format=PXA_SURFACE_FORMAT_RGB565;f.stride_bytes=853;
+        assert(!espp4_a::CoversDisplayOpaque(f,854,480));
+        f.width=854;f.height=480;f.stride_bytes=1712;
+        assert(espp4_a::CoversDisplayOpaque(f,854,480));
+        f.visible=0;assert(!espp4_a::CoversDisplayOpaque(f,854,480));
+    }
     // Independent scalar reference: overlapping/clipped masks must preserve
     // native UI rows even when the neighboring guest row can be replicated.
     for (int scale : {1,2,4}) for (int offset : {0,1}) {
