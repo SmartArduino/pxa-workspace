@@ -142,6 +142,23 @@ int main(int argc,char **argv) {
     assert(strstr(home.home,"/apps/lucinhu/volume-test") && !strcmp(home.locator,locator));
     unsigned discovered=0;size_t invalid;
     assert(!pxa_esp_installations_visit(owner,count_home,&discovered,&invalid) && discovered==1 && !invalid);
+    /* Reusing an owner must not reuse publisher authority across scans.
+     * An ambiguous alias or altered marker hides the app until repaired. */
+    {
+        char duplicate[768],marker[768];
+        assert(snprintf(duplicate,sizeof(duplicate),"%s/apps/%.64s",namespace_root,locator)<(int)sizeof(duplicate));
+        assert(!mkdir(duplicate,0700));discovered=0;
+        assert(!pxa_esp_installations_visit(owner,count_home,&discovered,&invalid) && !discovered && invalid);
+        assert(!rmdir(duplicate));discovered=0;
+        assert(!pxa_esp_installations_visit(owner,count_home,&discovered,&invalid) && discovered==1 && !invalid);
+        assert(snprintf(marker,sizeof(marker),"%s/apps/lucinhu/.publisher.pxi",namespace_root)<(int)sizeof(marker));
+        int marker_fd=open(marker,O_RDWR);assert(marker_fd>=0);uint8_t saved,changed;
+        assert(pread(marker_fd,&saved,1,120)==1);changed=saved^1;
+        assert(pwrite(marker_fd,&changed,1,120)==1);discovered=0;
+        assert(!pxa_esp_installations_visit(owner,count_home,&discovered,&invalid) && !discovered && invalid);
+        assert(pwrite(marker_fd,&saved,1,120)==1 && !close(marker_fd));discovered=0;
+        assert(!pxa_esp_installations_visit(owner,count_home,&discovered,&invalid) && discovered==1 && !invalid);
+    }
     signature_checks=0;
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home) && prepare_calls==1);
     assert(signature_checks==0);

@@ -11,6 +11,9 @@
 #define PXA_ESP_PACKAGE_MAX_PATH 160
 #define PXA_ESP_PACKAGE_MAX_ASSET_PATH 256
 #define PXA_ESP_SIGNED_MANIFEST_MAX_BYTES (128u * 1024u)
+#define PXA_ESP_HOST_MAX_PATH 160
+typedef struct {char name[128],description[512],icon_path[256];} pxa_host_package_metadata_t;
+static struct {int initialized;} g_host={1};
 #define ESP_LOGE(...) ((void)0)
 typedef struct {
     char id[65],root[160]; uint8_t publisher_key_id[32];
@@ -89,6 +92,20 @@ int main(void) {
     entry.publisher_key_id[0]^=1;rejected(&r);entry.publisher_key_id[0]^=1;
     short_read=1;rejected(&r);short_read=0;
     entry.ambiguous=1;reads=0;rejected(&r);assert(!reads);entry.ambiguous=0;
+    /* Desktop localization shares the current-generation snapshot loader:
+     * one manifest read per app, with ownership released on all failures. */
+    pxa_host_package_metadata_t localized;
+    reads=0;
+    assert(pxa_esp_host_resolve_package_metadata("test","zh-CN",&localized));
+    assert(reads==1 && localized.name[0] && !live);
+    for(int fail=1;fail<=2;++fail) {
+        allocations=0;fail_allocation=fail;
+        assert(!pxa_esp_host_resolve_package_metadata("test","zh-CN",&localized));
+        assert(!live && !metadata && !transaction);
+    }
+    fail_allocation=0;entry.ambiguous=1;reads=0;
+    assert(!pxa_esp_host_resolve_package_metadata("test","zh-CN",&localized));
+    assert(!reads && !live);entry.ambiguous=0;
     r.root_capacity=1;rejected(&r);r.root_capacity=sizeof(root);
     FILE *file=fopen("package/manifest.pxm","r+b");assert(file);
     int first=fgetc(file);rewind(file);fputc(first^255,file);fclose(file);rejected(&r);

@@ -1304,6 +1304,7 @@ bool CreateSystem(const pxa_board_port_t* board,
         return false;
     }
 
+    ESP_LOGI(kTag, "Startup bridge ready at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
     if constexpr (kUseReferenceUi) {
         pxsys_reference_lvgl_config_t ui_config;
         pxsys_reference_lvgl_config_init(&ui_config);
@@ -1417,7 +1418,9 @@ bool CreateSystem(const pxa_board_port_t* board,
         ui_config.idle_dim = board->set_idle_dim != nullptr ? ApplyIdleDim : nullptr;
         ui_config.idle_lock = board->idle_screen_off != nullptr
                                   ? IdleScreenOff : nullptr;
+        ESP_LOGI(kTag, "Startup desktop config ready at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
         status = pxsys_reference_lvgl_create(&ui_config, &g_reference_ui);
+        ESP_LOGI(kTag, "Startup desktop created at %lu ms", static_cast<unsigned long>(esp_log_timestamp()));
         if (status == PXSYS_STATUS_OK)
             status = pxsys_reference_lvgl_start(g_reference_ui);
         if (status != PXSYS_STATUS_OK) {

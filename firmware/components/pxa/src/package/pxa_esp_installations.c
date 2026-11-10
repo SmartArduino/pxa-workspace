@@ -121,6 +121,39 @@ static pxa_status_t map_locator(void *context,const char *locator,uint8_t revers
     pxa_esp_installations_t *owner=context;
     return pxa_esp_publisher_map(owner->root,&owner->volume.id,"apps",locator,reverse,out,bytes);
 }
+typedef struct {
+    pxa_esp_installations_t *owner;
+    char logical[65],physical[65];
+} catalog_mapping_t;
+static pxa_status_t map_catalog_locator(void *context,const char *locator,uint8_t reverse,char *out,size_t bytes) {
+    if(!locator || !out || !bytes)return PXA_STATUS_INVALID_ARGUMENT;
+    catalog_mapping_t *mapping=context;
+    const char *slash=strchr(locator,'/');
+    const char *from=reverse?mapping->physical:mapping->logical;
+    const char *to=reverse?mapping->logical:mapping->physical;
+    if(slash && from[0] && (size_t)(slash-locator)==strlen(from) &&
+        !memcmp(locator,from,(size_t)(slash-locator))) {
+        /* The publisher pair was authenticated by a complete forward lookup
+         * during this enumeration. Still validate every untrusted App ID. */
+        static const uint8_t zero[32]={0};char checked[PXA_POSIX_APP_LOCATOR_BYTES];
+        pxa_status_t status=pxa_esp_installations_locator(zero,slash+1,checked,sizeof(checked));
+        if(status!=PXA_STATUS_OK)return status;
+        int n=snprintf(out,bytes,"%s/%s",to,slash+1);
+        return n>=0 && (size_t)n<bytes?PXA_STATUS_OK:PXA_STATUS_LIMIT_EXCEEDED;
+    }
+    pxa_status_t status=map_locator(mapping->owner,locator,reverse,out,bytes);
+    /* Forward lookup checks all publisher directories for duplicate claims;
+     * a reverse marker alone is not sufficient to populate this cache. */
+    if(status==PXA_STATUS_OK && !reverse && slash) {
+        const char *mapped_slash=strchr(out,'/');
+        if(mapped_slash && slash-locator<=64 && mapped_slash-out<=64) {
+            size_t a=(size_t)(slash-locator),b=(size_t)(mapped_slash-out);
+            memcpy(mapping->logical,locator,a);mapping->logical[a]=0;
+            memcpy(mapping->physical,out,b);mapping->physical[b]=0;
+        }
+    }
+    return status;
+}
 pxa_status_t pxa_esp_installations_open(uint64_t epoch,pxa_esp_installations_t **output) {
     if(!output || !epoch)return PXA_STATUS_INVALID_ARGUMENT;
     *output=NULL;pxa_status_t status=pxa_esp_volumes_retain(epoch);
@@ -173,7 +206,12 @@ pxa_status_t pxa_esp_installations_visit(pxa_esp_installations_t *owner,
     if(!visitor)return PXA_STATUS_INVALID_ARGUMENT;
     visible_visit_t scan={owner,visitor,context};
     pxa_status_t status=available(owner);
-    return status==PXA_STATUS_OK?pxa_posix_app_store_visit(&owner->config,visit_visible,&scan,invalid):status;
+    /* Cache one verified publisher pair only for this read-only enumeration.
+     * Mutations, activation and the next scan always authenticate afresh. */
+    catalog_mapping_t mapping={.owner=owner};
+    pxa_posix_app_store_config_t config=owner?owner->config:(pxa_posix_app_store_config_t){0};
+    config.locator_context=&mapping;config.map_locator=map_catalog_locator;
+    return status==PXA_STATUS_OK?pxa_posix_app_store_visit(&config,visit_visible,&scan,invalid):status;
 }
 pxa_status_t pxa_esp_installations_inspect(pxa_esp_installations_t *owner,const char *source,
     pxa_posix_installer_result_t *result) {

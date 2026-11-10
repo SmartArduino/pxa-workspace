@@ -6375,28 +6375,19 @@ bool pxa_esp_host_resolve_package_metadata(
     pxa_package_manifest_t *manifest = NULL;
     pxa_package_metadata_t resolved;
     char root[PXA_ESP_HOST_MAX_PATH];
-    uint8_t *encoded = NULL;
-    void *workspace = NULL;
-    size_t encoded_size;
-    size_t workspace_size;
+    pxa_posix_installer_result_t loaded = {
+        .struct_size = sizeof(loaded), .root = root,
+        .root_capacity = sizeof(root), .manifest = &manifest,
+    };
     bool success = false;
     if (!g_host.initialized || identity == NULL || locale == NULL ||
         metadata == NULL) {
         return false;
     }
     memset(metadata, 0, sizeof(*metadata));
-    encoded_size =
-        pxa_esp_package_store_installed_manifest_size(identity);
-    workspace_size =
-        pxa_esp_package_store_installed_manifest_workspace_size(identity);
-    if (encoded_size == 0 || workspace_size == 0 ||
-        (encoded = esp_alloc(encoded_size)) == NULL ||
-        (workspace = esp_alloc(workspace_size)) == NULL) {
-        goto done;
-    }
-    if (!pxa_esp_package_store_load_installed(
-            identity, root, sizeof(root), workspace, workspace_size, encoded,
-            encoded_size, &manifest) ||
+    /* Catalog localization uses the same single-read manifest snapshot as
+     * launch preparation. Measure and parse under one installation lease. */
+    if (!pxa_esp_package_store_prepare_launch(identity, &loaded) ||
         pxa_package_metadata_resolve(
             manifest,
             (pxa_bytes_t){(const uint8_t *)locale, strlen(locale)},
@@ -6412,8 +6403,8 @@ bool pxa_esp_host_resolve_package_metadata(
                                          sizeof(metadata->icon_path),
                                          resolved.icon_path);
 done:
-    free(workspace);
-    free(encoded);
+    free(loaded.manifest_workspace);
+    free(loaded.encoded);
     return success;
 }
 
