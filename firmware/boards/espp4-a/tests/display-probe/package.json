@@ -1,0 +1,17 @@
+{
+  "format": "pxa-package-source-0.1",
+  "min_sdk": [2, 0],
+  "target_sdk": [2, 0],
+  "compile_sdk": [2, 0],
+  "id": "pxa-p4-display-probe",
+  "version": "0.1.0",
+  "release_sequence": 1,
+  "name": "P4 Display Probe",
+  "description": "Fixed GameRender scene for display measurements; tap to rotate.",
+  "build": {"system": "cmake", "source_dir": ".", "linear_memory": {"maximum_bytes": 1048576, "pinned": true}},
+  "components": [{
+    "id": "main", "kind": "ui", "cmake_target": "pxa_main",
+    "services": ["clock", "game-render", "log", "ui", {"name": "window", "min_version": [0, 5]}],
+    "wasi": {"version": "preview1", "libc": "wasi-libc", "features": ["monotonic-clock", "wall-clock"]}
+  }]
+}

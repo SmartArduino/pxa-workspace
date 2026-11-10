@@ -27,20 +27,26 @@ SmartArduino ESPP4-A / ESP32-P4 DevKit v1.1 的 PXA 板级适配。
 显示在板级完成合成：LVGL 以 FULL 模式直接绘制两个 DSI DMA 帧缓冲，随后
 合成 PXA Surface 和透明层，免去整屏 UI 复制。DMA 在帧边界切换缓冲后允许
 LVGL 绘制下一帧；帧率统计和截图另等完整扫描结束，避免把提交次数当成显示帧率。
-RGB565 原尺寸 Surface 使用逐行复制，2 倍／4 倍放大按源行展开并复用重复行；
+RGB565 Surface 按可见跨度逐行复制，2 倍／4 倍放大按源行展开并复用重复行。
+存在系统不透明遮挡区时仍使用逐行路径，只复用应用像素，不复制状态栏、导航条
+等原生 UI；透明层在行复用后单独合成，保留每个物理像素的透明度。
 ARGB 同尺寸画面按行合成，按遮挡区和透明度平面跳过不可见跨度；其他缩放
 与复杂混合保留通用合成。
 Window 0.5 支持应用动态选择横屏、竖屏和 0°/90°/180°/270°。本板原生方向为
 480×854；90°/270° 的逻辑画面为 854×480。非零角度首次分配一个约 801 KiB
-的 PSRAM 缓冲，先按逻辑方向合成，再旋转写入 DSI DMA 缓冲；回到 0° 恢复
-原有直接绘制路径。物理触摸同步反变换，PXADB 输入及截图使用当前逻辑坐标。
+的 PSRAM 缓冲，先按逻辑方向合成，再使用 P4 PPA 的 RGB565 硬件旋转写入
+DSI DMA 缓冲。旋转事务完成后才提交显示；缓冲按 L2 缓存行对齐，由 IDF
+驱动同步 CPU 缓存与 DMA。硬件初始化或事务返回错误时退回软件旋转。
+PPA 只旋转，不进行插值缩放，保留像素画布的整数缩放效果。
+回到 0° 恢复原有直接绘制路径。物理触摸同步反变换，PXADB 输入及截图使用当前逻辑坐标。
 退回桌面恢复系统方向，重新进入应用恢复该应用的方向请求。
 
 GameRender 的 PSRAM 分配和缓存写回按配置的 L2 缓存行大小对齐，支持本板
 128 字节缓存行；帧尾保留完整缓存行，避免写回相邻对象。
 DSI／DW-GDMA 中断及帧完成回调驻留 IRAM，回调上下文与静态信号量驻留
 内部 DRAM，Flash 存档暂停缓存时仍能继续扫描。串口每 10 秒输出扫描次数、
-超时扫描间隔及 Surface 获取失败计数；背光日志仅在状态变化时输出。
+超时扫描间隔及 Surface 获取失败计数，并输出平均合成、旋转耗时和硬件／软件
+旋转次数；背光日志仅在状态变化时输出。
 PXA Surface、系统透明层、
 锁屏、物理触摸优先级和 PXADB 输入都在同一个板级显示锁下协调。
 触摸支持五个独立触点，按 ST7123 原始报告的固定槽保留触点身份；抬起一指
@@ -130,6 +136,19 @@ tools/factory.sh image espp4-a --profile factory/profiles/generic.toml \
 仅提供通用 WASM 时会使用解释执行，安装兼容不代表具有原生包的帧率。
 比较板卡性能时应固定游戏版本、场景和画布尺寸，并统计实际完成显示的帧。
 
+`tests/display-probe` 提供不写存档的原生 GameRender 测试应用：四个色块与移动
+标记持续重绘，点击切换四个方向。按应用签名流程构建为 `esp32p4` 包后，
+可用 `tools/measure-device-display.py` 测量；`--install --keep-installed` 安装并
+记录本轮测试包归属，之后使用相同的包和 `--ownership` 文件对比固件。
+每次使用新的 `--output` 目录，日志、截图和结果统一放在 `local/artifacts/`。
+最终一轮加 `--cleanup`，只移除本轮安装的测试应用并检查原有应用及版本仍在。
+测试期间独占串口，关闭其他烧录和监视进程；截图及内存查询均在计时窗口外执行。
+
+硬件旋转的整屏逐像素比对可在开发构建中通过
+`-DPXA_ESPP4_ROTATION_SELFTEST=ON` 启用。首次进入非零方向时测试三种旋转，
+比较 PPA 输出与软件参考实现，临时使用约 1.6 MiB PSRAM，完成后释放。
+此检查默认关闭，正式固件不包含测试代码和临时缓冲。
+
 ## 无线与许可证
 
 无线驱动随源码保存在 `vendor/p4_wireless/`，固定于上述上游提交并保持原样。
@@ -153,5 +172,3 @@ GC4023 的 ESP32 适配保留 SmartArduino 的 Apache-2.0 许可，寄存器及�
 核对自 OpenHisilicon 的 MIT 传感器库，保留 Shenshu 原始版权。OpenHisilicon
 对传感器库和内核模块分别声明 MIT 与 GPL，固件只使用前者。固定来源、完整
 许可及修改说明见 `vendor/gc4023/NOTICE`，不以无许可的 HiSpark 副本作为授权依据。
-
-Surface-ready notifications wake the display task; new frames refresh through the normal LVGL trusted-UI and DMA path. Integer 2× RGB565 composition expands aligned pixel pairs with 32-bit stores and reuses identical source rows. Clipped, unaligned and alpha-bearing rows preserve the same composition rules.

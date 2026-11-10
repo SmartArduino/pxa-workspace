@@ -6,6 +6,45 @@
 #include <vector>
 
 int main() {
+    // Independent scalar reference: overlapping/clipped masks must preserve
+    // native UI rows even when the neighboring guest row can be replicated.
+    for (int scale : {1,2,4}) for (int offset : {0,1}) {
+        std::array<uint16_t,9*7> source;
+        for (size_t i=0;i<source.size();++i) source[i]=uint16_t(i*1009u);
+        pxa_esp_surface_frame_t frame{};
+        frame.visible=1; frame.width=7; frame.height=5; frame.stride_bytes=18;
+        frame.pixels=reinterpret_cast<const uint8_t*>(source.data());
+        frame.format=PXA_SURFACE_FORMAT_RGB565; frame.x=2; frame.y=3;
+        frame.opaque_ui_region_count=4;
+        frame.opaque_ui_regions[0]={2,1,4,3};
+        frame.opaque_ui_regions[1]={0,2,7,1};
+        frame.opaque_ui_regions[2]={1,0,3,2};
+        frame.opaque_ui_regions[3]={6,3,9,7};
+        const int w=7*scale+4,h=5*scale+6,pitch=w+3;
+        std::vector<uint16_t> actual(size_t(pitch)*h+2),expected(actual.size());
+        for (size_t i=0;i<actual.size();++i) actual[i]=expected[i]=uint16_t(i*37u);
+        const uint16_t overlay=0xffff; const uint8_t alpha=173;
+        frame.system_alpha_plane={&overlay,&alpha,2,1,3,4,1,1,219,1,0};
+        espp4_a::Compose(frame,actual.data()+offset,0,0,w,h,pitch,w,h);
+        for (int y=0;y<h;++y) for(int x=0;x<w;++x) {
+            auto& out=expected[offset+y*pitch+x];
+            if(x>=2 && y>=3 && x<2+7*scale && y<3+5*scale) {
+                const int sx=(x-2)/scale,sy=(y-3)/scale;
+                bool masked=false;
+                for(unsigned i=0;i<frame.opaque_ui_region_count;++i) {
+                    const auto& r=frame.opaque_ui_regions[i];
+                    masked|=sx>=r.x && sy>=r.y && sx<r.x+r.width && sy<r.y+r.height;
+                }
+                if(!masked)out=source[sy*9+sx];
+            }
+            if(x==3 && y==4)out=pxa_esp_surface_blend_alpha_pixel(out,overlay,alpha,219);
+        }
+        assert(actual==expected);
+        frame.opaque_ui_region_count=PXA_SURFACE_MAX_OPAQUE_UI_REGIONS+1;
+        auto guard=actual;
+        espp4_a::Compose(frame,actual.data()+offset,0,0,w,h,pitch,w,h);
+        assert(actual==guard);
+    }
     // Padded source rows and a tile crossing the integer-scale boundary.
     const std::array<uint16_t, 8> source{0xf800, 0x07e0, 0xdead, 0xbeef,
                                       0x001f, 0xffff, 0xdead, 0xbeef};
@@ -70,7 +109,7 @@ int main() {
     frame.opaque_ui_regions[0] = {0, 1, 1, 1};
     tile.fill(0x1234);
     espp4_a::Compose(frame, tile.data(), 118, 214, 4, 2, 6);
-    assert(tile[1] == 0x1234 && tile[2] == 242); // Region-mask fallback.
+    assert(tile[1] == 0x1234 && tile[2] == 242); // Preserve trusted opaque UI.
     // Full portrait 2x expansion, including vertically repeated rows and a
     // trusted plane covering only the second physical row of a guest pixel.
     std::vector<uint16_t> scaled_source(242 * 427, 0xdead), expanded(482 * 854, 0x1234);

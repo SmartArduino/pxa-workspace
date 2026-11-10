@@ -6,6 +6,7 @@
 #include "espp4_a_images.h"
 #include "espp4_a_surface.h"
 #include "espp4_a_scanout.h"
+#include "espp4_a_rotation.h"
 #include "espp4_a_touch.h"
 #include <algorithm>
 #include <cstdlib>
@@ -35,6 +36,12 @@
 #include <pxadb/pxadb_service.h>
 #include <pxadb_pointer_samples.h>
 #include <wifi_manager.h>
+
+#ifdef PXA_ESPP4_ROTATION_SELFTEST
+namespace espp4_a {
+bool VerifyHardwareRotation(RotationEngine&, uint16_t*, uint16_t*, uint32_t, uint32_t);
+}
+#endif
 
 // Supplier radio supports STA or AP. The shared provisioning controller stops
 // STA before entering AP mode; it must not request unsupported concurrency.
@@ -128,6 +135,10 @@ private:
     std::atomic<bool> backlight_ready_{false};
     uint64_t boot_visible_us_ = 0;
     unsigned missed_surfaces_ = 0;
+    espp4_a::RotationEngine rotation_engine_;
+    uint64_t compose_us_ = 0, rotation_us_ = 0;
+    uint32_t composed_frames_ = 0, rotated_frames_ = 0;
+    uint8_t compose_masks_ = 0, compose_guest_plane_ = 0, compose_system_plane_ = 0;
     std::atomic<uint32_t> light_state_{UINT32_MAX};
     lv_display_t* display_ = nullptr;
     lv_indev_t* pointers_[espp4_a::kTouchPointers]{};
@@ -251,15 +262,33 @@ void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
         if (output != b->frames_[next] || b->pending_count_ == b->pending_.size()) abort();
     }
     const int width = b->LogicalWidth(), height = b->LogicalHeight();
+#ifdef PXA_ESPP4_ROTATION_SELFTEST
+    static bool rotation_checked = false;
+    if (rotation && !rotation_checked) {
+        rotation_checked = true;
+        (void)espp4_a::VerifyHardwareRotation(b->rotation_engine_, output, b->frames_[next], kWidth, kHeight);
+    }
+#endif
     pxa_esp_surface_frame_t frame{};
     const bool acquired = pxa_esp_surface_acquire_latest(&frame);
+    if (acquired) {
+        b->compose_masks_ = frame.opaque_ui_region_count;
+        b->compose_guest_plane_ = frame.ui_alpha_plane.visible;
+        b->compose_system_plane_ = frame.system_alpha_plane.visible;
+    }
     if (!acquired && pxa_esp_surface_has_visible_surface()) ++b->missed_surfaces_;
+    const int64_t compose_start = esp_timer_get_time();
     if (acquired) espp4_a::Compose(frame, output, 0, 0, width, height, width, width, height);
     if (pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY))
         pxa_board_performance_draw_rgb565(output, width, height, width,
             0, 0, width, height, false);
+    const int64_t compose_end = esp_timer_get_time();
+    b->compose_us_ += compose_end - compose_start;
+    ++b->composed_frames_;
     if (rotation) {
-        pxa_display_rgb565_to_native(output, b->frames_[next], kWidth, kHeight, rotation);
+        b->rotation_engine_.Rotate(output, b->frames_[next], kWidth, kHeight, rotation);
+        b->rotation_us_ += esp_timer_get_time() - compose_end;
+        ++b->rotated_frames_;
         output = b->frames_[next];
     }
     const uint64_t frame_id = acquired ? frame.frame_id : 0;
@@ -436,7 +465,7 @@ bool Board::SetRotation(uint8_t rotation) {
     if (rotation > 3) return false;
     if (rotation == rotation_) return true;
     if (rotation && !rotation_pixels_) {
-        rotation_pixels_ = static_cast<uint16_t*>(heap_caps_aligned_alloc(64, kBytes,
+        rotation_pixels_ = static_cast<uint16_t*>(heap_caps_aligned_alloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE, kBytes,
             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
         if (!rotation_pixels_) return false;
     }
@@ -555,6 +584,14 @@ void Board::Loop() {
                 static_cast<unsigned long>(stats.scans), static_cast<unsigned long>(stats.delayed),
                 static_cast<unsigned long>(stats.max_interval_us), missed_surfaces_, unsigned(uxTaskGetStackHighWaterMark(nullptr)));
             missed_surfaces_ = 0;
+            const auto rotations = rotation_engine_.TakeStats();
+            ESP_LOGI(kTag, "Compose: frames=%lu mean_us=%llu rotation_mean_us=%llu ppa=%lu software=%lu masks=%u guest_plane=%u system_plane=%u",
+                static_cast<unsigned long>(composed_frames_),
+                static_cast<unsigned long long>(composed_frames_ ? compose_us_ / composed_frames_ : 0),
+                static_cast<unsigned long long>(rotated_frames_ ? rotation_us_ / rotated_frames_ : 0),
+                static_cast<unsigned long>(rotations.hardware), static_cast<unsigned long>(rotations.software),
+                unsigned(compose_masks_), unsigned(compose_guest_plane_), unsigned(compose_system_plane_));
+            compose_us_ = rotation_us_ = 0; composed_frames_ = rotated_frames_ = 0;
         }
         const uint32_t delay = lv_timer_handler();
         lv_unlock(); Unlock();

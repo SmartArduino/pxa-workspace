@@ -19,6 +19,13 @@ mkdir -p "$test_build"
 "$test_build/scanout_test"
 "${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
+    -I"$test_dir/rotation_stubs" -I"$test_dir/../include" \
+    -I"$project_dir/deps/pxa-system/libpxa/include" \
+    "$test_dir/rotation_test.cc" "$test_dir/../src/espp4_a_rotation.cc" \
+    -o "$test_build/rotation_test"
+"$test_build/rotation_test"
+"${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
+    -fsanitize=address,undefined -fno-omit-frame-pointer \
     -I"$test_dir/../include" -I"$project_dir/firmware/components/pxadb/include" \
     "$test_dir/touch_test.cc" -o "$test_build/touch_test"
 "$test_build/touch_test"

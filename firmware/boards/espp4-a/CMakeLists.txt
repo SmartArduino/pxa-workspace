@@ -1,12 +1,12 @@
 idf_component_register(
     LDFRAGMENTS camera.lf
-    SRCS src/espp4_a_board.cc src/espp4_a_audio.cc src/espp4_a_panel.c src/espp4_a_surface.cc
+    SRCS src/espp4_a_board.cc src/espp4_a_audio.cc src/espp4_a_panel.c src/espp4_a_surface.cc src/espp4_a_rotation.cc
         src/espp4_a_sdio.cc src/espp4_a_camera.cc src/espp4_a_images.cc vendor/gc4023/gc4023.c
     INCLUDE_DIRS include
     PRIV_INCLUDE_DIRS vendor/gc4023/include vendor/gc4023
         "${PXSYS_ROOT}/libpxa/adapters/include"
     PRIV_REQUIRES esp_driver_gpio esp_driver_i2c esp_driver_i2s
-        esp_driver_cam esp_driver_isp esp_driver_jpeg
+        esp_driver_cam esp_driver_isp esp_driver_jpeg esp_driver_ppa
         espressif__esp_cam_sensor espressif__esp_sccb_intf espressif__esp_new_jpeg
         esp_driver_ledc esp_driver_sdmmc esp_driver_uart esp_lcd esp_hw_support esp_timer
         esp_netif esp_wifi fatfs sdmmc p4_wireless
@@ -14,6 +14,13 @@ idf_component_register(
         espressif__esp_codec_dev espressif__esp_lv_decoder espressif__freetype
         pxa pxadb pxa_board_api pxa_board_common pxa_lvgl_memory
         pxa_system_standard pxa_system_reference_ui)
+
+option(PXA_ESPP4_ROTATION_SELFTEST "Include the on-device RGB565 rotation differential test" OFF)
+if(PXA_ESPP4_ROTATION_SELFTEST)
+    target_sources(${COMPONENT_LIB} PRIVATE tests/rotation_device_test.cc)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_ESPP4_ROTATION_SELFTEST=1)
+endif()
+
 
 # The shared provisioning UI requests APSTA. This module supports AP or STA;
 # its board-local wrapper selects AP while provisioning (STA is stopped first).
