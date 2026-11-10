@@ -6,6 +6,31 @@
 #include <vector>
 
 int main() {
+    // Opaque redraws must replace old guest pixels after a move or resize,
+    // while clearing only the backdrop. Compare against a full clean buffer.
+    for (const auto& [w,h] : {std::pair{7,11},std::pair{480,854},std::pair{854,480}}) {
+        for (const auto& [sw,sh] : {std::pair{1,1},std::pair{3,5},std::pair{240,426},std::pair{320,240},std::pair{480,854}}) {
+            std::vector<uint16_t> source(size_t(sw)*sh);
+            for (size_t i=0;i<source.size();++i) source[i]=uint16_t(i*97+3);
+            for (const auto& [x,y] : {std::pair{0,0},std::pair{2,3},std::pair{-2,-4},std::pair{w+1,h+1}}) {
+                std::vector<uint16_t> actual(size_t(w)*h+2,0x1357), expected(size_t(w)*h,0x2468);
+                pxa_esp_surface_frame_t f{};f.visible=1;f.pixels=reinterpret_cast<const uint8_t*>(source.data());
+                f.width=sw;f.height=sh;f.stride_bytes=sw*2;f.format=PXA_SURFACE_FORMAT_RGB565;f.x=x;f.y=y;
+                assert(espp4_a::FillOpaqueBackdrop(f,actual.data()+1,w,h,0x2468));
+                // Leave the new guest area unfilled; this near-full frame has
+                // only two uncovered scanlines on the real portrait panel.
+                if(w==480 && h==854 && sw==240 && sh==426 && !x && !y) {
+                    size_t clears=0;for(size_t i=1;i+1<actual.size();++i) clears+=actual[i]==0x2468;
+                    assert(clears==960);
+                }
+                espp4_a::Compose(f,actual.data()+1,0,0,w,h,w,w,h);
+                espp4_a::Compose(f,expected.data(),0,0,w,h,w,w,h);
+                assert(actual.front()==0x1357 && actual.back()==0x1357);
+                assert(std::equal(expected.begin(),expected.end(),actual.begin()+1));
+            }
+        }
+    }
+
     // A letterboxed direct frame may use a fill only after the entire painted
     // background, including its final pixel, has been proven uniform.
     for (size_t count : {size_t(1),size_t(2),size_t(3),size_t(32),size_t(513)}) {
@@ -41,6 +66,7 @@ int main() {
         }
         assert(output.front()==0x2468 && output.back()==0x2468);
         frame.system_alpha_plane.visible=1;assert(!espp4_a::IsOpaqueSurface(frame));
+        assert(!espp4_a::FillOpaqueBackdrop(frame,output.data()+1,dw,dh,0));
         frame.system_alpha_plane.visible=0;frame.ui_alpha_plane.visible=1;
         assert(!espp4_a::IsOpaqueSurface(frame));
         frame.ui_alpha_plane.visible=0;frame.opaque_ui_region_count=1;

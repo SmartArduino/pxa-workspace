@@ -405,7 +405,10 @@ bool Board::PresentOpaqueSurface() {
     auto* output = rotation ? rotation_pixels_ : frames_[next];
     acquire_us_ += acquired - acquire_started;
     if (!covers_display) {
-        espp4_a_fill_rgb565(output, uint32_t(width) * height, backdrop_color_);
+        if (!espp4_a::FillOpaqueBackdrop(frame, output, width, height, backdrop_color_)) {
+            pxa_esp_surface_release_frame(frame.lease);
+            return false;
+        }
         ++direct_backdrop_frames_;
     }
     espp4_a::Compose(frame, output, 0, 0, width, height, width, width, height);

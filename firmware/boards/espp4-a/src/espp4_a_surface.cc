@@ -25,6 +25,33 @@ bool UniformBackground(const uint16_t* pixels, size_t count, uint16_t& color) {
     return true;
 }
 
+bool FillOpaqueBackdrop(const pxa_esp_surface_frame_t& frame, uint16_t* pixels,
+                        int width, int height, uint16_t color) {
+    if (!pixels || width <= 0 || height <= 0 || !IsOpaqueSurface(frame)) return false;
+    const int scale = std::max(1, int(pxa_surface_fit_scale(frame.width, frame.height, width, height)));
+    const int64_t sw = int64_t(frame.width) * scale, sh = int64_t(frame.height) * scale;
+    int64_t x = frame.x, y = frame.y;
+    if (!x && !y && (sw < width || sh < height)) {
+        x = (width - sw) / 2; y = (height - sh) / 2;
+    }
+    const int left = int(std::clamp<int64_t>(x, 0, width));
+    const int right = int(std::clamp<int64_t>(x + sw, 0, width));
+    const int top = int(std::clamp<int64_t>(y, 0, height));
+    const int bottom = int(std::clamp<int64_t>(y + sh, 0, height));
+    if (left == right || top == bottom) {
+        espp4_a_fill_rgb565(pixels, uint32_t(width) * height, color);
+        return true;
+    }
+    espp4_a_fill_rgb565(pixels, uint32_t(width) * top, color);
+    if (left || right < width) for (int row = top; row < bottom; ++row) {
+        auto* line = pixels + size_t(row) * width;
+        espp4_a_fill_rgb565(line, left, color);
+        espp4_a_fill_rgb565(line + right, width - right, color);
+    }
+    espp4_a_fill_rgb565(pixels + size_t(bottom) * width, uint32_t(width) * (height - bottom), color);
+    return true;
+}
+
 bool CoversDisplayOpaque(const pxa_esp_surface_frame_t& frame, int width, int height) {
     if (width <= 0 || height <= 0 || !IsOpaqueSurface(frame) || frame.x || frame.y) return false;
     const int scale = pxa_surface_fit_scale(frame.width, frame.height, width, height);

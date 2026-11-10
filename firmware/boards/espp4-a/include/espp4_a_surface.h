@@ -7,6 +7,10 @@ bool IsOpaqueSurface(const pxa_esp_surface_frame_t&);
 // Inspect the complete painted background, never just its corners. A direct
 // letterboxed frame can replace it with a fill only while LVGL stays clean.
 bool UniformBackground(const uint16_t* pixels, size_t count, uint16_t& color);
+// Restore only the uncovered backdrop; Compose overwrites the opaque guest
+// rectangle, including when its geometry changes between frames.
+bool FillOpaqueBackdrop(const pxa_esp_surface_frame_t&, uint16_t* pixels,
+                        int width, int height, uint16_t color);
 // Safe to overwrite an entire logical buffer without repainting its LVGL
 // background. Visibility/modal/fresh-frame gates are checked by the Host.
 bool CoversDisplayOpaque(const pxa_esp_surface_frame_t&, int width, int height);
