@@ -13,6 +13,10 @@ public:
     bool SetVolume(uint8_t percent);
     uint8_t volume() const { return volume_.load(); }
 private:
+    bool Check(int result, const char* operation);
+#if PXA_ESPP4_AUDIO_SELFTEST
+    void DeviceSelfTest();
+#endif
     bool Write(const int16_t*, size_t);
     bool CaptureEnabled(bool);
     int32_t Read(int16_t*, size_t);
@@ -20,6 +24,8 @@ private:
     esp_codec_dev_handle_t codec_ = nullptr;
     SemaphoreHandle_t mutex_ = nullptr;
     std::atomic<uint8_t> volume_{60};
+    bool output_failed_ = false;
+    bool signal_logged_ = false;
     int16_t stereo_[640]{};
     int16_t input_[640]{};
     PxaAudioOutput output_;

@@ -21,6 +21,11 @@ if(PXA_ESPP4_ROTATION_SELFTEST)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_ESPP4_ROTATION_SELFTEST=1)
 endif()
 
+option(PXA_ESPP4_AUDIO_SELFTEST "Play a bounded tone and verify the ES8311 DAC reference at boot" OFF)
+if(PXA_ESPP4_AUDIO_SELFTEST)
+    target_sources(${COMPONENT_LIB} PRIVATE tests/audio_device_test.cc)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_ESPP4_AUDIO_SELFTEST=1)
+endif()
 
 # The shared provisioning UI requests APSTA. This module supports AP or STA;
 # its board-local wrapper selects AP while provisioning (STA is stopped first).
