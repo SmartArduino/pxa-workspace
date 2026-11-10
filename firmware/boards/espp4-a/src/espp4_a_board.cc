@@ -104,6 +104,8 @@ private:
     void Status();
     void CollectCompletions();
     void WaitScan();
+    void Submit(unsigned buffer, const pxa_esp_surface_frame_t& frame);
+    bool PresentOpaqueSurface();
     void ApplyBacklight();
     static bool IRAM_ATTR FrameComplete(esp_lcd_panel_handle_t, esp_lcd_dpi_panel_event_data_t*, void*);
     static void Flush(lv_display_t*, const lv_area_t*, uint8_t*);
@@ -129,7 +131,7 @@ private:
     };
     std::array<Presentation, 4> pending_{};
     unsigned pending_head_ = 0, pending_count_ = 0;
-    unsigned front_ = 0;
+    unsigned front_ = 0, scanout_buffer_ = 0;
     uint64_t completed_ = 0, completed_us_ = 0;
     bool frame_valid_ = false, capture_refresh_ = false;
     std::atomic<bool> backlight_ready_{false};
@@ -137,6 +139,11 @@ private:
     unsigned missed_surfaces_ = 0;
     espp4_a::RotationEngine rotation_engine_;
     uint64_t compose_us_ = 0, rotation_us_ = 0;
+    uint64_t acquire_us_ = 0, submit_us_ = 0, scan_wait_us_ = 0;
+    uint64_t paint_started_us_ = 0, paint_us_ = 0;
+    uint32_t painted_frames_ = 0;
+    uint32_t direct_frames_ = 0;
+    uint32_t direct_acquire_misses_ = 0, direct_coverage_misses_ = 0;
     uint32_t composed_frames_ = 0, rotated_frames_ = 0;
     uint8_t compose_masks_ = 0, compose_guest_plane_ = 0, compose_system_plane_ = 0;
     std::atomic<uint32_t> light_state_{UINT32_MAX};
@@ -249,14 +256,23 @@ bool Board::Initialize() {
 
 void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
     auto* b = static_cast<Board*>(lv_display_get_user_data(display));
+    const int64_t flush_started = esp_timer_get_time();
+    if (b->paint_started_us_) {
+        b->paint_us_ += flush_started - b->paint_started_us_;
+        ++b->painted_frames_; b->paint_started_us_ = 0;
+    }
     b->CollectCompletions();
     auto* output = reinterpret_cast<uint16_t*>(data);
     unsigned next;
     const uint8_t rotation = b->rotation_;
+    while (b->pending_count_ == b->pending_.size()) {
+        b->WaitScan(); b->CollectCompletions();
+    }
     if (rotation) {
-        // Logical LVGL pixels are separate from physical DMA scanout.
-        while (b->pending_count_) { b->WaitScan(); b->CollectCompletions(); }
-        next = b->front_ ^ 1u;
+        // The last Flush waited until scanout switched buffers. Compose and
+        // rotate into the released native buffer while the other one scans.
+        // Completed-frame bookkeeping is independent and remains two EOFs.
+        next = b->scanout_buffer_ ^ 1u;
     } else {
         next = output == b->frames_[0] ? 0 : 1;
         if (output != b->frames_[next] || b->pending_count_ == b->pending_.size()) abort();
@@ -270,7 +286,9 @@ void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
     }
 #endif
     pxa_esp_surface_frame_t frame{};
+    const int64_t acquire_started = esp_timer_get_time();
     const bool acquired = pxa_esp_surface_acquire_latest(&frame);
+    b->acquire_us_ += esp_timer_get_time() - acquire_started;
     if (acquired) {
         b->compose_masks_ = frame.opaque_ui_region_count;
         b->compose_guest_plane_ = frame.ui_alpha_plane.visible;
@@ -289,30 +307,88 @@ void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
         b->rotation_engine_.Rotate(output, b->frames_[next], kWidth, kHeight, rotation);
         b->rotation_us_ += esp_timer_get_time() - compose_end;
         ++b->rotated_frames_;
-        output = b->frames_[next];
     }
-    const uint64_t frame_id = acquired ? frame.frame_id : 0;
-    const uint64_t input_us = acquired ? frame.input_timestamp_us : 0;
-    const uint32_t raster_us = acquired ? frame.raster_ready_tick_us : 0;
     if (acquired) pxa_esp_surface_release_frame(frame.lease);
-    const auto result = esp_lcd_panel_draw_bitmap(b->panel_, 0, 0, kWidth, kHeight, output);
+    b->Submit(next, frame);
+    lv_display_flush_ready(display);
+}
+
+// Both LVGL and the opaque fullscreen path retain identical DMA ownership,
+// complete-scan timestamps, input latency accounting and screenshot fences.
+void Board::Submit(unsigned next, const pxa_esp_surface_frame_t& frame) {
+    const int64_t submit_started = esp_timer_get_time();
+    const auto result = esp_lcd_panel_draw_bitmap(panel_, 0, 0, kWidth, kHeight, frames_[next]);
+    const int64_t submitted = esp_timer_get_time();
+    submit_us_ += submitted - submit_started;
     if (result != ESP_OK) {
         ESP_LOGE(kTag, "DSI presentation failed: %s", esp_err_to_name(result));
         abort(); // Buffer ownership is unknown after a failed presentation.
     }
-    portENTER_CRITICAL(&b->scan_lock_);
-    const uint32_t fence = b->scan_clock_.Fence();
-    portEXIT_CRITICAL(&b->scan_lock_);
-    b->pending_[(b->pending_head_ + b->pending_count_++) % b->pending_.size()] =
-        {frame_id, input_us, raster_us, fence, next, b->capture_refresh_};
+    portENTER_CRITICAL(&scan_lock_);
+    const uint32_t fence = scan_clock_.Fence();
+    portEXIT_CRITICAL(&scan_lock_);
+    pending_[(pending_head_ + pending_count_++) % pending_.size()] =
+        {frame.frame_id, frame.input_timestamp_us, frame.raster_ready_tick_us,
+         fence, next, capture_refresh_};
     // Follow esp_lvgl_port's DSI FULL-buffer ownership handoff: the first
     // future EOF releases the old buffer, so LVGL can draw the next frame.
     // Count this submission only at its later complete-scan fence.
-    while (xSemaphoreTake(b->frame_done_, 0) == pdTRUE) {}
-    b->WaitScan();
-    b->CollectCompletions();
-    b->ApplyBacklight();
-    lv_display_flush_ready(display);
+    for (;;) {
+        portENTER_CRITICAL(&scan_lock_);
+        const bool latched = scan_clock_.Latched(fence);
+        portEXIT_CRITICAL(&scan_lock_);
+        if (latched) break;
+        WaitScan();
+    }
+    scanout_buffer_ = next;
+    scan_wait_us_ += esp_timer_get_time() - submitted;
+    CollectCompletions();
+    ApplyBacklight();
+}
+
+bool Board::PresentOpaqueSurface() {
+    // In native orientation LVGL owns the two physical draw buffers. Rotated
+    // mode has a separate single logical buffer, owned only by this task.
+    const uint8_t rotation = rotation_;
+    if (!rotation || !rotation_pixels_) return false;
+    CollectCompletions();
+    while (pending_count_ == pending_.size()) { WaitScan(); CollectCompletions(); }
+    pxa_esp_surface_frame_t frame{};
+    const int64_t acquire_started = esp_timer_get_time();
+    (void)pxa_esp_surface_prepare_latest_raster();
+    // This alpha-aware acquisition atomically checks the fresh-frame resume
+    // barrier and rejects incomplete modal snapshots. The coverage predicate
+    // below additionally requires an empty visible plane stack.
+    if (!pxa_esp_surface_acquire_prepared_with_alpha(&frame)) {
+        ++direct_acquire_misses_; return false;
+    }
+    const int64_t acquired = esp_timer_get_time();
+    const int width = LogicalWidth(), height = LogicalHeight();
+    if (!espp4_a::CoversDisplayOpaque(frame, width, height)) {
+        if (++direct_coverage_misses_ == 1)
+            ESP_LOGI(kTag, "Opaque fallback: source=%ux%u stride=%lu xy=%ld,%ld format=%u masks=%u alpha=%u/%u target=%dx%d",
+                unsigned(frame.width), unsigned(frame.height), static_cast<unsigned long>(frame.stride_bytes),
+                static_cast<long>(frame.x), static_cast<long>(frame.y), unsigned(frame.format),
+                unsigned(frame.opaque_ui_region_count), unsigned(frame.ui_alpha_plane.visible),
+                unsigned(frame.system_alpha_plane.visible), width, height);
+        pxa_esp_surface_release_frame(frame.lease);
+        return false;
+    }
+    const unsigned next = scanout_buffer_ ^ 1u;
+    acquire_us_ += acquired - acquire_started;
+    espp4_a::Compose(frame, rotation_pixels_, 0, 0, width, height, width, width, height);
+    if (pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY))
+        pxa_board_performance_draw_rgb565(rotation_pixels_, width, height, width,
+            0, 0, width, height, false);
+    const int64_t composed = esp_timer_get_time();
+    compose_us_ += composed - acquired; ++composed_frames_;
+    rotation_engine_.Rotate(rotation_pixels_, frames_[next], kWidth, kHeight, rotation);
+    rotation_us_ += esp_timer_get_time() - composed; ++rotated_frames_;
+    ++direct_frames_;
+    compose_masks_ = compose_guest_plane_ = compose_system_plane_ = 0;
+    pxa_esp_surface_release_frame(frame.lease);
+    Submit(next, frame);
+    return true;
 }
 
 bool IRAM_ATTR Board::FrameComplete(esp_lcd_panel_handle_t, esp_lcd_dpi_panel_event_data_t*, void* c) {
@@ -565,12 +641,14 @@ void Board::Loop() {
         Lock(0); lv_lock();
         CollectCompletions();
         Input();
-        if (surface_dirty_.exchange(false)) {
+        if (surface_dirty_.exchange(false) && !PresentOpaqueSurface()) {
             lv_obj_invalidate(lv_display_get_screen_active(display_));
             // A completed guest frame must not wait for a second, unrelated
             // LVGL refresh period. Keep the normal trusted-UI composition and
             // DMA ownership; only advance its pending refresh to this wake.
+            paint_started_us_ = esp_timer_get_time();
             lv_refr_now(display_);
+            paint_started_us_ = 0;
         }
         if (lv_tick_elaps(status_tick) >= 1000) {
             status_tick = lv_tick_get(); Status(); (void)pxa_board_performance_refresh();
@@ -585,6 +663,16 @@ void Board::Loop() {
                 static_cast<unsigned long>(stats.max_interval_us), missed_surfaces_, unsigned(uxTaskGetStackHighWaterMark(nullptr)));
             missed_surfaces_ = 0;
             const auto rotations = rotation_engine_.TakeStats();
+            ESP_LOGI(kTag, "Display stages: paint=%llu acquire=%llu compose=%llu rotate=%llu submit=%llu scan_wait=%llu us direct=%lu",
+                static_cast<unsigned long long>(painted_frames_ ? paint_us_ / painted_frames_ : 0),
+                static_cast<unsigned long long>(composed_frames_ ? acquire_us_ / composed_frames_ : 0),
+                static_cast<unsigned long long>(composed_frames_ ? compose_us_ / composed_frames_ : 0),
+                static_cast<unsigned long long>(rotated_frames_ ? rotation_us_ / rotated_frames_ : 0),
+                static_cast<unsigned long long>(composed_frames_ ? submit_us_ / composed_frames_ : 0),
+                static_cast<unsigned long long>(composed_frames_ ? scan_wait_us_ / composed_frames_ : 0),
+                static_cast<unsigned long>(direct_frames_));
+            ESP_LOGI(kTag, "Opaque fallback counts: acquire=%lu coverage=%lu",
+                static_cast<unsigned long>(direct_acquire_misses_), static_cast<unsigned long>(direct_coverage_misses_));
             ESP_LOGI(kTag, "Compose: frames=%lu mean_us=%llu rotation_mean_us=%llu ppa=%lu software=%lu masks=%u guest_plane=%u system_plane=%u",
                 static_cast<unsigned long>(composed_frames_),
                 static_cast<unsigned long long>(composed_frames_ ? compose_us_ / composed_frames_ : 0),
@@ -592,6 +680,9 @@ void Board::Loop() {
                 static_cast<unsigned long>(rotations.hardware), static_cast<unsigned long>(rotations.software),
                 unsigned(compose_masks_), unsigned(compose_guest_plane_), unsigned(compose_system_plane_));
             compose_us_ = rotation_us_ = 0; composed_frames_ = rotated_frames_ = 0;
+            acquire_us_ = submit_us_ = scan_wait_us_ = paint_us_ = 0; painted_frames_ = 0;
+            direct_frames_ = 0;
+            direct_acquire_misses_ = direct_coverage_misses_ = 0;
         }
         const uint32_t delay = lv_timer_handler();
         lv_unlock(); Unlock();
