@@ -10,6 +10,7 @@
 #include "espp4_a_scanout.h"
 #include "espp4_a_rotation.h"
 #include "espp4_a_touch.h"
+#include "espp4_a_usb.h"
 #include <algorithm>
 #include <cstdlib>
 #include <atomic>
@@ -192,6 +193,7 @@ bool Board::Initialize() {
         uart_set_pin(UART_NUM_0, 37, 38, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK ||
         uart_driver_install(UART_NUM_0, 4096, 0, 0, nullptr, 0) != ESP_OK) return false;
     uart_vfs_dev_use_driver(UART_NUM_0);
+    if (!Espp4AInitializeUsb()) return false;
     mutex_ = xSemaphoreCreateRecursiveMutex();
     // The DMA ISR must access this queue while Flash/PSRAM caches are disabled.
     frame_done_ = xSemaphoreCreateCountingStatic(3, 0, &frame_done_storage_);

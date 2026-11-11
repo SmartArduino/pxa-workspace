@@ -1,7 +1,7 @@
 idf_component_register(
     LDFRAGMENTS camera.lf
     SRCS src/espp4_a_board.cc src/espp4_a_audio.cc src/espp4_a_panel.c src/espp4_a_surface.cc src/espp4_a_rotation.cc
-        src/espp4_a_sdio.cc src/espp4_a_sd.cc src/espp4_a_camera.cc src/espp4_a_images.cc vendor/gc4023/gc4023.c
+        src/espp4_a_sdio.cc src/espp4_a_sd.cc src/espp4_a_camera.cc src/espp4_a_images.cc src/espp4_a_usb.cc src/espp4_a_usb_restart.cc vendor/gc4023/gc4023.c
     INCLUDE_DIRS include
     PRIV_INCLUDE_DIRS vendor/gc4023/include vendor/gc4023
         "${PXSYS_ROOT}/libpxa/adapters/include"
@@ -9,13 +9,15 @@ idf_component_register(
         esp_driver_cam esp_driver_isp esp_driver_jpeg esp_driver_ppa
         espressif__esp_cam_sensor espressif__esp_sccb_intf espressif__esp_new_jpeg
         esp_driver_ledc esp_driver_sdmmc esp_driver_uart esp_lcd esp_hw_support esp_timer
-        esp_netif esp_wifi fatfs sdmmc p4_wireless
+        esp_netif esp_wifi fatfs sdmmc p4_wireless esp_hal_usb espressif__esp_tinyusb
         78__esp-wifi-connect espressif__esp_lcd_touch_st7123
         espressif__esp_codec_dev espressif__esp_lv_decoder espressif__freetype
         pxa pxadb pxa_board_api pxa_board_common pxa_lvgl_memory
         pxa_system_standard pxa_system_reference_ui)
 
 target_sources(${COMPONENT_LIB} PRIVATE src/espp4_a_pixels.cc src/espp4_a_pixels.S)
+target_link_options(${COMPONENT_LIB} INTERFACE
+    "-Wl,--wrap=esp_cpu_reset" "-Wl,--undefined=__wrap_esp_cpu_reset")
 option(PXA_ESPP4_PIXEL_ACCEL "Use P4 v3 PIE RGB565 pixel primitives" ON)
 option(PXA_ESPP4_SD_SINGLE_BLOCK "Diagnostic single-block TF transfers" OFF)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_ESPP4_SD_SINGLE_BLOCK=$<BOOL:${PXA_ESPP4_SD_SINGLE_BLOCK}>)

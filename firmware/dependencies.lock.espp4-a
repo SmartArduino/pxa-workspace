@@ -176,6 +176,26 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.0.0
+  espressif/esp_tinyusb:
+    component_hash: 9a73a76a6bc17907f6e523342ff6b1e440023e8aac2c11f4691212106ec24e66
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    - name: espressif/tinyusb
+      registry_url: https://components.espressif.com
+      require: public
+      version: '>=0.17.0~2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32p4
+    - esp32h4
+    - esp32s31
+    version: 2.2.1
   espressif/freetype:
     component_hash: aa9f7657a69b2b1c1f49044017fc424081d4e0fe6e97834cb43883548d44e3ca
     dependencies:
@@ -200,6 +220,22 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 1.6.59
+  espressif/tinyusb:
+    component_hash: e7f993ae9b1b0eb8779c04dd26b5f8900108a19e5e4534b19946e18f1edd8895
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32p4
+    - esp32h4
+    - esp32s31
+    version: 0.21.0~4
   espressif/zlib:
     component_hash: 61b7c41a6c7091085555a3cef58722af4bd9078e8708ee00a0e78efb997daf7c
     dependencies:
@@ -266,10 +302,11 @@ direct_dependencies:
 - espressif/esp_lvgl_port
 - espressif/esp_new_jpeg
 - espressif/esp_sccb_intf
+- espressif/esp_tinyusb
 - espressif/freetype
 - idf
 - joltwallet/littlefs
 - lvgl/lvgl
-manifest_hash: 9234b6513c1e8e2f9fe3e2375c8350325bd967e3a4adf658e6fa6438979f22e3
+manifest_hash: bbd68d61f47991e791db0b7539207424133d5d36fa0031d7afe64bdac85847bf
 target: esp32p4
 version: 3.0.0

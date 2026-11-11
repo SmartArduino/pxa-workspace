@@ -57,3 +57,11 @@ mkdir -p "$test_build"
     -I"$test_dir/../include" "$test_dir/camera_geometry_test.cc" \
     -o "$test_build/camera_geometry_test"
 "$test_build/camera_geometry_test"
+
+"${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
+    -fsanitize=address,undefined -fno-omit-frame-pointer \
+    -I"$test_dir/../include" "$test_dir/usb_download_trigger_test.cc" \
+    -o "$test_build/usb_download_trigger_test"
+"$test_build/usb_download_trigger_test"
+python3 "$test_dir/test_usb_restart.py"
+python3 "$test_dir/test_usb_esptool.py"

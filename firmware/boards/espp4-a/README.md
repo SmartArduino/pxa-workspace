@@ -155,16 +155,31 @@ CMD 及检测脚有 51 kΩ 上拉，CLK 直接连接。上电前通过 GPIO4 关
 
 ```sh
 tools/firmware.sh espp4-a build
-tools/firmware.sh espp4-a flash --port /dev/ttyUSB1 --baud 2000000
-tools/firmware.sh espp4-a monitor --port /dev/ttyUSB1 --baud 2000000
-python3 tools/pxadb/pxadb.py info --port /dev/ttyUSB1 --baud 2000000
+tools/firmware.sh espp4-a flash --port /dev/ttyUSB0 --baud 2000000
+tools/firmware.sh espp4-a monitor --port /dev/ttyUSB0 --baud 2000000
+# 安装本固件后，原生 USB HS 口提供 PXADB：
+python3 tools/pxadb/pxadb.py info --port /dev/ttyACM0 --baud 2000000
+tools/firmware.sh espp4-a app-flash --port /dev/ttyACM0
 ```
 
-CH340X 的 RTS / DTR 接到 EN / BOOT。PXADB 客户端在打开桥接串口前释放
-这两根控制线，并给打开串口时可能发生的复位预留启动时间。多步交互验证使用
-同一个 PXADB 连接，例如 `pxadb run <scenario>` 或 GUI 的持续连接，避免逐条
-命令重新打开串口造成应用重启。
-控制台与 PXADB 共用 UART 驱动和同步 TX，避免轮询控制台日志插入协议帧。
+端口编号由主机分配，以上仅为示例；应按 USB 产品名和 MAC 序列号确认目标，
+Linux 可使用 `/dev/serial/by-id/` 的稳定链接。CH340X 的 RTS / DTR 接到
+EN / BOOT，串口保留 UART0 启动日志和硬件自动下载，速率为 2000000。
+
+原生 USB 默认运行 TinyUSB 高速 CDC，产品名为 `ESPP4-A`，序列号为本机
+MAC；PXADB 的应用安装、文件、日志、输入和截图均使用该接口。CDC 的波特率
+不决定 USB 总线速度。普通连接及关闭调试连接不会触发复位。
+
+板级 `tools/usb_esptool.py` 已通过 `ESPTOOL_WRAPPER` 接入 IDF 烧录目标。
+运行态使用 1200 波特率下的 DTR 下降沿请求下载；独立任务等待应用停止和存档，
+退出 CDC，再经 IDF 完成双核、DMA、缓存与时钟清理后复位进入 ROM。主机按相同
+MAC 等待 `ESP32-P4` ROM 重新枚举，并用 `no-reset` 连接，避免再次复位丢失下载模式。
+已经处于 ROM 时直接连接；CH340、其他 USB 产品和离线镜像生成均保持原有行为。
+首次安装其他厂商固件时，请先用 CH340 烧录；本适配不依赖其他固件响应下载请求。
+
+PXADB 传输由现有 Kconfig 单选项决定：默认是原生 USB；需要旧的 UART 调试时，
+在 `menuconfig` 将 `PXADB transport` 切换至 UART0，TX37/RX38、2000000 波特率。
+USB 与 UART PXADB 会话不同时运行；UART 控制台和硬件下载始终可用。
 
 `factory` 应用分区为 7 MiB，`pxa_data` 从 `0x710000` 开始，占用剩余
 `0x8f0000` 字节。固件烧录不覆盖该数据分区；已有数据挂载失败时保留原内容。
