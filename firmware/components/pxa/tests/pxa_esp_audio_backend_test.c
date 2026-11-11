@@ -41,9 +41,9 @@ static void budget_free(void *c, void *ptr) { (void)c; free(ptr); }
 pxa_status_t pxa_esp_resource_memory_initialize(void) {
     if (audio_allocator.budget) return PXA_STATUS_OK;
     pxa_memory_budget_config_t config = {0};
-    config.limit[PXA_MEMORY_EXTERNAL] = 32768;
+    config.limit[PXA_MEMORY_EXTERNAL] = sizeof(pxa_audio_mixer_t)+8192;
     pxa_status_t status = pxa_memory_budget_init(&audio_budget, &config);
-    pxa_memory_owner_t owner; const size_t limits[2] = {0, 32768};
+    pxa_memory_owner_t owner; const size_t limits[2] = {0, sizeof(pxa_audio_mixer_t)+8192};
     if (!status) status = pxa_memory_owner_open(&audio_budget, limits, &owner);
     if (!status) audio_allocator = (pxa_memory_allocator_t){&audio_budget, owner,
         PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO, NULL, budget_allocate, budget_free};
@@ -308,7 +308,7 @@ int main(void) {
     assert(pxa_esp_audio_set_pull_device(16000,device_wake,&device_wakes));
     f=(pxa_audio_format_t){32768,2,20};
     assert(!b.open_pcm(b.context,&f,&info,&a));
-    assert(info.sink_rate==16000 && info.sink_channels==1 && info.queue_frames==PXA_AUDIO_MIXER_PACKETS*(32768u/50u));
+    assert(info.sink_rate==16000 && info.sink_channels==1 && info.queue_frames==4u*(32768u/50u));
     pxa_audio_graph_t native_gain={.route=PXA_AUDIO_ROUTE_SPEAKER};
     assert(!b.commit(b.context,a,&native_gain));
     uint8_t native_pcm[548*4];
@@ -345,6 +345,24 @@ int main(void) {
         b.close(b.context, a);
         pxa_esp_audio_deinitialize();
     }
+    /* Opt-in speech buffering is independent of the default route. */
+    pxa_audio_format_t speech_format={16000,1,20};
+    assert(b.open_pcm_buffered);
+    if(PXA_AUDIO_MIXER_PACKETS>=24) {
+        assert(pxa_esp_audio_set_pull_device(16000,device_wake,&device_wakes));
+        assert(!b.open_pcm_buffered(b.context,&speech_format,&info,&a));
+        assert(info.queue_frames==7680 && g_audio.mixer->voices[0].buffered);
+        assert(!b.commit(b.context,a,&native_gain));
+        int16_t sentence[320]; for(unsigned i=0;i<320;++i) sentence[i]=10000;
+        assert(!b.submit(b.context,a,(uint8_t *)sentence,sizeof(sentence)));
+        for(unsigned tick=0;tick<20;++tick) {
+            assert(pxa_esp_audio_render(rendered,320)==320);
+            for(unsigned i=0;i<320;++i) assert(!rendered[i]);
+        }
+        assert(pxa_esp_audio_render(rendered,320)==320);
+        for(unsigned i=0;i<320;++i) assert(rendered[i]==10000);
+        b.close(b.context,a); pxa_esp_audio_deinitialize();
+    } else assert(b.open_pcm_buffered(b.context,&speech_format,&info,&a)==PXA_STATUS_UNSUPPORTED);
     pxa_memory_stats_t stats;
     assert(!pxa_memory_budget_stats(&audio_budget, audio_allocator.owner, &stats));
     assert(!stats.charged[PXA_MEMORY_INTERNAL] && !stats.charged[PXA_MEMORY_EXTERNAL]);

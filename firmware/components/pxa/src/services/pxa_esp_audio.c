@@ -174,7 +174,7 @@ static pxa_status_t audio_open_format(void *context, const pxa_audio_format_t *f
             slot->provider_session = session;
             *provider_session = session;
             if (info) *info = (pxa_audio_pcm_info_t){output_rate,
-                PXA_AUDIO_MIXER_PACKETS * (format->sample_rate * 20u / 1000u), 1};
+                4u * (format->sample_rate * 20u / 1000u), 1};
             audio_unlock(audio);
             return PXA_STATUS_OK;
         }
@@ -196,6 +196,22 @@ static pxa_status_t audio_open_pcm(void *context, const pxa_audio_format_t *form
         format->sample_rate > 48000 || (format->channels != 1 && format->channels != 2))
         return PXA_STATUS_INVALID_ARGUMENT;
     return audio_open_format(context, format, info, session);
+}
+static pxa_status_t audio_open_pcm_buffered(void *context, const pxa_audio_format_t *format,
+    pxa_audio_pcm_info_t *info, uint64_t *session) {
+    if (PXA_AUDIO_MIXER_PACKETS < 24) return PXA_STATUS_UNSUPPORTED;
+    pxa_status_t status = audio_open_pcm(context, format, info, session);
+    if (status) return status;
+    audio_lock(&g_audio);
+    for (unsigned i = 0; i < PXA_ESP_AUDIO_VOICE_COUNT; ++i) {
+        if (g_audio.slots[i].active && g_audio.slots[i].provider_session == *session) {
+            status = pxa_audio_mixer_buffered(&g_audio.mixer->voices[i]);
+            info->queue_frames = g_audio.mixer->voices[i].queue_limit * (format->sample_rate / 50u);
+            break;
+        }
+    }
+    audio_unlock(&g_audio);
+    return status;
 }
 static void audio_wake(pxa_esp_audio_state_t *audio) {
     if (audio->device_wake) audio->device_wake(audio->device_context);
@@ -663,12 +679,14 @@ static void audio_output_tick(pxa_esp_audio_state_t *audio) {
             uint32_t accounted[PXA_AUDIO_MIXER_PACKETS], source_phase[PXA_AUDIO_MIXER_PACKETS];
             pxa_audio_biquad_t eq[PXA_AUDIO_MAX_EQ_BANDS];
             pxa_audio_state_t state;
-            uint8_t read, count;
+            uint8_t read, count, started;
+            uint32_t startup_waited;
         } checkpoint[PXA_AUDIO_MIXER_VOICES];
         for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i) {
             pxa_audio_mixer_voice_t *v = &audio->mixer->voices[i];
             checkpoint[i].state = v->state;
             checkpoint[i].read = v->read; checkpoint[i].count = v->count;
+            checkpoint[i].started = v->started; checkpoint[i].startup_waited = v->startup_waited;
             memcpy(checkpoint[i].eq, v->eq, sizeof(v->eq));
             for (unsigned j = 0; j < PXA_AUDIO_MIXER_PACKETS; ++j) {
                 checkpoint[i].position[j] = v->packets[j].position;
@@ -710,6 +728,7 @@ static void audio_output_tick(pxa_esp_audio_state_t *audio) {
                 pxa_audio_mixer_voice_t *v = &audio->mixer->voices[i];
                 v->state = checkpoint[i].state;
                 v->read = checkpoint[i].read; v->count = checkpoint[i].count;
+                v->started = checkpoint[i].started; v->startup_waited = checkpoint[i].startup_waited;
                 memcpy(v->eq, checkpoint[i].eq, sizeof(v->eq));
                 for (unsigned j = 0; j < PXA_AUDIO_MIXER_PACKETS; ++j) {
                     v->packets[j].position = checkpoint[i].position[j];
@@ -907,6 +926,7 @@ void pxa_esp_audio_backend(pxa_audio_backend_t *output) {
     output->capture_frame_ms = capture_frame_ms;
     output->open = audio_open;
     output->open_pcm = audio_open_pcm;
+    output->open_pcm_buffered = audio_open_pcm_buffered;
     output->commit = audio_commit;
     output->submit = audio_submit;
     output->query = audio_query;

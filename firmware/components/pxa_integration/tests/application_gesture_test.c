@@ -265,6 +265,63 @@ static void test_launcher_paging(lv_display_t* display) {
     lv_indev_delete(indev);
     lv_obj_delete(ui.root);
 }
+static void test_hidden_navigation_escape(lv_display_t* display) {
+    pxsys_standard_system_config_t system_config;
+    pxsys_standard_system_config_init(&system_config);
+    system_config.allocator.allocate = launcher_allocate;
+    system_config.allocator.release = launcher_release;
+    pxsys_standard_system_t* system = NULL;
+    assert(pxsys_standard_system_create(&system_config, &system) == PXSYS_STATUS_OK);
+    pxsys_reference_lvgl_config_t config;
+    pxsys_reference_lvgl_config_init(&config);
+    config.system = system;
+    config.parent = lv_layer_top();
+    config.text_font = config.title_font = LV_FONT_DEFAULT;
+    config.allocator = system_config.allocator;
+    config.navigation_mode = PXSYS_NAVIGATION_BUTTONS;
+    config.animations_enabled = 0;
+    pxsys_reference_lvgl_t* ui = NULL;
+    assert(pxsys_reference_lvgl_create(&config, &ui) == PXSYS_STATUS_OK);
+    assert(pxsys_reference_lvgl_start(ui) == PXSYS_STATUS_OK);
+    assert(open_role(ui, PXSYS_ROLE_SETTINGS) == PXSYS_STATUS_OK);
+    pxsys_display_profile_init(&ui->display, 480, 480);
+    ui->content_active = 0; /* Foreground app owns content. */
+    ui->window.status_bar_mode = PXSYS_WINDOW_BAR_HIDDEN;
+    ui->window.navigation_bar_mode = PXSYS_WINDOW_BAR_HIDDEN;
+    rebuild(ui);
+    assert(ui->navigation_bar && !navigation_bar_is_visible(ui));
+    lv_indev_t* indev = lv_indev_create();
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_display(indev, display);
+    lv_indev_set_read_cb(indev, read_launcher_pointer);
+    lv_timer_pause(lv_indev_get_read_timer(indev));
+    lv_obj_update_layout(ui->root);
+    for (unsigned round = 0; round < 2; ++round) {
+        pointer_sample(indev, 240, 479, true);
+        pointer_sample(indev, 240, 415, true);
+        pointer_sample(indev, 240, 415, false);
+        advance(40);
+        assert(navigation_bar_is_visible(ui));
+        assert(lv_obj_get_child_count(ui->navigation_bar) == 3);
+        assert(ui->content_inset_bottom == 0); /* User override is an overlay. */
+        if (!round) {
+            advance(TRANSIENT_BAR_TIMEOUT_MS + 40);
+            assert(ui->navigation_bar && !navigation_bar_is_visible(ui));
+        }
+    }
+    lv_obj_t* home = lv_obj_get_child(ui->navigation_bar, 1);
+    lv_obj_update_layout(ui->root);
+    lv_area_t area;
+    lv_obj_get_coords(home, &area);
+    pointer_sample(indev, (area.x1 + area.x2)/2, (area.y1 + area.y2)/2, true);
+    pointer_sample(indev, (area.x1 + area.x2)/2, (area.y1 + area.y2)/2, false);
+    advance(40);
+    assert(ui->content_active && ui->active_page == REFERENCE_PAGE_HOME);
+    lv_indev_delete(indev);
+    assert(pxsys_reference_lvgl_destroy(ui) == PXSYS_STATUS_OK);
+    assert(pxsys_standard_system_destroy(system) == PXSYS_STATUS_OK);
+    puts("Permanently hidden app bars: trusted edge reveal, timeout, repeat reveal and system Home passed");
+}
 int main(void) {
     lv_init();
     lv_display_t* display = lv_display_create(480, 480);
@@ -437,6 +494,7 @@ int main(void) {
     test_launcher_pointer(display, 160);
     test_launcher_pointer(display, 320);
     test_launcher_paging(display);
+    test_hidden_navigation_escape(display);
     lv_deinit();
     puts("Game gestures, launcher swipe rejection and compact shade status updates passed");
     return 0;

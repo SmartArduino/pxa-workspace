@@ -3458,7 +3458,7 @@ static void host_service_capabilities(pxa_package_activation_profile_t *capabili
                     PXA_UI_FEATURE_CONTROLLER_INPUT |
                     PXA_UI_FEATURE_CANVAS_STREAM_IO |
                     PXA_UI_FEATURE_TEXT_INPUT_CONTROL | PXA_UI_FEATURE_DYNAMIC_TEXT |
-                    PXA_UI_FEATURE_PASSWORD_INPUT | PXA_UI_FEATURE_FONT_GLYPH;
+                    PXA_UI_FEATURE_PASSWORD_INPUT | PXA_UI_FEATURE_FONT_GLYPH | PXA_UI_FEATURE_IMAGE_SAMPLING;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
                 service_capabilities[index].features |= PXA_UI_FEATURE_SIZED_TEXT;
 #endif
@@ -5700,7 +5700,7 @@ bool pxa_esp_host_initialize(void) {
         PXA_UI_FEATURE_GRID | PXA_UI_FEATURE_RGB565_BITMAP |
         PXA_UI_FEATURE_CONTROLLER_INPUT | PXA_UI_FEATURE_TEXT_INPUT_CONTROL |
         PXA_UI_FEATURE_DYNAMIC_TEXT | PXA_UI_FEATURE_PASSWORD_INPUT |
-        PXA_UI_FEATURE_FONT_GLYPH;
+        PXA_UI_FEATURE_FONT_GLYPH | PXA_UI_FEATURE_IMAGE_SAMPLING;
 #if defined(CONFIG_LV_USE_FREETYPE) && CONFIG_LV_USE_FREETYPE
     ui_config.primary_environment.features |= PXA_UI_FEATURE_SIZED_TEXT;
 #endif
