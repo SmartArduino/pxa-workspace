@@ -68,6 +68,7 @@ struct Camera {
     ppa_client_handle_t ppa = nullptr;
     uint8_t* preview_dma = nullptr;
     void* allocation = nullptr;
+    void* transform_allocation = nullptr;
     uint8_t* buffers[2]{};
     uint8_t* scaled = nullptr;
     size_t jpeg_capacity = 0;
@@ -153,6 +154,7 @@ void Finish(void*) {
         (void)esp_cam_sensor_xclk_free(camera.xclk); camera.xclk = nullptr;
     }
     heap_caps_free(camera.allocation); camera.allocation = nullptr;
+    heap_caps_free(camera.transform_allocation); camera.transform_allocation = nullptr;
     camera.buffers[0] = camera.buffers[1] = camera.scaled = camera.last = nullptr;
     camera.completed.store(nullptr);
     camera.columns = nullptr;
@@ -217,15 +219,23 @@ pxa_status_t PrepareProfile(void*, const pxa_camera_profile_t& profile) {
         if (registered != ESP_OK) ESP_LOGW(kTag, "PPA preview unavailable: %s", esp_err_to_name(registered));
     }
     const size_t preview_bytes = camera.ppa ? align(espp4_a::kCameraPpaPreviewBytes) : 0;
-    const size_t bytes = 2 * camera.stride + camera.scaled_stride + preview_bytes + align(std::max(camera.width, camera.height) * 2);
-    // Fixed board-owned CSI/JPEG DMA storage, separate from immutable Core assets.
-    // The allocation is bounded by the two fixed sensor frames and selected profile.
-    camera.allocation = heap_caps_aligned_alloc(alignment, bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!camera.allocation) return PXA_STATUS_RESOURCE_LIMIT;
-    const auto address = (reinterpret_cast<uintptr_t>(camera.allocation) + alignment - 1) & ~(uintptr_t(alignment) - 1);
-    camera.buffers[0] = reinterpret_cast<uint8_t*>(address);
+    const size_t capture_bytes = 2 * camera.stride;
+    const size_t transform_bytes = camera.scaled_stride + preview_bytes + align(std::max(camera.width, camera.height) * 2);
+    const size_t bytes = capture_bytes + transform_bytes;
+    // Keep the fixed CSI pair contiguous for cache ownership, but allocate
+    // transform storage separately. Recording/playback can fragment PSRAM:
+    // reopening must not require one contiguous 13 MiB portrait buffer.
+    camera.allocation = heap_caps_aligned_alloc(alignment, capture_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    camera.transform_allocation = heap_caps_aligned_alloc(alignment, transform_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!camera.allocation || !camera.transform_allocation) {
+        ESP_LOGW(kTag, "DMA storage unavailable: capture=%u transform=%u largest=%u",
+            unsigned(capture_bytes), unsigned(transform_bytes),
+            unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
+        return PXA_STATUS_RESOURCE_LIMIT;
+    }
+    camera.buffers[0] = static_cast<uint8_t*>(camera.allocation);
     camera.buffers[1] = camera.buffers[0] + camera.stride;
-    camera.scaled = camera.buffers[1] + camera.stride;
+    camera.scaled = static_cast<uint8_t*>(camera.transform_allocation);
     camera.preview_dma = camera.ppa ? camera.scaled + camera.scaled_stride : nullptr;
     camera.columns = reinterpret_cast<uint16_t*>(camera.scaled + camera.scaled_stride + preview_bytes);
     espp4_a::CameraColumns(camera.columns, camera.crop_width, camera.portrait ? camera.height : camera.width);

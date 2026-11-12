@@ -86,7 +86,10 @@ constexpr size_t kMaxEncodedPayload = 2048;
 constexpr size_t kScreenshotChunkSize = 1024;
 constexpr size_t kUsbBufferSize = 512;
 constexpr size_t kLogQueueDepth = 4;
-constexpr size_t kLogHistoryDepth = 16;
+#ifndef CONFIG_PXADB_LOG_HISTORY_DEPTH
+#define CONFIG_PXADB_LOG_HISTORY_DEPTH 16
+#endif
+constexpr size_t kLogHistoryDepth = CONFIG_PXADB_LOG_HISTORY_DEPTH;
 constexpr size_t kLogScratchCount = 2;
 constexpr size_t kFsPathLength = pxadb::kFsPathCapacity;
 #ifndef CONFIG_PXA_MOUNT_POINT
@@ -359,7 +362,10 @@ const char* DeviceSerial() {
     static bool initialized = false;
     if (!initialized) {
         uint8_t mac[6] = {};
-        if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+        // P4 has an external radio, so use its eFuse base MAC when no on-chip
+        // Wi-Fi MAC is available. This also matches its ROM/native USB serial.
+        if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK ||
+            esp_efuse_mac_get_default(mac) == ESP_OK) {
             snprintf(serial, sizeof(serial), "%02x:%02x:%02x:%02x:%02x:%02x",
                      mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
         } else {
@@ -1727,7 +1733,9 @@ void SendInfo(unsigned long sequence) {
     }
     const size_t identity_offset = strlen(payload);
     snprintf(payload + identity_offset, sizeof(payload) - identity_offset,
-             ";elf_sha256=%s", elf_sha256);
+             ";elf_sha256=%s;pxadb_stack_bytes=%u;pxadb_stack_min_free=%u", elf_sha256,
+             static_cast<unsigned>(kTaskStackSize),
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     SendFrame(sequence, "OK", payload);
 }
 
@@ -3232,14 +3240,20 @@ void PxadbInputTask(void*) {
 }
 #endif
 
-void PxadbTask(void*) {
+struct ControlParser {
+    char command[kMaxCommandLength];
+    uint8_t input[512];
+};
+
+void PxadbTask(void* argument) {
+    auto* parser = static_cast<ControlParser*>(argument);
     AbortTransfers();
-    char command[kMaxCommandLength] = {};
+    char* command = parser->command;
     size_t command_length = 0;
     bool discarding_command = false;
-    uint8_t input[512] = {};
+    uint8_t* input = parser->input;
     while (s_running.load()) {
-        const int received = TransportRead(input, sizeof(input), kTransportReadPollMs);
+        const int received = TransportRead(input, sizeof(parser->input), kTransportReadPollMs);
         if (received <= 0) {
             if (s_bulk.bytes && static_cast<uint64_t>(esp_timer_get_time()) - s_bulk.last_us > 10000000u) {
                 const unsigned long sequence = s_bulk.sequence;
@@ -3285,7 +3299,7 @@ void PxadbTask(void*) {
                 discarding_command = false;
             } else if (discarding_command) {
                 continue;
-            } else if (command_length + 1 < sizeof(command)) {
+            } else if (command_length + 1 < sizeof(parser->command)) {
                 command[command_length++] = character;
             } else {
                 command_length = 0;
@@ -3301,6 +3315,7 @@ void PxadbTask(void*) {
 #endif
         ESP_LOGI(kTag, "PXADB control session stopped");
     }
+    heap_caps_free(parser);
     s_task_active.store(false);
     vTaskDelete(nullptr);
 }
@@ -3479,10 +3494,21 @@ esp_err_t Start() {
     portEXIT_CRITICAL(&s_input_lock);
 #endif
     s_running.store(true);
+    // These buffers are used by the control task only, outside flash/cache
+    // critical sections. Keep them off its internal-only filesystem stack.
+    auto* parser = static_cast<ControlParser*>(heap_caps_calloc(
+        1, sizeof(ControlParser), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!parser) parser = static_cast<ControlParser*>(heap_caps_calloc(
+        1, sizeof(ControlParser), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (!parser) {
+        CleanupService(false);
+        return ESP_ERR_NO_MEM;
+    }
     s_task_active.store(true);
-    if (xTaskCreateWithCaps(PxadbTask, "pxadbd", kTaskStackSize, nullptr, 4,
+    if (xTaskCreateWithCaps(PxadbTask, "pxadbd", kTaskStackSize, parser, 4,
                             nullptr, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
         s_task_active.store(false);
+        heap_caps_free(parser);
         ESP_LOGW(kTag,
                  "PXADB control task allocation failed: free_sram=%u largest_sram=%u",
                  static_cast<unsigned>(heap_caps_get_free_size(

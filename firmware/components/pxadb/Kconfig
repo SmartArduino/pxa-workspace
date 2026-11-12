@@ -74,6 +74,16 @@ menu "PXADB development service"
             high-water marks with deployment and capture workloads. The
             stack stays internal because filesystem operations write flash.
 
+    config PXADB_LOG_HISTORY_DEPTH
+        int "PXADB retained log records"
+        range 4 64
+        default 16
+        depends on PXADB_ENABLED
+        help
+            Internal-memory history replayed when logcat connects. Live log
+            streaming uses its separate bounded queue. Boards with camera DMA
+            requirements can retain fewer records to preserve internal memory.
+
     config PXADB_TEST_CONTROL
         bool "Enable input injection and display capture"
         depends on PXADB_ENABLED

@@ -137,9 +137,14 @@ immutable Core image, overlapping the next acquisition with app/UI processing.
 WHEN_EMPTY parks DMA once that single queued frame is ready.
 The app closes the camera before writing photos or buffered video to Flash. The existing Espressif JPEG encoder runs in the shared
 vision worker with the sensor's YUYV input, avoiding an RGB conversion during
-JPEG encoding. The pinned esp32-camera 2.1.8 dependency uses its Apache-2.0
+JPEG encoding. The pinned esp32-camera 2.1.9 dependency uses its Apache-2.0
 and file-specific permissive licenses. Its public esp_jpeg dependency is
 Apache-2.0. esp_new_jpeg retains its Espressif product-use license.
+The board retains a 16 KiB instruction cache so camera DMA and Flash task
+stacks have internal SRAM available. The native runtime and PXADB control
+stacks use 16 KiB each; PXADB parser buffers live in PSRAM and the board retains
+eight log history records. Changing these budgets requires preview, capture,
+recording and package-install tests; free PSRAM alone cannot satisfy DMA.
 Two whole-row internal SRAM DMA nodes feed the PSRAM framebuffers. The ring
 uses 3840 bytes for smaller profiles and 2560 bytes for VGA, avoiding corrupted
 rows observed with direct PSRAM capture on this board. A board-local wrapper

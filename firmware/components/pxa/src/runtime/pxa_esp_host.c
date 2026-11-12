@@ -1559,12 +1559,17 @@ static pxa_status_t request_runtime_permission_prompt(
         else if (strcmp(prompt.permission_name, "audio.playback") == 0)
             snprintf(prompt.permission_name, sizeof(prompt.permission_name),
                      "音频播放");
+        else if (strcmp(prompt.permission_name, "audio.capture") == 0)
+            snprintf(prompt.permission_name, sizeof(prompt.permission_name),
+                     "麦克风录音");
         if (strcmp(prompt.scope, "local-network") == 0)
             snprintf(prompt.scope, sizeof(prompt.scope), "当前局域网");
         else if (strcmp(prompt.scope, "network") == 0)
             snprintf(prompt.scope, sizeof(prompt.scope), "所有 IPv4 网络");
         else if (strcmp(prompt.scope, "media") == 0)
             snprintf(prompt.scope, sizeof(prompt.scope), "媒体音频");
+        else if (strcmp(prompt.scope, "microphone") == 0)
+            snprintf(prompt.scope, sizeof(prompt.scope), "麦克风");
     }
     g_host.activation.permission_prompt.prompt_id = prompt_id;
     g_host.activation.permission_prompt.component = component;

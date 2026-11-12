@@ -88,7 +88,7 @@ endif()
 idf_component_get_property(PAI_BOARD_COMMON_LIB pxa_board_common COMPONENT_LIB)
 target_compile_definitions(${PAI_BOARD_COMMON_LIB} PRIVATE PXA_BOARD_VISION_STACK_BYTES=4096)
 
-# esp32-camera is pinned to 2.1.8. The DMA adapter uses its private geometry
+# esp32-camera is pinned to 2.1.9. The DMA adapter uses its private geometry
 # hook, with the original header and ABI compiled into this board only.
 idf_component_get_property(PAI_CAMERA_COMPONENT_DIR espressif__esp32-camera COMPONENT_DIR)
 target_include_directories(${COMPONENT_LIB} PRIVATE

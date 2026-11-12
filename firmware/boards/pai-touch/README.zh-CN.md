@@ -94,6 +94,10 @@ Espressif JPEG编码器，直接以传感器YUYV数据编码JPEG，省去编码�
 为3840字节，VGA为2560字节。板级覆盖固定版本驱动的DMA尺寸计算，并保留其他格式的原实现。
 原生预览按全范围BT.601将YUYV转换为有预算限制的RGB565 Core IMAGE，跳过JPEG编解码。
 录像预览复用同一次JPEG采集的原始帧。相机应用位于 `local/pxa-apps/camera`，支持自动预览、画质切换、JPEG照片及MJPEG/Opus MKV相册。
+固定 esp32-camera 2.1.9，沿用 Apache-2.0 与文件级宽松许可。
+指令缓存保留16 KiB，将其余内部 RAM 留给相机 DMA 与 Flash 调用栈。原生运行任务
+与 PXADB 控制任务各用16 KiB 栈；PXADB 解析缓冲放在 PSRAM，日志历史保留8条。
+调整预算后应复测预览、拍照、录像及包安装；空闲 PSRAM 不能替代内部 DMA 内存。
 `PXA_PAI_CAMERA_DIAGNOSTIC` 默认0，正式固件保持0。
 
 ## LCD DMA 错误恢复

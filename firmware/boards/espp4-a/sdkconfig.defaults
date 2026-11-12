@@ -4,6 +4,9 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="boards/espp4-a/partitions.csv"
 CONFIG_PARTITION_TABLE_OFFSET=0x8000
 
 CONFIG_SPIRAM=y
+# Native preview images overlap the JPEG buffer and the previous display lease.
+# The generic 2 MiB Host quota cannot hold that overlap on this 32 MiB board.
+CONFIG_PXA_RESOURCE_EXTERNAL_BYTES=8388608
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_SPEED_250M=y
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y

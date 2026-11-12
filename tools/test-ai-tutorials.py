@@ -9,7 +9,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import time
 
@@ -21,7 +20,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     ws, site, output = (p.resolve() for p in (args.workspace, args.website, args.output))
-    projects = [ws / 'apps/tutorial-cpp', ws / 'apps/tutorial-c']
+    projects = [ws / ('apps/tutorial-' + name) for name in ('cpp', 'c', 'counter', 'timer')]
     if any(p.exists() for p in projects):
         parser.error('Use a fresh configured workspace; existing tutorial projects are retained')
     output.mkdir(parents=True, exist_ok=False)
@@ -54,11 +53,12 @@ def main():
         run('init-existing-refused', ['init', 'apps/tutorial-cpp'], expected=1)
         run('context-cpp', ['context', 'apps/tutorial-cpp', '--query', 'Button'])
         text = (site / 'content/ai-tools-reference.md').read_text()
-        scenario = json.loads(re.search(r'```json\n(.*?)```', text, re.S).group(1))
-        (projects[0] / 'tests').mkdir()
-        (projects[0] / 'tests/hello.json').write_text(json.dumps(scenario))
+        if not all(example in text for example in ('--recipe counter', '--recipe timer',
+                                                   'tests/journey.json', 'tests/complete.json')):
+            raise RuntimeError('Public recipe tutorial is missing a required creation or verification example')
         verify('cpp-interaction', ['apps/tutorial-cpp', '--profiles', 'pai-touch', 'sensecap-watcher',
-                                  '--scenario', 'apps/tutorial-cpp/tests/hello.json', '--store-screenshots'])
+                                  '--scenario', 'apps/tutorial-cpp/tests/basic.json',
+                                  '--require-ui', '--store-screenshots'])
         run('scope-after-cpp', ['scope', 'check'])
         run('init-c', ['init', 'apps/tutorial-c', '--id', 'pxa-tutorial-c', '--language', 'c'])
         assert (projects[1] / 'main.c').is_file() and not (projects[1] / 'main.cpp').exists()
@@ -79,6 +79,20 @@ def main():
         value = json.loads(run('store-prepare', ['store', 'prepare', 'apps/tutorial-c']))
         assert set(value['omitted']) == {'icon', 'cover'} and not value['needs_choice']
         assert value['listing']['tags'] == ['计数', '工具']
+        run('recipes', ['recipes'])
+        run('new-counter', ['new', 'apps/tutorial-counter', '--recipe', 'counter', '--title', '计数器'])
+        verify('counter-journey', ['apps/tutorial-counter', '--profiles', 'pai-touch', 'espp4-a',
+                                   '--scenario', 'apps/tutorial-counter/tests/journey.json',
+                                   '--require-ui', '--jobs', '2', '--store-screenshots'])
+        run('new-timer', ['new', 'apps/tutorial-timer', '--recipe', 'timer', '--title', '番茄钟',
+                          '--minutes', '25', '--break-minutes', '5'])
+        verify('timer-journey', ['apps/tutorial-timer', '--profiles', 'pai-touch',
+                               '--scenario', 'apps/tutorial-timer/tests/journey.json',
+                               '--require-ui', '--store-screenshots'])
+        verify('timer-completion', ['apps/tutorial-timer', '--profiles', 'pai-touch',
+                                  '--define', 'PXA_RECIPE_TIMER_SECONDS=6',
+                                  '--scenario', 'apps/tutorial-timer/tests/complete.json',
+                                  '--require-ui', '--store-screenshots'])
         run('scope-final', ['scope', 'check'])
         run('scope-end', ['scope', 'end'])
         result['passed'] = True
