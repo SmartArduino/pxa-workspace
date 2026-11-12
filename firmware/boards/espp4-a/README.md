@@ -4,6 +4,11 @@ SmartArduino ESPP4-A / ESP32-P4 DevKit v1.1 的 PXA 板级适配。
 硬件参数和 ST7102 初始化表来自
 [SmartArduino/ESPP4-A](https://github.com/SmartArduino/ESPP4-A/tree/1e981d9f159a1afb30bd5e41b0137344ce3916a6)。
 
+400 MHz配置在创建系统main任务前临时切到200 MHz，让调度器完成main与idle任务栈初始化；
+板级初始化开始时恢复配置频率，再初始化外设。启动日志输出实际运行频率，运行阶段仍为400 MHz。
+该板的RTOS创建适配只在调度器尚未启动、任务名为main时调整频率；保留内存保护和完整栈水位填充。
+这是针对早期内部SRAM写入异常的板级启动处理，不降低相机和应用运行时的CPU频率。
+
 | 资源 | 接线 / 配置 |
 | --- | --- |
 | 主控 | ESP32-P4，400 MHz，16 MB Flash，Hex PSRAM 250 MHz |

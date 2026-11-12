@@ -25,6 +25,7 @@
 #include <esp_lcd_mipi_dsi.h>
 #include <esp_lcd_touch_st7123.h>
 #include <esp_log.h>
+#include <soc/rtc.h>
 #include <esp_lv_decoder.h>
 #include <esp_netif_sntp.h>
 #include <esp_timer.h>
@@ -54,8 +55,26 @@ extern "C" esp_err_t __wrap_esp_wifi_set_mode(wifi_mode_t mode) {
 }
 extern "C" BaseType_t __real_xTaskCreatePinnedToCore(TaskFunction_t, const char*, uint32_t,
     void*, UBaseType_t, TaskHandle_t*, BaseType_t);
+namespace {
+// Keep the scheduler's initial main/idle stack writes at 200 MHz. On this
+// P4 v3 board, starting those writes at 400 MHz can fault in valid internal
+// SRAM. Restore the configured clock before any board peripherals start.
+// This flag is owned by pre-scheduler startup and then by the main task.
+bool bootstrap_clock_active = false;
+bool SetCpuClock(unsigned mhz) {
+    rtc_cpu_freq_config_t clock;
+    if (!rtc_clk_cpu_freq_mhz_to_config(mhz, &clock)) return false;
+    rtc_clk_cpu_freq_set_config(&clock);
+    return true;
+}
+}
 extern "C" BaseType_t __wrap_xTaskCreatePinnedToCore(TaskFunction_t entry, const char* name,
     uint32_t bytes, void* context, UBaseType_t priority, TaskHandle_t* task, BaseType_t core) {
+    if (CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ == 400 && name && std::strcmp(name, "main") == 0 &&
+        xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED) {
+        if (!SetCpuClock(200)) return pdFAIL;
+        bootstrap_clock_active = true;
+    }
     // The supplier bus worker requests 2 KiB. Current IDF SDMMC/error paths
     // require more stack; adapt its public RTOS allocation without changing
     // the supplier archive or any other task's placement/priority.
@@ -180,6 +199,11 @@ private:
 };
 
 bool Board::Initialize() {
+    const bool restore_clock = bootstrap_clock_active;
+    if (restore_clock) {
+        if (!SetCpuClock(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ)) return false;
+        bootstrap_clock_active = false;
+    }
     // Keep one contiguous internal block through display/audio/radio setup.
     // PXADB needs its own 20 KiB stack before the 32 KiB runtime is created.
     runtime_stack_reserve_ = heap_caps_malloc(40 * 1024, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -193,6 +217,12 @@ bool Board::Initialize() {
         uart_set_pin(UART_NUM_0, 37, 38, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK ||
         uart_driver_install(UART_NUM_0, 4096, 0, 0, nullptr, 0) != ESP_OK) return false;
     uart_vfs_dev_use_driver(UART_NUM_0);
+    if (restore_clock) {
+        rtc_cpu_freq_config_t clock;
+        rtc_clk_cpu_freq_get_config(&clock);
+        if (clock.freq_mhz != CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ) return false;
+        ESP_LOGI(kTag, "CPU clock: startup=200 MHz, runtime=%u MHz", unsigned(clock.freq_mhz));
+    }
     if (!Espp4AInitializeUsb()) return false;
     mutex_ = xSemaphoreCreateRecursiveMutex();
     // The DMA ISR must access this queue while Flash/PSRAM caches are disabled.
