@@ -26,6 +26,8 @@ int audio_opus_frame_read(uint8_t *data, size_t max_len);
  * Unlike audio_opus_frame_read, this never waits for an incoming frame. */
 int audio_opus_frame_try_read(uint8_t *data, size_t max_len);
 size_t audio_opus_frame_available(void);
+/* Lifetime overwrite count; callers can compare snapshots around a capture. */
+uint32_t audio_opus_frame_dropped(void);
 void audio_opus_frame_flush(void);
 
 /* Feed bytes received from the underlying transport (e.g. UART) into rpc_701. */

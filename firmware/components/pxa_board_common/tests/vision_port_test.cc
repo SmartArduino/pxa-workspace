@@ -15,7 +15,11 @@ static bool deny_memory, oversized;
 static std::atomic<bool> block{false}, entered{false}, released{false};
 static std::atomic<bool> preview_block{false}, preview_entered{false}, preview_released{false};
 static bool preview_error;
-bool pxa_board_add_peripheral_backend(const pxa_peripherals_backend_t* b) { backend = *b; return true; }
+static bool backend_registration_failure;
+bool pxa_board_add_peripheral_backend(const pxa_peripherals_backend_t* b) {
+    if(backend_registration_failure)return false;
+    backend = *b; return true;
+}
 extern "C" const pxa_memory_allocator_t* pxa_esp_device_resource_allocator(unsigned c, unsigned k) {
     assert(c == PXA_MEMORY_EXTERNAL && k == PXA_MEMORY_FRAME); return nullptr;
 }
@@ -50,7 +54,31 @@ static pxa_status_t PreviewJpeg(void* context, const uint8_t* bytes, size_t size
 }
 int main() {
     const PxaBoardVisionDriver driver{nullptr, true, false, Prepare, Capture, Finish};
+#if PXA_BOARD_VISION_STACK_EXTERNAL
+    pxa_test_heap_fail=true;
+    assert(!pxa_board_vision_port_initialize(&driver));
+    assert(!vision.stack && !vision.task && !pxa_test_heap_live);
+    pxa_test_heap_fail=false;
+#endif
+    pxa_test_task_create_fail=true;
+    assert(!pxa_board_vision_port_initialize(&driver));
+    assert(!vision.task);
+#if PXA_BOARD_VISION_STACK_EXTERNAL
+    assert(!vision.stack && !pxa_test_heap_live);
+#endif
+    pxa_test_task_create_fail=false;
+    backend_registration_failure=true;
+    assert(!pxa_board_vision_port_initialize(&driver));
+    assert(!vision.task && pxa_test_tasks_deleted==1);
+#if PXA_BOARD_VISION_STACK_EXTERNAL
+    assert(!vision.stack && !pxa_test_heap_live);
+#endif
+    backend_registration_failure=false;
     assert(pxa_board_vision_port_initialize(&driver));
+    assert(pxa_test_stack_bytes==PXA_BOARD_VISION_STACK_BYTES);
+#if PXA_BOARD_VISION_STACK_EXTERNAL
+    assert(vision.stack && pxa_test_heap_live==1);
+#endif
     assert(!pxa_board_vision_port_initialize(&driver));
     size_t count; pxa_peripheral_port_t port{};
     assert(backend.list(nullptr, &port, 1, &count) == PXA_STATUS_OK && count == 1);

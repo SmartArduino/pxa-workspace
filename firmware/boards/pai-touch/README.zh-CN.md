@@ -96,7 +96,10 @@ Espressif JPEG编码器，直接以传感器YUYV数据编码JPEG，省去编码�
 录像预览复用同一次JPEG采集的原始帧。相机应用位于 `local/pxa-apps/camera`，支持自动预览、画质切换、JPEG照片及MJPEG/Opus MKV相册。
 固定 esp32-camera 2.1.9，沿用 Apache-2.0 与文件级宽松许可。
 指令缓存保留16 KiB，将其余内部 RAM 留给相机 DMA 与 Flash 调用栈。原生运行任务
-与 PXADB 控制任务各用16 KiB 栈；PXADB 解析缓冲放在 PSRAM，日志历史保留8条。
+使用24 KiB内部栈，PXADB控制任务使用16 KiB内部栈；PXADB解析缓冲放在PSRAM，日志历史保留8条。
+常规Vision工作任务使用4 KiB PSRAM栈，其回调不执行Flash或NVS写入；会写文件的原始相机诊断模式仍使用内部栈。
+JL701 UART接收中断放在IRAM，驱动使用4 KiB内部接收环。解析后的Opus包使用16 KiB有界PSRAM队列，
+队列控制块留在内部RAM，为录像写Flash时的读取暂停保留音频；结束采集时记录队列覆盖丢帧数。
 调整预算后应复测预览、拍照、录像及包安装；空闲 PSRAM 不能替代内部 DMA 内存。
 `PXA_PAI_CAMERA_DIAGNOSTIC` 默认0，正式固件保持0。
 

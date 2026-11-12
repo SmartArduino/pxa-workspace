@@ -34,6 +34,15 @@ mkdir -p "$out"
   -I"$root/extensions/peripherals/include" -I"$root/deps/pxa-system/libpxa/include" \
   -DESP_PLATFORM "$tests/vision_port_test.cc" -o "$out/vision-test"
 "$out/vision-test"
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread -g \
+  -fsanitize=address,undefined -fno-omit-frame-pointer \
+  -I"$tests/rgb_stubs" -I"$tests/../include" \
+  -I"$root/firmware/components/pxa/include" \
+  -I"$root/extensions/peripherals/include" -I"$root/deps/pxa-system/libpxa/include" \
+  -DESP_PLATFORM -DPXA_BOARD_VISION_STACK_EXTERNAL=1 \
+  -DPXA_BOARD_VISION_STACK_BYTES=4096 -DCONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=1 \
+  "$tests/vision_port_test.cc" -o "$out/vision-external-stack-test"
+"$out/vision-external-stack-test"
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -g \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   -I"$tests/../include" -I"$root/firmware/components/pxa/include" \

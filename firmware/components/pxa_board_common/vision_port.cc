@@ -15,6 +15,15 @@
 #ifndef PXA_BOARD_VISION_STACK_BYTES
 #define PXA_BOARD_VISION_STACK_BYTES 8192
 #endif
+#ifndef PXA_BOARD_VISION_STACK_EXTERNAL
+#define PXA_BOARD_VISION_STACK_EXTERNAL 0
+#endif
+#if PXA_BOARD_VISION_STACK_EXTERNAL
+#include <esp_heap_caps.h>
+#if !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+#error "An external vision stack requires FreeRTOS external-stack support"
+#endif
+#endif
 static_assert(PXA_BOARD_VISION_STACK_BYTES >= 4096);
 namespace {
 struct State {
@@ -35,7 +44,11 @@ struct State {
     TaskHandle_t task = nullptr;
     StaticSemaphore_t mutex_storage;
     StaticTask_t task_storage;
+#if PXA_BOARD_VISION_STACK_EXTERNAL
+    StackType_t* stack = nullptr;
+#else
     StackType_t stack[PXA_BOARD_VISION_STACK_BYTES / sizeof(StackType_t)];
+#endif
     PxaWorkerNotifications notifications;
 } vision;
 void Unlock() { xSemaphoreGive(vision.mutex); }
@@ -266,9 +279,27 @@ bool pxa_board_vision_port_initialize(const PxaBoardVisionDriver* driver) {
     vision.driver = *driver;
     vision.mutex = xSemaphoreCreateMutexStatic(&vision.mutex_storage);
     if (!vision.mutex) return false;
-    vision.task = xTaskCreateStatic(Worker, "pxa_vision", sizeof(vision.stack), nullptr, 2, vision.stack, &vision.task_storage);
-    if (!vision.task) return false;
+#if PXA_BOARD_VISION_STACK_EXTERNAL
+    // Only opt in for drivers whose worker callbacks never write Flash/NVS.
+    // Runtime/Flash task stacks and the task control block remain internal.
+    vision.stack = static_cast<StackType_t*>(heap_caps_malloc(
+        PXA_BOARD_VISION_STACK_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!vision.stack) return false;
+#endif
+    vision.task = xTaskCreateStatic(Worker, "pxa_vision", PXA_BOARD_VISION_STACK_BYTES,
+        nullptr, 2, vision.stack, &vision.task_storage);
+    if (!vision.task) {
+#if PXA_BOARD_VISION_STACK_EXTERNAL
+        heap_caps_free(vision.stack); vision.stack = nullptr;
+#endif
+        return false;
+    }
     const pxa_peripherals_backend_t backend = {sizeof(pxa_peripherals_backend_t), nullptr,
         List, Module, Open, Io, Start, Poll, Cancel, Close, Ready, Profiles, Preview};
-    return pxa_board_add_peripheral_backend(&backend);
+    if (pxa_board_add_peripheral_backend(&backend)) return true;
+    vTaskDelete(vision.task); vision.task = nullptr;
+#if PXA_BOARD_VISION_STACK_EXTERNAL
+    heap_caps_free(vision.stack); vision.stack = nullptr;
+#endif
+    return false;
 }

@@ -10,9 +10,11 @@
 
 namespace {
 constexpr char kTag[] = "PaiTouchAudio";
+uint32_t capture_dropped_start;
 pxa_status_t CaptureOpen(void*) {
     if (!jl701_audio_link_ready()) return PXA_STATUS_UNAVAILABLE;
     audio_opus_frame_flush();
+    capture_dropped_start = audio_opus_frame_dropped();
     return PXA_STATUS_OK;
 }
 int32_t CaptureRead(void*, uint8_t* data, size_t size) {
@@ -20,7 +22,11 @@ int32_t CaptureRead(void*, uint8_t* data, size_t size) {
     int n=audio_opus_frame_try_read(data,size);
     return n>0 ? n : n==0 ? PXA_STATUS_WOULD_BLOCK : PXA_STATUS_IO_ERROR;
 }
-void CaptureClose(void*) { audio_opus_frame_flush(); }
+void CaptureClose(void*) {
+    ESP_LOGI(kTag, "Capture queue dropped frames: %lu",
+        static_cast<unsigned long>(audio_opus_frame_dropped() - capture_dropped_start));
+    audio_opus_frame_flush();
+}
 }
 
 bool PaiTouchAudio::Initialize() {

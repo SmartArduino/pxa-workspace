@@ -87,6 +87,12 @@ endif()
 # available for the camera DMA ring instead of reserving it in an idle stack.
 idf_component_get_property(PAI_BOARD_COMMON_LIB pxa_board_common COMPONENT_LIB)
 target_compile_definitions(${PAI_BOARD_COMMON_LIB} PRIVATE PXA_BOARD_VISION_STACK_BYTES=4096)
+# Normal camera callbacks perform no Flash/NVS writes. Keep their stack in
+# PSRAM so the JL701 UART ISR can retain an internal, cache-safe receive ring.
+# Raw diagnostic capture writes a file from the worker and needs an internal stack.
+if(NOT PXA_PAI_CAMERA_DIAGNOSTIC)
+    target_compile_definitions(${PAI_BOARD_COMMON_LIB} PRIVATE PXA_BOARD_VISION_STACK_EXTERNAL=1)
+endif()
 
 # esp32-camera is pinned to 2.1.9. The DMA adapter uses its private geometry
 # hook, with the original header and ABI compiled into this board only.

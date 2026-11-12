@@ -34,9 +34,10 @@ constexpr int32_t kReinitWakeAfterMs = 6000;
 /* Receive-error reports are repeated at most this often. */
 constexpr int64_t kUartErrorLogIntervalUs = 10 * 1000 * 1000;
 
-/* The coprocessor streams audio without flow control, so the driver ring
- * buffer needs headroom for a burst while the receive task is parsing. */
-constexpr int kUartDriverRxBufferSize = 16384;
+/* Compressed Opus arrives without flow control. An internal 4 KiB ring keeps
+ * receiving while Flash writes disable the cache; the high-priority reader
+ * drains it into the larger parsed-frame queue. The board enables the IRAM ISR. */
+constexpr int kUartDriverRxBufferSize = 4096;
 constexpr int kRxChunkSize = 2048;
 constexpr int kUartTxBufferSize = 1024;
 constexpr int kUartEventQueueSize = 32;

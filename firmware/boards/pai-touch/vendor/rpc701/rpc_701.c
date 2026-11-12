@@ -10,12 +10,15 @@
 #include "rpc_701_internal.h"
 #include <errno.h>
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 
 #define RPC_TX_QUEUE_SIZE        5
 #define RPC_RX_QUEUE_SIZE        3
 #define RPC_TASK_STACK_SIZE   4096
 #define RPC_TASK_PRIORITY     23
-#define AUDIO_FRAME_BUF_SIZE  (1 * 1024)  // 16KB for OPUS frames
+/* Recording may stall the consumer during Flash writes. Keep compressed
+ * packets in bounded PSRAM; the ring's lock/control block stays internal. */
+#define AUDIO_FRAME_BUF_SIZE  (16 * 1024)
 
 static const char* TAG = "RPC_701";
 
@@ -28,6 +31,9 @@ static SemaphoreHandle_t s_sync_rsp_mutex = NULL;
 static rpc_evt_cb_t rpc_evt_cb_table[RPC_ID__Evt_Max - RPC_ID__Evt_Base] = { NULL };
 static uint32_t uid = 0;
 static RingbufHandle_t s_audio_ringbuf = NULL;
+static StaticRingbuffer_t s_audio_ringbuf_control;
+static uint8_t *s_audio_ringbuf_bytes = NULL;
+static uint32_t s_audio_dropped_frames;
 
 /* 用于通过 uid 追踪响应信号量和回调的结构体 */
 typedef struct {
@@ -965,9 +971,14 @@ int rpc_701_init(const rpc_701_config_t *config)
     serial_transfer_init(config->write_cb, transfer_recv_cb, NULL);
 
     // 初始化音频帧缓冲区
-    s_audio_ringbuf = xRingbufferCreate(AUDIO_FRAME_BUF_SIZE, RINGBUF_TYPE_NOSPLIT);
+    s_audio_ringbuf_bytes = heap_caps_malloc(AUDIO_FRAME_BUF_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_audio_ringbuf_bytes) {
+        s_audio_ringbuf = xRingbufferCreateStatic(AUDIO_FRAME_BUF_SIZE, RINGBUF_TYPE_NOSPLIT,
+            s_audio_ringbuf_bytes, &s_audio_ringbuf_control);
+    }
     if (!s_audio_ringbuf) {
         ESP_LOGE(TAG, "Failed to initialize audio frame buffer");
+        goto free_bufs;
     } else {
         ESP_LOGI(TAG, "Audio frame buffer initialized: %d bytes", AUDIO_FRAME_BUF_SIZE);
     }
@@ -1058,6 +1069,8 @@ void rpc_701_deinit(void)
 		vRingbufferDelete(s_audio_ringbuf);
 		s_audio_ringbuf = NULL;
 	}
+    heap_caps_free(s_audio_ringbuf_bytes);
+    s_audio_ringbuf_bytes = NULL;
 
 	serial_transfer_deinit();
 }
@@ -1090,6 +1103,7 @@ int audio_opus_frame_write(const uint8_t *data, size_t len)
 			return -1;
 		}
 		vRingbufferReturnItem(s_audio_ringbuf, old_frame);
+		__atomic_fetch_add(&s_audio_dropped_frames, 1, __ATOMIC_RELAXED);
 
 		if (++attempts > max_attempts) {
 			ESP_LOGE(TAG, "Cannot write frame after %d drops", attempts);
@@ -1166,6 +1180,11 @@ size_t audio_opus_frame_available(void)
 		return 0;
 	}
 	return xRingbufferGetCurFreeSize(s_audio_ringbuf);
+}
+
+uint32_t audio_opus_frame_dropped(void)
+{
+    return __atomic_load_n(&s_audio_dropped_frames, __ATOMIC_RELAXED);
 }
 
 void audio_opus_frame_flush(void)

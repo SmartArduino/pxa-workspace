@@ -141,9 +141,15 @@ JPEG encoding. The pinned esp32-camera 2.1.9 dependency uses its Apache-2.0
 and file-specific permissive licenses. Its public esp_jpeg dependency is
 Apache-2.0. esp_new_jpeg retains its Espressif product-use license.
 The board retains a 16 KiB instruction cache so camera DMA and Flash task
-stacks have internal SRAM available. The native runtime and PXADB control
-stacks use 16 KiB each; PXADB parser buffers live in PSRAM and the board retains
-eight log history records. Changing these budgets requires preview, capture,
+stacks have internal SRAM available. The native runtime uses a 24 KiB internal
+stack and PXADB uses 16 KiB; parser buffers live in PSRAM and the board retains
+eight log history records. The normal Vision worker uses a 4 KiB PSRAM stack;
+its callbacks perform no Flash/NVS writes. Raw camera diagnostics that write
+files retain an internal worker stack. The JL701 UART ISR runs in IRAM with a
+4 KiB internal receive ring. Parsed Opus packets use a bounded 16 KiB PSRAM
+queue with an internal control block to cover recording stalls during Flash
+writes. Capture close logs the queue overwrite count.
+Changing these budgets requires preview, capture,
 recording and package-install tests; free PSRAM alone cannot satisfy DMA.
 Two whole-row internal SRAM DMA nodes feed the PSRAM framebuffers. The ring
 uses 3840 bytes for smaller profiles and 2560 bytes for VGA, avoiding corrupted
