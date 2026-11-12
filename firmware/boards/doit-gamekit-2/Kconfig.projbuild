@@ -1,0 +1,87 @@
+menu "DOIT GameKit 2"
+
+config PXA_DOIT2_BATTERY_R37_KOHM
+    int "Battery divider upper resistor R37 (kohm)"
+    range 1 1000
+    default 120
+    help
+        Must match R37 between VBAT_SW and GPIO49. V2.0 uses 120 kohm,
+        with R52=100 kohm and C50=100 nF. Q5/Q6 enable the divider in hardware.
+
+config PXA_DOIT2_BATTERY_R52_KOHM
+    int "Battery divider lower resistor R52 (kohm)"
+    range 1 1000
+    default 100
+    help
+        Must match the physical resistor between GPIO49 and ground.
+
+config PXA_DOIT2_BATTERY_GAIN_PERMILLE
+    int "Battery voltage correction gain (per mille)"
+    range 500 1500
+    default 1089
+    help
+        V2.0 reference measurement: multiply the restored divider voltage
+        by 1089/1000, then add BATTERY_OFFSET_MV. Set 1000 for unity gain.
+
+config PXA_DOIT2_BATTERY_OFFSET_MV
+    int "Battery voltage correction offset (mV)"
+    range -1000 1000
+    default 127
+    help
+        Added after divider restoration and gain correction. Set 0 to disable.
+
+config PXA_DOIT2_TOUCH
+    bool "FT6336U capacitive touch"
+    default y
+    help
+        Poll the module at I2C address 0x38 on GPIO13/14, INT=15, RESET=16.
+        Match the reference firmware: swap XY, then mirror Y for the default software rotation.
+
+config PXA_DOIT2_LCD_PSRAM_DMA_DIRECT
+    bool "Send aligned output frames directly from PSRAM"
+    default y
+    help
+        Use SPI DMA on the cache-aligned PSRAM output frame, without internal
+        bounce copies. The submit worker drains DMA before recycling a frame.
+        Disable to use four-line internal bounce buffers for troubleshooting.
+
+config PXA_DOIT2_LCD_CLOCK_HZ
+    int "LCD SPI clock (Hz)"
+    range 10000000 80000000
+    default 80000000
+
+config PXA_DOIT2_LCD_FLIP_180
+    bool "Rotate landscape orientation by 180 degrees"
+    default n
+    help
+        The panel keeps native 240x320 addressing (MADCTL MV/MX/MY cleared).
+        Default software rotation is 270 degrees; select 90 degrees instead.
+        The FT6336U coordinate transform changes together with the display.
+
+config PXA_DOIT2_LCD_INVERT
+    bool "Invert LCD colors"
+    default n
+
+config PXA_DOIT2_LCD_BGR
+    bool "Use BGR panel color order"
+    default n
+
+config PXA_DOIT2_LCD_X_GAP
+    int "Native portrait panel X offset (pixels)"
+    range 0 80
+    default 0
+
+config PXA_DOIT2_LCD_Y_GAP
+    int "Native portrait panel Y offset (pixels)"
+    range 0 80
+    default 0
+
+config PXA_DOIT2_DENSITY_DPI
+    int "Display density (DPI)"
+    range 80 500
+    default 125
+    help
+        Approximately 125 DPI for a 320x240 panel with a 65x50 mm active area.
+        Keep the simulator profile at the same density.
+
+endmenu

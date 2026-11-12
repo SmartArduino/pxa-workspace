@@ -11,6 +11,11 @@ spec.loader.exec_module(release)
 
 
 class FirmwareLayout(unittest.TestCase):
+    def test_maintained_gamekit_replaces_retired_revisions(self):
+        self.assertIn('doit-gamekit-2', release.BOARDS)
+        self.assertNotIn('doit-gamekit', release.BOARDS)
+        self.assertNotIn('doit-gamekit-1', release.BOARDS)
+
     def test_factory_tree_is_bound_to_container_inventory_and_version(self):
         def tlv(tag, data):
             return struct.pack('<HH', tag, len(data)) + data

@@ -1,5 +1,8 @@
 # DOIT GameKit 1 (V0.8)
 
+> 已停止维护及后续固件发布；保留历史源码与配置。当前维护的硬件为
+> [DOIT GameKit 2](../doit-gamekit-2/README.md)。不同硬件版本不可混刷固件。
+
 Board ID: `doit-gamekit-1`，ESP32-S31，ESP-IDF 6.2，16 MiB Flash。
 依据 [V0.8 原理图](docs/SCH_V0.8_2026-10-20.pdf)，从 `doit-gamekit` 派生独立
 component、配置、分区表和依赖锁。默认 CPU 320 MHz、PSRAM 250 MHz。

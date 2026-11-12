@@ -78,19 +78,18 @@ CST92xx touch, ES8311 playback and native USB CDC. See
 [its board guide](firmware/boards/esp-mosaico/README.md) for revision detection,
 the ESP-IDF main environment and hardware limitations.
 
-`doit-gamekit` (doit游戏机 / DOIT GameKit) targets ESP32-S31 with a 320 × 240
-ST7789, twelve gamepad buttons, MAX98357A audio and an SPI SD card, without
-touch. It uses button focus navigation without a bottom navigation bar, plus
-a fallback mouse pointer. Landscape frames are rotated in software and sent in
-ST7789 native scan order, without a TE signal. Build with
-`tools/firmware.sh doit-gamekit build`; see the
-[board guide](firmware/boards/doit-gamekit/README.md) for wiring and controls.
+`doit-gamekit-2` is the maintained V2.0 GameKit profile: ESP32-S31, 320 × 240
+ST7789V TN display, FT6336U touch, 14 keys, MAX98357A and four-bit SDMMC.
+It uses a 120k/100k battery divider, configurable voltage correction and
+active-low USB supply detection on GPIO51. Build with
+`tools/firmware.sh doit-gamekit-2 build`; see the
+[board guide](firmware/boards/doit-gamekit-2/README.md).
 
-`doit-gamekit-1` targets the V0.8 revision with ST7789V TN hardware landscape
-initialization from the reference firmware, FT6336U touch, 14 keys including
-MENU/RETURN, MAX98357A audio and native four-bit SDMMC. Build with
-`tools/firmware.sh doit-gamekit-1 build`; see the
-[board guide](firmware/boards/doit-gamekit-1/README.md).
+`doit-gamekit` and `doit-gamekit-1` are **no longer maintained or included in
+new firmware releases**. Historical sources and profiles remain available.
+Firmware cannot be exchanged between hardware revisions; see the historical
+[GameKit](firmware/boards/doit-gamekit/README.md) and
+[GameKit 1](firmware/boards/doit-gamekit-1/README.md) guides.
 
 `doit-esp32s31-devkit` supports the DOIT ESP32-S31 DevKit with 8 MiB Flash,
 480 × 854 ST7102 RGB display and touch, ES8311 audio and four-bit SDMMC.

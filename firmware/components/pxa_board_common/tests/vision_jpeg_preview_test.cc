@@ -20,7 +20,7 @@ extern "C" pxa_status_t pxa_image_decoder_create(const pxa_image_decode_options_
     const pxa_memory_allocator_t* pixels, const pxa_memory_allocator_t* temporary,
     const pxa_image_backend_t* selected, pxa_image_decoder_t** output) {
     assert(options->max_width == 320 && options->max_height == 320);
-    assert(options->max_pixels == 102400 && options->max_encoded_bytes == PXA_VISION_MAX_JPEG);
+    assert(options->max_pixels == 102400 && options->max_encoded_bytes == PXA_VISION_MAX_JPEG_HD);
     assert(options->formats == 2 && options->opaque_rgb565 == 1);
     assert(pixels == &allocator && temporary == &allocator && selected == &backend);
     if (deny_create) return PXA_STATUS_RESOURCE_LIMIT;
@@ -53,7 +53,7 @@ int main() {
     assert(PxaBoardVisionPreviewJpeg(nullptr, bytes.data(), bytes.size(), nullptr) == PXA_STATUS_INVALID_ARGUMENT);
     assert(PxaBoardVisionPreviewJpeg(nullptr, nullptr, bytes.size(), &output) == PXA_STATUS_INVALID_ARGUMENT);
     assert(PxaBoardVisionPreviewJpeg(nullptr, bytes.data(), 0, &output) == PXA_STATUS_INVALID_ARGUMENT);
-    assert(PxaBoardVisionPreviewJpeg(nullptr, bytes.data(), PXA_VISION_MAX_JPEG+1, &output) == PXA_STATUS_INVALID_ARGUMENT);
+    assert(PxaBoardVisionPreviewJpeg(nullptr, bytes.data(), PXA_VISION_MAX_JPEG_HD+1, &output) == PXA_STATUS_INVALID_ARGUMENT);
     for (bool* failure : {&deny_create, &deny_write, &deny_finish, &zero_budget}) {
         *failure = true;
         assert(PxaBoardVisionPreviewJpeg(nullptr, bytes.data(), bytes.size(), &output) != PXA_STATUS_OK);

@@ -31,6 +31,8 @@ Python callers can borrow an existing `PxaDbClient` using
 `command_package_install(arguments, connection=client, quiet=True)`. The caller
 owns and closes that connection. `open_client(port, timeout, baudrate=2000000)`
 selects a serial rate without changing process-wide environment variables.
+On Linux, UART sessions deassert DTR and RTS together during opening, avoiding
+the intermediate reset pulse on ESP automatic download circuits such as GameKit.
 Use one connection for installation and subsequent activation/state queries on
 UART bridges whose reset circuitry reacts to opening the port. A stale mount
 epoch from a previous connection is not an installation selector; refresh the

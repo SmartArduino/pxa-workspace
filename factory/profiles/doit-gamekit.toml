@@ -1,3 +1,5 @@
+# Retired hardware profile; no further maintenance or firmware releases.
+# Maintained hardware: doit-gamekit-2 (firmware is revision-specific).
 [factory]
 include_system_font = true
 apps = []

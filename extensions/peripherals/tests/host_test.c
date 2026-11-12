@@ -102,7 +102,7 @@ static size_t backend_bytes=2;
 static pxa_status_t backend_poll_status=PXA_STATUS_OK, backend_open_status=PXA_STATUS_OK;
 static int backend_null_open;
 static int camera_mode, frame_block;
-static uint8_t frame_bytes[8192+PXA_VISION_HEADER_BYTES];
+static uint8_t frame_bytes[32768+PXA_VISION_HEADER_BYTES];
 static size_t frame_offset, frame_chunk = 7, frame_length = 32, native_reads;
 static size_t frame_block_after = SIZE_MAX;
 static uint16_t listed_kind = PXA_PERIPHERALS_I2C;
@@ -112,9 +112,10 @@ static pxa_status_t port_list(void *ctx, pxa_peripheral_port_t *p, size_t capaci
     if (camera_mode) { p->kind = PXA_PERIPHERALS_VISION; strcpy(p->name, "camera.jpeg"); }
     return PXA_STATUS_OK;
 }
-static int invalid_profile;
+static int invalid_profile, hd_profile;
 static unsigned image_allocations;
 static int preview_block;
+static uint16_t preview_width = 2;
 static pxa_status_t preview_error;
 static void* image_allocate(void* context, size_t size) { (void)context; ++image_allocations; return malloc(size); }
 static void image_free(void* context, void* pointer) { (void)context; --image_allocations; free(pointer); }
@@ -124,10 +125,10 @@ static pxa_status_t preview_image(void* context, void* device, pxa_raster_asset_
     if (preview_error) return preview_error;
     pxa_asset_info_t info={0}; uint8_t* pixels=NULL;
     info.kind=PXA_ASSET_IMAGE; info.encoding=PXA_ASSET_ENCODING_RGB565;
-    info.width=info.height=2; info.format_version=1; info.payload_offset=32;
-    info.stored_bytes=40; info.decoded_bytes=8;
+    info.width=preview_width; info.height=2; info.format_version=1; info.payload_offset=32;
+    info.decoded_bytes=preview_width*4u; info.stored_bytes=32+info.decoded_bytes;
     pxa_status_t status=pxa_asset_object_create(&info,image_allocate,image_free,NULL,output,&pixels);
-    if (!status) { memset(pixels,0x7c,8); pxa_raster_asset_finish_loading(*output); }
+    if (!status) { memset(pixels,0x7c,info.decoded_bytes); pxa_raster_asset_finish_loading(*output); }
     return status;
 }
 static pxa_status_t profiles(void *ctx, uint16_t port, pxa_camera_profile_t *out, size_t capacity, size_t *count) {
@@ -136,6 +137,11 @@ static pxa_status_t profiles(void *ctx, uint16_t port, pxa_camera_profile_t *out
     assert(capacity >= 2); *count = 2;
     out[0] = (pxa_camera_profile_t){1, PXA_VISION_JPEG, 320, 240, 75, 262144, 100000, PXA_CAMERA_PROFILE_DEFAULT};
     out[1] = (pxa_camera_profile_t){2, PXA_VISION_JPEG, 640, 480, 85, 262144, 300000, 0};
+    if (hd_profile) {
+        out[0].flags = 0;
+        out[1] = (pxa_camera_profile_t){2, PXA_VISION_JPEG, 1920, 1080, 82,
+            PXA_VISION_MAX_JPEG_HD, 40000, PXA_CAMERA_PROFILE_DEFAULT | PXA_CAMERA_PROFILE_NATIVE_SIZE};
+    }
     if (invalid_profile) out[1].id = 1;
     return PXA_STATUS_OK;
 }
@@ -399,6 +405,15 @@ int main(void) {
     invalid_profile = 1;
     assert(call(component, PXA_PERIPHERALS_SERVICE_ID, 7, packet, 2) == PXA_STATUS_PROTOCOL_ERROR);
     invalid_profile = 0;
+    hd_profile = 1;
+    assert(call(component, PXA_PERIPHERALS_SERVICE_ID, 7, packet, 2) == PXA_STATUS_OK);
+    assert(pxa_read_u16(reply.payload.data+4) == 2 && pxa_read_u32(reply.payload.data+42) == PXA_VISION_MAX_JPEG_HD);
+    pxa_write_u16(hello+22, 7);
+    assert(call(component, PXA_PERIPHERALS_SERVICE_ID, 1, hello, 24) == PXA_STATUS_OK);
+    assert(call(component, PXA_PERIPHERALS_SERVICE_ID, 7, packet, 2) == PXA_STATUS_OK);
+    assert(pxa_read_u16(reply.payload.data+4) == 1 && reply.payload.size == 30);
+    assert(pxa_read_u32(reply.payload.data+26) == PXA_CAMERA_PROFILE_DEFAULT);
+    hd_profile = 0;
     pxa_write_u16(hello+22, 4);
     assert(call(component, PXA_PERIPHERALS_SERVICE_ID, 1, hello, 24) == PXA_STATUS_OK);
     assert(call(component, PXA_PERIPHERALS_SERVICE_ID, 7, packet, 2) == PXA_STATUS_UNSUPPORTED);
@@ -437,6 +452,16 @@ int main(void) {
     assert(!pxa_assets_acquire_handle(runtime,component,preview_handle,PXA_ASSET_IMAGE,&retained));
     assert(!pxa_handle_close64(runtime,component,preview_handle) && image_allocations==1);
     pxa_raster_asset_release(retained); assert(!image_allocations);
+    preview_width=840;
+    assert(call(component,PXA_PERIPHERALS_SERVICE_ID,9,packet,8)==PXA_STATUS_UNSUPPORTED && !image_allocations);
+    pxa_write_u16(hello+22,8);
+    assert(!call(component,PXA_PERIPHERALS_SERVICE_ID,1,hello,24));
+    assert(!call(component,PXA_PERIPHERALS_SERVICE_ID,9,packet,8));
+    assert(pxa_read_u16(reply.payload.data+16)==840);
+    assert(!pxa_handle_close64(runtime,component,pxa_read_u64(reply.payload.data+4)) && !image_allocations);
+    preview_width=1025;
+    assert(call(component,PXA_PERIPHERALS_SERVICE_ID,9,packet,8)==PXA_STATUS_PROTOCOL_ERROR && !image_allocations);
+    preview_width=2;
     pxa_handle64_t held_images[2];
     for (unsigned i=0;i<2;++i) {
         assert(!call(component,PXA_PERIPHERALS_SERVICE_ID,9,packet,8)); held_images[i]=pxa_read_u64(reply.payload.data+4);
@@ -515,6 +540,22 @@ int main(void) {
     for (unsigned i=0;i<fi.size;++i) assert(bulk[i]==(uint8_t)i);
     assert(read_resource(component,frame_handle,bulk,sizeof(bulk))==0);
     assert(!pxa_handle_close64(runtime,component,frame_handle));
+    // 0.8 batches more bounded native reads, preserving the old 4 KiB contract.
+    pxa_write_u16(hello+22,8);
+    assert(!call(component,PXA_PERIPHERALS_SERVICE_ID,1,hello,24));
+    fi.size=24576; assert(pxa_vision_encode(frame_bytes,&fi));
+    for (unsigned i=0;i<fi.size;++i) frame_bytes[PXA_VISION_HEADER_BYTES+i]=(uint8_t)i;
+    frame_length=PXA_VISION_HEADER_BYTES+fi.size; frame_offset=0; native_reads=0;
+    assert(!call(component,PXA_PERIPHERALS_SERVICE_ID,6,packet,8));
+    frame_handle=pxa_read_u64(reply.payload.data+4);
+    uint8_t hd_bulk[24576];
+    assert(read_resource(component,frame_handle,hd_bulk,sizeof(hd_bulk))==16384 && native_reads==65);
+    assert(read_resource(component,frame_handle,hd_bulk+16384,8192)==8192 && native_reads==97);
+    for (unsigned i=0;i<fi.size;++i) assert(hd_bulk[i]==(uint8_t)i);
+    assert(!pxa_handle_close64(runtime,component,frame_handle));
+    pxa_write_u16(hello+22,4);
+    assert(!call(component,PXA_PERIPHERALS_SERVICE_ID,1,hello,24));
+    fi.size=5120; assert(pxa_vision_encode(frame_bytes,&fi)); frame_length=PXA_VISION_HEADER_BYTES+fi.size;
     frame_offset=0; frame_block_after=PXA_VISION_HEADER_BYTES+256;
     assert(!call(component,PXA_PERIPHERALS_SERVICE_ID,6,packet,8));
     frame_handle=pxa_read_u64(reply.payload.data+4);

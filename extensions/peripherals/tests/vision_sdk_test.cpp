@@ -44,7 +44,7 @@ int main() {
     for (unsigned corrupt : {0u, 4u, 6u, 8u}) {
         Stream bad; bad.chunk = 24; bad.data.assign(stream.data.begin(), stream.data.begin() + 24);
         bad.data[corrupt] = std::byte{0};
-        if (corrupt == 8) { bad.data[9] = std::byte{0}; bad.data[10] = std::byte{5}; }
+        if (corrupt == 8) { bad.data[9] = std::byte{0}; bad.data[10] = std::byte{17}; }
         FrameReader invalid(PXA_VISION_JPEG);
         assert(!invalid.header(bad));
         auto result = invalid.header(bad); assert(!result && result.error() == pxa::Error::protocol_error);
@@ -61,5 +61,12 @@ int main() {
     assert(!pxa_vision_encode(bytes.data(), &info));
     info = {PXA_VISION_JSON, PXA_VISION_MAX_JSON + 1, 0, 0};
     assert(!pxa_vision_encode(bytes.data(), &info));
+    info = {PXA_VISION_JPEG, PXA_VISION_MAX_JPEG_HD, 7, 8};
+    assert(pxa_vision_encode(bytes.data(), &info));
+    pxa_vision_frame_info_t decoded{};
+    assert(pxa_vision_decode(bytes.data(), &decoded) && decoded.size == PXA_VISION_MAX_JPEG_HD);
+    info.size += 1;
+    assert(!pxa_vision_encode(bytes.data(), &info));
+    assert(PXA_VISION_JPEG_LIMIT(7) == 262144 && PXA_VISION_JPEG_LIMIT(8) == 1048576);
     puts("Vision SDK: partial headers/payloads, WouldBlock, exact bounds, bad format/length/count, frame lifecycle passed");
 }

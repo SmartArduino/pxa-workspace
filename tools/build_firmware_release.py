@@ -21,7 +21,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-BOARDS = ('pai-touch', 'esp-mosaico', 'esp32s31-korvo-1', 'sensecap-watcher', 'doit-gamekit', 'doit-gamekit-1', 'doit-esp32s31-devkit', 'espp4-a')
+BOARDS = ('pai-touch', 'esp-mosaico', 'esp32s31-korvo-1', 'sensecap-watcher', 'doit-gamekit-2', 'doit-esp32s31-devkit', 'espp4-a')
 
 
 def store_identity(package: Path, container: Path) -> dict:

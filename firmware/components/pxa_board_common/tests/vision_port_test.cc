@@ -27,6 +27,7 @@ extern "C" void pxa_memory_release(void* p) { if (p) { --allocations; std::free(
 static pxa_status_t Prepare(void*, uint16_t format) { assert(format == PXA_VISION_JPEG); ++preparations; return PXA_STATUS_OK; }
 static pxa_status_t Capture(void*, uint8_t* p, size_t cap, size_t* n) {
     ++captures;
+    assert(reinterpret_cast<uintptr_t>(p) % 128 == 0); // Payload is DMA-aligned, header is separate.
     if (block) { entered = true; while (!released) std::this_thread::yield(); }
     *n = oversized ? cap + 1 : 600;
     if (!oversized) for (size_t i = 0; i < *n; ++i) p[i] = uint8_t(i);
@@ -197,5 +198,14 @@ int main() {
     assert(Pump()); oversized = true; assert(!Pump());
     assert(backend.io(nullptr, next, PXA_IO_READ, bytes, 1) == PXA_STATUS_PROTOCOL_ERROR);
     backend.close(nullptr, next); assert(!Pump() && !allocations);
+    // A selected HD profile owns its larger bounded, DMA-aligned payload.
+    const pxa_camera_profile_t hd{10,PXA_VISION_JPEG,1920,1080,82,PXA_VISION_MAX_JPEG_HD,40000,PXA_CAMERA_PROFILE_DEFAULT};
+    vision.driver.profiles=&hd; vision.driver.profile_count=1;
+    vision.driver.prepare_profile=[](void* ctx,const pxa_camera_profile_t&) { return Prepare(ctx,PXA_VISION_JPEG); };
+    oversized=false;
+    assert(backend.open(nullptr,9,3,7,10,0,&next)==PXA_STATUS_OK && Pump());
+    assert(vision.capacity==PXA_VISION_MAX_JPEG_HD+PXA_VISION_HEADER_BYTES);
+    assert(!Pump());
+    backend.close(nullptr,next); assert(!Pump() && !allocations);
     puts("Vision native: permission, bounded memory, immutable JPEG delivery during preview, skipped previews, prefetch failure, capture/close race and cleanup passed");
 }

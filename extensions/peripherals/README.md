@@ -1,4 +1,4 @@
-# PXA peripherals extension 0.7
+# PXA peripherals extension 0.8
 
 `org.doit.peripherals` provides logical GPIO, I²C, UART and module-slot discovery.
 It is optional and separate from standard Sensor, Audio, Storage and Haptics.
@@ -8,7 +8,7 @@ including `sdk/Peripherals.cmake`. Host builds use `pxa_peripherals`.
 Service/resource ID 33026 is allocated in this workspace's extension registry;
 identity is UUID `26531fa8-55a1-446a-b917-316c58b06582`. Always start with
 `co_await pxa::ext::peripherals::open(ctx)`: HELLO verifies this identity and
-negotiates 0.1–0.7. RGB ports require 0.2 and vision streams require 0.3. The Host still accepts 0.1 clients,
+negotiates 0.1–0.8. RGB ports require 0.2 and vision streams require 0.3. The Host still accepts 0.1 clients,
 hiding RGB ports from LIST and rejecting their OPEN attempts, while GPIO/I²C/
 UART/slot behavior stays compatible. Clients limited to 0.2 cannot list or open
 vision ports. Version ranges compare (major, minor) lexicographically;
@@ -114,7 +114,7 @@ Every frame is a 24-byte header and exactly one payload. Header offsets:
 | 0 | ASCII `PXVF` (4 bytes) |
 | 4 | Header version u16 = 1 |
 | 6 | Format u16: JPEG=1, JSON=2 |
-| 8 | Payload bytes u32, nonzero; JPEG ≤262144, JSON ≤8192 |
+| 8 | Payload bytes u32, nonzero; JPEG ≤262144 (0.1–0.7), ≤1048576 (0.8); JSON ≤8192 |
 | 12 | Sequence u32 (wraps modulo 2³²) |
 | 16 | Capture-completion monotonic microseconds u64, not UTC |
 
@@ -146,6 +146,11 @@ zero means unspecified, otherwise it is a suggested sampling interval in
 microseconds, without a guaranteed frame rate. Flags are default=1 and
 native-size=2. Native-size profiles may report width=height=0, meaning that the
 sensor coprocessor chooses its current dimensions. Read the actual JPEG size.
+
+Version 0.8 permits JPEG profiles up to 1 MiB. Older sessions only receive
+profiles within their 256 KiB limit; if the board default is filtered, a retained
+native-size profile (or the first profile) becomes the advertised default.
+FrameStream reads are bounded to 16 KiB in 0.8 and 4 KiB in older sessions.
 
 Pass the selected ID as OPEN's parameter. Zero keeps the existing default
 behavior. Nonzero camera parameters require negotiation of 0.5. Unknown IDs
@@ -207,7 +212,7 @@ EEPROM format and board pin assignments follow Espressif's
 ## File-backed JPEG frames (0.6)
 
 `JPEG_FILE_FRAME` (opcode 8) takes an owned Core FILE handle (u64), byte offset
-(u64), length (u32, 1–262144) and first ReadAt cookie (u64). The reply contains one finite Core STREAM
+(u64), length (u32, 1–262144 before 0.8, 1–1048576 in 0.8) and first ReadAt cookie (u64). The reply contains one finite Core STREAM
 handle (u64). It reads only that range with cursor-preserving ReadAt, using a
 1024-byte Host cache. This allows Host image decode of MJPEG AVI frames without
 a Guest JPEG decoder or a whole-video allocation. The caller must validate its
@@ -237,7 +242,9 @@ foreground camera permission as JPEG reads and returns Busy while a JPEG stream
 is open. The SDK owns and validates the image handle before exposing its pixels
 through Canvas. No native pointer or raw pixels enter Guest memory.
 
-The current preview contract uses RGB565 or BGRA8888 (straight or premultiplied alpha), at most320×320 pixels. VGA capture may
+The preview contract uses RGB565 or BGRA8888 (straight or premultiplied alpha),
+at most 320×320 pixels in 0.7 and 1024×1024 in 0.8. Hosts return Unsupported
+for larger native images requested by 0.7 clients, which can fall back to JPEG. VGA capture may
 produce a smaller preview while photos and video keep the selected profile.
 The Host wires the Assets service with `pxa_peripherals_service_set_assets`.
 Native producers allocate through a bounded Host resource allocator and publish

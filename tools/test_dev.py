@@ -79,6 +79,7 @@ class DeviceLaunchTest(unittest.TestCase):
             ("esp32s31-korvo-1", "esp32s31"),
             ("doit-gamekit", "esp32s31"),
             ("doit-gamekit-1", "esp32s31"),
+            ("doit-gamekit-2", "esp32s31"),
             ("doit-esp32s31-devkit", "esp32s31"),
             ("pai-touch", "esp32s3"),
             ("sensecap-watcher", "esp32s3"),
@@ -94,7 +95,7 @@ class DeviceLaunchTest(unittest.TestCase):
     def test_doit_uart_default_applies_to_install_run_and_logs(self) -> None:
         self.developer.args.baud = None
         with mock.patch.dict(os.environ, {}, clear=True):
-            for board in ("doit-gamekit", "doit-gamekit-1"):
+            for board in ("doit-gamekit", "doit-gamekit-1", "doit-gamekit-2"):
                 self.developer.args.board = board
                 for arguments in (("package", "install", "store.pxa"),
                                   ("package", "run", "pxa-store"), ("logcat",)):
@@ -103,7 +104,7 @@ class DeviceLaunchTest(unittest.TestCase):
                         self.assertEqual(command[-2:], ["--baud", "2000000"])
 
     def test_doit_uart_explicit_and_environment_overrides(self) -> None:
-        for board in ("doit-gamekit", "doit-gamekit-1"):
+        for board in ("doit-gamekit", "doit-gamekit-1", "doit-gamekit-2"):
             self.developer.args.board = board
             with self.subTest(board=board), mock.patch.dict(os.environ, {"PXADB_BAUD": "460800"}):
                 self.developer.args.baud = None

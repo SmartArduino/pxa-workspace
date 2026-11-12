@@ -1,5 +1,8 @@
 # doit游戏机 / DOIT GameKit
 
+> 已停止维护及后续固件发布；保留历史源码与配置。当前维护的硬件为
+> [DOIT GameKit 2](../doit-gamekit-2/README.md)。不同硬件版本不可混刷固件。
+
 Board ID: `doit-gamekit`. Target: **ESP32-S31** (`esp32s31`, RISC-V),
 ESP-IDF 6.2, 16 MiB W25Q128 flash and in-package PSRAM. This profile follows
 the supplied V0.6 schematic. There is no touch controller.

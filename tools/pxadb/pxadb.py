@@ -299,6 +299,32 @@ def _hold_usb_awake(port: str, *, tty_root: pathlib.Path = pathlib.Path("/sys/cl
     return None
 
 
+def _open_uart_without_reset(port) -> None:
+    """Keep DTR/RTS deasserted together while Linux opens an ESP UART bridge.
+
+    pyserial normally clears DTR and RTS in separate ioctls. The intermediate
+    state pulses EN on the GameKit's automatic download circuit.
+    """
+    backend = getattr(serial, "serialposix", None)
+    if not sys.platform.startswith("linux") or backend is None or not isinstance(port, backend.Serial):
+        port.open()
+        return
+    import fcntl
+    import termios
+
+    update_dtr, update_rts = port._update_dtr_state, port._update_rts_state
+
+    def deassert_both():
+        fcntl.ioctl(port.fd, termios.TIOCMBIC,
+                    struct.pack("I", termios.TIOCM_DTR | termios.TIOCM_RTS))
+
+    port._update_dtr_state = port._update_rts_state = deassert_both
+    try:
+        port.open()
+    finally:
+        port._update_dtr_state, port._update_rts_state = update_dtr, update_rts
+
+
 class PxaDbClient:
     # Optional sinks that replace the default stdout/stderr printing. The
     # desktop GUI installs callbacks so device output lands in its log pane.
@@ -348,7 +374,7 @@ class PxaDbClient:
                 serial_port.dtr = False
                 serial_port.rts = False
                 serial_port.port = port
-                serial_port.open()
+                _open_uart_without_reset(serial_port)
             self.serial = SerialLineReader(serial_port)
         except BaseException:
             if serial_port is not None:

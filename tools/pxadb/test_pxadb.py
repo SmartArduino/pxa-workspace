@@ -247,6 +247,38 @@ class BulkUploadTest(unittest.TestCase):
             self.assertEqual(client.serial.writes[-1], b"\0")
 
 
+@unittest.skipUnless(sys.platform.startswith("linux") and pxadb.serial is not None,
+                     "Linux pyserial UART control")
+class AtomicUartOpenTest(unittest.TestCase):
+    def test_open_clears_both_modem_lines_without_an_intermediate_reset_state(self):
+        import fcntl
+        import termios
+        port = pxadb.serial.serialposix.Serial(None)
+        original_dtr, original_rts = port._update_dtr_state, port._update_rts_state
+        def opening():
+            port.fd = 123
+            port._update_dtr_state()
+            port._update_rts_state()
+        with mock.patch.object(port, "open", side_effect=opening), \
+                mock.patch.object(fcntl, "ioctl") as ioctl:
+            pxadb._open_uart_without_reset(port)
+        mask = struct.pack("I", termios.TIOCM_DTR | termios.TIOCM_RTS)
+        self.assertEqual(ioctl.call_args_list,
+                         [mock.call(123, termios.TIOCMBIC, mask)] * 2)
+        self.assertEqual(port._update_dtr_state, original_dtr)
+        self.assertEqual(port._update_rts_state, original_rts)
+        port.fd = None
+
+    def test_failed_open_restores_normal_modem_controls(self):
+        port = pxadb.serial.serialposix.Serial(None)
+        original_dtr, original_rts = port._update_dtr_state, port._update_rts_state
+        with mock.patch.object(port, "open", side_effect=OSError("busy")):
+            with self.assertRaisesRegex(OSError, "busy"):
+                pxadb._open_uart_without_reset(port)
+        self.assertEqual(port._update_dtr_state, original_dtr)
+        self.assertEqual(port._update_rts_state, original_rts)
+
+
 class UsbRuntimeGuardTest(unittest.TestCase):
     def test_explicit_baud_does_not_read_or_change_shared_environment(self):
         port = SimpleNamespace(dtr=True, rts=True, port=None, open=mock.Mock(), close=mock.Mock())

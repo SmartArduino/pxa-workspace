@@ -62,7 +62,7 @@ static pxa::Task<void> check_frame(ports::Client client) {
 static pxa::Task<void> check_preview(ports::Client client) {
     if (selected_minor>=7) {
         auto image=co_await client.preview(port);
-        assert(image && image->descriptor().width==320 && image->descriptor().height==240);
+        assert(image && image->descriptor().width==(selected_minor>=8 ? 840u : 320u) && image->descriptor().height==240);
         assert(image->descriptor().encoding==2 && image->close());
     } else {
         auto image=co_await client.preview(port);
@@ -141,9 +141,10 @@ int main(int argc, char**) {
         std::array<std::byte,28> image{};
         pxa::wire::put64(image.data(),UINT64_C(0x100000008));
         image[8]=std::byte{4}; image[9]=std::byte{2}; pxa::wire::put16(image.data()+10,1);
-        pxa::wire::put16(image.data()+12,320); pxa::wire::put16(image.data()+14,240);
-        pxa::wire::put32(image.data()+16,153600); pxa::wire::put32(image.data()+20,153600);
-        pxa::wire::put32(image.data()+24,153728);
+        const uint32_t image_bytes=(selected_minor>=8 ? 840u : 320u)*240u*2u;
+        pxa::wire::put16(image.data()+12,selected_minor>=8 ? 840 : 320); pxa::wire::put16(image.data()+14,240);
+        pxa::wire::put32(image.data()+16,image_bytes); pxa::wire::put32(image.data()+20,image_bytes);
+        pxa::wire::put32(image.data()+24,image_bytes+128);
         assert(opcode==9); answer(image);
     }
     std::array<std::byte, 8> caps{}; pxa::wire::put32(caps.data(), 1); pxa::wire::put32(caps.data()+4, 1000);

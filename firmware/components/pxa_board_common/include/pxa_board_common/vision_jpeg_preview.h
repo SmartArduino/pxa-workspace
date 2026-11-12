@@ -12,11 +12,11 @@ inline pxa_status_t PxaBoardVisionPreviewJpeg(void*, const uint8_t* bytes,
     size_t size, pxa_raster_asset_t** output) {
     if (!output) return PXA_STATUS_INVALID_ARGUMENT;
     *output = nullptr;
-    if (!bytes || !size || size > PXA_VISION_MAX_JPEG) return PXA_STATUS_INVALID_ARGUMENT;
+    if (!bytes || !size || size > PXA_VISION_MAX_JPEG_HD) return PXA_STATUS_INVALID_ARGUMENT;
     pxa_image_decode_options_t options{};
     options.max_width = options.max_height = 320;
     options.max_pixels = 102400;
-    options.max_encoded_bytes = PXA_VISION_MAX_JPEG;
+    options.max_encoded_bytes = PXA_VISION_MAX_JPEG_HD;
     options.formats = 2; // JPEG
     options.opaque_rgb565 = 1;
     pxa_image_decoder_t* decoder = nullptr;

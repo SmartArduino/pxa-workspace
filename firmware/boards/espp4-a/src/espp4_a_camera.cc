@@ -6,6 +6,7 @@
 #include <pxa_board_common/vision_jpeg_preview.h>
 #include <pxa/pxa_esp_resource_memory.h>
 #include <driver/gpio.h>
+#include <driver/ppa.h>
 #include <driver/i2c_master.h>
 #include <driver/isp.h>
 #include <driver/jpeg_encode.h>
@@ -37,7 +38,7 @@ constexpr char kTag[] = "espp4_camera";
 constexpr unsigned kSensorWidth = 1920, kSensorHeight = 1080;
 constexpr size_t kSensorBytes = kSensorWidth * kSensorHeight * 2;
 constexpr pxa_camera_profile_t kProfiles[] = {
-    {9, PXA_VISION_JPEG, 320, 240, 75, PXA_VISION_MAX_JPEG, 40000, PXA_CAMERA_PROFILE_DEFAULT},
+    {9, PXA_VISION_JPEG, 320, 240, 75, PXA_VISION_MAX_JPEG, 40000, 0},
     {1, PXA_VISION_JPEG, 320, 180, 75, PXA_VISION_MAX_JPEG, 40000, 0},
     {2, PXA_VISION_JPEG, 640, 360, 80, PXA_VISION_MAX_JPEG, 40000, 0},
     {3, PXA_VISION_JPEG, 160, 90, 60, PXA_VISION_MAX_JPEG, 40000, 0},
@@ -45,7 +46,16 @@ constexpr pxa_camera_profile_t kProfiles[] = {
     {5, PXA_VISION_JPEG, 800, 450, 80, PXA_VISION_MAX_JPEG, 40000, 0},
     {6, PXA_VISION_JPEG, 960, 540, 78, PXA_VISION_MAX_JPEG, 40000, 0},
     {7, PXA_VISION_JPEG, 1280, 720, 70, PXA_VISION_MAX_JPEG, 40000, 0},
-    {8, PXA_VISION_JPEG, 1920, 1080, 60, PXA_VISION_MAX_JPEG, 40000, PXA_CAMERA_PROFILE_NATIVE_SIZE},
+    {8, PXA_VISION_JPEG, 1920, 1080, 60, PXA_VISION_MAX_JPEG, 40000,
+        PXA_CAMERA_PROFILE_NATIVE_SIZE | PXA_CAMERA_PROFILE_DEFAULT},
+    {10, PXA_VISION_JPEG, 1920, 1080, 82, PXA_VISION_MAX_JPEG_HD, 40000,
+        PXA_CAMERA_PROFILE_NATIVE_SIZE},
+    {11, PXA_VISION_JPEG, 240, 320, 75, PXA_VISION_MAX_JPEG, 40000, 0},
+    {12, PXA_VISION_JPEG, 180, 320, 75, PXA_VISION_MAX_JPEG, 40000, 0},
+    {13, PXA_VISION_JPEG, 270, 480, 78, PXA_VISION_MAX_JPEG, 40000, 0},
+    {14, PXA_VISION_JPEG, 720, 1280, 70, PXA_VISION_MAX_JPEG, 40000, 0},
+    {15, PXA_VISION_JPEG, 1080, 1920, 60, PXA_VISION_MAX_JPEG, 40000, PXA_CAMERA_PROFILE_NATIVE_SIZE},
+    {16, PXA_VISION_JPEG, 1080, 1920, 82, PXA_VISION_MAX_JPEG_HD, 40000, PXA_CAMERA_PROFILE_NATIVE_SIZE},
 };
 struct Camera {
     i2c_master_bus_handle_t bus = nullptr;
@@ -55,10 +65,12 @@ struct Camera {
     esp_cam_ctlr_handle_t controller = nullptr;
     isp_proc_handle_t isp = nullptr;
     jpeg_encoder_handle_t encoder = nullptr;
+    ppa_client_handle_t ppa = nullptr;
+    uint8_t* preview_dma = nullptr;
     void* allocation = nullptr;
     uint8_t* buffers[2]{};
     uint8_t* scaled = nullptr;
-    uint8_t* jpeg = nullptr;
+    size_t jpeg_capacity = 0;
     uint8_t* last = nullptr;
     uint16_t* columns = nullptr;
     pxa_raster_asset_t* pending_preview = nullptr;
@@ -72,6 +84,7 @@ struct Camera {
     unsigned crop_x = 0, crop_width = kSensorWidth;
     uint32_t exposure = 1000, gain = 0;
     bool enabled = false, started = false, isp_enabled = false;
+    bool portrait = false, ppa_failed = false;
     bool demosaic = false, gamma = false, wbg = false, blc = false;
     uint32_t red_gain = 256, blue_gain = 256;
     uint64_t wait_us = 0, sample_us = 0, encode_us = 0;
@@ -131,6 +144,8 @@ void Finish(void*) {
     camera.isp_enabled = false;
     if (camera.isp) { (void)esp_isp_del_processor(camera.isp); camera.isp = nullptr; }
     if (camera.encoder) { (void)jpeg_del_encoder_engine(camera.encoder); camera.encoder = nullptr; }
+    if (camera.ppa) { (void)ppa_unregister_client(camera.ppa); camera.ppa = nullptr; }
+    camera.preview_dma = nullptr;
     if (camera.sccb) { (void)esp_sccb_del_i2c_io(camera.sccb); camera.sccb = nullptr; }
     if (camera.bus) { (void)i2c_del_master_bus(camera.bus); camera.bus = nullptr; }
     if (camera.xclk) {
@@ -138,7 +153,7 @@ void Finish(void*) {
         (void)esp_cam_sensor_xclk_free(camera.xclk); camera.xclk = nullptr;
     }
     heap_caps_free(camera.allocation); camera.allocation = nullptr;
-    camera.buffers[0] = camera.buffers[1] = camera.scaled = camera.jpeg = camera.last = nullptr;
+    camera.buffers[0] = camera.buffers[1] = camera.scaled = camera.last = nullptr;
     camera.completed.store(nullptr);
     camera.columns = nullptr;
     pxa_raster_asset_release(camera.pending_preview); camera.pending_preview = nullptr;
@@ -148,7 +163,10 @@ pxa_status_t PrepareProfile(void*, const pxa_camera_profile_t& profile) {
     Finish(nullptr);
     if (profile.id < 1 || profile.id > sizeof(kProfiles) / sizeof(kProfiles[0])) return PXA_STATUS_UNSUPPORTED;
     camera.width = profile.width; camera.height = profile.height; camera.quality = profile.quality;
-    camera.crop_width = std::min(kSensorWidth, kSensorHeight * camera.width / camera.height);
+    camera.portrait = espp4_a::CameraPortrait(camera.width, camera.height);
+    camera.ppa_failed = false;
+    camera.jpeg_capacity = profile.max_frame_bytes;
+    camera.crop_width = std::min(kSensorWidth, espp4_a::CameraCropWidth(camera.width, camera.height));
     camera.crop_x = (kSensorWidth - camera.crop_width) / 2;
     camera.frames = 0; camera.exposure = 1000; camera.gain = 0;
     camera.requests = 0; camera.completions = 0; camera.errors = 0;
@@ -188,10 +206,18 @@ pxa_status_t PrepareProfile(void*, const pxa_camera_profile_t& profile) {
         return PXA_STATUS_INTERNAL;
     const auto align = [alignment](size_t n) { return (n + alignment - 1) & ~(alignment - 1); };
     camera.stride = align(kSensorBytes);
-    const bool native = camera.width == kSensorWidth && camera.height == kSensorHeight;
-    const bool shared_preview = camera.width == espp4_a::kCameraPreviewWidth;
-    camera.scaled_stride = native || shared_preview ? 0 : align(size_t(camera.width) * camera.height * 2);
-    const size_t bytes = 2 * camera.stride + camera.scaled_stride + align(PXA_VISION_MAX_JPEG) + align(camera.width * 2);
+    const bool native = espp4_a::CameraNativePixels(camera.width, camera.height);
+    const bool direct_native = native && !camera.portrait;
+    const bool shared_preview = (camera.portrait ? camera.height : camera.width) == espp4_a::kCameraPreviewWidth;
+    camera.scaled_stride = direct_native || shared_preview ? 0 : align(size_t(camera.width) * camera.height * 2);
+    if (native) {
+        ppa_client_config_t ppa_config{};
+        ppa_config.oper_type = PPA_OPERATION_SRM;
+        const auto registered = ppa_register_client(&ppa_config, &camera.ppa);
+        if (registered != ESP_OK) ESP_LOGW(kTag, "PPA preview unavailable: %s", esp_err_to_name(registered));
+    }
+    const size_t preview_bytes = camera.ppa ? align(espp4_a::kCameraPpaPreviewBytes) : 0;
+    const size_t bytes = 2 * camera.stride + camera.scaled_stride + preview_bytes + align(std::max(camera.width, camera.height) * 2);
     // Fixed board-owned CSI/JPEG DMA storage, separate from immutable Core assets.
     // The allocation is bounded by the two fixed sensor frames and selected profile.
     camera.allocation = heap_caps_aligned_alloc(alignment, bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -200,9 +226,9 @@ pxa_status_t PrepareProfile(void*, const pxa_camera_profile_t& profile) {
     camera.buffers[0] = reinterpret_cast<uint8_t*>(address);
     camera.buffers[1] = camera.buffers[0] + camera.stride;
     camera.scaled = camera.buffers[1] + camera.stride;
-    camera.jpeg = camera.scaled + camera.scaled_stride;
-    camera.columns = reinterpret_cast<uint16_t*>(camera.jpeg + align(PXA_VISION_MAX_JPEG));
-    espp4_a::CameraColumns(camera.columns, camera.crop_width, camera.width);
+    camera.preview_dma = camera.ppa ? camera.scaled + camera.scaled_stride : nullptr;
+    camera.columns = reinterpret_cast<uint16_t*>(camera.scaled + camera.scaled_stride + preview_bytes);
+    espp4_a::CameraColumns(camera.columns, camera.crop_width, camera.portrait ? camera.height : camera.width);
     // LDO3 is already held by the DSI panel. Never release/reconfigure that shared rail.
     esp_cam_ctlr_csi_config_t csi{};
     csi.ctlr_id = 0; csi.h_res = kSensorWidth; csi.v_res = kSensorHeight;
@@ -261,6 +287,9 @@ pxa_status_t PrepareProfile(void*, const pxa_camera_profile_t& profile) {
     if ((error = jpeg_new_encoder_engine(&jpeg, &camera.encoder)) != ESP_OK) return Error("JPEG create", error);
     if ((error = esp_cam_ctlr_enable(camera.controller)) != ESP_OK) return Error("CSI enable", error);
     camera.enabled = true;
+    if (camera.ppa && (error = esp_cache_msync(camera.buffers[0], 2 * camera.stride,
+        ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE)) != ESP_OK)
+        return Error("CSI cache prepare", error);
     if ((error = esp_cam_ctlr_start(camera.controller)) != ESP_OK) return Error("CSI start", error);
     camera.started = true;
     int stream = 1;
@@ -322,7 +351,10 @@ pxa_status_t AcquireFrame(const uint16_t** output) {
         if (espp4_a::CameraFrameFresh(camera.ready_us.load(std::memory_order_relaxed), uint32_t(esp_timer_get_time()))) break;
         camera.completed.store(nullptr, std::memory_order_release); ++camera.stale_drops;
     }
-    const auto error = esp_cache_msync(const_cast<uint16_t*>(*output), camera.stride, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+    // Native 1080p stays DMA-to-DMA: PPA and JPEG read CSI storage without
+    // a CPU walk/invalidation of its full 4 MiB image.
+    const auto error = camera.ppa && !camera.ppa_failed ? ESP_OK : esp_cache_msync(
+        const_cast<uint16_t*>(*output), camera.stride, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
     if (error != ESP_OK) {
         camera.completed.store(nullptr, std::memory_order_release);
         return Error("capture cache", error);
@@ -334,10 +366,33 @@ void* AllocateImage(void*, size_t bytes) {
     return pxa_memory_allocate(pxa_esp_device_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_FRAME), bytes);
 }
 void ReleaseImage(void*, void* pointer) { pxa_memory_release(pointer); }
+bool PpaImage(const uint16_t* source, void* output, size_t capacity, unsigned width, unsigned height) {
+    if (!camera.ppa || camera.ppa_failed) return false;
+    ppa_srm_oper_config_t scale{};
+    scale.in.buffer = source; scale.in.pic_w = scale.in.block_w = kSensorWidth;
+    scale.in.pic_h = scale.in.block_h = kSensorHeight;
+    scale.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+    scale.out.buffer = output; scale.out.buffer_size = capacity;
+    scale.out.pic_w = width; scale.out.pic_h = height;
+    scale.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+    scale.rotation_angle = camera.portrait ? PPA_SRM_ROTATION_ANGLE_270 : PPA_SRM_ROTATION_ANGLE_0;
+    scale.scale_x = float(camera.portrait ? height : width) / kSensorWidth;
+    // Both axes use the same exact 1/16 scale; the shorter side rounds down.
+    scale.scale_y = scale.scale_x;
+    scale.mode = PPA_TRANS_MODE_BLOCKING;
+    const auto error = ppa_do_scale_rotate_mirror(camera.ppa, &scale);
+    if (error == ESP_OK) return true;
+    camera.ppa_failed = true;
+    ESP_LOGW(kTag, "PPA image unavailable: %s; using CPU transform", esp_err_to_name(error));
+    return false;
+}
 pxa_status_t MakePreview(const uint16_t* source, pxa_raster_asset_t** output) {
     const int64_t begin = esp_timer_get_time();
-    constexpr unsigned width = espp4_a::kCameraPreviewWidth;
-    const unsigned height = camera.height * width / camera.width;
+    const bool use_ppa = camera.ppa && !camera.ppa_failed;
+    const unsigned width = use_ppa ? (camera.portrait ? espp4_a::kCameraPpaPreviewHeight : espp4_a::kCameraPpaPreviewWidth) :
+        (camera.portrait ? espp4_a::kCameraPreviewWidth * camera.width / camera.height : espp4_a::kCameraPreviewWidth);
+    const unsigned height = use_ppa ? (camera.portrait ? espp4_a::kCameraPpaPreviewWidth : espp4_a::kCameraPpaPreviewHeight) :
+        (camera.portrait ? espp4_a::kCameraPreviewWidth : camera.height * width / camera.width);
     pxa_asset_info_t info{};
     info.kind = PXA_ASSET_IMAGE; info.encoding = PXA_ASSET_ENCODING_RGB565; info.format_version = 1;
     info.payload_offset = PXA_ASSET_FILE_HEADER_BYTES; info.width = width; info.height = height;
@@ -346,18 +401,34 @@ pxa_status_t MakePreview(const uint16_t* source, pxa_raster_asset_t** output) {
     const auto result = pxa_asset_object_create(&info, AllocateImage, ReleaseImage, nullptr, output, &bytes);
     if (result != PXA_STATUS_OK) return result;
     auto* pixels = reinterpret_cast<uint16_t*>(bytes);
-    // Sample CSI directly into the immutable Core image. No profile-sized
-    // intermediate or second preview copy, including during JPEG recording.
-    espp4_a::CameraResize(source + camera.crop_x, camera.crop_width, kSensorHeight, kSensorWidth,
-        pixels, width, height, camera.crop_width % width ? camera.columns : nullptr);
+    // Native profiles use a fixed 7/16-size PPA preview; CPU fallback
+    // samples CSI directly. Neither creates a full-resolution CPU copy.
+    if (PpaImage(source, camera.preview_dma, espp4_a::kCameraPpaPreviewBytes, width, height)) {
+        const auto error = esp_cache_msync(camera.preview_dma,
+            espp4_a::kCameraPpaPreviewBytes, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+        if (error != ESP_OK) {
+            pxa_raster_asset_release(*output); *output = nullptr;
+            return Error("PPA preview", error);
+        }
+        // Only the small preview crosses into immutable Core image storage.
+        std::memcpy(pixels, camera.preview_dma, width * height * 2);
+    } else {
+        if (use_ppa) { // A failed DMA attempt may leave the full CSI image uncached.
+            const auto error = esp_cache_msync(const_cast<uint16_t*>(source), camera.stride, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+            if (error != ESP_OK) { pxa_raster_asset_release(*output); *output=nullptr; return Error("preview cache", error); }
+        }
+        espp4_a::CameraResizeOriented(source + camera.crop_x, camera.crop_width, kSensorHeight, kSensorWidth,
+            pixels, width, height, !camera.portrait && width == camera.width ? camera.columns : nullptr, camera.portrait);
+    }
     UpdateControls(pixels, width, height);
     pxa_raster_asset_finish_loading(*output);
     ++camera.frames; ++camera.previews;
     camera.sample_us += esp_timer_get_time() - begin;
     if (camera.previews % 120 == 0)
-        ESP_LOGI(kTag, "pipeline: preview=%u capture=%u wait_avg_us=%llu sample_avg_us=%llu encode_avg_us=%llu extent=%ux%u preview_intermediate_copies=0 stale_drops=%u csi_done=%lu errors=0x%lx",
+        ESP_LOGI(kTag, "pipeline: preview=%u capture=%u wait_avg_us=%llu sample_avg_us=%llu encode_avg_us=%llu extent=%ux%u preview_ppa=%u preview_intermediate_copies=%u jpeg_copies=0 stale_drops=%u csi_done=%lu errors=0x%lx",
             camera.previews, camera.captures, camera.wait_us / camera.previews,
             camera.sample_us / camera.previews, camera.captures ? camera.encode_us / camera.captures : 0, width, height,
+            camera.ppa && !camera.ppa_failed, camera.ppa && !camera.ppa_failed ? 1u : 0u,
             camera.stale_drops, static_cast<unsigned long>(camera.completions.load()), static_cast<unsigned long>(camera.errors.load()));
     return PXA_STATUS_OK;
 }
@@ -371,7 +442,7 @@ pxa_status_t Capture(void*, uint8_t* output, size_t capacity, size_t* size) {
     const auto preview_status = MakePreview(source, &camera.pending_preview);
     const auto* input = reinterpret_cast<const uint8_t*>(source);
     const bool native = camera.width == kSensorWidth && camera.height == kSensorHeight;
-    const bool shared_preview = camera.width == espp4_a::kCameraPreviewWidth;
+    const bool shared_preview = (camera.portrait ? camera.height : camera.width) == espp4_a::kCameraPreviewWidth;
     if (shared_preview) {
         if (preview_status != PXA_STATUS_OK) {
             camera.completed.store(nullptr, std::memory_order_release);
@@ -385,8 +456,14 @@ pxa_status_t Capture(void*, uint8_t* output, size_t capacity, size_t* size) {
         input = view.data;
     }
     if (camera.scaled_stride) {
-        espp4_a::CameraResize(source + camera.crop_x, camera.crop_width, kSensorHeight, kSensorWidth,
-            reinterpret_cast<uint16_t*>(camera.scaled), camera.width, camera.height, camera.columns);
+        if (!PpaImage(source, camera.scaled, camera.scaled_stride, camera.width, camera.height)) {
+            if (camera.ppa) {
+                const auto error = esp_cache_msync(const_cast<uint16_t*>(source), camera.stride, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+                if (error != ESP_OK) { camera.completed.store(nullptr, std::memory_order_release); return Error("rotation cache", error); }
+            }
+            espp4_a::CameraResizeOriented(source + camera.crop_x, camera.crop_width, kSensorHeight, kSensorWidth,
+                reinterpret_cast<uint16_t*>(camera.scaled), camera.width, camera.height, camera.columns, camera.portrait);
+        }
         input = camera.scaled;
     }
     if (!native) camera.completed.store(nullptr, std::memory_order_release);
@@ -396,7 +473,7 @@ pxa_status_t Capture(void*, uint8_t* output, size_t capacity, size_t* size) {
     uint32_t encoded = 0;
     const int64_t begin = esp_timer_get_time();
     const auto error = jpeg_encoder_process(camera.encoder, &config, input, camera.width * camera.height * 2,
-        camera.jpeg, PXA_VISION_MAX_JPEG, &encoded);
+        output, std::min(capacity, camera.jpeg_capacity), &encoded);
     camera.encode_us += esp_timer_get_time() - begin; ++camera.captures;
     if (camera.captures % 30 == 1)
         ESP_LOGI(kTag, "capture: %ux%u jpeg=%lu input=%s encode_us=%lld",
@@ -405,7 +482,7 @@ pxa_status_t Capture(void*, uint8_t* output, size_t capacity, size_t* size) {
     if (error != ESP_OK) status = Error("JPEG encode", error);
     else if (!encoded || encoded > capacity) status = PXA_STATUS_LIMIT_EXCEEDED;
     else {
-        std::memcpy(output, camera.jpeg, encoded); *size = encoded;
+        *size = encoded;
     }
     if (native) camera.completed.store(nullptr, std::memory_order_release);
     return status;

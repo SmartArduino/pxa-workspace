@@ -136,7 +136,7 @@ public:
                 wire::get16(p+8), wire::get16(p+10), wire::get32(p+12), wire::get32(p+16), wire::get32(p+20)};
             if (!value.id || value.encoding != PXA_VISION_JPEG || value.quality > 100 ||
                 (!value.width != !value.height) || (!value.width && !value.native_size()) ||
-                !value.max_frame_bytes || value.max_frame_bytes > PXA_VISION_MAX_JPEG || (value.flags & ~3u))
+                !value.max_frame_bytes || value.max_frame_bytes > PXA_VISION_JPEG_LIMIT(self.minor_) || (value.flags & ~3u))
                 co_return std::unexpected(Error::protocol_error);
             for (unsigned j = 0; j < i; ++j) if (output[j].id == value.id)
                 co_return std::unexpected(Error::protocol_error);
@@ -203,7 +203,7 @@ public:
                                  std::uint64_t& next_cookie) {
         if (minor_ < 6) return Task<FrameStream>::failed(Error::unsupported);
         if (!file || file.readable().transport != &ctx_->transport() || !bytes ||
-            bytes > PXA_VISION_MAX_JPEG || offset > UINT64_MAX-bytes ||
+            bytes > PXA_VISION_JPEG_LIMIT(minor_) || offset > UINT64_MAX-bytes ||
             !next_cookie || next_cookie > UINT64_MAX-bytes)
             return Task<FrameStream>::failed(Error::invalid_argument);
         std::array<std::byte, 28> packet{};
@@ -225,7 +225,8 @@ private:
         AssetDescriptor descriptor{AssetKind(std::to_integer<uint8_t>(p[0])),std::to_integer<uint8_t>(p[1]),
             wire::get16(p+2),wire::get16(p+4),wire::get16(p+6),wire::get32(p+8),wire::get32(p+12),wire::get32(p+16)};
         if (descriptor.kind!=AssetKind::image || !descriptor.width || !descriptor.height ||
-            descriptor.width>320 || descriptor.height>320 ||
+            descriptor.width>PXA_CAMERA_PREVIEW_EDGE(self.minor_) ||
+            descriptor.height>PXA_CAMERA_PREVIEW_EDGE(self.minor_) ||
             (descriptor.encoding!=2 && descriptor.encoding!=7 && descriptor.encoding!=8) ||
             descriptor.decoded_bytes!=uint32_t(descriptor.width)*descriptor.height*(descriptor.encoding==2 ? 2u : 4u) ||
             descriptor.resident_bytes<descriptor.decoded_bytes)

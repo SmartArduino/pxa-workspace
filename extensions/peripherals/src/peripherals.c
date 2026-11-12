@@ -221,15 +221,18 @@ static int32_t read_frame(void *context, uint32_t operation, uint8_t *output, si
         frame->header_used += (size_t)count;
         if (frame->header_used < sizeof(frame->header)) return PXA_STATUS_WOULD_BLOCK;
         pxa_vision_frame_info_t info;
-        if (!pxa_vision_decode(frame->header, &info) || info.format != PXA_VISION_JPEG)
+        if (!pxa_vision_decode(frame->header, &info) || info.format != PXA_VISION_JPEG ||
+            info.size > PXA_VISION_JPEG_LIMIT(minor_for(s, frame->component)))
             goto malformed;
         frame->remaining = info.size;
     }
     // Coalesce native 256-byte transfers into one bounded Core STREAM read.
     // The call budget also bounds backends that return very short fragments.
-    const size_t limit = capacity < 4096 ? capacity : 4096;
+    const unsigned calls = minor_for(s, frame->component) >= 8 ? 64 : 16;
+    const size_t window = calls * PXA_PERIPHERALS_MAX_TRANSFER;
+    const size_t limit = capacity < window ? capacity : window;
     size_t copied = 0;
-    for (unsigned call = 0; call < 16 && copied < limit && frame->remaining; ++call) {
+    for (unsigned call = 0; call < calls && copied < limit && frame->remaining; ++call) {
         size_t size = limit - copied;
         if (size > PXA_PERIPHERALS_MAX_TRANSFER) size = PXA_PERIPHERALS_MAX_TRANSFER;
         if (size > frame->remaining) size = frame->remaining;
@@ -255,7 +258,7 @@ static pxa_status_t open_file_frame(pxa_peripherals_service_t *s, pxa_component_
     const uint64_t parent = pxa_read_u64(m->payload.data), offset = pxa_read_u64(m->payload.data+8);
     const uint32_t length = pxa_read_u32(m->payload.data+16);
     const uint64_t first_cookie = pxa_read_u64(m->payload.data+20);
-    if (!length || length > PXA_VISION_MAX_JPEG || offset > UINT64_MAX-length ||
+    if (!length || length > PXA_VISION_JPEG_LIMIT(minor_for(s, component)) || offset > UINT64_MAX-length ||
         !first_cookie || first_cookie > UINT64_MAX-length) return PXA_STATUS_INVALID_ARGUMENT;
     pxa_resource_t source;
     pxa_status_t status = pxa_handle_get64(s->runtime, component, parent, PXA_RESOURCE_FILE, &source);
@@ -318,6 +321,12 @@ static pxa_status_t preview_result(peripheral_resource_t *parent, uint8_t *outpu
     }
     pxa_asset_object_view_t view;
     pxa_asset_object_view(image, &view);
+    const uint16_t minor = minor_for(s, parent->component);
+    if (view.width > PXA_CAMERA_PREVIEW_EDGE(minor) || view.height > PXA_CAMERA_PREVIEW_EDGE(minor)) {
+        pxa_raster_asset_release(image);
+        // Legacy clients fall back to their bounded JPEG preview path.
+        return minor < 8 ? PXA_STATUS_UNSUPPORTED : PXA_STATUS_PROTOCOL_ERROR;
+    }
     pxa_handle64_t handle = 0;
     status = pxa_assets_publish_image(s->assets, parent->component, image, &handle);
     if (status) { pxa_raster_asset_release(image); return status; }
@@ -426,27 +435,36 @@ static pxa_status_t camera_profiles(pxa_peripherals_service_t *s, pxa_component_
     if (minor_for(s, component) < 5 || !s->backend.camera_profiles) return PXA_STATUS_UNSUPPORTED;
     if (m->payload.size != 2) return PXA_STATUS_INVALID_ARGUMENT;
     pxa_camera_profile_t profiles[PXA_CAMERA_MAX_PROFILES];
-    size_t count = 0;
+    size_t count = 0, visible = 0, fallback = 0;
+    unsigned defaults = 0, visible_defaults = 0;
     pxa_status_t status = normalize(s->backend.camera_profiles(s->backend.context,
         pxa_read_u16(m->payload.data), profiles, PXA_CAMERA_MAX_PROFILES, &count));
     if (status) return status;
     if (!count || count > PXA_CAMERA_MAX_PROFILES) return PXA_STATUS_PROTOCOL_ERROR;
-    unsigned defaults = 0;
+    const uint32_t limit = PXA_VISION_JPEG_LIMIT(minor_for(s, component));
     for (size_t i = 0; i < count; ++i) {
         const pxa_camera_profile_t *p = &profiles[i];
         if (!p->id || p->encoding != PXA_VISION_JPEG || p->quality > 100 ||
             (!p->width != !p->height) || (!p->width && !(p->flags & PXA_CAMERA_PROFILE_NATIVE_SIZE)) ||
-            !p->max_frame_bytes || p->max_frame_bytes > PXA_VISION_MAX_JPEG || (p->flags & ~3u))
+            !p->max_frame_bytes || p->max_frame_bytes > PXA_VISION_MAX_JPEG_HD || (p->flags & ~3u))
             return PXA_STATUS_PROTOCOL_ERROR;
         for (size_t j = 0; j < i; ++j) if (profiles[j].id == p->id) return PXA_STATUS_PROTOCOL_ERROR;
         defaults += !!(p->flags & PXA_CAMERA_PROFILE_DEFAULT);
-        uint8_t *out = s->scratch + 2 + i * 24;
+        if (p->max_frame_bytes > limit) continue;
+        if (p->flags & PXA_CAMERA_PROFILE_NATIVE_SIZE) fallback = visible;
+        visible_defaults += !!(p->flags & PXA_CAMERA_PROFILE_DEFAULT);
+        uint8_t *out = s->scratch + 2 + visible++ * 24;
         pxa_write_u32(out, p->id); pxa_write_u16(out+4, p->encoding);
         pxa_write_u16(out+6, p->width); pxa_write_u16(out+8, p->height); pxa_write_u16(out+10, p->quality);
         pxa_write_u32(out+12, p->max_frame_bytes); pxa_write_u32(out+16, p->period_us); pxa_write_u32(out+20, p->flags);
     }
     if (defaults != 1) return PXA_STATUS_PROTOCOL_ERROR;
-    pxa_write_u16(s->scratch, (uint16_t)count); *result_size = 2 + count * 24;
+    if (!visible) return PXA_STATUS_UNSUPPORTED;
+    if (!visible_defaults) {
+        uint8_t *flags = s->scratch + 2 + fallback * 24 + 20;
+        pxa_write_u32(flags, pxa_read_u32(flags) | PXA_CAMERA_PROFILE_DEFAULT);
+    }
+    pxa_write_u16(s->scratch, (uint16_t)visible); *result_size = 2 + visible * 24;
     return PXA_STATUS_OK;
 }
 static pxa_status_t command(pxa_peripherals_service_t *s, pxa_component_t component,

@@ -69,17 +69,16 @@ ESP-IDF 依赖由拥有对应代码的目录声明。产品基线在 `firmware/m
 ES8311 播放和原生 USB CDC。硬件版本识别、ESP-IDF main 环境与当前外设限制见
 [板级说明](firmware/boards/esp-mosaico/README.md)。
 
-`doit-gamekit`（doit游戏机 / DOIT GameKit）适配 ESP32-S31、320×240 ST7789、
-12 个手柄键、MAX98357A 音频和 SPI SD 卡，无触摸。构建命令为
-`tools/firmware.sh doit-gamekit build`；默认纯按键焦点导航，无底部导航栏，支持
-兜底鼠标。横屏使用整帧软件旋转，按 ST7789 原生方向输出，不依赖 TE。
-接线、按键操作和首次烧录见
-[板级说明](firmware/boards/doit-gamekit/README.md)。
+`doit-gamekit-2` 对应 V2.0，是当前维护的 GameKit 板型：ESP32-S31、320×240
+ST7789V TN、FT6336U 触摸、14 个按键、MAX98357A 与四线 SDMMC。新板使用
+120k/100k 电池分压、参考电压校正及 GPIO51 低有效 USB 外部供电检测。
+构建命令为 `tools/firmware.sh doit-gamekit-2 build`；接线、操作与首次烧录见
+[板级说明](firmware/boards/doit-gamekit-2/README.md)。
 
-`doit-gamekit-1` 对应 V0.8 新板，采用参考工程的 ST7789V TN 横屏初始化、
-FT6336U 触摸、14 个按键、MAX98357A 和原生四线 SDMMC，新增 MENU/RETURN
-系统键。构建命令为 `tools/firmware.sh doit-gamekit-1 build`；接线、屏幕参数
-和首次烧录见 [板级说明](firmware/boards/doit-gamekit-1/README.md)。
+`doit-gamekit` 与 `doit-gamekit-1` **已停止维护和后续固件发布**，保留历史源码
+和配置。不同硬件版本不能混刷固件；旧板说明分别见
+[GameKit](firmware/boards/doit-gamekit/README.md) 和
+[GameKit 1](firmware/boards/doit-gamekit-1/README.md)。
 
 `doit-esp32s31-devkit` 适配 8 MiB Flash 的 DOIT ESP32-S31 DevKit、480×854
 ST7102 RGB 屏幕及触摸、ES8311 音频与四线 SDMMC。构建命令为

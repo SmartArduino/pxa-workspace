@@ -18,7 +18,7 @@ static inline uint64_t pxa_vision_get_le(const uint8_t *p, unsigned n) {
     return result;
 }
 static inline int pxa_vision_valid_size(uint16_t format, uint32_t size) {
-    return size && ((format == PXA_VISION_JPEG && size <= PXA_VISION_MAX_JPEG) ||
+    return size && ((format == PXA_VISION_JPEG && size <= PXA_VISION_MAX_JPEG_HD) ||
         (format == PXA_VISION_JSON && size <= PXA_VISION_MAX_JSON));
 }
 static inline int pxa_vision_encode(uint8_t header[PXA_VISION_HEADER_BYTES],

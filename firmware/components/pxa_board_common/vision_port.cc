@@ -29,6 +29,7 @@ struct State {
     const pxa_camera_profile_t* profile = nullptr;
     uint32_t sequence = 0;
     uint8_t* bytes = nullptr;
+    void* storage = nullptr;
     size_t capacity = 0, used = 0, offset = 0;
     SemaphoreHandle_t mutex = nullptr;
     TaskHandle_t task = nullptr;
@@ -162,9 +163,9 @@ bool Pump() {
         Unlock();
         if (vision.allocated) vision.driver.finish(vision.driver.context);
         pxa_raster_asset_release(vision.image);
-        pxa_memory_release(vision.bytes);
+        pxa_memory_release(vision.storage);
         xSemaphoreTake(vision.mutex, portMAX_DELAY);
-        vision.bytes = nullptr; vision.used = vision.offset = vision.capacity = 0;
+        vision.bytes = nullptr; vision.storage = nullptr; vision.used = vision.offset = vision.capacity = 0;
         vision.image = nullptr; vision.requested = vision.preview_requested = false;
         vision.preview_enabled = false;
         vision.jpeg_size=0; vision.reuse_jpeg=false;
@@ -181,9 +182,15 @@ bool Pump() {
     const auto format = vision.format;
     Unlock();
     if (prepare) {
-        vision.capacity = (format == PXA_VISION_JPEG ? PXA_VISION_MAX_JPEG : PXA_VISION_MAX_JSON) + PXA_VISION_HEADER_BYTES;
+        vision.capacity = (format == PXA_VISION_JPEG ?
+            (vision.profile ? vision.profile->max_frame_bytes : PXA_VISION_MAX_JPEG) :
+            PXA_VISION_MAX_JSON) + PXA_VISION_HEADER_BYTES;
         const auto* allocator = pxa_esp_device_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_FRAME);
-        vision.bytes = static_cast<uint8_t*>(pxa_memory_allocate(allocator, vision.capacity));
+        // Align the payload, not its wire header, for direct hardware JPEG DMA.
+        vision.storage = pxa_memory_allocate(allocator, vision.capacity + 127u);
+        vision.bytes = vision.storage ? reinterpret_cast<uint8_t*>(
+            (reinterpret_cast<uintptr_t>(vision.storage) + PXA_VISION_HEADER_BYTES + 127u) & ~uintptr_t(127u))
+            - PXA_VISION_HEADER_BYTES : nullptr;
         vision.allocated = true; // finish also rolls back partial preparation.
         const auto status = !vision.bytes ? PXA_STATUS_RESOURCE_LIMIT :
             (vision.profile && vision.driver.prepare_profile ?
@@ -210,7 +217,8 @@ bool Pump() {
                                     vision.capacity - PXA_VISION_HEADER_BYTES, &size);
     const pxa_vision_frame_info_t info{format, static_cast<uint32_t>(size), ++vision.sequence,
                                      static_cast<uint64_t>(esp_timer_get_time())};
-    if (status == PXA_STATUS_OK && (size > UINT32_MAX || !pxa_vision_encode(vision.bytes, &info)))
+    if (status == PXA_STATUS_OK && (size > vision.capacity - PXA_VISION_HEADER_BYTES ||
+        size > UINT32_MAX || !pxa_vision_encode(vision.bytes, &info)))
         status = PXA_STATUS_PROTOCOL_ERROR;
     // Drivers must return a frame or a terminal error after their deadline;
     // a WOULD_BLOCK result here is not a busy-loop retry contract.
