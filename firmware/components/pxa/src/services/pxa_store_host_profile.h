@@ -8,17 +8,17 @@
 
 /* A published PXA capability snapshot, NOT the board's firmware version.
  * Keep the snapshot stable across patches that do not change compatibility.
- * PXA 0.10.0 adds Window orientation and separate UI/bar/gesture margins;
+ * PXA 0.11.0 includes UI 0.11 and Device 0.16 capabilities;
  * advertise that snapshot for each supported target. Container 0.2 and Store
  * install 0.8 remain available.
  * Unknown targets must not claim another target's capabilities. */
 static const char *pxa_store_host_profile(void) {
 #if defined(CONFIG_IDF_TARGET_ESP32S3) && CONFIG_IDF_TARGET_ESP32S3
-    return "esp32-s3-pxa-0.10.0";
+    return "esp32-s3-pxa-0.11.0";
 #elif defined(CONFIG_IDF_TARGET_ESP32S31) && CONFIG_IDF_TARGET_ESP32S31
-    return "esp32-s31-pxa-0.10.0";
+    return "esp32-s31-pxa-0.11.0";
 #elif defined(CONFIG_IDF_TARGET_ESP32P4) && CONFIG_IDF_TARGET_ESP32P4
-    return "esp32-p4-pxa-0.10.0";
+    return "esp32-p4-pxa-0.11.0";
 #else
     return NULL;
 #endif
