@@ -23,7 +23,7 @@ WORKSPACE = Path(__file__).resolve().parents[3]
 SYSTEM = WORKSPACE / 'deps/pxa-system'
 sys.path.insert(0, str(SYSTEM / 'tools/release'))
 from compact import compact_python, compact_toolchain, strip_compiler
-from assemble import archive, copy, host_c_abi, sha
+from assemble import archive, copy, copy_tracked_tree, host_c_abi, sha
 
 # OS libraries remain replaceable and are never copied into the DevKit.
 OS_DLLS = set(('kernel32 user32 gdi32 advapi32 shell32 ole32 oleaut32 uuid '
@@ -181,9 +181,11 @@ def main():
     if root.exists():
         parser.error('Choose an empty output directory; existing packages are immutable')
     root.mkdir()
-    ignore = shutil.ignore_patterns('__pycache__', '*.pyc', '.git', '.pxa', 'dist', 'build')
-    for name in ('VERSION', 'LICENSE', 'sdk', 'config', 'docs', 'ai'):
+    ignore = shutil.ignore_patterns('__pycache__', '*.pyc', '.git', '.pxa', 'dist', 'build',
+                                    '.venv', '.env', '.pytest_cache', '.ruff_cache')
+    for name in ('VERSION', 'LICENSE', 'sdk', 'config', 'docs'):
         copy(SYSTEM / name, root / name, ignore=ignore)
+    copy_tracked_tree(SYSTEM, 'ai', root / 'ai')
     copy(WORKSPACE / 'extensions', root / 'extensions', ignore=ignore)
     copy(SYSTEM / 'spec/draft', root / 'spec/draft', ignore=ignore)
     for name in ('pxa_tools', 'package', 'i18n'):
