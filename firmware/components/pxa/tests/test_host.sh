@@ -84,6 +84,7 @@ build_and_run clock_slots \
   "$component_dir/src/runtime/pxa_host_clock_slots.c"
 build_and_run raster_handoff \
   -I"$component_dir/src/services" -pthread "$tests_dir/pxa_raster_handoff_test.c"
+python3 "$tests_dir/test_raster_workers.py"
 build_and_run controller_state \
   -I"$component_dir/src/runtime" "$tests_dir/pxa_host_controller_state_test.c"
 build_and_run pointer_mailbox \

@@ -108,6 +108,12 @@ scheduler validation so removed workers cannot retain stale queued work.
 Setting a key to its existing value performs no file write;
 changed values retain the synchronous durable A/B-slot commit behavior.
 
+GameRender parallel rasterization selects a worker on the other core from the
+caller, covering both synchronous borrowed submissions on the Guest thread and
+queued submissions on the presenter. Two PSRAM stacks are reserved; workers
+start on demand, at most one per core, with separate notifications and completion
+state. A caller can finish an unstarted range itself when the other core is busy.
+
 Canvas display lists reuse returned buffers after the backend releases its
 previous frame. Stable frames reuse their image-reference set; new Canvas
 assets are prepared outside the LVGL execution lock. `pxa_canvas_present_regions`

@@ -4,7 +4,7 @@ set(PXSYS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../deps/pxa-system" CACHE PATH
     "Path to the imported pxa-system checkout")
 set(PXA_BOARD "pai-touch" CACHE STRING "Selected board profile")
 set(PXA_WIFI_LOCATION_DEFAULT OFF)
-if(PXA_BOARD STREQUAL "pai-touch")
+if(PXA_BOARD STREQUAL "pai-touch" OR PXA_BOARD STREQUAL "doit-gamekit-2")
     set(PXA_WIFI_LOCATION_DEFAULT ON)
 endif()
 option(PXA_ENABLE_WIFI_LOCATION "Expose permission-controlled Wi-Fi positioning snapshots" ${PXA_WIFI_LOCATION_DEFAULT})
@@ -84,6 +84,9 @@ idf_build_set_property(MINIMAL_BUILD ON)
 idf_build_set_property(PXA_ENABLE_APP_PAGES_COMPAT OFF)
 
 project(pxa_esp_platform)
+if(TARGET __idf_esp_driver_i2c)
+    include("${CMAKE_CURRENT_LIST_DIR}/cmake/i2c_sync_probe.cmake")
+endif()
 
 include("${PXSYS_ROOT}/cmake/PxaLicensePolicy.cmake")
 if(CONFIG_LV_USE_FS_FROGFS OR CONFIG_LV_USE_THORVG)

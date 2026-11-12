@@ -73,6 +73,13 @@ GPIOs are driven. No eFuse is written by this firmware.
   brightness; `power ... touch_clock=lvgl` logs the resulting power state.
   Malformed reports and I2C failures do not abort; stale presses release after
   150 ms. Valid empty reports release immediately.
+  This board applies a reviewed ESP-IDF I2C receive/probe fix to a build-local
+  source copy: new transactions clear stale receive state, probes retain their
+  command table in bus-owned storage, and pending events are cleared before
+  probe interrupts are enabled. This prevents a failed read from making a later
+  probe write through an expired receive pointer. The external IDF checkout is
+  unchanged. `tools/prepare_idf_i2c.py` checks the reviewed upstream source
+  hash; an IDF upgrade requires reviewing this fix and its regression test.
 - ES8311: address `0x19`, MCLK 54, BCLK 37, WS 49, DOUT 52 and amplifier enable 45.
   Playback uses the PXA Host's 16 kHz rate, with mono samples duplicated into
   stereo I2S slots. Six 320-frame DMA blocks match the Host's 20 ms output

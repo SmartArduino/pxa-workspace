@@ -252,7 +252,9 @@ bool Board::Initialize() {
         if (board->ui_task_) xTaskNotifyGive(board->ui_task_);
     }, this);
     if (xTaskCreatePinnedToCore([](void* c) { static_cast<Board*>(c)->Loop(); },
-        "espp4_ui", 9216, this, 4, &ui_task_, 0) != pdPASS) return false;
+        // Nested native-widget redraws (for example Sibo's learning pages)
+        // exceed 9 KiB in LVGL's style/event traversal.
+        "espp4_ui", 16384, this, 4, &ui_task_, 0) != pdPASS) return false;
     if (xTaskCreate([](void* c) {
         auto* b = static_cast<Board*>(c);
         WifiManagerConfig config; config.ssid_prefix = "PXA-ESPP4-A"; config.language = "zh-CN";
@@ -514,6 +516,9 @@ bool Board::Touch() {
     esp_lcd_panel_io_i2c_config_t io_config{};
     io_config.dev_addr = 0x55; io_config.control_phase_bytes = 1;
     io_config.lcd_cmd_bits = 16; io_config.scl_speed_hz = 100000;
+    // A NACK can leave ST7123's bus busy. The panel IO default waits forever,
+    // including the driver's NACK drain loop, so bound UI-thread reads.
+    io_config.transaction_timeout_ms = 20;
     io_config.flags.disable_control_phase = true;
     if (esp_lcd_new_panel_io_i2c(bus, &io_config, &touch_io_) != ESP_OK) return false;
     esp_lcd_touch_config_t touch_config{};

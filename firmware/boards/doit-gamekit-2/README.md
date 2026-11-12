@@ -38,6 +38,11 @@ FAT16/FAT32，显示路径 `/sdcard`，实际挂载 `/pxa/sdcard`；不自动格
 系统可校验并迁移字体及许可证到 `/sdcard/PXA/system/fonts`，再回收内部字体副本。
 LED2 通过 `org.doit.peripherals` 的 `indicator.status` 逻辑端口使用。
 
+默认接入 `org.doit.wifi-location` 的 `wifi.scan` 权限接口，复用现有 Wi-Fi
+管理器，在独立任务中按需读取附近热点快照；没有应用查询时不启动扫描。
+可用 `-DPXA_ENABLE_WIFI_LOCATION=OFF` 关闭，应用自行选择定位服务。
+显示方向接口声明为原生横屏，不接受运行期竖屏或旋转请求。
+
 ## 电池与 USB 外部供电
 
 R37 为 **120kΩ**、R52 为 **100kΩ**，C50 为 100 nF。Q5/Q6 在系统 3.3 V

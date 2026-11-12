@@ -218,10 +218,15 @@ menu "PXA Development Apps"
                 renders the other into the same color and depth buffers.
 
         config PXA_RASTER_WORKER_AFFINITY
-            int "GameRender raster worker core affinity"
+            int "GameRender raster worker preferred core"
             depends on PXA_PARALLEL_RASTER
             range 0 1
             default 0
+            help
+                Prefer this core unless the caller already runs there. In
+                that case use the other core, including synchronous borrowed
+                submissions from the Guest runtime. At most one worker per
+                core is created on demand; each has its own handoff and stack.
 
         config PXA_RASTER_WORKER_PRIORITY
             int "GameRender raster worker priority"

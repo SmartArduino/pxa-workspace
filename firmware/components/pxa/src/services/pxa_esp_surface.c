@@ -332,15 +332,23 @@ typedef struct {
     uint32_t byte_begin, byte_end;
 } pxa_esp_raster_worker_job_t;
 
-static TaskHandle_t g_raster_worker_task;
-static StaticTask_t g_raster_worker_task_storage;
+typedef struct {
+    TaskHandle_t task;
+    StaticTask_t task_storage;
+    StaticSemaphore_t done_storage;
+    SemaphoreHandle_t done;
+    pxa_raster_handoff_t handoff;
+    uint8_t attempted;
+} pxa_esp_raster_worker_t;
+
+/* Borrowed submissions run on the Guest thread; queued submissions run on
+ * the presenter. Select the opposite core for each call. Notifications and
+ * completion belong to each worker so a late wake cannot claim another
+ * worker's next job. Job storage remains shared by the serialized renderer. */
+static pxa_esp_raster_worker_t g_raster_workers[2];
 EXT_RAM_BSS_ATTR static StackType_t
-    g_raster_worker_stack[CONFIG_PXA_RASTER_WORKER_STACK_SIZE];
-static StaticSemaphore_t g_raster_worker_done_storage;
-static SemaphoreHandle_t g_raster_worker_done;
+    g_raster_worker_stacks[2][CONFIG_PXA_RASTER_WORKER_STACK_SIZE];
 static pxa_esp_raster_worker_job_t g_raster_worker_job;
-static uint8_t g_raster_worker_attempted;
-static pxa_raster_handoff_t g_raster_handoff;
 static uint16_t g_raster_split_row;
 static uint16_t g_raster_split_height;
 
@@ -361,58 +369,60 @@ static void execute_worker_job(void) {
 }
 
 static void raster_worker_task(void *context) {
-    (void)context;
+    pxa_esp_raster_worker_t *worker = context;
     for (;;) {
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         /* A late notification can outlive a job stolen by the owner. Only
          * a successful acquire permits accessing its borrowed inputs. */
-        if (!pxa_raster_handoff_claim(&g_raster_handoff)) continue;
+        if (!pxa_raster_handoff_claim(&worker->handoff)) continue;
         execute_worker_job();
-        xSemaphoreGive(g_raster_worker_done);
+        xSemaphoreGive(worker->done);
     }
 }
 
-static void start_worker_job(void) {
-    (void)xSemaphoreTake(g_raster_worker_done, 0);
-    pxa_raster_handoff_publish(&g_raster_handoff);
-    xTaskNotifyGive(g_raster_worker_task);
+static void start_worker_job(pxa_esp_raster_worker_t *worker) {
+    (void)xSemaphoreTake(worker->done, 0);
+    pxa_raster_handoff_publish(&worker->handoff);
+    xTaskNotifyGive(worker->task);
 }
 
-static int finish_worker_job(void) {
+static int finish_worker_job(pxa_esp_raster_worker_t *worker) {
     /* The other core also runs LCD/audio tasks. If it has not started our
      * half, finish it here instead of sleeping behind unrelated work. */
-    if (pxa_raster_handoff_claim(&g_raster_handoff)) {
+    if (pxa_raster_handoff_claim(&worker->handoff)) {
         execute_worker_job();
         return 0;
     }
-    (void)xSemaphoreTake(g_raster_worker_done, portMAX_DELAY);
+    (void)xSemaphoreTake(worker->done, portMAX_DELAY);
     return 1;
 }
 
-static void ensure_raster_worker(void) {
-    if (g_raster_worker_task != NULL || g_raster_worker_attempted) return;
-    g_raster_worker_attempted = 1;
-    g_raster_worker_done = xSemaphoreCreateBinaryStatic(
-        &g_raster_worker_done_storage);
-    if (g_raster_worker_done != NULL) {
-        g_raster_worker_task = xTaskCreateStaticPinnedToCore(
+static pxa_esp_raster_worker_t *ensure_raster_worker(void) {
+    unsigned core = CONFIG_PXA_RASTER_WORKER_AFFINITY;
+    if (core == (unsigned)xPortGetCoreID()) core ^= 1u;
+    pxa_esp_raster_worker_t *worker = &g_raster_workers[core];
+    if (worker->task != NULL) return worker;
+    if (worker->attempted) return NULL;
+    worker->attempted = 1;
+    worker->done = xSemaphoreCreateBinaryStatic(&worker->done_storage);
+    if (worker->done != NULL) {
+        worker->task = xTaskCreateStaticPinnedToCore(
             raster_worker_task, "pxa_raster",
-            CONFIG_PXA_RASTER_WORKER_STACK_SIZE, NULL,
-            CONFIG_PXA_RASTER_WORKER_PRIORITY, g_raster_worker_stack,
-            &g_raster_worker_task_storage,
-            CONFIG_PXA_RASTER_WORKER_AFFINITY);
+            CONFIG_PXA_RASTER_WORKER_STACK_SIZE, worker,
+            CONFIG_PXA_RASTER_WORKER_PRIORITY, g_raster_worker_stacks[core],
+            &worker->task_storage, core);
     }
-    if (g_raster_worker_task == NULL) {
-        g_raster_worker_task = NULL;
+    if (worker->task == NULL) {
         ESP_LOGW(PXA_ESP_SURFACE_TAG,
                  "Parallel raster worker unavailable; using one core");
-        return;
+        return NULL;
     }
     ESP_LOGI(PXA_ESP_SURFACE_TAG,
              "Parallel raster worker: core=%d priority=%d stack=%uB PSRAM",
-             CONFIG_PXA_RASTER_WORKER_AFFINITY,
+             (int)core,
              CONFIG_PXA_RASTER_WORKER_PRIORITY,
              (unsigned)CONFIG_PXA_RASTER_WORKER_STACK_SIZE);
+    return worker;
 }
 
 static uint16_t current_raster_split(uint16_t height) {
@@ -1602,7 +1612,7 @@ static pxa_status_t create_game_render_context(
         return status;
     }
 #if CONFIG_PXA_PARALLEL_RASTER
-    ensure_raster_worker();
+    (void)ensure_raster_worker();
 #endif
     *capabilities = raster_capabilities();
     return PXA_STATUS_OK;
@@ -1641,10 +1651,10 @@ pxa_status_t pxa_esp_game_render_execute_compute(void *context,
     }
 #endif
 #if CONFIG_PXA_PARALLEL_RASTER
-    ensure_raster_worker();
+    pxa_esp_raster_worker_t *worker = ensure_raster_worker();
     /* Avoid waking the second core for very small surfaces. The split is a
      * cache-line boundary in native memory, preventing false sharing. */
-    if (g_raster_worker_task && batch->pixels >= 2048) {
+    if (worker && batch->pixels >= 2048) {
         uintptr_t base = (uintptr_t)batch->target;
         uint32_t midpoint = pxa_raster_compute_split_hint(batch,
             128);
@@ -1656,9 +1666,9 @@ pxa_status_t pxa_esp_game_render_execute_compute(void *context,
             g_raster_worker_job.compute_batch = batch;
             g_raster_worker_job.byte_begin = split;
             g_raster_worker_job.byte_end = batch->target_bytes;
-            start_worker_job();
+            start_worker_job(worker);
             pxa_raster_compute_execute_range(batch, 0, split);
-            int parallel = finish_worker_job();
+            int parallel = finish_worker_job(worker);
             (void)parallel;
 #if PXA_PRIORITY_TILE_TRACE
             if (trace_tile) {
@@ -2067,7 +2077,8 @@ static void execute_raster_draw_list(
     *worker_us = 0;
     *split_row = target->height;
 #if CONFIG_PXA_PARALLEL_RASTER
-    if (g_raster_worker_task != NULL && target->height >= 2) {
+    pxa_esp_raster_worker_t *worker = ensure_raster_worker();
+    if (worker != NULL && target->height >= 2) {
         const uint16_t split = current_raster_split(target->height);
         *split_row = split;
         memset(&g_raster_worker_job, 0, sizeof(g_raster_worker_job));
@@ -2077,14 +2088,14 @@ static void execute_raster_draw_list(
         g_raster_worker_job.resources = *resources;
         g_raster_worker_job.row_begin = split;
         g_raster_worker_job.row_end = target->height;
-        start_worker_job();
+        start_worker_job(worker);
 
         main_started_us = (uint64_t)esp_timer_get_time();
         pxa_raster_execute_draw_list_rows(bytes, list, target, resources, 0,
                                           split, telemetry);
         *main_us = latency_us(main_started_us,
                               (uint64_t)esp_timer_get_time());
-        if (finish_worker_job()) *worker_us = g_raster_worker_job.elapsed_us;
+        if (finish_worker_job(worker)) *worker_us = g_raster_worker_job.elapsed_us;
         else {
             *main_us = latency_us(main_started_us, (uint64_t)esp_timer_get_time());
             *split_row = target->height;

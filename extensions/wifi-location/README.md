@@ -22,7 +22,7 @@ ESP 后端过滤组播/本地管理地址和 `_nomap` 热点，返回 BSSID、RS
 进行匹配。Guest 跳过非 UTF-8 名称。本扩展不请求任何外部定位服务。
 应用负责告知所选服务、申请网络权限、提交信号并判断结果精度。
 
-构建选项 `PXA_ENABLE_WIFI_LOCATION` 控制固件接入，只有 pai-touch 默认开启。
+构建选项 `PXA_ENABLE_WIFI_LOCATION` 控制固件接入，pai-touch 和 doit-gamekit-2 默认开启。
 其他板型需确认使用相同的 Wi-Fi 管理器后显式启用。关闭后应用的其他定位来源
 仍可使用；旧固件会在 HELLO 返回不支持。无查询时不分配扫描任务或发起扫描。
 
