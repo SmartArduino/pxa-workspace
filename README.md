@@ -1,233 +1,94 @@
-# PXA ESP 平台工程
+# PXA Workspace
 
-[English](README.en.md)
+[English](README.en.md) · [开发文档](https://pxa.doit.am/docs/) · [下载](https://pxa.doit.am/docs/downloads/)
 
-这是一个独立的 ESP-IDF 产品工程。它以依赖方式引入 `pxa-system`，不会依赖旧产品
-固件目录。通过同一份 `pxa_board_port_t` 合约支持两种板级接入方式：
+面向 ESP32 设备的 PXA 固件工作区。把显示、触摸、按键、音频和存储接入统一的应用系统，让同一份 PXA 应用在不同板型上运行，并独立于固件安装和更新。
 
-- 新 BSP 在 `firmware/boards/<board>/` 中直接实现 board port。
-- 已有固件在其显示初始化完成后，增加一个小型 adapter，将既有板级 API 映射为
-  board port。
+- **板级集成**：每块板子维护自己的驱动、配置、分区和依赖，使用统一命令构建。
+- **应用开发**：桌面模拟器调试界面与交互，PXADB 连接真机安装应用、查看日志和传输文件。
+- **产品交付**：按板型管理系统资源与出厂预置，日常应用迭代无需重新构建固件。
 
-## 只开发应用？先用 DevKit
+## 界面预览
 
-无需克隆本仓库或安装 ESP-IDF。下载 [DevKit 0.11.0](https://pxa.doit.am/docs/downloads/)，解压后：
+| 系统桌面 | 系统设置 |
+| :---: | :---: |
+| <img src="docs/images/desktop.zh-CN.png" width="300" alt="PXA 系统桌面，显示已安装应用"> | <img src="docs/images/settings.zh-CN.png" width="300" alt="PXA 系统设置，包含网络、外观和语言"> |
 
-```sh
-export PATH="$PWD/pxa-devkit-0.11.0-linux-x86_64/bin:$PATH"
-pxa init hello
-pxa run hello
-```
+以上为真实桌面模拟器画面；桌面应用需单独安装，设备可用功能取决于板级实现。
 
-默认 C++26、O3，项目通过 `pxa.lock` 固定 SDK 与工具链版本。当前发行包要求 Linux x86_64、glibc 2.39+。应用包需要 Core 2.1 及其声明的服务能力。
-[中文入门教程](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [发布说明](https://github.com/SmartArduino/pxa-system/releases/tag/v0.11.0) · [发布说明与升级](docs/release-0.11.0.zh-CN.md)
+## 选择开发入口
 
-[PXA Agent Kit](https://pxa.doit.am/docs/ai-development/) 支持一句话准备环境、开发与调试、真机安装、官方固件升级及商城提交。把下面这句话交给 Codex、Claude Code、DSH 等编程助手：
+| 你的目标 | 从这里开始 |
+| --- | --- |
+| 开发一个应用 | [DevKit 入门](https://pxa.doit.am/docs/first-app/)，无需先构建固件 |
+| 运行或修改现有应用 | [pxa-apps](https://github.com/SmartArduino/pxa-apps) |
+| 修改固件、接入硬件或定制产品 | 继续阅读本页 |
+| 修改运行库、系统界面或 SDK | [pxa-system](https://github.com/SmartArduino/pxa-system) |
 
-> 请读取 https://pxa.doit.am/ai.md，在当前目录为我配置 PXA 开发环境，运行模拟器检查环境，然后等待我的应用需求。
-
-工具自动校验发行签名并安装 DevKit，只配置项目内的技能与 MCP，不增加设备运行开销。首次系统安装、浏览器登录和必要的 BOOT/RESET 仍需用户操作。
-
-Windows x64 可按 [原生构建说明](tools/portable/windows/README.md) 编译工具链、模拟器和调试工具。Windows/macOS 也可使用 [跨平台工具](tools/portable/README.md)：容器负责构建和无界面模拟器，宿主机 PXADB 直接连接 USB 串口；无需 USB 转发。
-
-以下命令面向修改系统或板级驱动的开发者，在本仓库根目录运行：
+## 开始构建
 
 ```sh
 git clone --recurse-submodules https://github.com/SmartArduino/pxa-workspace.git
 cd pxa-workspace
-git clone https://github.com/SmartArduino/pxa-apps.git local/pxa-apps
 ```
 
-## 目录
+按下表的板级说明准备对应 ESP-IDF 环境，然后在仓库根目录构建，例如：
+
+```sh
+tools/firmware.sh doit-gamekit-2 build
+```
+
+每块板子使用独立的 `build/firmware/<board>/`。首次安装、系统字体初始化、串口参数和日常固件更新，均按对应板级说明执行。
+
+### 板型入口
+
+| Board ID | 设备与显示 | 接入说明 |
+| --- | --- | --- |
+| `doit-gamekit-2` | ESP32-S31，320×240，触摸与手柄按键 | [GameKit V2.0](firmware/boards/doit-gamekit-2/README.md) |
+| `esp-mosaico` | ESP32-S31，480×480，触摸与传感器 | [ESP-Mosaico](firmware/boards/esp-mosaico/README.md) |
+| `doit-esp32s31-devkit` | ESP32-S31，480×854 RGB 屏 | [DOIT S31 DevKit](firmware/boards/doit-esp32s31-devkit/README.md) |
+| `espp4-a` | ESP32-P4，480×854 DSI 屏 | [ESPP4-A](firmware/boards/espp4-a/README.md) |
+| `sensecap-watcher` | ESP32-S3，412×412 圆屏与旋钮 | [SenseCAP Watcher](firmware/boards/sensecap-watcher/README.md) |
+| `pai-touch` | ESP32-S3，296×240，触摸与音频 | [Pai Touch](firmware/boards/pai-touch/README.zh-CN.md) |
+| `epdiy-v7` | ESP32-S3，定制 40-pin 墨水屏接线 | [EPDiy V7 适配范围](firmware/boards/epdiy-v7/README.md) |
+
+更多板级实现见 [firmware/boards](firmware/boards/)。`doit-gamekit`、`doit-gamekit-1` 已停止维护和新固件发布，保留历史源码。
+
+## 应用与真机联调
+
+将应用仓库放在工作区的本地目录，从模拟器开始：
+
+```sh
+git clone https://github.com/SmartArduino/pxa-apps.git local/pxa-apps
+tools/dev.sh sim pixel-dungeon --source-root local/pxa-apps
+```
+
+设备已运行 PXA 固件时，可直接安装并启动应用：
+
+```sh
+tools/dev.sh device --board doit-gamekit-2 pixel-dungeon --port /dev/ttyACM0
+```
+
+串口名按实际设备修改。使用 `--watch` 开启保存后重新构建和运行。桌面管理工具入口为 `tools/pxadb-gui.sh`，操作见 [PXADB GUI](tools/pxadb-gui/README.md)。
+
+## 工作区结构
 
 ```text
-firmware/                    唯一的 ESP-IDF 工程
-firmware/boards/             每块板子的驱动、默认配置和分区表
-simulator/                   桌面 UI/显示 Profile 模拟配置
-factory/                     可复现的板级出厂预置 Profile
-tools/                       固件、应用、模拟器和出厂工具入口
-local/                       忽略的本机 App catalog、覆盖配置与输出
-deps/pxa-system/             引入的上游系统与应用打包工具
+firmware/          ESP-IDF 产品工程、板级驱动与系统接入
+simulator/         桌面显示与输入配置
+factory/           板级出厂预置
+extensions/        产品扩展服务
+tools/             固件、应用、模拟器与设备工具
+deps/pxa-system/   固定版本的系统子模块
+local/             本机应用仓库、覆盖配置与生成产物
 ```
 
-`firmware/boards/pai-touch` 本身就是 ESP-IDF component。通过 CMake cache 中的 `PXA_BOARD`
-选择板子，无需维护一个全局 `CONFIG_BOARD_TYPE` choice。该目录下的
-`sdkconfig.defaults` 会在根目录的跨板默认配置之后作为板级 overlay 加载。
+## 继续阅读
 
-## 托管依赖
+- [工作区结构与日常流程](docs/zh-CN/workspace-layout.md)
+- [应用打包、安装与出厂交付](docs/zh-CN/pxa-app-delivery.md)
+- [模拟器与显示配置](simulator/README.md)
+- [新板接入模板](templates/board/README.zh-CN.md) · [已有固件适配](templates/legacy-board-adapter/README.zh-CN.md)
+- [跨平台工具](tools/portable/README.md) · [Windows 原生构建](tools/portable/windows/README.md)
 
-ESP-IDF 依赖由拥有对应代码的目录声明。产品基线在 `firmware/main/idf_component.yml`；每块板子的
-显示、输入、电源、联网和可选字体包写在 `firmware/boards/<board>/idf_component.yml`。这样即使板子
-使用不兼容版本的驱动，也能保持依赖图隔离。Component Manager 会在 `firmware/` 中生成
-`dependencies.lock.<board>`；依赖解析后应提交对应板子的该文件，但绝不可手工编辑。
-
-## 编译指定板子
-
-使用 I2C 驱动的板型共用构建期接收状态修复：新事务清除旧读取状态，探测命令保存在总线对象中，
-启用探测中断前清除残留事件。`tools/prepare_idf_i2c.py` 校验已审查的 ESP-IDF 源码摘要，
-只生成构建目录内的驱动副本，不修改外部 IDF。升级 IDF 时须重新审查补丁，并运行
-`python3 tools/test_prepare_idf_i2c.py` 验证正常、NACK 和超时后的探测行为。
-
-通过板级工具编译与调试，并为每块板子使用独立构建目录。
-
-`esp-mosaico` 配置适配 ESP32-S31、480 × 480 CO5300 显示、CST92xx 触摸、
-ES8311 播放和原生 USB CDC。硬件版本识别、ESP-IDF main 环境与当前外设限制见
-[板级说明](firmware/boards/esp-mosaico/README.md)。
-
-`doit-gamekit-2` 对应 V2.0，是当前维护的 GameKit 板型：ESP32-S31、320×240
-ST7789V TN、FT6336U 触摸、14 个按键、MAX98357A 与四线 SDMMC。新板使用
-120k/100k 电池分压、参考电压校正及 GPIO51 低有效 USB 外部供电检测。
-构建命令为 `tools/firmware.sh doit-gamekit-2 build`；接线、操作与首次烧录见
-[板级说明](firmware/boards/doit-gamekit-2/README.md)。
-
-`doit-gamekit` 与 `doit-gamekit-1` **已停止维护和后续固件发布**，保留历史源码
-和配置。不同硬件版本不能混刷固件；旧板说明分别见
-[GameKit](firmware/boards/doit-gamekit/README.md) 和
-[GameKit 1](firmware/boards/doit-gamekit-1/README.md)。
-
-`doit-esp32s31-devkit` 适配 8 MiB Flash 的 DOIT ESP32-S31 DevKit、480×854
-ST7102 RGB 屏幕及触摸、ES8311 音频与四线 SDMMC。构建命令为
-`tools/firmware.sh doit-esp32s31-devkit build`；USB-Uart 默认 921600，
-共享总线、BOOT/LCD 片选及摄像头接线限制见
-[板级说明](firmware/boards/doit-esp32s31-devkit/README.md)。
-
-```sh
-tools/firmware.sh pai-touch build
-tools/firmware.sh pai-touch flash --port /dev/ttyACM0 --baud 406800
-tools/firmware.sh pai-touch monitor --port /dev/ttyACM0 --baud 115200
-```
-
-等效的 ESP-IDF 直接构建命令为：
-
-```sh
-idf.py -C firmware -B build/firmware/pai-touch -DPXA_BOARD=pai-touch build
-```
-
-`PXA_BOARD` 会选择 `firmware/boards/<board>/`、其 `board.cmake`、`sdkconfig.defaults`、
-分区表和 `idf_component.yml`。`board.cmake` 会在 component 发现前选择匹配的 ESP
-目标芯片。第一次配置会解析该板子的托管 component，并生成
-`firmware/dependencies.lock.<board>`。不要将同一个构建目录复用于另一块板子。
-
-## PXA 应用交付
-
-产品应用源码放在独立的 `local/pxa-apps` Git 仓库；本工作区忽略该目录。
-`deps/pxa-system/apps/pxa` 保存开发签名夹具与部分历史示例；新应用使用 pxa init 生成的 C++26 模板。
-工作区的 App 工具会自动发现 `local/pxa-apps`，也可显式传入 `--source-root`。
-
-固件构建和 PXA 应用交付被刻意拆开。App 源码根目录优先由被忽略的 `local/apps.toml` 解析，
-未配置时使用 `local/pxa-apps`；
-私有 App 不会污染本工程。常规固件编译与烧录既不会打包应用，也不会写入 PXA 数据分区。
-详见 [PXA 应用交付](docs/zh-CN/pxa-app-delivery.md)。
-目录职责与日常流程见 [工作区结构](docs/zh-CN/workspace-layout.md)。
-
-SD 资源访问、多分区、安装位置选择及跨卷迁移的现状与拟议 ABI/SDK，见
-[多卷存储设计](docs/pxa-multi-volume-design.zh-CN.md)。授权 SD 只读接口已有先行实现；
-整应用安装的统一 `/PXA` 布局，以及无需 Flash 文件分区的 SD 系统盘，见
-[固定目录与 SD 系统盘设计](docs/pxa-storage-layout.zh-CN.md)（安装及系统盘后端尚未实现）。
-默认资源根已支持无需选目录的 `fs.app_media()`，见
-[SDK 示例](deps/pxa-system/sdk/guest-cpp/examples/fixed-files/README.zh-CN.md)。
-
-## PXA 快速开发
-
-`tools/dev.sh` 将应用的增量打包、PXADB 覆盖安装和启动串为一个开发循环。App 源码根目录是
-包含 `<app-id>/` 的父目录：可在被忽略的 `local/apps.toml` 中登记，也可在命令中临时传入。
-
-```toml
-# local/apps.toml
-[apps.my-app]
-source_root = "/home/me/work/pxa-apps"
-```
-
-模拟器模式会安装应用，启动完整 PXA 系统（与 `tools/simulator.sh run` 相同），并自动进入该应用。
-系统桌面、设置、输入法、主题、DPI 和屏幕形状都会生效。PXADB2 服务保持运行，
-每次保存后重启系统并进入更新后的 App；Host 及 Guest 的 `pxa_log_*` 日志输出到终端：
-
-```sh
-tools/dev.sh sim my-app --watch
-# 或者不登记本机 catalog：
-tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
-# 使用 Watcher 的 412×412 圆屏配置：
-tools/dev.sh sim --board sensecap-watcher pixel-dungeon
-tools/dev.sh sim --board esp-mosaico voxel-craft
-```
-
-模拟器默认使用与 `--board` 同名的屏幕 profile；需要单独覆盖时传入 `--profile`。
-设置和 App 数据与 `tools/simulator.sh run` 共用该 profile 的持久化目录；传入
-`--instance <名称>` 可使用独立的开发实例。只需要单独运行应用时，可使用
-`tools/simulator.sh product --profile <板型> --installed <包 ID>`。
-`dev.sh` 默认只打包当前目标的 AOT，不附带 `.wasm` 回退文件（包括声明为 `artifact: "both"`
-的组件）；应用中明确声明为
-Wasm-only 的组件仍会保留。需要同时打包 Wasm 时，可直接使用 `tools/app.sh build`。
-
-设备模式从 `firmware/boards/<board>/board.cmake` 的 `PXA_BOARD_TARGET` 读取芯片目标
-（默认 pai-touch / esp32s3）。新增同架构板型只需声明该值，无需修改应用工具的板名映射。
-`tools/app.sh` 与底层打包入口共用同一读取方式；显式 `--target` 可覆盖默认架构，
-缺失声明时直接报错。设备模式覆盖安装到现有固件，不会重新烧录固件；部署后默认会显示
-`pxadb logcat`，下一次更新前会自动暂时关闭它以释放 USB Serial/JTAG 连接：
-
-```sh
-tools/dev.sh device my-app --port /dev/ttyACM0 --baud 2000000 --watch
-```
-
-所有构建、部署和运行器输出同时保存在 `local/dev-logs/<mode>/<app-id>.log`。这是重新加载
-WASM/AOT 应用的快速循环，而非运行时热重载，因此每次代码更新会重启运行环境。
-
-## PXADB GUI
-
-`tools/pxadb-gui.sh` 为 CLI 所用的同一个 `pxadb` 客户端提供桌面界面：发现 USB 设备与
-正在运行的产品模拟器，把设备截图流式显示为实时预览，注入点击、拖动和按键，浏览并传输
-文件，显示设备日志，管理 Package。预览在 USB 固件上通过设备端 JPEG 约 3~4 FPS，在产品
-模拟器上约 15~20 FPS；拖动时会暂停截图采集，保证操控响应。
-
-```sh
-tools/pxadb-gui.sh
-tools/pxadb-gui.sh --port /dev/ttyACM0
-tools/pxadb-gui.sh --simulator pai-touch
-```
-
-PXADB 独占串口，请在打开 GUI 前关闭正在使用同一端口的 `pxadb` 命令或
-`tools/dev.sh device`。详见 [PXADB GUI](tools/pxadb-gui/README.md)。
-
-## 模拟器
-
-`tools/simulator.sh` 启动引入的 SDL/LVGL 标准 UI 模拟器，未指定时使用默认的
-`generic` Profile。其他板子 Profile 显式通过参数选择：
-
-```sh
-tools/simulator.sh --profile pai-touch
-```
-
-标准 UI 模式运行完整系统；已安装的桌面 Guest 应用可以从启动器打开。目录里只有 manifest 的卡片需要先构建和安装，不能当作应用已经运行的证据。
-
-```sh
-tools/dev.sh sim pixel-dungeon --source-root local/pxa-apps
-# 只运行已安装应用，不显示系统桌面：
-tools/simulator.sh product --profile pai-touch --installed pxa-pixel-dungeon
-```
-
-签名和目标选择与真机使用相同的包契约。模拟器用于布局、输入和 Guest 行为验证；硬件驱动、DMA、触控 IC、音频输出延迟与电源仍须在真机验证。详见[模拟器说明](simulator/README.md)。
-
-## 板级合约
-
-board port 提供显示创建与显示 Profile，以及可选的网络、音量、亮度、状态发布和诊断
-控制。它只承载控制面：DMA 提交、framebuffer 所有权、像素转换和 PCM 帧传输仍留在
-板级 component 中。pai-touch 的 PXA 直出帧路径就是这种边界的示例。
-
-## 适配已有固件
-
-不要迁移旧的板级实现。在原板子旁增加一个 adapter，注册 `pxa_board_port_t`，并在
-既有 LVGL display 初始化完成后调用 `pxa_integration_start()`。adapter 独占对旧
-`Board`、UI 和产品类的引用；`pxa-system` 与通用 integration component 不会包含
-这些头文件。
-
-## 依赖
-
-`deps/pxa-system` 是独立 Git checkout，并固定 WAMR 和 page-manager 子模块。ESP
-host 直接持有很小的 WAMR/ESP-IDF 声明兼容层。host 与板级依赖
-均保存在本工程内，因此源码和 CMake 文件不包含原 pai-touch 演示固件的路径。
-
-## 关于 DOIT
-
-公司：**深圳四博智联科技有限公司（DOIT）**。
-
-[公司官网](https://doit.am/) · [关于 PXA 与 DOIT](https://pxa.doit.am/about/)
+遇到问题或有改进建议，请使用 [Issue 模板](https://github.com/SmartArduino/pxa-workspace/issues/new/choose)，选择中文或英文，并提供板型、固件版本和复现步骤。

@@ -1,5 +1,5 @@
-# PXA ESP 平台工程
+# PXA Workspace
 
-中文首页已统一到 [README.md](README.md)。
+中文首页：[README.md](README.md)。
 
 [English](README.en.md)
