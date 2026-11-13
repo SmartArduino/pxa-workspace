@@ -19,6 +19,9 @@ target_sources(${COMPONENT_LIB} PRIVATE src/espp4_a_pixels.cc src/espp4_a_pixels
 target_link_options(${COMPONENT_LIB} INTERFACE
     "-Wl,--wrap=esp_cpu_reset" "-Wl,--undefined=__wrap_esp_cpu_reset")
 option(PXA_ESPP4_PIXEL_ACCEL "Use P4 v3 PIE RGB565 pixel primitives" ON)
+option(PXA_ESPP4_NATIVE_UI_DIRECT "Redraw only damaged native LVGL regions between guest frames" ON)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    PXA_ESPP4_NATIVE_UI_DIRECT=$<BOOL:${PXA_ESPP4_NATIVE_UI_DIRECT}>)
 option(PXA_ESPP4_SD_SINGLE_BLOCK "Diagnostic single-block TF transfers" OFF)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_ESPP4_SD_SINGLE_BLOCK=$<BOOL:${PXA_ESPP4_SD_SINGLE_BLOCK}>)
 option(PXA_ESPP4_SD_SELFTEST "Run an owned temporary-file TF throughput/integrity test at boot" OFF)

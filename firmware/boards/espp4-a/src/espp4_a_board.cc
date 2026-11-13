@@ -11,6 +11,7 @@
 #include "espp4_a_rotation.h"
 #include "espp4_a_touch.h"
 #include "espp4_a_usb.h"
+#include "espp4_a_ui_render.h"
 #include <algorithm>
 #include <cstdlib>
 #include <atomic>
@@ -128,6 +129,7 @@ private:
     void WaitScan();
     void Submit(unsigned buffer, const pxa_esp_surface_frame_t& frame);
     bool PresentOpaqueSurface();
+    void UpdateUiRenderMode();
     void ApplyBacklight();
     static bool IRAM_ATTR FrameComplete(esp_lcd_panel_handle_t, esp_lcd_dpi_panel_event_data_t*, void*);
     static void Flush(lv_display_t*, const lv_area_t*, uint8_t*);
@@ -167,6 +169,9 @@ private:
     uint64_t acquire_us_ = 0, submit_us_ = 0, scan_wait_us_ = 0;
     uint64_t paint_started_us_ = 0, paint_us_ = 0;
     uint32_t painted_frames_ = 0;
+    uint64_t ui_damage_pixels_ = 0;
+    uint32_t ui_native_frames_ = 0;
+    espp4_a::UiRenderMode ui_render_;
     uint32_t direct_frames_ = 0;
     uint32_t direct_native_frames_ = 0, direct_backdrop_frames_ = 0;
     uint32_t lvgl_revision_ = 0, painted_revision_ = UINT32_MAX;
@@ -255,11 +260,22 @@ bool Board::Initialize() {
     lv_display_add_event_cb(display_, [](lv_event_t* event) {
         // Public invalidation notifications cover dialogs, status changes,
         // animations and app transitions, including changes before a flush.
-        ++static_cast<Board*>(lv_event_get_user_data(event))->lvgl_revision_;
+        auto* board = static_cast<Board*>(lv_event_get_user_data(event));
+        ++board->lvgl_revision_;
+        const lv_area_t overlay = {
+            (kWidth - PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) / 2, 0,
+            (kWidth + PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) / 2 - 1,
+            PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT - 1};
+        board->ui_render_.IncludeOverlay(static_cast<lv_area_t*>(lv_event_get_param(event)),
+            pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY), overlay);
     }, LV_EVENT_INVALIDATE_AREA, this);
+    lv_display_add_event_cb(display_, [](lv_event_t* event) {
+        static_cast<Board*>(lv_event_get_user_data(event))->paint_started_us_ = esp_timer_get_time();
+    }, LV_EVENT_RENDER_START, this);
     // LVGL redraws the complete trusted UI before guest composition. Render
     // directly into the two DMA buffers, starting away from scanout buffer 0.
-    // FULL mode is required: a retained partial background would contain guests.
+    // Guest composition starts in FULL mode. The native shell can switch to
+    // retained dirty rectangles after all guest pixels have been repainted.
     lv_display_set_buffers(display_, frames_[1], frames_[0], kBytes, LV_DISPLAY_RENDER_MODE_FULL);
     lv_display_set_flush_cb(display_, Flush);
     if (esp_lv_decoder_init(&decoder_) != ESP_OK || !Espp4AInitializeJpegImages(decoder_)) return false;
@@ -311,8 +327,13 @@ bool Board::Initialize() {
     return true;
 }
 
-void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
+void Board::Flush(lv_display_t* display, const lv_area_t* area, uint8_t* data) {
     auto* b = static_cast<Board*>(lv_display_get_user_data(display));
+    if (area) b->ui_damage_pixels_ += uint64_t(lv_area_get_width(area)) * lv_area_get_height(area);
+    if (!b->ui_render_.ShouldSubmit(display)) {
+        lv_display_flush_ready(display);
+        return;
+    }
     const int64_t flush_started = esp_timer_get_time();
     if (b->paint_started_us_) {
         b->paint_us_ += flush_started - b->paint_started_us_;
@@ -335,6 +356,24 @@ void Board::Flush(lv_display_t* display, const lv_area_t*, uint8_t* data) {
         if (output != b->frames_[next] || b->pending_count_ == b->pending_.size()) abort();
     }
     const int width = b->LogicalWidth(), height = b->LogicalHeight();
+    if (b->ui_render_.direct()) {
+        // A guest may publish its first Surface after this pass selected
+        // native rendering. Leave these retained pixels exclusively to LVGL;
+        // repaint/composite on the following FULL pass instead.
+        if (pxa_esp_surface_has_visible_surface()) {
+            b->ui_render_.RequireFull();
+            b->surface_dirty_ = true;
+        }
+        const bool overlay = pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY);
+        if (overlay) pxa_board_performance_draw_rgb565(output, width, height, width,
+            0, 0, width, height, false);
+        b->ui_render_.OverlayDrawn(overlay);
+        b->painted_revision_ = b->lvgl_revision_;
+        ++b->ui_native_frames_;
+        b->Submit(next, {});
+        lv_display_flush_ready(display);
+        return;
+    }
 #ifdef PXA_ESPP4_ROTATION_SELFTEST
     static bool rotation_checked = false;
     if (rotation && !rotation_checked) {
@@ -410,7 +449,7 @@ bool Board::PresentOpaqueSurface() {
     // Keep LVGL processing inputs and trusted UI. Skip painting only after a
     // completed clean LVGL frame; any later invalidation forces normal paint.
     const uint8_t rotation = rotation_;
-    if ((rotation && !rotation_pixels_) || painted_revision_ != lvgl_revision_)
+    if (ui_render_.direct() || (rotation && !rotation_pixels_) || painted_revision_ != lvgl_revision_)
         return false;
     CollectCompletions();
     while (pending_count_ == pending_.size()) { WaitScan(); CollectCompletions(); }
@@ -468,6 +507,20 @@ bool Board::PresentOpaqueSurface() {
             LV_DISPLAY_RENDER_MODE_FULL);
     }
     return true;
+}
+
+void Board::UpdateUiRenderMode() {
+    const bool direct = ui_render_.Desired(PXA_ESPP4_NATIVE_UI_DIRECT,
+        pxa_esp_surface_has_visible_surface(), rotation_.load());
+    if (!ui_render_.NeedsChange(direct)) return;
+    CollectCompletions();
+    while (pending_count_) { WaitScan(); CollectCompletions(); }
+    const uint8_t rotation = rotation_.load();
+    ui_render_.Configure(display_, rotation ? rotation_pixels_ : frames_[scanout_buffer_ ^ 1u],
+        rotation ? nullptr : frames_[scanout_buffer_], kBytes, direct);
+    backdrop_uniform_ = false;
+    painted_revision_ = UINT32_MAX;
+    surface_dirty_ = true;
 }
 
 bool IRAM_ATTR Board::FrameComplete(esp_lcd_panel_handle_t, esp_lcd_dpi_panel_event_data_t*, void* c) {
@@ -668,8 +721,8 @@ bool Board::SetRotation(uint8_t rotation) {
     /* This port owns pixel/input rotation. Keep LVGL's rotation at zero:
      * its pointer processor otherwise rotates already-logical input again. */
     lv_display_set_resolution(display_, LogicalWidth(), LogicalHeight());
-    lv_display_set_buffers(display_, rotation ? rotation_pixels_ : frames_[front_ ^ 1u],
-        rotation ? nullptr : frames_[front_], kBytes, LV_DISPLAY_RENDER_MODE_FULL);
+    ui_render_.Configure(display_, rotation ? rotation_pixels_ : frames_[front_ ^ 1u],
+        rotation ? nullptr : frames_[front_], kBytes, false);
     frame_valid_ = false;
     lv_obj_invalidate(lv_display_get_screen_active(display_));
     surface_dirty_ = true;
@@ -771,18 +824,24 @@ void Board::Loop() {
     for (;;) {
         Lock(0); lv_lock();
         CollectCompletions();
+        UpdateUiRenderMode();
         const int64_t input_started = esp_timer_get_time();
         Input();
         input_poll_us_ += esp_timer_get_time() - input_started;
         ++ui_passes_;
-        if (surface_dirty_.exchange(false) && !PresentOpaqueSurface()) {
-            lv_obj_invalidate(lv_display_get_screen_active(display_));
-            // A completed guest frame must not wait for a second, unrelated
-            // LVGL refresh period. Keep the normal trusted-UI composition and
-            // DMA ownership; only advance its pending refresh to this wake.
-            paint_started_us_ = esp_timer_get_time();
-            lv_refr_now(display_);
-            paint_started_us_ = 0;
+        if (surface_dirty_.exchange(false)) {
+            if (ui_render_.direct()) {
+                // Shell overlay notifications are already represented by
+                // LVGL invalid rectangles. Do not turn them into full redraws.
+                if (pxa_esp_surface_has_visible_surface()) {
+                    ui_render_.RequireFull(); surface_dirty_ = true;
+                }
+            } else if (!PresentOpaqueSurface()) {
+                lv_obj_invalidate(lv_display_get_screen_active(display_));
+                // Present a fresh guest frame on this wake, without waiting
+                // for a second, unrelated LVGL refresh period.
+                lv_refr_now(display_);
+            }
         }
         if (lv_tick_elaps(status_tick) >= 1000) {
             status_tick = lv_tick_get(); Status(); (void)pxa_board_performance_refresh();
@@ -802,8 +861,8 @@ void Board::Loop() {
                 static_cast<unsigned long long>(composed_frames_ ? acquire_us_ / composed_frames_ : 0),
                 static_cast<unsigned long long>(composed_frames_ ? compose_us_ / composed_frames_ : 0),
                 static_cast<unsigned long long>(rotated_frames_ ? rotation_us_ / rotated_frames_ : 0),
-                static_cast<unsigned long long>(composed_frames_ ? submit_us_ / composed_frames_ : 0),
-                static_cast<unsigned long long>(composed_frames_ ? scan_wait_us_ / composed_frames_ : 0),
+                static_cast<unsigned long long>((composed_frames_ + ui_native_frames_) ? submit_us_ / (composed_frames_ + ui_native_frames_) : 0),
+                static_cast<unsigned long long>((composed_frames_ + ui_native_frames_) ? scan_wait_us_ / (composed_frames_ + ui_native_frames_) : 0),
                 static_cast<unsigned long>(direct_frames_));
             ESP_LOGI(kTag, "Opaque fallback counts: acquire=%lu coverage=%lu",
                 static_cast<unsigned long>(direct_acquire_misses_), static_cast<unsigned long>(direct_coverage_misses_));
@@ -813,6 +872,9 @@ void Board::Loop() {
                 (unsigned long)direct_native_frames_, (unsigned long)direct_backdrop_frames_);
             ESP_LOGI(kTag, "Touch work: irq=%lu reads=%lu errors=%lu",
                 (unsigned long)touch_irq_count_.exchange(0), (unsigned long)touch_reads_, (unsigned long)touch_errors_);
+            ESP_LOGI(kTag, "Native UI: direct=%u frames=%lu damage_pixels=%llu",
+                unsigned(ui_render_.direct()), (unsigned long)ui_native_frames_,
+                (unsigned long long)ui_damage_pixels_);
             ESP_LOGI(kTag, "Compose: frames=%lu mean_us=%llu rotation_mean_us=%llu ppa=%lu software=%lu masks=%u guest_plane=%u system_plane=%u",
                 static_cast<unsigned long>(composed_frames_),
                 static_cast<unsigned long long>(composed_frames_ ? compose_us_ / composed_frames_ : 0),
@@ -826,6 +888,7 @@ void Board::Loop() {
             input_poll_us_ = lvgl_timer_us_ = 0; ui_passes_ = lvgl_timer_max_us_ = 0;
             touch_reads_ = touch_errors_ = 0;
             direct_acquire_misses_ = direct_coverage_misses_ = 0;
+            ui_damage_pixels_ = 0; ui_native_frames_ = 0;
         }
         const int64_t timer_started = esp_timer_get_time();
         const uint32_t delay = lv_timer_handler();
