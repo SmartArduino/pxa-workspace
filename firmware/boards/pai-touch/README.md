@@ -144,7 +144,9 @@ The board retains a 16 KiB instruction cache so camera DMA and Flash task
 stacks have internal SRAM available. The native runtime uses a 24 KiB internal
 stack and PXADB uses 16 KiB; parser buffers live in PSRAM and the board retains
 eight log history records. The normal Vision worker uses a 4 KiB PSRAM stack;
-its callbacks perform no Flash/NVS writes. Raw camera diagnostics that write
+its callbacks perform no Flash/NVS writes. PAI sets `PXA_BOARD_VISION_TASK_PRIORITY=4`
+so RGB/JPEG work is not delayed by the Guest runtime at priority 3.
+The shared helper's default priority is 2. Raw camera diagnostics that write
 files retain an internal worker stack. The JL701 UART ISR runs in IRAM with a
 4 KiB internal receive ring. Parsed Opus packets use a bounded 16 KiB PSRAM
 queue with an internal control block to cover recording stalls during Flash

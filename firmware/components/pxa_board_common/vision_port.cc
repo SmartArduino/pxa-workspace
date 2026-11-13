@@ -18,6 +18,13 @@
 #ifndef PXA_BOARD_VISION_STACK_EXTERNAL
 #define PXA_BOARD_VISION_STACK_EXTERNAL 0
 #endif
+#ifndef PXA_BOARD_VISION_TASK_PRIORITY
+#define PXA_BOARD_VISION_TASK_PRIORITY 2
+#endif
+static_assert(PXA_BOARD_VISION_TASK_PRIORITY > 0);
+#if defined(configMAX_PRIORITIES)
+static_assert(PXA_BOARD_VISION_TASK_PRIORITY < configMAX_PRIORITIES);
+#endif
 #if PXA_BOARD_VISION_STACK_EXTERNAL
 #include <esp_heap_caps.h>
 #if !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
@@ -287,7 +294,7 @@ bool pxa_board_vision_port_initialize(const PxaBoardVisionDriver* driver) {
     if (!vision.stack) return false;
 #endif
     vision.task = xTaskCreateStatic(Worker, "pxa_vision", PXA_BOARD_VISION_STACK_BYTES,
-        nullptr, 2, vision.stack, &vision.task_storage);
+        nullptr, PXA_BOARD_VISION_TASK_PRIORITY, vision.stack, &vision.task_storage);
     if (!vision.task) {
 #if PXA_BOARD_VISION_STACK_EXTERNAL
         heap_caps_free(vision.stack); vision.stack = nullptr;
