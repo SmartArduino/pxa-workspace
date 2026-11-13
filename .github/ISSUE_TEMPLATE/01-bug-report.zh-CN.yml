@@ -1,0 +1,98 @@
+name: 中文｜缺陷反馈
+description: 报告可复现的错误、崩溃或异常行为
+title: '[缺陷] '
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        本仓库受理：ESP 固件、板级驱动、烧录、工作区脚本与显示配置。
+
+        - [pxa-system](https://github.com/SmartArduino/pxa-system/issues/new?template=01-bug-report.zh-CN.yml)：系统运行库、服务、UI、SDK、DevKit、Agent Kit、打包工具与模拟器实现。
+        - [pxa-apps](https://github.com/SmartArduino/pxa-apps/issues/new?template=01-bug-report.zh-CN.yml)：PXA 应用、游戏、商城客户端与 common 共享应用代码。
+
+        不确定归属时，可按观察到的问题提交，并关联其他仓库中的相关 Issue；同一问题请勿重复提交。
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前检查
+      options:
+        - label: 我已搜索[现有 Issue](https://github.com/SmartArduino/pxa-workspace/issues?q=is%3Aissue)，未找到相同反馈。
+          required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: 涉及模块
+      options:
+        - 固件构建与烧录
+        - 板级驱动与外设
+        - 工作区脚本与 PXADB
+        - 显示与输入配置
+        - 出厂预置与交付
+        - 不确定或其他
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: 版本信息
+      description: 填写固件版本或下载链接；从源码构建时提供工作区与 pxa-system 的提交。无法确认的项目可填写“不清楚”。
+      placeholder: |-
+        固件版本或下载链接：
+        pxa-workspace 提交（git rev-parse HEAD）：
+        pxa-system 提交（git -C deps/pxa-system rev-parse HEAD）：
+        ESP-IDF 版本（仅源码构建）：
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 注明真机板型及硬件版本，或模拟器显示配置；构建、烧录和工具问题另附主机系统及工具版本。不适用的项目可填写“不适用”。
+      placeholder: |-
+        真机或模拟器：
+        板型、硬件版本与芯片：
+        Flash、PSRAM 与存储介质（如相关）：
+        屏幕尺寸、显示配置与输入方式（如相关）：
+        主机系统、架构与工具版本（如相关）：
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 实际表现
+      description: 描述具体错误及影响；一次反馈一个问题。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 提供完整命令、配置或最小示例；偶发问题请写明触发条件与频率。
+      placeholder: |-
+        1. 准备板型、固件与配置
+        2. 执行完整命令或操作
+        3. 观察结果
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期表现
+      description: 说明在相同步骤下期望发生什么。
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 粘贴构建、串口、崩溃或模拟器日志，并保留错误前后的上下文；无需手写代码块。提交前移除私钥、令牌和个人信息。
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: additional
+    attributes:
+      label: 附件与补充信息
+      description: 可拖入截图、录屏或最小复现文件；如已知，补充正常版本、回归范围、变通方法及相关 Issue 链接。
+    validations:
+      required: false
