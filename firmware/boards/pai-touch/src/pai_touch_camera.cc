@@ -149,6 +149,7 @@ pxa_status_t Preview(void*, pxa_raster_asset_t** output) {
     if (!frame) return PXA_STATUS_TIMED_OUT;
     if (!ValidFrame(frame)) return PXA_STATUS_PROTOCOL_ERROR;
     const int64_t acquired=esp_timer_get_time();
+    const bool log_frame = camera.preview_frames % 60 == 0;
     const unsigned divisor=std::max(1u,(camera.width+319)/320);
     const unsigned width=camera.width/divisor,height=camera.height/divisor;
     pxa_asset_info_t info{};
@@ -159,6 +160,7 @@ pxa_status_t Preview(void*, pxa_raster_asset_t** output) {
     uint8_t* pixels=nullptr;
     const auto status=pxa_asset_object_create(&info,AllocateImage,ReleaseImage,nullptr,output,&pixels);
     if (status!=PXA_STATUS_OK) return status;
+    const int64_t allocated = log_frame ? esp_timer_get_time() : 0;
     auto* destination=reinterpret_cast<uint16_t*>(pixels);
     const auto* source=reinterpret_cast<const uint16_t*>(frame->buf);
     if (frame->format == PIXFORMAT_YUV422) {
@@ -178,14 +180,19 @@ pxa_status_t Preview(void*, pxa_raster_asset_t** output) {
         for (unsigned y=0;y<height;++y) for (unsigned x=0;x<width;++x)
             destination[y*width+x]=__builtin_bswap16(source[y*divisor*camera.width+x*divisor]);
     }
+    const int64_t converted = log_frame ? esp_timer_get_time() : 0;
     pxa_raster_asset_finish_loading(*output);
     // The Core image owns its pixels. Queue one sensor frame while the app
     // presents this snapshot; WHEN_EMPTY stops DMA once that frame is ready.
     esp_camera_fb_return(camera.held);
     camera.held = nullptr;
-    if (++camera.preview_frames%60==1)
-        ESP_LOGI(kTag,"RGB preview frame=%u acquire_us=%lld convert_us=%lld",camera.preview_frames,
-            acquired-started,esp_timer_get_time()-acquired);
+    ++camera.preview_frames;
+    if (log_frame) {
+        const int64_t returned = esp_timer_get_time();
+        ESP_LOGI(kTag,"RGB preview frame=%u acquire_us=%lld convert_us=%lld alloc_us=%lld pixels_us=%lld return_us=%lld",camera.preview_frames,
+            acquired-started,returned-acquired,allocated-acquired,
+            converted-allocated,returned-converted);
+    }
     return PXA_STATUS_OK;
 }
 pxa_status_t Capture(void*, uint8_t* output, size_t capacity, size_t* size) {
