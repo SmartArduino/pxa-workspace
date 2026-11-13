@@ -49,7 +49,10 @@ subscription and system-write unlock. `HELLO` reports the current `transport`,
 the UART rate when applicable, and `transport_sessions`. Select either physical
 port with `--port`; two ports can belong to the same device, identified by the
 same serial/MAC. Custom boards must reserve and configure the UART pins first.
-ESPP4-A uses 115200 on its CH340 UART; GameKit 2 uses 2000000 on its CH343 UART.
+ESPP4-A uses 2000000 on its CH340X UART; GameKit 2 uses 2000000 on its CH343 UART.
+Pass `--baud 2000000` for these UART endpoints. Older ESPP4-A builds may use
+115200; custom firmware can select another rate by configuring both PXADB
+and the shared console to match.
 Native USB line coding does not determine USB throughput.
 
 Device operations use one control task. An unfinished command or upload frame

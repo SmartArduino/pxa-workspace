@@ -22,7 +22,7 @@ SmartArduino ESPP4-A / ESP32-P4 DevKit v1.1 的 PXA 板级适配。
 | TF 卡 | SDMMC0 CLK43 / CMD44 / D0…D3=39…42，检测45，电源4低有效 |
 | 无线 | 模组专用 `p4_wireless`，SDMMC1，GPIO14…19 / 54 由厂商驱动占用 |
 | BOOT | GPIO35：短按返回，长按后松开回桌面；休眠时先唤醒 |
-| 调试 | UART0 TX37 / RX38，115200；连接板载 CH340X 的 UART-DEBUG Type-C |
+| 调试 | UART0 TX37 / RX38，2000000；连接板载 CH340X 的 UART-DEBUG Type-C |
 
 默认界面显示密度为 240 DPI，使文字、间距和控件相对 200 DPI 放大约 20%，
 便于在这块屏幕上阅读。应用通过显示环境获取密度；像素画布仍按应用自己的缩放策略显示。
@@ -195,19 +195,24 @@ CMD 及检测脚有 51 kΩ 上拉，CLK 直接连接。上电前通过 GPIO4 关
 ```sh
 tools/firmware.sh espp4-a build
 tools/firmware.sh espp4-a flash --port /dev/ttyUSB0 --baud 2000000
-tools/firmware.sh espp4-a monitor --port /dev/ttyUSB0 --baud 115200
+tools/firmware.sh espp4-a monitor --port /dev/ttyUSB0 --baud 2000000
 # 安装本固件后，原生 USB HS 口提供 PXADB：
 python3 tools/pxadb/pxadb.py info --port /dev/ttyACM0 --baud 2000000
 # UART-DEBUG 口也提供 PXADB：
-python3 tools/pxadb/pxadb.py info --port /dev/ttyUSB0 --baud 115200
+python3 tools/pxadb/pxadb.py info --port /dev/ttyUSB0 --baud 2000000
 tools/firmware.sh espp4-a app-flash --port /dev/ttyACM0
 ```
 
 端口编号由主机分配，以上仅为示例；应按 USB 产品名和 MAC 序列号确认目标，
 Linux 可使用 `/dev/serial/by-id/` 的稳定链接。CH340X 的 RTS / DTR 接到
-EN / BOOT，串口保留 UART0 启动日志和硬件自动下载，运行期默认速率为 115200。
+EN / BOOT，串口保留 UART0 启动日志和硬件自动下载，运行期默认速率为 2000000。
 控制台使用 `CONFIG_ESP_CONSOLE_UART_BAUDRATE`，PXADB 使用
 `CONFIG_PXADB_UART_BAUD`；共享 UART0 时应保持一致。烧录速率由 esptool 独立协商。
+需要较低速率时可将这两个配置同时改为 `1000000` 或 `115200`，重新构建固件，
+并给主机工具传入相同的 `--baud`。已有构建目录需同步更新其 `sdkconfig`；
+板级 defaults 不会覆盖旧配置。板载 CH340X 的额定上限为
+[2 Mbps](https://www.wch.cn/products/CH340.html)，不将 3 Mbps 作为该接口的支持档位。
+ROM 下载握手仍使用 115200，应用运行日志会切换到上述配置的速率。
 
 原生 USB 默认运行 TinyUSB 高速 CDC，产品名为 `ESPP4-A`，序列号为本机
 MAC；PXADB 的应用安装、文件、日志、输入和截图均使用该接口。CDC 的波特率
