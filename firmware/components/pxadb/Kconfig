@@ -10,7 +10,7 @@ menu "PXADB development service"
             expose a shell or raw flash access.
 
     choice PXADB_TRANSPORT
-        prompt "PXADB transport"
+        prompt "Primary PXADB transport"
         depends on PXADB_ENABLED
         default PXADB_TRANSPORT_USB_SERIAL_JTAG
         help
@@ -34,26 +34,37 @@ menu "PXADB development service"
                 starting PXADB. Console output may share this interface.
     endchoice
 
+    config PXADB_UART_SECONDARY
+        bool "Also expose PXADB on UART"
+        depends on PXADB_ENABLED && !PXADB_TRANSPORT_UART
+        default n
+        help
+            Keep native USB and UART available at the same time. Each endpoint
+            has its own parser, uploads, log subscription and system-write
+            unlock. Package transfers share a device-wide mutation lease.
+            Both endpoints use one control task to preserve internal SRAM.
+            Only enable this on a UART/pin pair reserved by the board for debug.
+
     config PXADB_UART_PORT
         int "PXADB UART port"
         range 0 2
         default 0
-        depends on PXADB_ENABLED && PXADB_TRANSPORT_UART
+        depends on PXADB_ENABLED && (PXADB_TRANSPORT_UART || PXADB_UART_SECONDARY)
 
     config PXADB_UART_TX_GPIO
         int "PXADB UART TX GPIO (-1 keeps the console default)"
         default -1
-        depends on PXADB_ENABLED && PXADB_TRANSPORT_UART
+        depends on PXADB_ENABLED && (PXADB_TRANSPORT_UART || PXADB_UART_SECONDARY)
 
     config PXADB_UART_RX_GPIO
         int "PXADB UART RX GPIO (-1 keeps the console default)"
         default -1
-        depends on PXADB_ENABLED && PXADB_TRANSPORT_UART
+        depends on PXADB_ENABLED && (PXADB_TRANSPORT_UART || PXADB_UART_SECONDARY)
 
     config PXADB_UART_BAUD
         int "PXADB UART baud rate"
         default 115200
-        depends on PXADB_ENABLED && PXADB_TRANSPORT_UART
+        depends on PXADB_ENABLED && (PXADB_TRANSPORT_UART || PXADB_UART_SECONDARY)
 
     config PXADB_AUTOSTART
         bool "Start PXADB automatically after boot"

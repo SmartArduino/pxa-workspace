@@ -22,7 +22,7 @@ SmartArduino ESPP4-A / ESP32-P4 DevKit v1.1 的 PXA 板级适配。
 | TF 卡 | SDMMC0 CLK43 / CMD44 / D0…D3=39…42，检测45，电源4低有效 |
 | 无线 | 模组专用 `p4_wireless`，SDMMC1，GPIO14…19 / 54 由厂商驱动占用 |
 | BOOT | GPIO35：短按返回，长按后松开回桌面；休眠时先唤醒 |
-| 调试 | UART0 TX37 / RX38，2000000；连接板载 CH340X 的 UART-DEBUG Type-C |
+| 调试 | UART0 TX37 / RX38，115200；连接板载 CH340X 的 UART-DEBUG Type-C |
 
 默认界面显示密度为 240 DPI，使文字、间距和控件相对 200 DPI 放大约 20%，
 便于在这块屏幕上阅读。应用通过显示环境获取密度；像素画布仍按应用自己的缩放策略显示。
@@ -185,15 +185,19 @@ CMD 及检测脚有 51 kΩ 上拉，CLK 直接连接。上电前通过 GPIO4 关
 ```sh
 tools/firmware.sh espp4-a build
 tools/firmware.sh espp4-a flash --port /dev/ttyUSB0 --baud 2000000
-tools/firmware.sh espp4-a monitor --port /dev/ttyUSB0 --baud 2000000
+tools/firmware.sh espp4-a monitor --port /dev/ttyUSB0 --baud 115200
 # 安装本固件后，原生 USB HS 口提供 PXADB：
 python3 tools/pxadb/pxadb.py info --port /dev/ttyACM0 --baud 2000000
+# UART-DEBUG 口也提供 PXADB：
+python3 tools/pxadb/pxadb.py info --port /dev/ttyUSB0 --baud 115200
 tools/firmware.sh espp4-a app-flash --port /dev/ttyACM0
 ```
 
 端口编号由主机分配，以上仅为示例；应按 USB 产品名和 MAC 序列号确认目标，
 Linux 可使用 `/dev/serial/by-id/` 的稳定链接。CH340X 的 RTS / DTR 接到
-EN / BOOT，串口保留 UART0 启动日志和硬件自动下载，速率为 2000000。
+EN / BOOT，串口保留 UART0 启动日志和硬件自动下载，运行期默认速率为 115200。
+控制台使用 `CONFIG_ESP_CONSOLE_UART_BAUDRATE`，PXADB 使用
+`CONFIG_PXADB_UART_BAUD`；共享 UART0 时应保持一致。烧录速率由 esptool 独立协商。
 
 原生 USB 默认运行 TinyUSB 高速 CDC，产品名为 `ESPP4-A`，序列号为本机
 MAC；PXADB 的应用安装、文件、日志、输入和截图均使用该接口。CDC 的波特率
@@ -206,9 +210,13 @@ MAC 等待 `ESP32-P4` ROM 重新枚举，并用 `no-reset` 连接，避免再次
 已经处于 ROM 时直接连接；CH340、其他 USB 产品和离线镜像生成均保持原有行为。
 首次安装其他厂商固件时，请先用 CH340 烧录；本适配不依赖其他固件响应下载请求。
 
-PXADB 传输由现有 Kconfig 单选项决定：默认是原生 USB；需要旧的 UART 调试时，
-在 `menuconfig` 将 `PXADB transport` 切换至 UART0，TX37/RX38、2000000 波特率。
-USB 与 UART PXADB 会话不同时运行；UART 控制台和硬件下载始终可用。
+默认同时启用原生 USB CDC 和 UART0 PXADB：主传输选择 USB CDC，
+`CONFIG_PXADB_UART_SECONDARY=y` 保留 TX37/RX38 上的第二个会话。
+两端独立握手、收发、订阅日志与解锁系统写入；同一设备的 MAC 相同。
+上传和安装共用设备级写入占用锁，另一端的冲突操作返回 `transport_busy`，
+不会因第二端连接或断开而删除第一端的上传。控制命令由同一任务执行，耗时操作
+仍会串行等待。关闭 secondary 可只保留原生 USB；主传输改选 UART 则只运行 UART。
+自适配板型需先确认原生 USB 接线及调试 UART 引脚，不能只照搬 VID/PID 或引脚号。
 
 `factory` 应用分区为 7 MiB，`pxa_data` 从 `0x710000` 开始，占用剩余
 `0x8f0000` 字节。固件烧录不覆盖该数据分区；已有数据挂载失败时保留原内容。

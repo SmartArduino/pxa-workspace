@@ -19,12 +19,17 @@ FIXTURE = r'''
 #include <vector>
 using namespace pxadb;
 #define ESP_LOGW(...) ((void)0)
-// STATE
-std::atomic<uint64_t> s_last_control_activity_us{0};
+// BULK
+struct Upload {size_t total=512,remaining=512;};
+struct Session {BulkUpload bulk;Upload upload;std::atomic<uint64_t> last_activity_us{0};} session;
+Session& CurrentSession() {return session;}
+BulkUpload& s_bulk=session.bulk;
+Upload& s_file_upload=session.upload;
+std::atomic<uint64_t>& s_last_control_activity_us=session.last_activity_us;
+// RESET
 uint64_t now_us=1,commit_delay=0;
 int commits=0,aborts=0;
 bool active=false;
-struct {size_t total=512,remaining=512;} s_file_upload;
 const char* reply=nullptr;
 uint64_t esp_timer_get_time() {return now_us;}
 uint32_t esp_rom_crc32_le(uint32_t crc,const uint8_t* data,size_t size) {
@@ -106,9 +111,8 @@ int main() {
 
 def main():
     text = (ROOT / 'firmware/components/pxadb/src_pxa_service.cc').read_text()
-    start = text.index('struct BulkUpload {')
-    end = text.index('#if CONFIG_PXA_ENABLED', start)
-    source = FIXTURE.replace('// STATE', text[start:end])
+    source = FIXTURE.replace('// BULK', function(text, 'struct BulkUpload') + ';')
+    source = source.replace('// RESET', function(text, 'void ResetBulkUpload('))
     source = source.replace('// RECEIVER', function(text, 'size_t ConsumeFsBulk('))
     with tempfile.TemporaryDirectory(prefix='pxadb-session-') as directory:
         unit, binary = Path(directory) / 'test.cc', Path(directory) / 'test'

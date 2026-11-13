@@ -110,5 +110,12 @@ python -m esptool --chip esp32s31 --port /dev/ttyACM0 --baud 2000000 --no-stub \
 控制台为 2000000 波特率，ROM 早期控制台为 115200。应用开发可用
 `tools/dev.sh device --board doit-gamekit-2 store --port /dev/ttyACM0`。
 
+默认同时启用原生 USB Serial/JTAG 与 UART0 PXADB，后者通过板载 CH343P
+连接，速率为 2000000。原生 USB 需要对应数据口接线；板载 USB 串口不会因此
+变成原生 USB。两端使用同一设备身份，各自维护握手、上传、日志订阅和系统写入
+解锁。第二端连接或退出不取消第一端上传；安装或文件写入冲突返回
+`transport_busy`。耗时控制命令仍由同一任务串行执行。
+只需单端时可关闭 `CONFIG_PXADB_UART_SECONDARY`，或将主传输选为 UART。
+
 板级回归测试：`bash firmware/boards/doit-gamekit-2/tests/test_host.sh`，包括
 输入、触摸、送屏布局、电压校正、USB 有效电平、去抖及 ADC 故障隔离。

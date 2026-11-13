@@ -35,6 +35,8 @@ struct InputCommand {
     InputKey key = InputKey::kBack;
     uint32_t request_sequence = 0;
     uint32_t event_sequence = 0;
+    uint32_t session_generation = 0;
+    uint8_t session_id = UINT8_MAX;
     uint16_t x = 0;
     uint16_t y = 0;
     uint16_t end_x = 0;
@@ -81,7 +83,9 @@ public:
                 InputCommand& pending = commands_[(head_ + offset - 1) % Capacity];
                 if (pending.kind != InputCommandKind::kPointer ||
                     pending.pointer_action != PointerAction::kMove) break;
-                if (pending.pointer_id == command.pointer_id) {
+                if (pending.pointer_id == command.pointer_id &&
+                    pending.session_id == command.session_id &&
+                    pending.session_generation == command.session_generation) {
                     if (replaced != nullptr) *replaced = pending;
                     pending = command;
                     return MailboxPushResult::kCoalesced;

@@ -19,8 +19,8 @@ set(PXADB_PRIV_REQUIRES
     mbedtls
     pxa)
 
-set(PXADB_SRCS "src_pxa_service.cc" "pxadb_jpeg_encode.cc")
-if(CONFIG_PXADB_ENABLED AND CONFIG_PXADB_TRANSPORT_UART)
+set(PXADB_SRCS "src_pxa_service.cc" "pxadb_transport.cc" "pxadb_jpeg_encode.cc")
+if(CONFIG_PXADB_ENABLED AND (CONFIG_PXADB_TRANSPORT_UART OR CONFIG_PXADB_UART_SECONDARY))
     list(APPEND PXADB_SRCS "pxadb_uart_buffer.cc")
 endif()
 if(CONFIG_PXADB_JPEG_PSRAM_WORKSPACE)
@@ -40,7 +40,7 @@ endif()
 target_include_directories(${COMPONENT_LIB} PRIVATE
     "${PXSYS_ROOT}/libpxa/adapters/include")
 
-if(CONFIG_PXADB_ENABLED AND CONFIG_PXADB_TRANSPORT_UART)
+if(CONFIG_PXADB_ENABLED AND (CONFIG_PXADB_TRANSPORT_UART OR CONFIG_PXADB_UART_SECONDARY))
     target_link_libraries(${COMPONENT_LIB} INTERFACE
         "-Wl,--wrap=uart_driver_install")
 endif()

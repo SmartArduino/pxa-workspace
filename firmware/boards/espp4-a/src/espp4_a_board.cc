@@ -210,7 +210,7 @@ bool Board::Initialize() {
     if (!runtime_stack_reserve_) return false;
     // Route console and PXADB through one UART driver. Polled ROM/stdio TX
     // alongside buffered protocol TX can splice logs into screenshot frames.
-    const uart_config_t console = {.baud_rate = 2000000, .data_bits = UART_DATA_8_BITS,
+    const uart_config_t console = {.baud_rate = CONFIG_ESP_CONSOLE_UART_BAUDRATE, .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE, .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, .source_clk = UART_SCLK_DEFAULT};
     if (uart_param_config(UART_NUM_0, &console) != ESP_OK ||
@@ -306,7 +306,8 @@ bool Board::Initialize() {
         vTaskDelay(pdMS_TO_TICKS(10));
     if (wifi_init_done_) Sd();
     else ESP_LOGW(kTag, "Radio SDMMC initialization pending; TF mount deferred");
-    ESP_LOGI(kTag, "ST7102 480x854 DSI 440Mbps / BOOT GPIO35 / UART0 2000000");
+    ESP_LOGI(kTag, "ST7102 480x854 DSI 440Mbps / BOOT GPIO35 / UART0 %u",
+             unsigned(CONFIG_ESP_CONSOLE_UART_BAUDRATE));
     return true;
 }
 

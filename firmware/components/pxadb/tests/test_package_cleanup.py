@@ -40,6 +40,11 @@ int pxa_posix_installer_discard_transfers(void* installer) {
 // STORE
 // HOST
 std::atomic<bool> s_package_cleanup_pending{false};
+constexpr uint8_t kNoSession=UINT8_MAX;
+uint8_t s_mutation_owner=kNoSession,current_session=0;
+struct {bool package_staging=false;} session;
+auto& CurrentSession() {return session;}
+uint8_t CurrentSessionIndex() {return current_session;}
 int64_t s_next_package_cleanup_us=0,now_us=0;
 int64_t esp_timer_get_time() { return now_us; }
 void AbortFileUpload() { ++uploads_aborted; }
@@ -68,6 +73,15 @@ int main() {
     initialized=false;AbortTransfers();assert(!s_package_cleanup_pending && discards==3);
     initialized=true;store.legacy_ready=false;AbortTransfers();assert(!s_package_cleanup_pending && discards==3);
     store.legacy_ready=true;g_host_ready=false;AbortTransfers();assert(!s_package_cleanup_pending && discards==3);
+    // A second endpoint's HELLO/BYE/FSABORT cannot discard the active owner's
+    // receiving directories, including cleanup deferred by another Host task.
+    g_host_ready=true;s_mutation_owner=1;session.package_staging=false;
+    auto old_unlinks=unlinks,old_discards=discards,old_attempts=attempts;
+    AbortTransfers();assert(s_mutation_owner==1 && unlinks==old_unlinks && discards==old_discards);
+    s_package_cleanup_pending=true;TryDiscardPackageTransfers();
+    assert(attempts==old_attempts && s_package_cleanup_pending);
+    current_session=1;AbortTransfers();
+    assert(s_mutation_owner==kNoSession && !s_package_cleanup_pending && discards==old_discards+1);
     puts("PXADB cleanup: busy boot owner never blocks connection; retry paced; new uploads fenced until old session drains; failures retained");
 }
 '''

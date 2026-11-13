@@ -5,6 +5,44 @@ remains the firmware protocol over USB Serial/JTAG, UART or board-initialized
 TinyUSB CDC (ESP-Mosaico), so existing devices and
 tools remain compatible.
 
+## Firmware USB and UART sessions
+
+The firmware retains the primary transport choice and can additionally enable
+`CONFIG_PXADB_UART_SECONDARY` with a native USB primary. The UART port, pins and
+baud rate must match the board's reserved debug interface; this does not add
+native USB wiring to a board. UART-only and native-USB-only configurations
+continue to work. HELLO advertises the responding endpoint as `transport=uart`,
+`usb-jtag` or `usb-cdc`, reports the configured UART rate, and counts available
+endpoints in `transport_sessions`. Device identity remains the same on both.
+
+Each endpoint owns its line/binary parser, connection generation, upload,
+system-write unlock and log subscription. Replies and asynchronous input
+acknowledgements go back to their originating endpoint; acknowledgements from
+an earlier connection generation are discarded. Log records fan out to each
+subscriber's bounded queue, with independent drop counts. Closing one
+connection does not unsubscribe the other.
+
+A single control task polls both endpoints to avoid allocating another large
+internal-RAM stack. Partial lines and binary bodies do not block the other
+parser; synchronous package, filesystem and capture commands still serialize.
+Mutating commands require an active HELLO session and acquire a device-wide
+lease; the session's idle timeout can recover an abandoned lease. An ordinary
+file upload keeps
+it through completion; a package upload keeps it through staging and commit
+or cancellation. Competing writes return `ERR transport_busy`. Read-only
+queries remain available between commands. A non-owning connection's HELLO,
+BYE, FSABORT or timeout cannot discard the active owner's package staging.
+Deferred cleanup of old receiving candidates completes before new writes are
+admitted. Synthetic input has a separate single owner and rejects competing
+injection with `input_session_busy`; physical input cancels synthetic activity.
+
+The production parser/dispatcher, framing, transfer ownership, log fanout and
+input response routing are exercised by
+`firmware/components/pxadb/tests/test_host.sh`. Host prerequisites include
+Python 3, a C++17 compiler, MbedTLS headers and its Base64 implementation
+(`libmbedcrypto`), plus the managed JPEG headers used by the existing codec
+tests. These are test dependencies, not an additional firmware dependency.
+
 ## Firmware binary upload batches
 
 Firmware can advertise `fs_bulk_cobs=1;max_bulk=2048` during PXADB1 HELLO.

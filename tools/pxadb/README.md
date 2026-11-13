@@ -1,7 +1,7 @@
 # PXADB
 
-PXADB is the workspace-local host client for the firmware PXADB USB
-Serial/JTAG service. It installs independently built PXA containers without
+PXADB is the workspace-local host client for the firmware PXADB native USB
+(Serial/JTAG or TinyUSB CDC) and UART service. It installs independently built PXA containers without
 rebuilding or flashing firmware.
 
 ```sh
@@ -41,6 +41,26 @@ UART connections with request timeouts of at least one second allow an extra
 ten seconds for the initial HELLO after an adapter-induced reset. Subsequent
 request deadlines stay unchanged; sub-second discovery probes keep their short
 budget. Use an explicit longer timeout for products with slower startup.
+
+Boards can expose native USB and UART simultaneously with
+`CONFIG_PXADB_UART_SECONDARY=y` while retaining a native USB primary transport.
+Each endpoint has an independent connection, parser, upload state, log
+subscription and system-write unlock. `HELLO` reports the current `transport`,
+the UART rate when applicable, and `transport_sessions`. Select either physical
+port with `--port`; two ports can belong to the same device, identified by the
+same serial/MAC. Custom boards must reserve and configure the UART pins first.
+ESPP4-A uses 115200 on its CH340 UART; GameKit 2 uses 2000000 on its CH343 UART.
+Native USB line coding does not determine USB throughput.
+
+Device operations use one control task. An unfinished command or upload frame
+on one endpoint does not stop the other endpoint's parser; a long-running
+command still delays both. Package staging holds a device-wide mutation lease
+until install, publish, cancellation or timeout. Conflicting writes return
+`transport_busy`; wait for the owner to finish or cancel through that owner's
+connection. A second connection's `HELLO`, `BYE` or `FSABORT` cannot cancel the
+owner's upload. Synthetic input likewise has one owner until released or
+cancelled; a competing controller receives `input_session_busy`. Real device
+input retains priority. See the [firmware session contract](../../docs/pxadb2.md#firmware-usb-and-uart-sessions).
 
 New firmware advertises `package_receive=1` and `package_directory_adopt=1`
 in `INFO`. CLI/GUI installation uploads into an invisible receiving candidate,

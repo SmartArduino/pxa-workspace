@@ -81,8 +81,9 @@ struct PowerControlAdapter {
 
 esp_err_t ConfigurePowerControl(const PowerControlAdapter* adapter);
 
-// Starts the ESP32-S3 USB Serial/JTAG PXADB service. It owns the structured
-// control and log stream but never exposes a shell or raw partition access.
+// Starts the configured primary transport and optional independent UART
+// endpoint. One control task serializes commands; transfer ownership is per
+// connection. It never exposes a shell or raw partition access.
 esp_err_t Start();
 
 // Starts PXADB from a short-lived retry task without delaying UI startup.

@@ -13,6 +13,7 @@
 #include <cstring>
 #include <dirent.h>
 #include <inttypes.h>
+#include <initializer_list>
 #include <sys/stat.h>
 #include <string>
 #include <unistd.h>
@@ -26,16 +27,7 @@
 
 #if CONFIG_PXADB_ENABLED && (CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32S31 || CONFIG_IDF_TARGET_ESP32P4)
 
-#if CONFIG_PXADB_TRANSPORT_UART
-#include <driver/gpio.h>
-#include <driver/uart.h>
-extern "C" unsigned pxadb_uart_rx_buffer_capacity(void);
-#elif CONFIG_PXADB_TRANSPORT_USB_CDC
-#include <tinyusb_cdc_acm.h>
-#else
-#include <driver/usb_serial_jtag.h>
-#include <driver/usb_serial_jtag_vfs.h>
-#endif
+#include "pxadb_transport.h"
 #include <esp_app_desc.h>
 #include <esp_attr.h>
 #include <esp_heap_caps.h>
@@ -85,7 +77,6 @@ constexpr size_t kMaxEncodedPayload = 2048;
  * command traffic that loses frames. The META frame still carries a SHA-256,
  * so a rare dropped frame fails loudly instead of writing a corrupt image. */
 constexpr size_t kScreenshotChunkSize = 1024;
-constexpr size_t kUsbBufferSize = 512;
 constexpr size_t kLogQueueDepth = 4;
 #ifndef CONFIG_PXADB_LOG_HISTORY_DEPTH
 #define CONFIG_PXADB_LOG_HISTORY_DEPTH 16
@@ -135,12 +126,6 @@ struct BulkUpload {
     bool draining = false;
     bool fast = false;
 };
-BulkUpload s_bulk;
-
-void ResetBulkUpload() {
-    free(s_bulk.bytes);
-    s_bulk = {};
-}
 #if CONFIG_PXA_ENABLED
 constexpr size_t kPxaPackageListCapacity = 64;
 #endif
@@ -172,141 +157,6 @@ constexpr uint32_t kCaptureMinimumIntervalMs =
     CONFIG_PXADB_CAPTURE_MIN_INTERVAL_MS;
 #endif
 
-#if CONFIG_PXADB_TRANSPORT_UART
-constexpr uart_port_t kTransportPort =
-    static_cast<uart_port_t>(CONFIG_PXADB_UART_PORT);
-constexpr size_t kTransportRxBufferSize = 4096;
-constexpr size_t kTransportTxBufferSize = 4096;
-/* At 2 Mbaud the default 120/128 FIFO watermark leaves only 40 us for the
- * ISR to start draining it. Leave three quarters of the FIFO available for
- * interrupt latency; the larger software ring cannot recover a FIFO overrun.
- * Derive the threshold from the selected port, including smaller LP FIFOs. */
-constexpr int kTransportRxFifoThreshold = UART_HW_FIFO_LEN(kTransportPort) / 4;
-/* Keep control latency low while sharing the console's buffered driver. */
-constexpr uint32_t kTransportReadPollMs = 5;
-constexpr size_t kTransportWriteChunk = 1024;
-
-esp_err_t TransportStart() {
-    const uart_config_t config = {
-        .baud_rate = CONFIG_PXADB_UART_BAUD,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .rx_flow_ctrl_thresh = 0,
-        .source_clk = UART_SCLK_DEFAULT,
-        .flags = {},
-    };
-    if (uart_is_driver_installed(kTransportPort)) {
-        /* Port 0 is normally owned by the console; adopt its driver and match
-         * the configured baud rate instead of reinstalling it. */
-        esp_err_t err = uart_set_baudrate(kTransportPort, CONFIG_PXADB_UART_BAUD);
-        if (err != ESP_OK) return err;
-        return uart_set_rx_full_threshold(kTransportPort,
-                                          kTransportRxFifoThreshold);
-    }
-    esp_err_t err = uart_param_config(kTransportPort, &config);
-    if (err != ESP_OK) return err;
-    const gpio_num_t tx_gpio = static_cast<gpio_num_t>(
-        CONFIG_PXADB_UART_TX_GPIO >= 0
-            ? CONFIG_PXADB_UART_TX_GPIO
-            : static_cast<int>(UART_PIN_NO_CHANGE));
-    const gpio_num_t rx_gpio = static_cast<gpio_num_t>(
-        CONFIG_PXADB_UART_RX_GPIO >= 0
-            ? CONFIG_PXADB_UART_RX_GPIO
-            : static_cast<int>(UART_PIN_NO_CHANGE));
-    if (tx_gpio != UART_PIN_NO_CHANGE || rx_gpio != UART_PIN_NO_CHANGE) {
-        err = uart_set_pin(kTransportPort, tx_gpio, rx_gpio, UART_PIN_NO_CHANGE,
-                           UART_PIN_NO_CHANGE);
-        if (err != ESP_OK) return err;
-    }
-    err = uart_driver_install(kTransportPort, kTransportRxBufferSize,
-                              kTransportTxBufferSize, 0, nullptr, 0);
-    if (err != ESP_OK) return err;
-    return uart_set_rx_full_threshold(kTransportPort,
-                                      kTransportRxFifoThreshold);
-}
-
-int TransportWrite(const uint8_t* data, size_t length) {
-    return uart_write_bytes(kTransportPort, data, length);
-}
-
-bool TransportTxDone() {
-    return uart_wait_tx_done(kTransportPort, kIoTimeout) == ESP_OK;
-}
-
-int TransportRead(uint8_t* buffer, size_t length, uint32_t timeout_ms) {
-    if (!length) return 0;
-    // uart_read_bytes waits for the requested length, even when a complete
-    // short command is already buffered. Block for the first byte only, then
-    // drain what's available without adding a timeout to every round trip.
-    const int first = uart_read_bytes(kTransportPort, buffer, 1, pdMS_TO_TICKS(timeout_ms));
-    if (first <= 0 || length == 1) return first;
-    const int rest = uart_read_bytes(kTransportPort, buffer + 1, length - 1, 0);
-    return 1 + std::max(rest, 0);
-}
-#elif CONFIG_PXADB_TRANSPORT_USB_CDC
-constexpr uint32_t kTransportReadPollMs = 5;
-constexpr size_t kTransportWriteChunk = 256;
-
-esp_err_t TransportStart() {
-    return tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0)
-        ? ESP_OK : ESP_ERR_INVALID_STATE;
-}
-
-int TransportWrite(const uint8_t* data, size_t length) {
-    const size_t written = tinyusb_cdcacm_write_queue(
-        TINYUSB_CDC_ACM_0, data, length);
-    (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
-    return static_cast<int>(written);
-}
-
-bool TransportTxDone() {
-    return tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, kIoTimeout) == ESP_OK;
-}
-
-int TransportRead(uint8_t* buffer, size_t length, uint32_t timeout_ms) {
-    size_t received = 0;
-    // Resume a pending IN transfer after filesystem writes/cache stalls even
-    // when the host is only waiting for a response and sends no further data.
-    (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
-    if (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, buffer, length,
-                           &received) != ESP_OK)
-        return -1;
-    if (received == 0) vTaskDelay(pdMS_TO_TICKS(timeout_ms));
-    return static_cast<int>(received);
-}
-#else
-constexpr uint32_t kTransportReadPollMs = 25;
-/* A single USB Serial/JTAG write must fit the driver's TX ring buffer. */
-constexpr size_t kTransportWriteChunk = kUsbBufferSize / 2;
-
-esp_err_t TransportStart() {
-    if (!usb_serial_jtag_is_driver_installed()) {
-        usb_serial_jtag_driver_config_t config = {
-            .tx_buffer_size = kUsbBufferSize,
-            .rx_buffer_size = 4096,
-        };
-        const esp_err_t err = usb_serial_jtag_driver_install(&config);
-        if (err != ESP_OK) return err;
-    }
-    usb_serial_jtag_vfs_use_driver();
-    return ESP_OK;
-}
-
-int TransportWrite(const uint8_t* data, size_t length) {
-    return usb_serial_jtag_write_bytes(data, length, kIoTimeout);
-}
-
-bool TransportTxDone() {
-    return usb_serial_jtag_wait_tx_done(kIoTimeout) == ESP_OK;
-}
-
-int TransportRead(uint8_t* buffer, size_t length, uint32_t timeout_ms) {
-    return usb_serial_jtag_read_bytes(buffer, length, pdMS_TO_TICKS(timeout_ms));
-}
-#endif
-
 struct LogRecord {
     uint32_t timestamp_ms;
     char message[kMaxFramePayload];
@@ -333,28 +183,64 @@ struct FileUpload {
     bool refresh_pxa_inbox = false;
 };
 
+struct ControlParser {
+    char command[kMaxCommandLength];
+    uint8_t input[512];
+    size_t command_length = 0;
+    bool discarding = false;
+};
+
+#if CONFIG_PXADB_UART_SECONDARY
+constexpr size_t kSessionCount = 2;
+#else
+constexpr size_t kSessionCount = 1;
+#endif
+constexpr uint8_t kNoSession = UINT8_MAX;
+struct Session {
+    Transport transport = Transport::kPrimary;
+    bool enabled = false;
+    ControlParser* parser = nullptr;
+    BulkUpload bulk;
+    FileUpload upload;
+    std::atomic<bool> active{false};
+    std::atomic<uint32_t> generation{1};
+    std::atomic<uint64_t> last_activity_us{0};
+    std::atomic<uint64_t> unlock_expiry_us{0};
+    std::atomic<bool> log_subscribed{false};
+    std::atomic<uint32_t> dropped_logs{0};
+    QueueHandle_t log_queue = nullptr;
+    bool package_staging = false;
+};
+Session s_sessions[kSessionCount];
+// Only the single control task selects this context. Async input replies and
+// log producers use an explicit endpoint and never read this pointer.
+Session* s_current_session = &s_sessions[0];
+Session& CurrentSession() { return *s_current_session; }
+uint8_t CurrentSessionIndex() { return static_cast<uint8_t>(s_current_session - s_sessions); }
+uint8_t s_mutation_owner = kNoSession;
+
+void ResetBulkUpload() {
+    free(CurrentSession().bulk.bytes);
+    CurrentSession().bulk = {};
+}
+
 std::atomic<bool> s_running{false};
 std::atomic<bool> s_task_active{false};
-std::atomic<bool> s_log_subscribed{false};
-std::atomic<uint32_t> s_dropped_logs{0};
 std::atomic<bool> s_autostart_active{false};
 std::atomic<bool> s_autostart_cancelled{false};
-std::atomic<bool> s_control_session_active{false};
-std::atomic<uint64_t> s_last_control_activity_us{0};
 // Zero while the read-only system tree stays locked. FSUNLOCK arms an expiry
 // so a development session can stage factory content under system/.
-std::atomic<uint64_t> s_system_unlock_expiry_us{0};
-QueueHandle_t s_log_queue = nullptr;
 SemaphoreHandle_t s_tx_mutex = nullptr;
 StaticSemaphore_t s_tx_mutex_storage = {};
-vprintf_like_t s_previous_vprintf = nullptr;
+std::atomic<vprintf_like_t> s_previous_vprintf{nullptr};
+bool s_log_hook_installed = false;
+std::atomic<unsigned> s_log_writers{0};
 portMUX_TYPE s_history_lock = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE s_log_scratch_lock = portMUX_INITIALIZER_UNLOCKED;
 LogRecord* s_log_history = nullptr;
 size_t s_log_history_start = 0;
 size_t s_log_history_count = 0;
 LogScratch s_log_scratch[kLogScratchCount];
-FileUpload s_file_upload;
 std::atomic<bool> s_package_cleanup_pending{false};
 int64_t s_next_package_cleanup_us=0;
 
@@ -380,6 +266,9 @@ const char* DeviceSerial() {
 #if CONFIG_PXADB_TEST_CONTROL
 InputMailbox<kInputMailboxCapacity> s_input_mailbox;
 PointerState s_accepted_pointer;
+uint8_t s_input_owner = kNoSession; // Protected by s_input_lock.
+std::atomic<bool> s_input_cancel_pending{false};
+std::atomic<unsigned> s_input_cancel_callers{0};
 portMUX_TYPE s_input_lock = portMUX_INITIALIZER_UNLOCKED;
 SemaphoreHandle_t s_input_signal = nullptr;
 StaticSemaphore_t s_input_signal_storage = {};
@@ -413,8 +302,12 @@ bool TestControlAvailable() {
 }
 #endif
 
-bool WriteAll(const void* data, size_t length) {
+bool WriteAll(Session& session, const void* data, size_t length, uint32_t generation = 0) {
     if (s_tx_mutex != nullptr && xSemaphoreTake(s_tx_mutex, kIoTimeout) != pdTRUE) {
+        return false;
+    }
+    if (generation && (!session.active.load() || session.generation.load() != generation)) {
+        if (s_tx_mutex) xSemaphoreGive(s_tx_mutex);
         return false;
     }
     const auto* bytes = static_cast<const uint8_t*>(data);
@@ -428,8 +321,8 @@ bool WriteAll(const void* data, size_t length) {
         static_cast<int64_t>(kIoTimeout) * 1000000 / configTICK_RATE_HZ;
     while (offset < length) {
         const size_t piece =
-            std::min(kTransportWriteChunk, length - offset);
-        const int written = TransportWrite(bytes + offset, piece);
+            std::min(TransportWriteChunk(session.transport), length - offset);
+        const int written = TransportWrite(session.transport, bytes + offset, piece);
         if (written > 0) {
             offset += static_cast<size_t>(written);
             continue;
@@ -440,12 +333,13 @@ bool WriteAll(const void* data, size_t length) {
         }
         vTaskDelay(1);
     }
-    if (success) success = TransportTxDone();
+    if (success) success = TransportTxDone(session.transport);
     if (s_tx_mutex != nullptr) xSemaphoreGive(s_tx_mutex);
     return success;
 }
 
-bool SendFrame(unsigned long sequence, const char* type, const char* payload) {
+bool SendFrameTo(Session& session, unsigned long sequence, const char* type, const char* payload,
+                 uint32_t generation = 0) {
     const size_t payload_length = payload == nullptr ? 0 : strlen(payload);
     char encoded[kMaxEncodedPayload] = {};
     size_t encoded_length = 0;
@@ -464,9 +358,13 @@ bool SendFrame(unsigned long sequence, const char* type, const char* payload) {
     // ESP_LOG uses the same USB Serial/JTAG output. Keep raw console text on
     // either side of a complete response so the host can always resynchronize.
     esp_log_impl_lock();
-    const bool sent = WriteAll(line, static_cast<size_t>(length));
+    const bool sent = WriteAll(session, line, static_cast<size_t>(length), generation);
     esp_log_impl_unlock();
     return sent;
+}
+
+bool SendFrame(unsigned long sequence, const char* type, const char* payload) {
+    return SendFrameTo(CurrentSession(), sequence, type, payload);
 }
 
 bool IsSafeIdentity(const char* identity) {
@@ -485,29 +383,30 @@ bool IsSafeIdentity(const char* identity) {
 
 bool FileUploadActive() {
 #if CONFIG_PXA_ENABLED
-    if (s_file_upload.stream) return true;
+    if (CurrentSession().upload.stream) return true;
 #endif
-    return s_file_upload.file != nullptr;
+    return CurrentSession().upload.file != nullptr;
 }
 
 void AbortFileUpload() {
     ResetBulkUpload();
 #if CONFIG_PXA_ENABLED
-    pxa_host_container_stream_close(s_file_upload.stream);
-    s_file_upload.stream = nullptr;
+    pxa_host_container_stream_close(CurrentSession().upload.stream);
+    CurrentSession().upload.stream = nullptr;
 #endif
-    if (s_file_upload.file != nullptr) {
-        fclose(s_file_upload.file);
-        s_file_upload.file = nullptr;
+    if (CurrentSession().upload.file != nullptr) {
+        fclose(CurrentSession().upload.file);
+        CurrentSession().upload.file = nullptr;
     }
-    if (s_file_upload.temporary[0] != '\0') unlink(s_file_upload.temporary);
-    free(s_file_upload.io_buffer);
-    s_file_upload = {};
+    if (CurrentSession().upload.temporary[0] != '\0') unlink(CurrentSession().upload.temporary);
+    free(CurrentSession().upload.io_buffer);
+    CurrentSession().upload = {};
 }
 
 void TryDiscardPackageTransfers() {
 #if CONFIG_PXA_ENABLED
     if (!s_package_cleanup_pending.load()) return;
+    if (s_mutation_owner != kNoSession) return;
     const int64_t now=esp_timer_get_time();
     if (now<s_next_package_cleanup_us) return;
     if (pxa_host_try_discard_package_transfers()==PXA_STATUS_OK)
@@ -532,7 +431,12 @@ bool PackageTransfersReady(const char* command) {
 }
 
 void AbortTransfers() {
+    const bool may_discard = s_mutation_owner == kNoSession ||
+                             s_mutation_owner == CurrentSessionIndex();
     AbortFileUpload();
+    CurrentSession().package_staging = false;
+    if (!may_discard) return;
+    s_mutation_owner = kNoSession;
     (void)unlink(kFsUploadTemporary);
 #if CONFIG_PXA_ENABLED
     /* HELLO and startup must stay responsive while runtime bootstrap owns
@@ -541,6 +445,36 @@ void AbortTransfers() {
     s_next_package_cleanup_us=0;
     TryDiscardPackageTransfers();
 #endif
+}
+
+bool IsMutatingCommand(const char* command, const char* argument) {
+    if (!strcmp(command, "PACKAGE"))
+        return !argument || strcmp(argument, "paths") != 0;
+    for (const char* mutation : {"FSPUT", "FSINSTALL", "FSDATA", "FSDATA2",
+            "FSBULK", "FSFAST", "FSFETCH", "FSMKDIR", "FSMOVE", "FSCOPY", "FSRM", "FSRMTREE",
+            "REBOOT", "POWEROFF"})
+        if (!strcmp(command, mutation)) return true;
+    return false;
+}
+
+bool AdmitMutation(unsigned long sequence, const char* command, const char* argument) {
+    if (!IsMutatingCommand(command, argument)) return true;
+    if (!CurrentSession().active.load()) {
+        SendFrame(sequence, "ERR", "hello_required");
+        return false;
+    }
+    if (s_mutation_owner != kNoSession && s_mutation_owner != CurrentSessionIndex()) {
+        SendFrame(sequence, "ERR", "transport_busy");
+        return false;
+    }
+    s_mutation_owner = CurrentSessionIndex();
+    return true;
+}
+
+void ReleaseMutationIfIdle() {
+    if (s_mutation_owner == CurrentSessionIndex() &&
+        !FileUploadActive() && !CurrentSession().package_staging)
+        s_mutation_owner = kNoSession;
 }
 
 bool DecodeFsPath(const char* encoded, char* relative, size_t relative_capacity,
@@ -570,7 +504,7 @@ bool DecodeFsPath(const char* encoded, char* relative, size_t relative_capacity,
 
 bool IsSystemWriteUnlocked() {
     const uint64_t expiry =
-        s_system_unlock_expiry_us.load(std::memory_order_relaxed);
+        CurrentSession().unlock_expiry_us.load(std::memory_order_relaxed);
     return expiry != 0 &&
            static_cast<uint64_t>(esp_timer_get_time()) < expiry;
 }
@@ -580,7 +514,7 @@ bool IsWritableFsPath(const char* relative, bool system_unlocked = IsSystemWrite
 #if CONFIG_PXA_ENABLED
     if (pxa_esp_storage_debug_path(relative, system_unlocked, nullptr, 0)) return true;
 #endif
-    if (strcmp(relative, ".pxadb-upload") == 0) return false;
+    if (strncmp(relative, ".pxadb-upload", sizeof(".pxadb-upload") - 1) == 0) return false;
     if (strcmp(relative, kPxaStateRoot) == 0 ||
         (strncmp(relative, kPxaInboxRoot, sizeof(kPxaInboxRoot) - 1) == 0 &&
          (relative[sizeof(kPxaInboxRoot) - 1] == '\0' ||
@@ -707,7 +641,7 @@ void SendFsDigest(unsigned long sequence, const char* encoded_path) {
 
 void SendFsUploadReady(unsigned long sequence) {
     char payload[32] = {};
-    snprintf(payload, sizeof(payload), "%u", static_cast<unsigned>(s_file_upload.remaining));
+    snprintf(payload, sizeof(payload), "%u", static_cast<unsigned>(CurrentSession().upload.remaining));
     SendFrame(sequence, "READY", payload);
 }
 
@@ -902,10 +836,11 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
         SendFrame(sequence, "ERR", "invalid_sha256");
         return;
     }
-    if (s_file_upload.file != nullptr && s_file_upload.total == static_cast<size_t>(size) &&
-        strcmp(s_file_upload.destination, path) == 0 &&
-        s_file_upload.has_expected_sha256 == has_expected_sha256 &&
-        (!has_expected_sha256 || strcmp(s_file_upload.expected_sha256, expected_sha256) == 0)) {
+    if (IsPxaInboxPath(relative)) CurrentSession().package_staging = true;
+    if (CurrentSession().upload.file != nullptr && CurrentSession().upload.total == static_cast<size_t>(size) &&
+        strcmp(CurrentSession().upload.destination, path) == 0 &&
+        CurrentSession().upload.has_expected_sha256 == has_expected_sha256 &&
+        (!has_expected_sha256 || strcmp(CurrentSession().upload.expected_sha256, expected_sha256) == 0)) {
         SendFsUploadReady(sequence);
         return;
     }
@@ -918,19 +853,22 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
     AbortFileUpload();
     bool external = false;
 #if CONFIG_PXA_ENABLED
-    external = pxa_esp_storage_debug_path(relative, system_unlocked, s_file_upload.temporary,
-                                         sizeof(s_file_upload.temporary));
+    external = pxa_esp_storage_debug_path(relative, system_unlocked, CurrentSession().upload.temporary,
+                                         sizeof(CurrentSession().upload.temporary));
 #endif
-    const int temporary_length = external ? static_cast<int>(strlen(s_file_upload.temporary)) :
-        snprintf(s_file_upload.temporary, sizeof(s_file_upload.temporary), "%s", kFsUploadTemporary);
+    const int temporary_length = external ? static_cast<int>(strlen(CurrentSession().upload.temporary)) :
+        snprintf(CurrentSession().upload.temporary, sizeof(CurrentSession().upload.temporary), "%s", kFsUploadTemporary);
     if (temporary_length < 0 ||
-        static_cast<size_t>(temporary_length) >= sizeof(s_file_upload.temporary)) {
+        static_cast<size_t>(temporary_length) >= sizeof(CurrentSession().upload.temporary)) {
         AbortFileUpload();
         SendFrame(sequence, "ERR", "path_too_long");
         return;
     }
-    s_file_upload.file = fopen(s_file_upload.temporary, "wb");
-    if (s_file_upload.file == nullptr) {
+    // The mutation lease reserves this existing recovery slot for its owner.
+    // Keep the established name so boot cleanup also recovers interrupted
+    // uploads after session state has been lost in a reset.
+    CurrentSession().upload.file = fopen(CurrentSession().upload.temporary, "wb");
+    if (CurrentSession().upload.file == nullptr) {
         AbortFileUpload();
         SendFrame(sequence, "ERR", "file_open_failed");
         return;
@@ -939,35 +877,35 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
         // This is optional write coalescing, never a fixed RAM reservation.
         const size_t budget=heap_caps_get_free_size(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)/16;
         const size_t buffer_size=std::min<size_t>(size,std::min<size_t>(64*1024,budget));
-        s_file_upload.io_buffer=static_cast<char*>(heap_caps_malloc(buffer_size,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
-        if (s_file_upload.io_buffer && setvbuf(s_file_upload.file,s_file_upload.io_buffer,_IOFBF,buffer_size)) {
-            free(s_file_upload.io_buffer);s_file_upload.io_buffer=nullptr;
+        CurrentSession().upload.io_buffer=static_cast<char*>(heap_caps_malloc(buffer_size,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+        if (CurrentSession().upload.io_buffer && setvbuf(CurrentSession().upload.file,CurrentSession().upload.io_buffer,_IOFBF,buffer_size)) {
+            free(CurrentSession().upload.io_buffer);CurrentSession().upload.io_buffer=nullptr;
         }
     }
-    snprintf(s_file_upload.destination, sizeof(s_file_upload.destination), "%s", path);
-    s_file_upload.total = static_cast<size_t>(size);
-    s_file_upload.remaining = static_cast<size_t>(size);
-    s_file_upload.has_expected_sha256 = has_expected_sha256;
+    snprintf(CurrentSession().upload.destination, sizeof(CurrentSession().upload.destination), "%s", path);
+    CurrentSession().upload.total = static_cast<size_t>(size);
+    CurrentSession().upload.remaining = static_cast<size_t>(size);
+    CurrentSession().upload.has_expected_sha256 = has_expected_sha256;
     if (has_expected_sha256) {
-        snprintf(s_file_upload.expected_sha256, sizeof(s_file_upload.expected_sha256), "%s", expected_sha256);
+        snprintf(CurrentSession().upload.expected_sha256, sizeof(CurrentSession().upload.expected_sha256), "%s", expected_sha256);
     }
-    s_file_upload.refresh_pxa_inbox =
+    CurrentSession().upload.refresh_pxa_inbox =
         ShouldRefreshPxaInboxAfterUpload(relative);
-    if (s_file_upload.remaining == 0) {
-        const bool refresh_pxa_inbox = s_file_upload.refresh_pxa_inbox;
-        fclose(s_file_upload.file);
-        s_file_upload.file = nullptr;
-        const bool checksum_matches = !s_file_upload.has_expected_sha256 ||
-                                      FileMatchesSha256(s_file_upload.temporary,
-                                                        s_file_upload.expected_sha256);
+    if (CurrentSession().upload.remaining == 0) {
+        const bool refresh_pxa_inbox = CurrentSession().upload.refresh_pxa_inbox;
+        fclose(CurrentSession().upload.file);
+        CurrentSession().upload.file = nullptr;
+        const bool checksum_matches = !CurrentSession().upload.has_expected_sha256 ||
+                                      FileMatchesSha256(CurrentSession().upload.temporary,
+                                                        CurrentSession().upload.expected_sha256);
         if (!checksum_matches) {
             AbortFileUpload();
             SendFrame(sequence, "ERR", "checksum_mismatch");
             return;
         }
-        const bool renamed = rename(s_file_upload.temporary, s_file_upload.destination) == 0;
+        const bool renamed = rename(CurrentSession().upload.temporary, CurrentSession().upload.destination) == 0;
         if (!renamed) AbortFileUpload();
-        else s_file_upload = {};
+        else CurrentSession().upload = {};
         // Answer before refreshing: the inbox scan verifies signatures and can
         // take seconds, which must not delay the upload acknowledgement.
         SendFrame(sequence, renamed ? "OK" : "ERR",
@@ -1001,27 +939,28 @@ void StartFsStream(unsigned long sequence, const char* encoded_path,
             (strncmp(relative,prefix,sizeof(prefix)-1) || !IsSafeIdentity(relative+sizeof(prefix)-1)))) {
         SendFrame(sequence, "ERR", "invalid_stream_upload"); return;
     }
-    if (s_file_upload.stream && s_file_upload.total == size && s_file_upload.stream_epoch==epoch &&
-        !strcmp(s_file_upload.destination,path) && !strcmp(s_file_upload.expected_sha256,expected_sha256)) {
-        if(!s_file_upload.remaining)SendFrame(sequence,"OK","");else SendFsUploadReady(sequence);
+    if (CurrentSession().upload.stream && CurrentSession().upload.total == size && CurrentSession().upload.stream_epoch==epoch &&
+        !strcmp(CurrentSession().upload.destination,path) && !strcmp(CurrentSession().upload.expected_sha256,expected_sha256)) {
+        if(!CurrentSession().upload.remaining)SendFrame(sequence,"OK","");else SendFsUploadReady(sequence);
         return;
     }
     AbortFileUpload();
     uint8_t digest[32];
     for (size_t i=0;i<32;++i) {char hex[3]={expected_sha256[i*2],expected_sha256[i*2+1],0};digest[i]=strtoul(hex,nullptr,16);}
-    pxa_status_t status=epoch?pxa_host_container_stream_begin_volume(epoch,path,size,digest,&s_file_upload.stream):
-        pxa_host_container_stream_begin(path,size,digest,&s_file_upload.stream);
+    CurrentSession().package_staging = true;
+    pxa_status_t status=epoch?pxa_host_container_stream_begin_volume(epoch,path,size,digest,&CurrentSession().upload.stream):
+        pxa_host_container_stream_begin(path,size,digest,&CurrentSession().upload.stream);
     if (status!=PXA_STATUS_OK) {
         SendFrame(sequence,"ERR",status==PXA_STATUS_RESOURCE_LIMIT?"insufficient_memory":"stream_open_failed");return;
     }
-    s_file_upload.total=s_file_upload.remaining=size;
-    s_file_upload.stream_epoch=epoch;
-    snprintf(s_file_upload.destination,sizeof(s_file_upload.destination),"%s",path);
-    snprintf(s_file_upload.expected_sha256,sizeof(s_file_upload.expected_sha256),"%s",expected_sha256);
+    CurrentSession().upload.total=CurrentSession().upload.remaining=size;
+    CurrentSession().upload.stream_epoch=epoch;
+    snprintf(CurrentSession().upload.destination,sizeof(CurrentSession().upload.destination),"%s",path);
+    snprintf(CurrentSession().upload.expected_sha256,sizeof(CurrentSession().upload.expected_sha256),"%s",expected_sha256);
     SendFsUploadReady(sequence);
 }
 void FetchFsStream(unsigned long sequence,const char* encoded_url) {
-    if(!s_file_upload.stream || s_file_upload.remaining!=s_file_upload.total) {
+    if(!CurrentSession().upload.stream || CurrentSession().upload.remaining!=CurrentSession().upload.total) {
         SendFrame(sequence,"ERR","stream_fetch_not_ready");return;
     }
     char url[768]={};size_t bytes=0;
@@ -1030,9 +969,9 @@ void FetchFsStream(unsigned long sequence,const char* encoded_url) {
         memchr(url,0,bytes) || memchr(url,'\r',bytes) || memchr(url,'\n',bytes)) {
         SendFrame(sequence,"ERR","invalid_fetch_url");return;
     }
-    const pxa_status_t status=pxa_host_container_stream_fetch(s_file_upload.stream,url);
-    if(status==PXA_STATUS_OK)s_file_upload.remaining=0;
-    if(status!=PXA_STATUS_OK || !s_file_upload.stream_epoch)AbortFileUpload();
+    const pxa_status_t status=pxa_host_container_stream_fetch(CurrentSession().upload.stream,url);
+    if(status==PXA_STATUS_OK)CurrentSession().upload.remaining=0;
+    if(status!=PXA_STATUS_OK || !CurrentSession().upload.stream_epoch)AbortFileUpload();
     SendFrame(sequence,status==PXA_STATUS_OK?"OK":"ERR",status==PXA_STATUS_OK?"":
         status==PXA_STATUS_RESOURCE_LIMIT?"insufficient_memory":"stream_fetch_failed");
 }
@@ -1042,21 +981,21 @@ void FetchFsStream(unsigned long sequence,const char* encoded_url) {
 // writes therefore cannot stall the receiver in the middle of this batch.
 void CommitFsUploadBytes(unsigned long sequence, const uint8_t* bytes, size_t length) {
 #if CONFIG_PXA_ENABLED
-    if (s_file_upload.stream) {
-        pxa_status_t status=pxa_host_container_stream_feed(s_file_upload.stream,bytes,length);
+    if (CurrentSession().upload.stream) {
+        pxa_status_t status=pxa_host_container_stream_feed(CurrentSession().upload.stream,bytes,length);
         if (status==PXA_STATUS_OK) {
-            s_file_upload.remaining-=length;
-            if (s_file_upload.remaining) {SendFsUploadReady(sequence);return;}
-            status=pxa_host_container_stream_finish(s_file_upload.stream);
+            CurrentSession().upload.remaining-=length;
+            if (CurrentSession().upload.remaining) {SendFsUploadReady(sequence);return;}
+            status=pxa_host_container_stream_finish(CurrentSession().upload.stream);
         }
-        if(status!=PXA_STATUS_OK || !s_file_upload.stream_epoch)AbortFileUpload();
+        if(status!=PXA_STATUS_OK || !CurrentSession().upload.stream_epoch)AbortFileUpload();
         SendFrame(sequence,status==PXA_STATUS_OK?"OK":"ERR",status==PXA_STATUS_OK?"":
             status==PXA_STATUS_RESOURCE_LIMIT?"insufficient_memory":"stream_verification_failed");
         return;
     }
 #endif
     errno = 0;
-    if (fwrite(bytes, 1, length, s_file_upload.file) != length) {
+    if (fwrite(bytes, 1, length, CurrentSession().upload.file) != length) {
         const int write_error = errno;
         AbortFileUpload();
         char reason[64];
@@ -1064,20 +1003,20 @@ void CommitFsUploadBytes(unsigned long sequence, const uint8_t* bytes, size_t le
         SendFrame(sequence, "ERR", reason);
         return;
     }
-    s_file_upload.remaining -= length;
-    if (s_file_upload.remaining != 0) {
+    CurrentSession().upload.remaining -= length;
+    if (CurrentSession().upload.remaining != 0) {
         SendFsUploadReady(sequence);
         return;
     }
-    const bool refresh_pxa_inbox = s_file_upload.refresh_pxa_inbox;
-    const bool has_expected_sha256 = s_file_upload.has_expected_sha256;
-    char expected_sha256[sizeof(s_file_upload.expected_sha256)] = {};
-    snprintf(expected_sha256, sizeof(expected_sha256), "%s", s_file_upload.expected_sha256);
-    char temporary[sizeof(s_file_upload.temporary)] = {};
-    snprintf(temporary, sizeof(temporary), "%s", s_file_upload.temporary);
-    const int close_error = fclose(s_file_upload.file);
-    s_file_upload.file = nullptr;
-    free(s_file_upload.io_buffer);s_file_upload.io_buffer=nullptr;
+    const bool refresh_pxa_inbox = CurrentSession().upload.refresh_pxa_inbox;
+    const bool has_expected_sha256 = CurrentSession().upload.has_expected_sha256;
+    char expected_sha256[sizeof(CurrentSession().upload.expected_sha256)] = {};
+    snprintf(expected_sha256, sizeof(expected_sha256), "%s", CurrentSession().upload.expected_sha256);
+    char temporary[sizeof(CurrentSession().upload.temporary)] = {};
+    snprintf(temporary, sizeof(temporary), "%s", CurrentSession().upload.temporary);
+    const int close_error = fclose(CurrentSession().upload.file);
+    CurrentSession().upload.file = nullptr;
+    free(CurrentSession().upload.io_buffer);CurrentSession().upload.io_buffer=nullptr;
     if (close_error) {
         AbortFileUpload();
         SendFrame(sequence, "ERR", "file_close_failed");
@@ -1088,13 +1027,13 @@ void CommitFsUploadBytes(unsigned long sequence, const uint8_t* bytes, size_t le
         SendFrame(sequence, "ERR", "checksum_mismatch");
         return;
     }
-    const bool renamed = rename(s_file_upload.temporary, s_file_upload.destination) == 0;
+    const bool renamed = rename(CurrentSession().upload.temporary, CurrentSession().upload.destination) == 0;
     if (!renamed) {
         AbortFileUpload();
         SendFrame(sequence, "ERR", "file_commit_failed");
         return;
     }
-    s_file_upload = {};
+    CurrentSession().upload = {};
     // Answer before refreshing: the inbox scan verifies signatures and can
     // take seconds, which must not delay the upload acknowledgement.
     SendFrame(sequence, "OK", "");
@@ -1111,11 +1050,11 @@ void StartFsBulk(unsigned long sequence, const char* offset_text,
         SendFrame(sequence, "ERR", "invalid_file_chunk"); return;
     }
     const unsigned long offset = strtoul(offset_text, &end, 10);
-    if (end == offset_text || *end || offset != s_file_upload.total - s_file_upload.remaining) {
+    if (end == offset_text || *end || offset != CurrentSession().upload.total - CurrentSession().upload.remaining) {
         SendFrame(sequence, "ERR", "offset_mismatch"); return;
     }
     const unsigned long size = strtoul(size_text, &end, 10);
-    if (end == size_text || *end || !size || size > kFsBulkSize || size > s_file_upload.remaining) {
+    if (end == size_text || *end || !size || size > kFsBulkSize || size > CurrentSession().upload.remaining) {
         SendFrame(sequence, "ERR", "invalid_file_chunk"); return;
     }
     for (unsigned i = 0; i < 8; ++i) {
@@ -1125,13 +1064,13 @@ void StartFsBulk(unsigned long sequence, const char* offset_text,
         }
     }
     ResetBulkUpload();
-    s_bulk.bytes = static_cast<uint8_t*>(heap_caps_malloc(kFsBulkEncodedSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (!s_bulk.bytes) { SendFrame(sequence, "ERR", "bulk_no_memory"); return; }
-    s_bulk.expected = size;
-    s_bulk.capacity = kFsBulkEncodedSize;
-    s_bulk.sequence = sequence;
-    s_bulk.crc = static_cast<uint32_t>(strtoul(crc_text, nullptr, 16));
-    s_bulk.last_us = esp_timer_get_time();
+    CurrentSession().bulk.bytes = static_cast<uint8_t*>(heap_caps_malloc(kFsBulkEncodedSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!CurrentSession().bulk.bytes) { SendFrame(sequence, "ERR", "bulk_no_memory"); return; }
+    CurrentSession().bulk.expected = size;
+    CurrentSession().bulk.capacity = kFsBulkEncodedSize;
+    CurrentSession().bulk.sequence = sequence;
+    CurrentSession().bulk.crc = static_cast<uint32_t>(strtoul(crc_text, nullptr, 16));
+    CurrentSession().bulk.last_us = esp_timer_get_time();
     char accepted[24]; snprintf(accepted, sizeof(accepted), "%lu", size);
     if (!SendFrame(sequence, "CONTINUE", accepted)) ResetBulkUpload();
 }
@@ -1139,7 +1078,7 @@ void StartFsBulk(unsigned long sequence, const char* offset_text,
 void StartFsFast(unsigned long sequence, const char* requested) {
     char* end=nullptr;
     const unsigned long wanted=requested?strtoul(requested,&end,10):0;
-    if(!FileUploadActive() || !s_file_upload.remaining || !requested || end==requested || *end ||
+    if(!FileUploadActive() || !CurrentSession().upload.remaining || !requested || end==requested || *end ||
        wanted<256 || wanted>65536) {SendFrame(sequence,"ERR","invalid_fast_request");return;}
     ResetBulkUpload();
     // Prefer PSRAM. Fall back to a small internal buffer on devices without it.
@@ -1149,8 +1088,8 @@ void StartFsFast(unsigned long sequence, const char* requested) {
             const size_t raw=chunk+24, capacity=raw+raw/254+1;
             auto* buffer=static_cast<uint8_t*>(heap_caps_malloc(capacity,caps));
             if(!buffer) {if(chunk==256)break;continue;}
-            s_bulk.bytes=buffer;s_bulk.capacity=capacity;s_bulk.expected=chunk;s_bulk.fast=true;
-            s_bulk.sequence=sequence;s_bulk.last_us=esp_timer_get_time();
+            CurrentSession().bulk.bytes=buffer;CurrentSession().bulk.capacity=capacity;CurrentSession().bulk.expected=chunk;CurrentSession().bulk.fast=true;
+            CurrentSession().bulk.sequence=sequence;CurrentSession().bulk.last_us=esp_timer_get_time();
             char answer[64];snprintf(answer,sizeof(answer),"chunk=%u;timeout_ms=10000;window=1",unsigned(chunk));
             if(!SendFrame(sequence,"OK",answer))AbortFileUpload();
             return;
@@ -1160,19 +1099,19 @@ void StartFsFast(unsigned long sequence, const char* requested) {
 }
 
 size_t ConsumeFsBulk(const uint8_t* input, size_t available) {
-    if (!s_bulk.bytes && !s_bulk.draining) return 0;
-    s_bulk.last_us = esp_timer_get_time();
-    s_last_control_activity_us.store(s_bulk.last_us, std::memory_order_relaxed);
+    if (!CurrentSession().bulk.bytes && !CurrentSession().bulk.draining) return 0;
+    CurrentSession().bulk.last_us = esp_timer_get_time();
+    CurrentSession().last_activity_us.store(CurrentSession().bulk.last_us, std::memory_order_relaxed);
     const auto* end = static_cast<const uint8_t*>(memchr(input, 0, available));
     const size_t amount = end ? static_cast<size_t>(end - input) : available;
-    if (s_bulk.bytes && amount <= s_bulk.capacity - s_bulk.used) {
-        memcpy(s_bulk.bytes + s_bulk.used, input, amount);
-        s_bulk.used += amount;
-    } else s_bulk.draining = true;
+    if (CurrentSession().bulk.bytes && amount <= CurrentSession().bulk.capacity - CurrentSession().bulk.used) {
+        memcpy(CurrentSession().bulk.bytes + CurrentSession().bulk.used, input, amount);
+        CurrentSession().bulk.used += amount;
+    } else CurrentSession().bulk.draining = true;
     if (!end) return amount;
     // Detach before commit: a failed write/abort must not free this buffer twice.
-    const BulkUpload batch = s_bulk;
-    s_bulk = {};
+    const BulkUpload batch = CurrentSession().bulk;
+    CurrentSession().bulk = {};
     if(batch.fast) {
         // Empty delimiter cancels even between frames. Two delimiters also
         // recover a truncated/oversized frame before the next text command.
@@ -1187,18 +1126,18 @@ size_t ConsumeFsBulk(const uint8_t* input, size_t available) {
             uint32_t crc=0;
             for(unsigned i=0;i<4;++i)crc|=uint32_t(batch.bytes[decoded-4+i])<<(i*8);
             if(esp_rom_crc32_le(0,batch.bytes,decoded-4)!=crc) {valid=false;error="chunk_checksum_mismatch";}
-            else if(!FileUploadActive() || offset!=s_file_upload.total-s_file_upload.remaining ||
-                    length>s_file_upload.remaining) {valid=false;error="offset_mismatch";}
+            else if(!FileUploadActive() || offset!=CurrentSession().upload.total-CurrentSession().upload.remaining ||
+                    length>CurrentSession().upload.remaining) {valid=false;error="offset_mismatch";}
         }
         if(!valid) {AbortFileUpload();SendFrame(sequence,"ERR",error);}
         else CommitFsUploadBytes(sequence,batch.bytes+20,length);
-        if(valid && FileUploadActive() && s_file_upload.remaining) {
-            s_bulk=batch;s_bulk.used=0;s_bulk.last_us=esp_timer_get_time();
+        if(valid && FileUploadActive() && CurrentSession().upload.remaining) {
+            CurrentSession().bulk=batch;CurrentSession().bulk.used=0;CurrentSession().bulk.last_us=esp_timer_get_time();
         } else free(batch.bytes);
         // Decoding, storage flushes and final verification are active work.
         // Start the control-session idle lease after the ACK, just as the
         // text-command path does, including when the final frame frees bulk.
-        s_last_control_activity_us.store(esp_timer_get_time(), std::memory_order_relaxed);
+        CurrentSession().last_activity_us.store(esp_timer_get_time(), std::memory_order_relaxed);
         return amount+1;
     }
     if (batch.draining || !decode_bulk(batch.bytes, batch.used, batch.expected)) {
@@ -1209,7 +1148,7 @@ size_t ConsumeFsBulk(const uint8_t* input, size_t available) {
         SendFrame(batch.sequence, "ERR", "chunk_checksum_mismatch");
     else CommitFsUploadBytes(batch.sequence, batch.bytes, batch.expected);
     free(batch.bytes);
-    s_last_control_activity_us.store(esp_timer_get_time(), std::memory_order_relaxed);
+    CurrentSession().last_activity_us.store(esp_timer_get_time(), std::memory_order_relaxed);
     return amount + 1;
 }
 
@@ -1221,7 +1160,7 @@ void WriteFsUpload(unsigned long sequence, const char* offset_text,
     }
     const bool has_offset = encoded_data != nullptr;
     if (!has_offset) encoded_data = offset_text;
-    const size_t expected_offset = s_file_upload.total - s_file_upload.remaining;
+    const size_t expected_offset = CurrentSession().upload.total - CurrentSession().upload.remaining;
     if (has_offset) {
         if (offset_text == nullptr) {
             SendFrame(sequence, "ERR", "offset_mismatch");
@@ -1260,7 +1199,7 @@ void WriteFsUpload(unsigned long sequence, const char* offset_text,
         }
     }
     if (!DecodeFileChunk(encoded_data, bytes, sizeof(bytes), &length) || length == 0 ||
-        length > s_file_upload.remaining) {
+        length > CurrentSession().upload.remaining) {
         if (checksum == nullptr) AbortFileUpload();
         SendFrame(sequence, "ERR", "invalid_file_chunk");
         return;
@@ -1286,6 +1225,7 @@ void MakeFsDirectory(unsigned long sequence, const char* encoded_path) {
         return;
     }
     if (mkdir(path, 0775) == 0 || errno == EEXIST) {
+        if (IsPxaInboxPath(relative)) CurrentSession().package_staging = true;
         SendFrame(sequence, "OK", "");
     } else {
         SendFrame(sequence, "ERR", "mkdir_failed");
@@ -1480,13 +1420,13 @@ void HandleFsUnlock(unsigned long sequence, const char* minutes_text) {
     }
     expiry = static_cast<uint64_t>(esp_timer_get_time()) +
              static_cast<uint64_t>(minutes) * 60u * 1000000u;
-    s_system_unlock_expiry_us.store(expiry, std::memory_order_relaxed);
+    CurrentSession().unlock_expiry_us.store(expiry, std::memory_order_relaxed);
     snprintf(payload, sizeof(payload), "system;seconds=%lu", minutes * 60ul);
     SendFrame(sequence, "OK", payload);
 }
 
 void HandleFsLock(unsigned long sequence) {
-    s_system_unlock_expiry_us.store(0, std::memory_order_relaxed);
+    CurrentSession().unlock_expiry_us.store(0, std::memory_order_relaxed);
     SendFrame(sequence, "OK", "locked");
 }
 
@@ -1526,82 +1466,82 @@ void ReleaseLogScratch(LogScratch* scratch) {
 
 int PxaLogVprintf(const char* format, va_list arguments);
 
+bool AnyLogSubscribed() {
+    for (auto& session : s_sessions)
+        if (session.log_subscribed.load()) return true;
+    return false;
+}
+
 void EnableLogCapture() {
-    // Keep system tasks on ESP-IDF's original log path until a PXADB client asks
-    // for logcat; some of those tasks intentionally have small stacks.
-    if (s_previous_vprintf == nullptr)
-        s_previous_vprintf = esp_log_set_vprintf(PxaLogVprintf);
-    s_log_subscribed.store(true);
+    if (!s_log_hook_installed) {
+        s_previous_vprintf.store(esp_log_set_vprintf(PxaLogVprintf));
+        s_log_hook_installed = true;
+    }
+    CurrentSession().log_subscribed.store(true);
 }
 
 void DisableLogCapture() {
-    s_log_subscribed.store(false);
-    if (s_previous_vprintf != nullptr) {
-        vprintf_like_t previous = s_previous_vprintf;
-        s_previous_vprintf = nullptr;
-        esp_log_set_vprintf(previous);
+    CurrentSession().log_subscribed.store(false);
+    if (!AnyLogSubscribed() && s_log_hook_installed) {
+        esp_log_set_vprintf(s_previous_vprintf.load());
+        s_log_hook_installed = false;
     }
 }
 
 int PxaLogVprintf(const char* format, va_list arguments) {
+    struct Writer {
+        Writer() { s_log_writers.fetch_add(1); }
+        ~Writer() { s_log_writers.fetch_sub(1); }
+    } writer;
+    if (!AnyLogSubscribed()) {
+        const auto previous = s_previous_vprintf.load();
+        if (!previous) return 0;
+        va_list copied; va_copy(copied, arguments);
+        const int result = previous(format, copied);
+        va_end(copied);
+        return result;
+    }
     LogScratch* scratch = AcquireLogScratch();
-    if (scratch == nullptr) {
-        if (s_log_subscribed.load()) {
-            // Never fall back to raw UART while framed log capture is active:
-            // another task may be writing a screenshot/package DATA frame.
-            // Count the bounded log loss instead of corrupting that transfer.
-            s_dropped_logs.fetch_add(1);
-            return 0;
-        }
-        if (s_previous_vprintf != nullptr) {
-            va_list forwarded;
-            va_copy(forwarded, arguments);
-            const int result = s_previous_vprintf(format, forwarded);
-            va_end(forwarded);
-            return result;
-        }
+    if (!scratch) {
+        for (auto& session : s_sessions)
+            if (session.log_subscribed.load()) session.dropped_logs.fetch_add(1);
         return 0;
     }
     LogRecord& record = scratch->record;
     record.timestamp_ms = static_cast<uint32_t>(esp_log_timestamp());
-    va_list copied;
-    va_copy(copied, arguments);
+    va_list copied; va_copy(copied, arguments);
     const int result = vsnprintf(record.message, sizeof(record.message), format, copied);
     va_end(copied);
     size_t length = strnlen(record.message, sizeof(record.message));
-    while (length > 0 && (record.message[length - 1] == '\n' || record.message[length - 1] == '\r')) {
+    while (length && (record.message[length-1] == '\n' || record.message[length-1] == '\r'))
         record.message[--length] = '\0';
-    }
     RememberLog(record);
-    if (s_log_subscribed.load() && s_log_queue != nullptr &&
-        xQueueSend(s_log_queue, &record, 0) != pdTRUE) {
-        s_dropped_logs.fetch_add(1);
+    // Producers may run on either CPU. They never consult the control task's
+    // current session; slow/disconnected subscribers lose only their own logs.
+    for (auto& session : s_sessions) {
+        if (session.log_subscribed.load() && session.log_queue &&
+            xQueueSend(session.log_queue, &record, 0) != pdTRUE)
+            session.dropped_logs.fetch_add(1);
     }
     ReleaseLogScratch(scratch);
-    if (!s_log_subscribed.load() && s_previous_vprintf != nullptr) {
-        va_list forwarded;
-        va_copy(forwarded, arguments);
-        const int forwarded_result = s_previous_vprintf(format, forwarded);
-        va_end(forwarded);
-        return forwarded_result;
-    }
     return result;
 }
 
 void SendHello(unsigned long sequence) {
     const esp_app_desc_t* app = esp_app_get_description();
     // Keep complete capability and version fields without enlarging log records.
-    char payload[1024] = {};
-    char transport_info[72] = {};
-#if CONFIG_PXADB_TRANSPORT_UART
-    snprintf(transport_info, sizeof(transport_info),
-             ";transport=uart;uart_rx_buffer=%u;uart_rx_fifo_threshold=%d",
-             pxadb_uart_rx_buffer_capacity(), kTransportRxFifoThreshold);
-#elif CONFIG_PXADB_TRANSPORT_USB_CDC
-    snprintf(transport_info,sizeof(transport_info),";transport=usb-cdc");
-#else
-    snprintf(transport_info,sizeof(transport_info),";transport=usb-jtag");
-#endif
+    char payload[1152] = {};
+    char transport_info[160] = {};
+    unsigned endpoints = 0;
+    for (const auto& session : s_sessions) if (session.enabled) ++endpoints;
+    if (TransportIsUart(CurrentSession().transport))
+        snprintf(transport_info, sizeof(transport_info),
+                 ";transport=uart;uart_baud=%u;uart_rx_buffer=%u;uart_rx_fifo_threshold=%d;transport_sessions=%u",
+                 TransportBaudRate(CurrentSession().transport), TransportUartRxCapacity(),
+                 TransportUartRxFifoThreshold(), endpoints);
+    else
+        snprintf(transport_info, sizeof(transport_info), ";transport=%s;transport_sessions=%u",
+                 TransportName(CurrentSession().transport), endpoints);
     const char* kTestCapabilities =
 #if CONFIG_PXADB_TEST_CONTROL
         TestControlAvailable()
@@ -1993,15 +1933,21 @@ void HandlePerf(unsigned long sequence, char* const* arguments,
 }
 #endif
 
+bool InputSessionActive(const InputCommand& command) {
+    return command.session_id < kSessionCount && s_sessions[command.session_id].active.load() &&
+           s_sessions[command.session_id].generation.load() == command.session_generation;
+}
+
 void SendInputAck(const InputCommand& command, const char* status) {
-    if (command.request_sequence == 0) return;
+    if (!command.request_sequence || !InputSessionActive(command)) return;
+    auto& session = s_sessions[command.session_id];
     char payload[112] = {};
     snprintf(payload, sizeof(payload),
              "event=%u;device_us=%" PRIu64 ";log_ms=%u;status=%s",
              static_cast<unsigned>(command.event_sequence),
              static_cast<uint64_t>(esp_timer_get_time()),
              static_cast<unsigned>(esp_log_timestamp()), status);
-    SendFrame(command.request_sequence, "OK", payload);
+    SendFrameTo(session, command.request_sequence, "OK", payload, command.session_generation);
 }
 
 bool QueueInput(const InputCommand& requested, const char** error) {
@@ -2011,6 +1957,12 @@ bool QueueInput(const InputCommand& requested, const char** error) {
     MailboxPushResult result = MailboxPushResult::kFull;
     bool valid = true;
     portENTER_CRITICAL(&s_input_lock);
+    if (s_input_cancel_pending.load() || (command.kind != InputCommandKind::kSync &&
+        s_input_owner != kNoSession && s_input_owner != command.session_id)) {
+        portEXIT_CRITICAL(&s_input_lock);
+        *error = "input_session_busy";
+        return false;
+    }
     next_state = s_accepted_pointer;
     if (command.kind == InputCommandKind::kPointer) {
         valid = command.pointer_id < s_test_control.max_pointers &&
@@ -2027,6 +1979,7 @@ bool QueueInput(const InputCommand& requested, const char** error) {
         result = s_input_mailbox.Push(command, &replaced);
         if (result != MailboxPushResult::kFull) {
             s_accepted_pointer = next_state;
+            if (command.kind != InputCommandKind::kSync) s_input_owner = command.session_id;
         }
     }
     portEXIT_CRITICAL(&s_input_lock);
@@ -2043,12 +1996,17 @@ bool QueueInput(const InputCommand& requested, const char** error) {
     return true;
 }
 
-void QueueSessionCancel() {
-    InputCommand command;
-    command.kind = InputCommandKind::kCancel;
-    command.event_sequence = s_next_input_event.fetch_add(1);
-    const char* error = nullptr;
-    (void)QueueInput(command, &error);
+void QueueSessionCancel(uint8_t session = kNoSession) {
+    struct Caller {
+        Caller() { s_input_cancel_callers.fetch_add(1); }
+        ~Caller() { s_input_cancel_callers.fetch_sub(1); }
+    } caller;
+    if (!s_running.load()) return;
+    portENTER_CRITICAL(&s_input_lock);
+    const bool owned = session == kNoSession || s_input_owner == session;
+    if (owned) s_input_cancel_pending.store(true);
+    portEXIT_CRITICAL(&s_input_lock);
+    if (owned && s_input_signal) xSemaphoreGive(s_input_signal);
 }
 
 void HandleSystemInputTakeover(void*) {
@@ -2075,6 +2033,7 @@ void SendInputCapabilities(unsigned long sequence) {
         SendFrame(sequence, "ERR", "input_unavailable");
         return;
     }
+    if (!CurrentSession().active.load()) { SendFrame(sequence, "ERR", "hello_required"); return; }
     char payload[256] = {};
     uint16_t width, height;
     TestControlDisplaySize(width, height);
@@ -2094,6 +2053,7 @@ void SendInputCapabilities(unsigned long sequence) {
 
 void HandleInput(unsigned long sequence, char* const* arguments,
                  size_t argument_count) {
+    if (!CurrentSession().active.load()) { SendFrame(sequence, "ERR", "hello_required"); return; }
     if (argument_count == 0 || arguments[0] == nullptr) {
         SendFrame(sequence, "ERR", "invalid_input");
         return;
@@ -2109,6 +2069,8 @@ void HandleInput(unsigned long sequence, char* const* arguments,
     uint16_t width, height;
     TestControlDisplaySize(width, height);
     InputCommand command;
+    command.session_id = CurrentSessionIndex();
+    command.session_generation = CurrentSession().generation.load();
     command.request_sequence = static_cast<uint32_t>(sequence);
     command.event_sequence = s_next_input_event.fetch_add(1);
 
@@ -2558,8 +2520,8 @@ void HandlePackageInstallVolume(unsigned long sequence,const char* epoch_text,co
         !DecodeFsPath(source_text,relative,sizeof(relative),source,sizeof(source))) {
         SendFrame(sequence,"ERR","invalid_install_placement");return;
     }
-    const bool owned=s_file_upload.stream && s_file_upload.stream_epoch;
-    if(owned && (s_file_upload.remaining || s_file_upload.stream_epoch!=epoch || strcmp(source,s_file_upload.destination))) {
+    const bool owned=CurrentSession().upload.stream && CurrentSession().upload.stream_epoch;
+    if(owned && (CurrentSession().upload.remaining || CurrentSession().upload.stream_epoch!=epoch || strcmp(source,CurrentSession().upload.destination))) {
         SendFrame(sequence,"ERR","stream_install_not_ready");return;
     }
     const int32_t status=pxa_host_install_package_file_on_volume(source,uint64_t(epoch));
@@ -2783,6 +2745,19 @@ void SendLogHistory(unsigned long sequence) {
     }
 }
 
+void ResetControlSession(bool connected) {
+#if CONFIG_PXADB_TEST_CONTROL
+    QueueSessionCancel(CurrentSessionIndex());
+#endif
+    if (CurrentSession().generation.fetch_add(1) == UINT32_MAX) CurrentSession().generation.store(1);
+    CurrentSession().active.store(connected);
+    CurrentSession().unlock_expiry_us.store(0);
+    DisableLogCapture();
+    if (CurrentSession().log_queue) xQueueReset(CurrentSession().log_queue);
+    CurrentSession().dropped_logs.store(0);
+    AbortTransfers();
+}
+
 void HandleCommand(char* line) {
     char* save = nullptr;
     char* protocol = strtok_r(line, " ", &save);
@@ -2805,7 +2780,7 @@ void HandleCommand(char* line) {
     char* end = nullptr;
     const unsigned long sequence = strtoul(sequence_text, &end, 10);
     if (end == sequence_text || *end != '\0') return;
-    s_last_control_activity_us.store(
+    CurrentSession().last_activity_us.store(
         static_cast<uint64_t>(esp_timer_get_time()), std::memory_order_relaxed);
 
     if (!PackageTransfersReady(command)) {
@@ -2813,20 +2788,15 @@ void HandleCommand(char* line) {
         return;
     }
 
+    if (!AdmitMutation(sequence, command, argument)) return;
     if (strcmp(command, "HELLO") == 0) {
-        AbortTransfers();
+        ResetControlSession(true);
         SendHello(sequence);
-        if (!s_control_session_active.exchange(true)) {
-            ESP_LOGI(kTag, "PXADB control session connected");
-        }
+        ESP_LOGI(kTag, "PXADB %s control session connected", TransportName(CurrentSession().transport));
     } else if (strcmp(command, "BYE") == 0) {
-        AbortTransfers();
-#if CONFIG_PXADB_TEST_CONTROL
-        QueueSessionCancel();
-#endif
-        s_control_session_active.store(false);
+        ResetControlSession(false);
         SendFrame(sequence, "OK", "disconnected");
-        ESP_LOGI(kTag, "PXADB control session disconnected");
+        ESP_LOGI(kTag, "PXADB %s control session disconnected", TransportName(CurrentSession().transport));
     } else if (strcmp(command, "PING") == 0) {
         SendFrame(sequence, "OK", "pong");
     } else if (strcmp(command, "INTERACTION") == 0) {
@@ -2896,7 +2866,7 @@ void HandleCommand(char* line) {
         HandlePerf(sequence, arguments, argument_count);
 #endif
     } else if (strcmp(command, "LOGSUB") == 0) {
-        s_dropped_logs.store(0);
+        CurrentSession().dropped_logs.store(0);
         EnableLogCapture();
         SendLogHistory(sequence);
         SendFrame(sequence, "OK", "subscribed");
@@ -3055,11 +3025,19 @@ void HandleCommand(char* line) {
     } else {
         SendFrame(sequence, "ERR", "unknown_command");
     }
+    if (!strcmp(command, "PACKAGE") && argument &&
+        (!strcmp(argument, "publish") || !strcmp(argument, "deploy") ||
+         !strcmp(argument, "install") || !strcmp(argument, "install-volume") ||
+         !strcmp(argument, "cache-import"))) {
+        CurrentSession().package_staging = false;
+        AbortFileUpload();
+    }
+    ReleaseMutationIfIdle();
 }
 
 void SendPendingLogs() {
-    if (!s_log_subscribed.load() || s_log_queue == nullptr) return;
-    const uint32_t dropped = s_dropped_logs.exchange(0);
+    if (!CurrentSession().log_subscribed.load() || CurrentSession().log_queue == nullptr) return;
+    const uint32_t dropped = CurrentSession().dropped_logs.exchange(0);
     if (dropped > 0) {
         char payload[64] = {};
         snprintf(payload, sizeof(payload), "dropped=%u", static_cast<unsigned>(dropped));
@@ -3067,7 +3045,7 @@ void SendPendingLogs() {
     }
     for (int index = 0; index < 4; ++index) {
         LogRecord record = {};
-        if (xQueueReceive(s_log_queue, &record, 0) != pdTRUE) break;
+        if (xQueueReceive(CurrentSession().log_queue, &record, 0) != pdTRUE) break;
         char payload[kMaxLogFramePayload] = {};
         const int length = snprintf(
             payload, sizeof(payload), "%u\t%.*s",
@@ -3119,7 +3097,7 @@ bool CancelPointers(PointerState* state, uint16_t* delivered) {
 
 void DelayUntil(TickType_t target) {
     constexpr TickType_t kMaximumSlice = pdMS_TO_TICKS(20);
-    while (s_running.load()) {
+    while (s_running.load() && !s_input_cancel_pending.load()) {
         const TickType_t now = xTaskGetTickCount();
         if (now >= target) return;
         const TickType_t remaining = target - now;
@@ -3129,6 +3107,7 @@ void DelayUntil(TickType_t target) {
 
 bool ExecuteInput(const InputCommand& command, PointerState* pointer,
                   uint16_t* delivered) {
+    if (s_input_cancel_pending.load()) return false;
     if (command.kind == InputCommandKind::kPointer) {
         return ExecutePointer(pointer, delivered,
                               command.pointer_action, command.x, command.y,
@@ -3178,15 +3157,17 @@ bool ExecuteInput(const InputCommand& command, PointerState* pointer,
         const TickType_t target = xTaskGetTickCount() +
                                   pdMS_TO_TICKS(command.duration_ms);
         DelayUntil(target);
+        if (s_input_cancel_pending.load()) return false;
         return ExecutePointer(pointer, delivered, PointerAction::kUp,
                               command.x, command.y, command.pointer_id);
     }
 
     const TickType_t started = xTaskGetTickCount();
-    for (uint16_t step = 1; step <= command.steps && s_running.load(); ++step) {
+    for (uint16_t step = 1; step <= command.steps && s_running.load() && !s_input_cancel_pending.load(); ++step) {
         const TickType_t target = started + pdMS_TO_TICKS(
             static_cast<uint32_t>(command.duration_ms) * step / command.steps);
         DelayUntil(target);
+        if (s_input_cancel_pending.load()) return false;
         const uint16_t x = InterpolateCoordinate(
             command.x, command.end_x, step, command.steps);
         const uint16_t y = InterpolateCoordinate(
@@ -3196,7 +3177,7 @@ bool ExecuteInput(const InputCommand& command, PointerState* pointer,
             return false;
         }
     }
-    return ExecutePointer(pointer, delivered, PointerAction::kUp,
+    return !s_input_cancel_pending.load() && ExecutePointer(pointer, delivered, PointerAction::kUp,
                           command.end_x, command.end_y, command.pointer_id);
 }
 
@@ -3208,10 +3189,22 @@ void PxadbInputTask(void*) {
     while (s_running.load()) {
         (void)xSemaphoreTake(s_input_signal, pdMS_TO_TICKS(50));
         InputCommand command;
-        while (s_running.load() && TakeInput(&command)) {
-            const bool success = ExecuteInput(command, &pointer, &delivered);
+        if (s_input_cancel_pending.load()) {
+            while (TakeInput(&command)) SendInputAck(command, "cancelled");
+            (void)CancelPointers(&pointer, &delivered);
+            if (s_test_control.cancel_controller)
+                s_test_control.cancel_controller(s_test_control.context);
+            controller_active = false;
+            portENTER_CRITICAL(&s_input_lock);
+            s_accepted_pointer.Reset();
+            s_input_owner = kNoSession;
+            s_input_cancel_pending.store(false);
+            portEXIT_CRITICAL(&s_input_lock);
+        }
+        while (s_running.load() && !s_input_cancel_pending.load() && TakeInput(&command)) {
+            const bool success = InputSessionActive(command) && ExecuteInput(command, &pointer, &delivered);
             if (success && command.kind == InputCommandKind::kController)
-                controller_active = true;
+                controller_active = command.connected && command.buttons != 0;
             if (command.kind == InputCommandKind::kCancel ||
                 command.kind == InputCommandKind::kKey) controller_active = false;
             last_activity_us = static_cast<uint64_t>(esp_timer_get_time());
@@ -3235,6 +3228,11 @@ void PxadbInputTask(void*) {
             ResetAcceptedPointer();
             ESP_LOGW(kTag, "Synthetic input cancelled after input timeout");
         }
+        if (!pointer.pressed() && !controller_active) {
+            portENTER_CRITICAL(&s_input_lock);
+            if (!s_input_mailbox.size()) s_input_owner = kNoSession;
+            portEXIT_CRITICAL(&s_input_lock);
+        }
     }
     if (pointer.pressed()) {
         (void)CancelPointers(&pointer, &delivered);
@@ -3247,82 +3245,67 @@ void PxadbInputTask(void*) {
 }
 #endif
 
-struct ControlParser {
-    char command[kMaxCommandLength];
-    uint8_t input[512];
-};
-
-void PxadbTask(void* argument) {
-    auto* parser = static_cast<ControlParser*>(argument);
-    AbortTransfers();
-    char* command = parser->command;
-    size_t command_length = 0;
-    bool discarding_command = false;
-    uint8_t* input = parser->input;
-    while (s_running.load()) {
-        const int received = TransportRead(input, sizeof(parser->input), kTransportReadPollMs);
-        if (received <= 0) {
-            if (s_bulk.bytes && static_cast<uint64_t>(esp_timer_get_time()) - s_bulk.last_us > 10000000u) {
-                const unsigned long sequence = s_bulk.sequence;
-                const bool partial=s_bulk.used!=0;
-                if(s_bulk.fast) {AbortFileUpload();s_bulk.draining=partial;}
-                else {free(s_bulk.bytes);s_bulk.bytes=nullptr;s_bulk.draining=true;}
-                SendFrame(sequence, "ERR", "bulk_timeout");
-            }
-            SendPendingLogs();
-            TryDiscardPackageTransfers();
-            const uint64_t now_us = static_cast<uint64_t>(esp_timer_get_time());
-            const uint64_t last_us = s_last_control_activity_us.load(
-                std::memory_order_relaxed);
-            if (s_control_session_active.load() && last_us != 0 &&
-                now_us - last_us >=
-                    static_cast<uint64_t>(kSessionIdleTimeoutMs) * 1000u) {
-                s_control_session_active.store(false);
-                AbortTransfers();
-#if CONFIG_PXADB_TEST_CONTROL
-                QueueSessionCancel();
-#endif
-                ESP_LOGI(kTag, "PXADB control session timed out");
-            }
-            continue;
+bool PollControlSession(Session& session) {
+    s_current_session = &session;
+    auto* parser = session.parser;
+    const int received = TransportRead(session.transport, parser->input, sizeof(parser->input), 0);
+    if (received <= 0) {
+        if (session.bulk.bytes && static_cast<uint64_t>(esp_timer_get_time()) - session.bulk.last_us > 10000000u) {
+            const unsigned long sequence = session.bulk.sequence;
+            const bool partial = session.bulk.used != 0;
+            if (session.bulk.fast) { AbortFileUpload(); session.bulk.draining = partial; }
+            else { free(session.bulk.bytes); session.bulk.bytes = nullptr; session.bulk.draining = true; }
+            SendFrame(sequence, "ERR", "bulk_timeout");
         }
+        const uint64_t last_us = session.last_activity_us.load();
+        const auto now = static_cast<uint64_t>(esp_timer_get_time());
+        if (session.active.load() && last_us && now - last_us >= uint64_t(kSessionIdleTimeoutMs) * 1000u) {
+            ResetControlSession(false);
+            parser->command_length = 0;
+            parser->discarding = false;
+            ESP_LOGI(kTag, "PXADB %s control session timed out", TransportName(session.transport));
+        }
+    } else {
         for (int index = 0; index < received; ++index) {
-            const size_t consumed = ConsumeFsBulk(input + index, received - index);
-            if (consumed) { index += static_cast<int>(consumed) - 1; continue; }
-            // Zero is the bulk resynchronization delimiter, never command text.
-            if (input[index] == 0) { command_length = 0; discarding_command = false; continue; }
-            const char character = static_cast<char>(input[index]);
+            const size_t consumed = ConsumeFsBulk(parser->input + index, received - index);
+            if (consumed) { index += static_cast<int>(consumed) - 1; ReleaseMutationIfIdle(); continue; }
+            const char character = static_cast<char>(parser->input[index]);
+            if (!character) { parser->command_length = 0; parser->discarding = false; continue; }
             if (character == '\r') continue;
             if (character == '\n') {
-                if (!discarding_command && command_length > 0) {
-                    command[command_length] = '\0';
-                    HandleCommand(command);
-                    // Time spent downloading/verifying a package is active
-                    // work. Give the host a full idle window after the reply.
-                    s_last_control_activity_us.store(
-                        static_cast<uint64_t>(esp_timer_get_time()), std::memory_order_relaxed);
+                if (!parser->discarding && parser->command_length) {
+                    parser->command[parser->command_length] = '\0';
+                    HandleCommand(parser->command);
+                    session.last_activity_us.store(static_cast<uint64_t>(esp_timer_get_time()));
                 }
-                command_length = 0;
-                discarding_command = false;
-            } else if (discarding_command) {
-                continue;
-            } else if (command_length + 1 < sizeof(parser->command)) {
-                command[command_length++] = character;
-            } else {
-                command_length = 0;
-                discarding_command = true;
+                parser->command_length = 0;
+                parser->discarding = false;
+            } else if (!parser->discarding) {
+                if (parser->command_length + 1 < sizeof(parser->command))
+                    parser->command[parser->command_length++] = character;
+                else { parser->command_length = 0; parser->discarding = true; }
             }
         }
-        if (!s_bulk.bytes && !s_bulk.draining) SendPendingLogs();
     }
-    ResetBulkUpload();
-    if (s_control_session_active.exchange(false)) {
-#if CONFIG_PXADB_TEST_CONTROL
-        QueueSessionCancel();
-#endif
-        ESP_LOGI(kTag, "PXADB control session stopped");
+    if (!session.bulk.bytes && !session.bulk.draining) SendPendingLogs();
+    TryDiscardPackageTransfers();
+    return received > 0;
+}
+
+void PxadbTask(void*) {
+    // One task and one bounded parser per endpoint: long device operations
+    // serialize, but a partial line/bulk body never blocks the other endpoint.
+    while (s_running.load()) {
+        bool received = false;
+        for (auto& session : s_sessions)
+            if (session.enabled) received = PollControlSession(session) || received;
+        if (!received) vTaskDelay(1);
     }
-    heap_caps_free(parser);
+    for (auto& session : s_sessions) {
+        s_current_session = &session;
+        ResetControlSession(false);
+    }
+    s_current_session = &s_sessions[0];
     s_task_active.store(false);
     vTaskDelete(nullptr);
 }
@@ -3349,54 +3332,54 @@ void PxadbAutostartTask(void*) {
 
 void CleanupService(bool cancel_autostart) {
     if (cancel_autostart) s_autostart_cancelled.store(true);
-    if (!s_running.exchange(false)) return;
+    s_running.store(false);
 #if CONFIG_PXADB_TEST_CONTROL
-    if (s_test_control.set_input_takeover_callback != nullptr) {
-        s_test_control.set_input_takeover_callback(s_test_control.context,
-                                                   nullptr, nullptr);
-    }
-#endif
-    DisableLogCapture();
-#if CONFIG_PXADB_TEST_CONTROL
-    if (s_input_signal != nullptr) xSemaphoreGive(s_input_signal);
+    if (s_test_control.set_input_takeover_callback)
+        s_test_control.set_input_takeover_callback(s_test_control.context, nullptr, nullptr);
+    if (s_input_signal) xSemaphoreGive(s_input_signal);
 #endif
     const TickType_t started = xTaskGetTickCount();
     while ((s_task_active.load()
 #if CONFIG_PXADB_TEST_CONTROL
-            || s_input_task_active.load()
+            || s_input_task_active.load() || s_input_cancel_callers.load()
 #endif
-            ) &&
-           xTaskGetTickCount() - started < pdMS_TO_TICKS(3500)) {
-        vTaskDelay(1);
-    }
-    const bool tasks_stopped = !s_task_active.load()
+            ) && xTaskGetTickCount() - started < pdMS_TO_TICKS(3500)) vTaskDelay(1);
+    if (s_task_active.load()
 #if CONFIG_PXADB_TEST_CONTROL
-                               && !s_input_task_active.load()
+        || s_input_task_active.load() || s_input_cancel_callers.load()
 #endif
-        ;
-    if (!tasks_stopped) {
-        ESP_LOGE(kTag, "PXADB tasks did not stop; retaining synchronization objects");
+    ) {
+        ESP_LOGE(kTag, "PXADB tasks did not stop; retaining session resources");
         return;
     }
-    if (s_log_queue != nullptr) {
-        vQueueDelete(s_log_queue);
-        s_log_queue = nullptr;
+    for (auto& session : s_sessions) {
+        s_current_session = &session;
+        ResetControlSession(false);
     }
-    if (s_tx_mutex != nullptr) {
-        vSemaphoreDelete(s_tx_mutex);
-        s_tx_mutex = nullptr;
+    const auto log_started = xTaskGetTickCount();
+    while (s_log_writers.load() && xTaskGetTickCount() - log_started < pdMS_TO_TICKS(1000))
+        vTaskDelay(1);
+    if (s_log_writers.load()) return; // No queue can outlive an in-flight producer.
+    for (auto& session : s_sessions) {
+        if (session.log_queue) vQueueDelete(session.log_queue);
+        session.log_queue = nullptr;
+        heap_caps_free(session.parser);
+        session.parser = nullptr;
+        session.enabled = false;
     }
+    s_current_session = &s_sessions[0];
+    if (s_tx_mutex) vSemaphoreDelete(s_tx_mutex);
+    s_tx_mutex = nullptr;
 #if CONFIG_PXADB_TEST_CONTROL
-    if (s_input_signal != nullptr) {
-        vSemaphoreDelete(s_input_signal);
-        s_input_signal = nullptr;
-    }
+    if (s_input_signal) vSemaphoreDelete(s_input_signal);
+    s_input_signal = nullptr;
     portENTER_CRITICAL(&s_input_lock);
     s_input_mailbox.Clear();
     s_accepted_pointer.Reset();
+    s_input_owner = kNoSession;
+    s_input_cancel_pending.store(false);
     portEXIT_CRITICAL(&s_input_lock);
 #endif
-    AbortTransfers();
 }
 
 }  // namespace
@@ -3471,57 +3454,57 @@ esp_err_t ConfigurePowerControl(const PowerControlAdapter* adapter) {
 
 esp_err_t Start() {
     if (s_running.load()) return ESP_OK;
-    const esp_err_t transport_err = TransportStart();
-    if (transport_err != ESP_OK) return transport_err;
-    s_log_queue = xQueueCreateWithCaps(
-        kLogQueueDepth, sizeof(LogRecord),
-        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (s_log_queue == nullptr) {
-        ESP_LOGW(kTag, "PXADB log queue allocation failed");
-        return ESP_ERR_NO_MEM;
+    if (s_task_active.load()
+#if CONFIG_PXADB_TEST_CONTROL
+        || s_input_task_active.load() || s_input_cancel_callers.load()
+#endif
+    ) return ESP_ERR_INVALID_STATE;
+    // A previous long operation may have outlived Stop's bounded wait.
+    if (s_tx_mutex || s_sessions[0].log_queue || s_sessions[0].parser)
+        CleanupService(false);
+    if (s_log_writers.load()) return ESP_ERR_INVALID_STATE;
+    bool available = false;
+    esp_err_t last_error = ESP_ERR_INVALID_STATE;
+    for (size_t index = 0; index < kSessionCount; ++index) {
+        auto& session = s_sessions[index];
+        session.transport = index == 0 ? Transport::kPrimary : Transport::kUart;
+        last_error = TransportStart(session.transport);
+        session.enabled = last_error == ESP_OK;
+        available = available || session.enabled;
+        if (!session.enabled)
+            ESP_LOGW(kTag, "PXADB %s unavailable: %s", TransportName(session.transport), esp_err_to_name(last_error));
+    }
+    if (!available) return last_error;
+    s_running.store(true);
+    for (auto& session : s_sessions) {
+        if (!session.enabled) continue;
+        session.log_queue = xQueueCreateWithCaps(kLogQueueDepth, sizeof(LogRecord),
+                                                 MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        session.parser = static_cast<ControlParser*>(heap_caps_calloc(
+            1, sizeof(ControlParser), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!session.parser) session.parser = static_cast<ControlParser*>(heap_caps_calloc(
+            1, sizeof(ControlParser), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        if (!session.log_queue || !session.parser) {
+            CleanupService(false);
+            return ESP_ERR_NO_MEM;
+        }
     }
     s_tx_mutex = xSemaphoreCreateMutexStatic(&s_tx_mutex_storage);
-    if (s_tx_mutex == nullptr) {
-        vQueueDelete(s_log_queue);
-        s_log_queue = nullptr;
-        return ESP_ERR_NO_MEM;
-    }
+    if (!s_tx_mutex) { CleanupService(false); return ESP_ERR_NO_MEM; }
 #if CONFIG_PXADB_TEST_CONTROL
     s_input_signal = xSemaphoreCreateBinaryStatic(&s_input_signal_storage);
-    if (s_input_signal == nullptr) {
-        vQueueDelete(s_log_queue);
-        s_log_queue = nullptr;
-        vSemaphoreDelete(s_tx_mutex);
-        s_tx_mutex = nullptr;
-        return ESP_ERR_NO_MEM;
-    }
+    if (!s_input_signal) { CleanupService(false); return ESP_ERR_NO_MEM; }
     portENTER_CRITICAL(&s_input_lock);
     s_input_mailbox.Clear();
     s_accepted_pointer.Reset();
+    s_input_owner = kNoSession;
+    s_input_cancel_pending.store(false);
     portEXIT_CRITICAL(&s_input_lock);
 #endif
-    s_running.store(true);
-    // These buffers are used by the control task only, outside flash/cache
-    // critical sections. Keep them off its internal-only filesystem stack.
-    auto* parser = static_cast<ControlParser*>(heap_caps_calloc(
-        1, sizeof(ControlParser), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (!parser) parser = static_cast<ControlParser*>(heap_caps_calloc(
-        1, sizeof(ControlParser), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-    if (!parser) {
-        CleanupService(false);
-        return ESP_ERR_NO_MEM;
-    }
     s_task_active.store(true);
-    if (xTaskCreateWithCaps(PxadbTask, "pxadbd", kTaskStackSize, parser, 4,
-                            nullptr, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
+    if (xTaskCreateWithCaps(PxadbTask, "pxadbd", kTaskStackSize, nullptr, 4,
+                           nullptr, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
         s_task_active.store(false);
-        heap_caps_free(parser);
-        ESP_LOGW(kTag,
-                 "PXADB control task allocation failed: free_sram=%u largest_sram=%u",
-                 static_cast<unsigned>(heap_caps_get_free_size(
-                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
-                 static_cast<unsigned>(heap_caps_get_largest_free_block(
-                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
         CleanupService(false);
         return ESP_ERR_NO_MEM;
     }

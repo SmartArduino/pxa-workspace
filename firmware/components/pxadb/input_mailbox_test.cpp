@@ -164,4 +164,20 @@ int main() {
     assert(mailbox.Take(&event) && event.buttons == 16 && event.connected);
     assert(mailbox.Take(&event) && event.kind == InputCommandKind::kSync);
     assert(mailbox.Take(&event) && event.kind == InputCommandKind::kController && !event.buttons);
+    // An endpoint or reconnect generation must never replace another
+    // session's pending MOVE, even when both use pointer zero.
+    event.kind = InputCommandKind::kPointer;
+    event.pointer_action = PointerAction::kMove;
+    event.pointer_id = 0;
+    event.session_id = 0; event.session_generation = 1; event.x = 10;
+    assert(mailbox.Push(event) == MailboxPushResult::kQueued);
+    event.session_id = 1; event.x = 20;
+    assert(mailbox.Push(event) == MailboxPushResult::kQueued);
+    event.session_generation = 2; event.x = 30;
+    assert(mailbox.Push(event) == MailboxPushResult::kQueued);
+    event.x = 40;
+    assert(mailbox.Push(event) == MailboxPushResult::kCoalesced);
+    assert(mailbox.Take(&event) && event.session_id == 0 && event.x == 10);
+    assert(mailbox.Take(&event) && event.session_id == 1 && event.session_generation == 1 && event.x == 20);
+    assert(mailbox.Take(&event) && event.session_generation == 2 && event.x == 40);
 }
