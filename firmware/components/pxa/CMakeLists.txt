@@ -176,7 +176,9 @@ set(PXA_PRIV_REQUIRES
     freertos)
 list(APPEND PXA_PRIV_REQUIRES lz4)
 set(PXA_REQUIRES lvgl esp_timer esp_mm pxa_render_accel pxa_board_api)
-idf_build_get_property(PXA_WIFI_LOCATION_ENABLED PXA_ENABLE_WIFI_LOCATION)
+# CMake treats <CONFIG>_LOCATION as an imported target location property.
+# Keep the public option name, but use a regular boolean build property.
+idf_build_get_property(PXA_WIFI_LOCATION_ENABLED PXA_WIFI_LOCATION_ENABLED)
 get_filename_component(PXA_WIFI_LOCATION_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../extensions/wifi-location" ABSOLUTE)
 if(PXA_WIFI_LOCATION_ENABLED)
     list(APPEND PXA_SRCS "${PXA_WIFI_LOCATION_ROOT}/src/wifi_location.c" "src/services/pxa_esp_wifi_location.cc")

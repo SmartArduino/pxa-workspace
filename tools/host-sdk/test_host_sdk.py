@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -14,6 +15,31 @@ spec.loader.exec_module(sdk)
 
 
 class HostSdkTest(unittest.TestCase):
+    def test_optional_wifi_flag_is_a_boolean_on_the_idf_imported_target(self):
+        if shutil.which('cmake') is None:
+            self.skipTest('CMake unavailable')
+        upstream = Path(__file__).resolve().parents[2]
+        component = (upstream / 'firmware/components/pxa/CMakeLists.txt').read_text()
+        flag = re.search(r'idf_build_get_property\(PXA_WIFI_LOCATION_ENABLED\s+(\w+)\)', component)[1]
+        project = (upstream / 'firmware/CMakeLists.txt').read_text()
+        self.assertIn(f'idf_build_set_property({flag} "${{PXA_ENABLE_WIFI_LOCATION}}")', project)
+        source = self.base / 'wifi-flag'
+        source.mkdir()
+        (source / 'CMakeLists.txt').write_text(f'''cmake_minimum_required(VERSION 3.16)
+project(wifi_flag NONE)
+add_library(__idf_build_target STATIC IMPORTED GLOBAL)
+set_property(TARGET __idf_build_target PROPERTY IMPORTED_LOCATION /stub)
+foreach(expected OFF ON)
+    set_property(TARGET __idf_build_target PROPERTY {flag} ${{expected}})
+    get_property(actual TARGET __idf_build_target PROPERTY {flag})
+    if(NOT "${{actual}}" STREQUAL "${{expected}}")
+        message(FATAL_ERROR "Boolean flag returned ${{actual}} instead of ${{expected}}")
+    endif()
+endforeach()
+''')
+        result = subprocess.run(['cmake', '-S', str(source), '-B', str(self.base / 'flag-build')], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
