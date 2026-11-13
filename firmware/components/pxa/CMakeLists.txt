@@ -3,6 +3,7 @@
 # include paths and linked components.
 set(PXA_SRCS
     "src/runtime/pxa_host.c"
+    "src/runtime/pxa_host_interaction.c"
     "src/runtime/pxa_host_activation_arena.c"
     "src/runtime/pxa_host_clock_slots.c"
     "src/runtime/pxa_host_pointer_mailbox.c"

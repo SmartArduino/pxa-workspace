@@ -61,6 +61,7 @@ extern "C" unsigned pxadb_uart_rx_buffer_capacity(void);
 
 #if CONFIG_PXA_ENABLED
 #include "pxa/pxa_host.h"
+#include "pxa/pxa_host_interaction.h"
 #include "pxa/pxa_container_stream.h"
 #include "pxa/pxa_esp_surface.h"
 #include "pxa/pxa_esp_storage.h"
@@ -1644,7 +1645,7 @@ void SendHello(unsigned long sequence) {
         "";
 #endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;max_fast=3840;package_stream=2;package_legacy=%u;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;package_legacy_update_volume=1;package_location=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
+             "protocol=1;mode=normal;capabilities=interaction-info,info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;max_fast=3840;package_stream=2;package_legacy=%u;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;package_legacy_update_volume=1;package_location=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
              kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability, kGrayCapability, kUiCapability, kRuntimeCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
              static_cast<unsigned>(PXA_ENABLE_LEGACY_CONTAINER),
@@ -1652,6 +1653,8 @@ void SendHello(unsigned long sequence) {
              transport_info);
     SendFrame(sequence, "OK", payload);
 }
+
+#include "pxadb/pxadb_interaction_handler.inc"
 
 void SendInfo(unsigned long sequence) {
     const esp_app_desc_t* app = esp_app_get_description();
@@ -2826,6 +2829,9 @@ void HandleCommand(char* line) {
         ESP_LOGI(kTag, "PXADB control session disconnected");
     } else if (strcmp(command, "PING") == 0) {
         SendFrame(sequence, "OK", "pong");
+    } else if (strcmp(command, "INTERACTION") == 0) {
+        if (argument_count == 1 && strcmp(argument,"INFO") == 0) SendInteractionInfo(sequence);
+        else SendFrame(sequence,"ERR","invalid_interaction_command");
     } else if (strcmp(command, "INFO") == 0) {
         SendInfo(sequence);
     } else if (strcmp(command,"RUNTIME") == 0) {

@@ -353,11 +353,14 @@ class PxaDbClient:
         except ValueError:
             raise PxaDbError("PXADB_BAUD must be an integer baud rate")
         self.upload_profile = serial_upload_profile(port)
+        control_profile = os.environ.get("PXADB_SERIAL_PROFILE", "default")
+        if control_profile not in ("default", "mz79"):
+            raise PxaDbError("PXADB_SERIAL_PROFILE must be default or mz79")
         self._usb_awake_fd = _hold_usb_awake(port)
         serial_port = None
         try:
             serial_port = serial.Serial(
-                None if self.upload_profile == "uart" else port,
+                None if self.upload_profile == "uart" or control_profile == "mz79" else port,
                 baudrate=baudrate,
                 timeout=0.2,
                 # Most PXADB commands fit in one small OS write. In pyserial's finite
@@ -367,7 +370,17 @@ class PxaDbClient:
                 write_timeout=0,
                 exclusive=True,
             )
-            if self.upload_profile == "uart":
+            if control_profile == "mz79":
+                serial_port.dtr = True
+                serial_port.rts = False
+                serial_port.port = port
+                serial_port.open()
+                if sys.platform.startswith("linux"):
+                    import termios
+                    attributes = termios.tcgetattr(serial_port.fileno())
+                    attributes[2] &= ~termios.HUPCL
+                    termios.tcsetattr(serial_port.fileno(), termios.TCSANOW, attributes)
+            elif self.upload_profile == "uart":
                 # USB-UART bridges can wire these modem outputs to EN/BOOT.
                 # Deassert them before opening so a control session keeps the
                 # application running. Native USB retains its DTR behavior.
@@ -1008,6 +1021,46 @@ def runtime_profile(client: PxaDbClient) -> dict:
     return result
 
 
+def interaction_profile(client: PxaDbClient) -> dict:
+    from interaction_contract import MAX_DEVICE_BYTES, decode, validate_device, descriptor_hash
+    if 'interaction-info' not in device_capabilities(client.device_info):
+        return {'status': 'unknown', 'reason': 'legacy_firmware', 'descriptor': None, 'verified': False}
+    frames = client.request('INTERACTION INFO')
+    if not frames or frames[-1].kind != 'OK':
+        raise ValueError('Incomplete interaction response')
+    end = {}
+    for field in frames[-1].payload.split(';'):
+        if '=' not in field:
+            raise ValueError('Invalid interaction response field')
+        key, value = field.split('=', 1)
+        if key in end:
+            raise ValueError('Duplicate interaction response field')
+        end[key] = value
+    chunks = [frame.payload for frame in frames if frame.kind == 'DATA']
+    if end.get('schema') == '0' and not chunks:
+        return {'status': 'unknown', 'reason': 'device_description_missing', 'descriptor': None, 'verified': False}
+    if end.get('schema') != '1' or not end.get('bytes', '').isdecimal() or len(chunks) > 64:
+        raise ValueError('Invalid interaction response schema/size')
+    size = int(end['bytes'])
+    if not 1 <= size <= MAX_DEVICE_BYTES or any(not re.fullmatch(r'hex=(?:[0-9a-f]{2}){1,128}', item) for item in chunks):
+        raise ValueError('Invalid interaction response chunk')
+    data = b''.join(bytes.fromhex(item[4:]) for item in chunks)
+    if len(data) != size:
+        raise ValueError('Truncated interaction descriptor')
+    value = validate_device(decode(data, MAX_DEVICE_BYTES))
+    return {'status': 'declared', 'descriptor': value, 'profile_hash': descriptor_hash(value), 'verified': False}
+
+
+def command_interaction_info(arguments):
+    with open_client(resolve_pxadb_port(arguments.port, arguments.timeout), arguments.timeout) as client:
+        try:
+            result = interaction_profile(client)
+        except (ValueError, KeyError, TypeError) as error:
+            raise PxaDbError('Invalid interaction descriptor: ' + str(error)) from error
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def package_compatibility(client: PxaDbClient, source: pathlib.Path) -> dict:
     from package_compatibility import requirements, evaluate
     try:
@@ -1024,7 +1077,16 @@ def package_compatibility(client: PxaDbClient, source: pathlib.Path) -> dict:
                 if bits not in (12,14,15):
                     raise ValueError('Invalid container block size')
                 container.update(codec=codec,block_bytes=1 << bits)
-        return evaluate(requirements(read_package_manifest(source),container),runtime_profile(client))
+        package = requirements(read_package_manifest(source), container)
+        result = evaluate(package, runtime_profile(client))
+        from interaction_contract import evaluate as evaluate_interaction
+        interaction = evaluate_interaction(package.get('interaction'), interaction_profile(client)['descriptor'])
+        result['interaction'] = interaction
+        result['checks'].append({'subject': 'interaction', 'status': interaction['status'],
+                                 'message': 'Complete physical operation profile: ' + interaction['reason']})
+        states = [item['status'] for item in result['checks']]
+        result['status'] = 'incompatible' if 'incompatible' in states else 'unknown' if 'unknown' in states else 'compatible'
+        return result
     except (ValueError,KeyError,TypeError) as error:
         raise PxaDbError('Invalid package/runtime compatibility data: '+str(error)) from error
 
@@ -2878,6 +2940,8 @@ def add_connection_arguments(parser: argparse.ArgumentParser,
                         help="connect to an authenticated PXADB2 TCP service")
     parser.add_argument("--token", metavar="FILE",
                         help="read the PXADB2 TCP authentication token from FILE")
+    parser.add_argument("--serial-profile", choices=("default", "mz79"),
+                        help="explicit product control-line policy; mz79 keeps DTR set and RTS clear")
     parser.add_argument("--timeout", type=float, default=2.0, help="request timeout in seconds")
     if allow_logcat:
         parser.add_argument(
@@ -2902,6 +2966,9 @@ def build_parser() -> argparse.ArgumentParser:
     runtime = subcommands.add_parser('runtime-info', help='read actual Host ABI/service/engine capabilities; legacy omissions stay unknown')
     add_connection_arguments(runtime)
     runtime.set_defaults(handler=command_runtime_info)
+    interaction = subcommands.add_parser('interaction-info', help='read product-declared physical controls and system reservations')
+    add_connection_arguments(interaction)
+    interaction.set_defaults(handler=command_interaction_info)
     compatibility = subcommands.add_parser('compatibility', help='compare a local signed package with the device without uploading')
     add_connection_arguments(compatibility)
     compatibility.add_argument('package')
@@ -3159,6 +3226,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--baud must be a positive integer")
         # PxaDbClient reads PXADB_BAUD; keep a single source of truth.
         os.environ["PXADB_BAUD"] = str(baud)
+    if getattr(arguments, "serial_profile", None):
+        os.environ["PXADB_SERIAL_PROFILE"] = arguments.serial_profile
     connect = getattr(arguments, "connect", None)
     token_file = getattr(arguments, "token", None)
     if connect:

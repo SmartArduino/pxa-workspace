@@ -543,3 +543,18 @@ pxadb package install dist/my-app.pxa --port /dev/ttyUSB1 --yes --strict-compati
 服务 ID 唯一，数量须匹配；未上报的服务与功能不会当成零。依赖应用权限/卷的 FS 功能位是 `unknown`。
 模拟器使用实际激活配置；没有运行中的 Guest 或旧模拟器不能提供完整信息时返回 `schema=0;reason=...`，
 客户端保留未知。连接失败、报文损坏与重复/缺失记录是错误，不会降为旧版未知结果。
+
+
+## 设备操作描述
+
+`pxadb interaction-info --port PORT` 只读获取厂商固件注册的实体操作方式。
+MZ79 使用 `--serial-profile mz79 --baud 2000000` 选择控制线策略；该选项也可用于
+其他连接命令，或在当前命令环境设置 `PXADB_SERIAL_PROFILE=mz79`。
+它不切换固件、不启动应用，不会从 INPUT 注入掩码推断实体能力。
+未广告 `interaction-info` 的旧固件保留未知，不发送不支持的查询。
+
+应用 `package.json.interaction` 的完整方案签入可选 manifest TLV `0x8015`；
+`compatibility` 同时检查动作、触摸、长按/系统手势和组合键冲突。任一完整方案满足即可，
+资料缺失则未知。默认阻止明确不兼容，严格模式也阻止未知；旧包没有声明会增加操作未知项。
+`verified: false` 表示声明一致性，不能代替实机操作验收。
+字段与厂商接入见系统仓库的 `docs/zh-CN/device-interaction.md`。

@@ -22,7 +22,7 @@ def fields(data, single, repeated=()):
     for raw_tag, value in records(data):
         tag = raw_tag & 0x7fff
         if tag not in single and tag not in repeated:
-            if raw_tag & 0x8000:
+            if not raw_tag & 0x8000:
                 raise ValueError('Unknown required manifest field: ' + str(tag))
             continue
         if tag in repeated:
@@ -55,10 +55,16 @@ def requirements(manifest, container=None):
     major, minor, size = struct.unpack_from('<HHI', manifest, 4)
     if size != len(manifest)-12:
         raise ValueError('Invalid compatibility manifest length')
-    top = fields(manifest[12:], set(range(1,14)), (16,17,18,19,20))
+    for tag, _ in records(manifest[12:]):
+        if tag & 0x7fff == 21 and tag != 0x8015:
+            raise ValueError('Interaction declaration must use the optional wire tag')
+    top = fields(manifest[12:], {*range(1,14), 21}, (16,17,18,19,20))
     result = {'app_id': text(top[2]), 'manifest_version': [major,minor],
               'min_core': number(top[7], '<HH') if 7 in top else None,
               'container': container, 'components': []}
+    if 21 in top:
+        from interaction_contract import decode, validate_app, MAX_APP_BYTES
+        result['interaction'] = validate_app(decode(top[21], MAX_APP_BYTES))
     component_ids = set()
     for raw in top.get(16, []):
         item = fields(raw, (1,2,3), (4,5))

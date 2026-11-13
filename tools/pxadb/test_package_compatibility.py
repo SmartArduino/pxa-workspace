@@ -71,7 +71,7 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(evaluate(self.package,self.host)['status'],'unknown')
 
     def test_parser_rejects_duplicates_truncation_and_required_unknown_fields(self):
-        for extra in (record(7,struct.pack('<HH',2,0)),record(0x807f,b'x'),b'x'):
+        for extra in (record(7,struct.pack('<HH',2,0)),record(0x007f,b'x'),b'x'):
             data=manifest()+extra
             data=data[:8]+struct.pack('<I',len(data)-12)+data[12:]
             with self.assertRaises(ValueError):requirements(data)
@@ -107,7 +107,7 @@ class CompatibilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source=Path(directory);(source/'manifest.pxm').write_bytes(manifest());(source/'signature.pxs').touch()
             arguments=pxadb.build_parser().parse_args(['package','install',str(source),'--port','/dev/test','--yes'])
-            client=Mock();client.__enter__=Mock(return_value=client);client.__exit__=Mock(return_value=False)
+            client=Mock(device_info="");client.__enter__=Mock(return_value=client);client.__exit__=Mock(return_value=False)
             self.host['core']=[2,0]
             with patch.object(pxadb,'open_client',return_value=client), \
                  patch.object(pxadb,'runtime_profile',return_value=self.host), \
