@@ -545,6 +545,14 @@ pxadb package install dist/my-app.pxa --port /dev/ttyUSB1 --yes --strict-compati
 客户端保留未知。连接失败、报文损坏与重复/缺失记录是错误，不会降为旧版未知结果。
 
 
+## 安装拒绝与存储恢复
+
+安装返回 `install_status=-4` 表示拒绝，不能单独证明签名验证失败。若签名包已通过检查，
+而设备应用列表未显示 SD 卡已有的程序，应检查本机密钥与卡上作者/安装记录的绑定。
+换设备或清空平台安全状态可能使旧记录无法认证；CRC 正确不等于本机认证有效。
+保留原程序、记录及 `data` 目录，按[存储恢复边界](../../docs/pxa-storage-layout.zh-CN.md#权威记录与空间)
+诊断并安排恢复，不要用清空存档或重签应用作为通用重试手段。
+
 ## 设备操作描述
 
 `pxadb interaction-info --port PORT` 只读获取厂商固件注册的实体操作方式。
