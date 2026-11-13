@@ -35,7 +35,11 @@ inline void vEventGroupDelete(EventGroupHandle_t g){delete g;}
 inline auto xEventGroupGetBits(EventGroupHandle_t g){return *g;}
 inline auto xEventGroupClearBits(EventGroupHandle_t g,uint32_t b){*g&=~b;return *g;}
 inline auto xEventGroupSetBits(EventGroupHandle_t g,uint32_t b){*g|=b;return *g;}
-inline auto xEventGroupWaitBits(EventGroupHandle_t g,uint32_t,int,int,int){return *g;}
+inline std::function<void()> wait_hook;
+inline auto xEventGroupWaitBits(EventGroupHandle_t g,uint32_t bits,int clear,int,int){
+ if(!(*g&bits) && wait_hook)wait_hook();
+ const auto result=*g;if(clear)*g&=~bits;return result;
+}
 using esp_event_base_t=const char*;
 using esp_event_handler_instance_t=void*;
 using Handler=void(*)(void*,esp_event_base_t,int32_t,void*);
@@ -74,7 +78,8 @@ inline int64_t esp_timer_get_time(){return 1000000;}
 inline int esp_timer_create(const esp_timer_create_args_t*,esp_timer_handle_t* h){*h=new int(0);return ESP_OK;}
 inline int esp_timer_stop(esp_timer_handle_t){return ESP_OK;}
 inline int esp_timer_delete(esp_timer_handle_t h){delete h;return ESP_OK;}
-inline int esp_timer_start_once(esp_timer_handle_t,int64_t){return ESP_OK;}
+inline int scan_rearms=0;
+inline int esp_timer_start_once(esp_timer_handle_t,int64_t){++scan_rearms;return ESP_OK;}
 using nvs_handle_t=int;
 constexpr int NVS_READONLY=0;
 inline int nvs_open(const char*,int,int*){return ESP_FAIL;}
@@ -102,8 +107,10 @@ inline int esp_wifi_start(){return ESP_OK;}
 inline int esp_wifi_set_mode(int){return ESP_OK;}
 inline int esp_wifi_set_max_tx_power(int){return ESP_OK;}
 inline int esp_wifi_set_ps(int){return ESP_OK;}
-inline int esp_wifi_scan_get_ap_num(uint16_t* n){*n=1;return ESP_OK;}
-inline int esp_wifi_scan_get_ap_records(uint16_t*,wifi_ap_record_t* a){*a={};std::strcpy(reinterpret_cast<char*>(a->ssid),"example-net");return ESP_OK;}
+inline std::string visible_ssid="example-net";
+inline int scan_record_reads=0;
+inline int esp_wifi_scan_get_ap_num(uint16_t* n){*n=visible_ssid.empty()?0:1;return ESP_OK;}
+inline int esp_wifi_scan_get_ap_records(uint16_t*,wifi_ap_record_t* a){++scan_record_reads;*a={};std::strcpy(reinterpret_cast<char*>(a->ssid),visible_ssid.c_str());return ESP_OK;}
 inline int esp_wifi_sta_get_ap_info(wifi_ap_record_t* a){*a={};return ESP_OK;}
 using esp_netif_t=int;
 inline auto esp_netif_create_default_wifi_sta(){return new int(0);}
@@ -158,8 +165,44 @@ int main(){
  assert(!station.Connect("", "password"));
  assert(!station.Connect(std::string(33,'x'),"password"));
  }
+ {
+ // A UI refresh can consume the completion of a background scan. Both
+ // callers must receive the same results, and saved APs must still join.
+ auto& saved=SsidManager::GetInstance();
+ saved.AddSsid("doit-6","saved-password");
+ WifiStation station;station.Start();
+ visible_ssid="doit-6";
+ wait_hook=[]{deliver(WIFI_EVENT,WIFI_EVENT_SCAN_DONE,nullptr);};
+ std::vector<WifiNetwork> networks;
+ const int before=radio_connects, reads=scan_record_reads, writes=saves;
+ assert(station.ScanNetworks(&networks,true));
+ assert(networks.size()==1 && networks[0].ssid=="doit-6");
+ assert(radio_connects==before+1); // Regression: previously only the list updated.
+ assert(scan_record_reads==reads+1); // ESP scan records have a single consumer.
+ assert(saves==writes); // Reconnecting must reuse, not rewrite, credentials.
+ assert(std::string(reinterpret_cast<char*>(last_config.sta.password))=="saved-password");
+ const int scans=radio_scans;
+ assert(station.ScanNetworks(&networks,true) && radio_scans==scans);
+ ip_event_got_ip_t ip{};deliver(IP_EVENT,IP_EVENT_STA_GOT_IP,&ip);
+ assert(station.ScanNetworks(&networks,true));
+ assert(station.IsConnected() && radio_connects==before+1);
+ }
+ {
+ // A refresh finding no saved AP must leave a future background attempt.
+ WifiStation station;station.Start();visible_ssid="unknown-hotspot";
+ std::vector<WifiNetwork> networks;
+ const int joins=radio_connects,retries=scan_rearms;
+ assert(station.ScanNetworks(&networks,true));
+ assert(radio_connects==joins && scan_rearms==retries+1);
+ visible_ssid.clear();
+ assert(station.ScanNetworks(&networks,true) && networks.empty());
+ assert(radio_connects==joins && scan_rearms==retries+2);
+ visible_ssid="doit-6";
+ assert(station.ScanNetworks(&networks,true) && radio_connects==joins+1);
+ }
+ wait_hook={};
  assert(registrations.empty());
- puts("Station: asynchronous admission, copied credentials, scan isolation, intentional disconnect, retries, cancellation and recovery passed");
+ puts("Station: saved-network auto join after UI scans, single-consumer results, retry scheduling, association isolation and recovery passed");
 }
 '''
 

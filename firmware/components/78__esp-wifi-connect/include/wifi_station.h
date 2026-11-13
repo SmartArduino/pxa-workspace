@@ -80,7 +80,7 @@ private:
     std::atomic<bool> manual_connect_pending_{false};
     std::atomic<uint32_t> connect_generation_{0};
     bool manual_disconnect_pending_ = false;
-    bool connecting_ = false;
+    std::atomic<bool> connecting_{false};
     esp_netif_t* station_netif_ = nullptr;
     std::string ssid_;
     std::string password_;
@@ -98,15 +98,13 @@ private:
     std::function<void(int reason)> on_disconnected_;
     std::function<void()> on_scan_begin_;
     std::vector<WifiApRecord> connect_queue_;
-    std::vector<WifiNetwork> manual_scan_results_;
     std::vector<WifiNetwork> cached_scan_results_;
     int64_t cached_scan_at_us_ = 0;
     std::mutex manual_scan_mutex_;
-    bool manual_scan_pending_ = false;
     bool was_connected_ = false;  // Track if we were connected before disconnection
 
     void HandleScanResult();
-    void HandleManualScanResult();
+    void ScheduleScan();
     void StartConnect();
     void ConnectNow(const std::string& ssid, const std::string& password);
     static void ControlEventHandler(void*, esp_event_base_t, int32_t, void*);

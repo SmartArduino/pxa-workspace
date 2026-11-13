@@ -92,7 +92,7 @@ bool WifiStation::ScanNetworks(std::vector<WifiNetwork>* networks, bool force_re
         std::lock_guard<std::mutex> lock(manual_scan_mutex_);
         // A scan during association can interrupt the module's connection.
         // Keep the last visible list until the connection attempt completes.
-        if (manual_connect_pending_.load()) {
+        if (manual_connect_pending_.load() || connecting_.load()) {
             *networks = cached_scan_results_;
             return true;
         }
@@ -101,15 +101,11 @@ bool WifiStation::ScanNetworks(std::vector<WifiNetwork>* networks, bool force_re
             *networks = cached_scan_results_;
             return true;
         }
-        manual_scan_results_.clear();
-        manual_scan_pending_ = true;
     }
     xEventGroupClearBits(event_group_, WIFI_EVENT_SCAN_DONE_BIT);
     const esp_err_t result = esp_wifi_scan_start(nullptr, false);
     if (result != ESP_OK && result != ESP_ERR_WIFI_STATE) {
         ESP_LOGW(TAG, "Manual scan failed: %s", esp_err_to_name(result));
-        std::lock_guard<std::mutex> lock(manual_scan_mutex_);
-        manual_scan_pending_ = false;
         return false;
     }
     if (result == ESP_ERR_WIFI_STATE)
@@ -120,7 +116,6 @@ bool WifiStation::ScanNetworks(std::vector<WifiNetwork>* networks, bool force_re
     if ((bits & WIFI_EVENT_SCAN_DONE_BIT) == 0) {
         ESP_LOGW(TAG, "Manual scan timed out");
         std::lock_guard<std::mutex> lock(manual_scan_mutex_);
-        manual_scan_pending_ = false;
         if (!cached_scan_results_.empty() && cached_scan_at_us_ > 0 &&
             esp_timer_get_time() - cached_scan_at_us_ < 5 * 60 * 1000 * 1000) {
             *networks = cached_scan_results_;
@@ -128,10 +123,8 @@ bool WifiStation::ScanNetworks(std::vector<WifiNetwork>* networks, bool force_re
         }
         return false;
     }
-    HandleManualScanResult();
     std::lock_guard<std::mutex> lock(manual_scan_mutex_);
-    *networks = manual_scan_results_;
-    manual_scan_pending_ = false;
+    *networks = cached_scan_results_;
     ESP_LOGI(TAG, "Manual scan found %u networks", (unsigned)networks->size());
     return true;
 }
@@ -293,12 +286,6 @@ void WifiStation::Start() {
                                                         this,
                                                         &instance_got_ip_));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    if (max_tx_power_ != 0) {
-        ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(max_tx_power_));
-    }
-
     // Setup the timer to scan WiFi.
     // skip_unhandled_events = false so the timer can wake the CPU from light
     // sleep on its own; otherwise an idle device that failed to connect would
@@ -315,6 +302,12 @@ void WifiStation::Start() {
         .skip_unhandled_events = false
     };
     ESP_ERROR_CHECK(esp_timer_create(&timer_args, &timer_handle_));
+    // STA_START can complete its first scan immediately. Its retry path must
+    // already own a timer, including when no saved network is visible yet.
+    ESP_ERROR_CHECK(esp_wifi_start());
+    if (max_tx_power_ != 0) {
+        ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(max_tx_power_));
+    }
 }
 
 bool WifiStation::WaitForConnected(int timeout_ms) {
@@ -327,11 +320,19 @@ bool WifiStation::WaitForConnected(int timeout_ms) {
 
 void WifiStation::HandleScanResult() {
     uint16_t ap_num = 0;
-    esp_wifi_scan_get_ap_num(&ap_num);
+    if (esp_wifi_scan_get_ap_num(&ap_num) != ESP_OK) {
+        ScheduleScan();
+        return;
+    }
     wifi_ap_record_t *ap_records = (wifi_ap_record_t *)malloc(ap_num * sizeof(wifi_ap_record_t));
-    esp_wifi_scan_get_ap_records(&ap_num, ap_records);
+    if (ap_num && (ap_records == nullptr ||
+        esp_wifi_scan_get_ap_records(&ap_num, ap_records) != ESP_OK)) {
+        free(ap_records);
+        ScheduleScan();
+        return;
+    }
     // sort by rssi descending
-    std::sort(ap_records, ap_records + ap_num, [](const wifi_ap_record_t& a, const wifi_ap_record_t& b) {
+    if (ap_num > 1) std::sort(ap_records, ap_records + ap_num, [](const wifi_ap_record_t& a, const wifi_ap_record_t& b) {
         return a.rssi > b.rssi;
     });
     {
@@ -344,10 +345,13 @@ void WifiStation::HandleScanResult() {
 
     // A late scan completion must not reconnect a healthy station or replace
     // the network explicitly selected by a user.
-    if (IsConnected() || manual_connect_pending_.load()) {
+    if (IsConnected() || connecting_.load() || manual_connect_pending_.load()) {
         free(ap_records);
         return;
     }
+    // A fresh UI scan may precede an armed background retry. Both scans use
+    // this event-loop owner; cancel that retry before choosing a saved AP.
+    if (timer_handle_ != nullptr) (void)esp_timer_stop(timer_handle_);
     connect_queue_.clear();
 
     auto& ssid_manager = SsidManager::GetInstance();
@@ -378,27 +382,19 @@ void WifiStation::HandleScanResult() {
 
     if (connect_queue_.empty()) {
         ESP_LOGI(TAG, "No AP found, next scan in %d seconds", scan_current_interval_microseconds_ / 1000 / 1000);
-        esp_timer_start_once(timer_handle_, scan_current_interval_microseconds_);
-        UpdateScanInterval();
+        ScheduleScan();
         return;
     }
 
     StartConnect();
 }
 
-void WifiStation::HandleManualScanResult() {
-    uint16_t ap_num = 0;
-    if (esp_wifi_scan_get_ap_num(&ap_num) != ESP_OK || ap_num == 0) return;
-    std::vector<wifi_ap_record_t> records(ap_num);
-    if (esp_wifi_scan_get_ap_records(&ap_num, records.data()) != ESP_OK) return;
-    std::sort(records.begin(), records.end(),
-              [](const wifi_ap_record_t& a, const wifi_ap_record_t& b) {
-                  return a.rssi > b.rssi;
-              });
-    std::lock_guard<std::mutex> lock(manual_scan_mutex_);
-    collect_visible_networks(records.data(), ap_num, &manual_scan_results_);
-    cached_scan_results_ = manual_scan_results_;
-    cached_scan_at_us_ = esp_timer_get_time();
+void WifiStation::ScheduleScan() {
+    if (timer_handle_ == nullptr) return;
+    (void)esp_timer_stop(timer_handle_);
+    const esp_err_t result = esp_timer_start_once(timer_handle_, scan_current_interval_microseconds_);
+    if (result == ESP_OK) UpdateScanInterval();
+    else ESP_LOGW(TAG, "Could not schedule automatic scan: %s", esp_err_to_name(result));
 }
 
 void WifiStation::StartConnect() {
@@ -509,17 +505,11 @@ void WifiStation::WifiEventHandler(void* arg, esp_event_base_t event_base, int32
             this_->on_scan_begin_();
         }
     } else if (event_id == WIFI_EVENT_SCAN_DONE) {
-        bool manual_scan = false;
-        {
-            std::lock_guard<std::mutex> lock(this_->manual_scan_mutex_);
-            manual_scan = this_->manual_scan_pending_;
-        }
-        if (manual_scan) {
-            xEventGroupSetBits(this_->event_group_, WIFI_EVENT_SCAN_DONE_BIT);
-            return;
-        }
-        xEventGroupSetBits(this_->event_group_, WIFI_EVENT_SCAN_DONE_BIT);
+        // Consume the driver's AP records exactly once. A settings refresh
+        // receives the cached list after saved-network selection/retry has
+        // run, so it cannot swallow an automatic scan's completion.
         this_->HandleScanResult();
+        xEventGroupSetBits(this_->event_group_, WIFI_EVENT_SCAN_DONE_BIT);
     } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
         xEventGroupClearBits(this_->event_group_, WIFI_EVENT_CONNECTED);
         
@@ -554,8 +544,7 @@ void WifiStation::WifiEventHandler(void* arg, esp_event_base_t event_base, int32
                  this_->scan_current_interval_microseconds_ / 1000 / 1000);
         this_->manual_connect_pending_ = false;
         this_->connecting_ = false;
-        esp_timer_start_once(this_->timer_handle_, this_->scan_current_interval_microseconds_);
-        this_->UpdateScanInterval();
+        this_->ScheduleScan();
     } else if (event_id == WIFI_EVENT_STA_CONNECTED) {
     }
 }
