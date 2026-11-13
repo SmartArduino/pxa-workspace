@@ -96,6 +96,20 @@ def config(board: Path, name: str, default: str) -> str:
     return default
 
 
+def store_profile_release(header: Path) -> str:
+    """Read the capability snapshot advertised by these firmware sources.
+
+    A firmware patch need not change Store compatibility. Refuse ambiguous or
+    incomplete declarations instead of deriving compatibility from VERSION.
+    """
+    profiles = re.findall(r'return\s+"esp32-(s3|s31|p4)-pxa-([0-9A-Za-z][0-9A-Za-z.+-]*)"\s*;',
+                          header.read_text())
+    if (len(profiles) != 3 or {target for target, _ in profiles} != {'s3', 's31', 'p4'} or
+            len({version for _, version in profiles}) != 1):
+        raise ValueError('Expected one common Store capability snapshot for S3, S31 and P4')
+    return profiles[0][1]
+
+
 def build_board(args, name: str, version: str) -> dict:
     if not args.skip_build:
         subprocess.run(['bash', str(ROOT / 'tools/firmware.sh'), name, 'build'], check=True,
@@ -255,8 +269,9 @@ def main():
     parser.add_argument('--packages', type=Path, required=True)
     parser.add_argument('--boards', nargs='+', choices=BOARDS, default=BOARDS)
     parser.add_argument('--skip-build', action='store_true')
-    parser.add_argument('--store-host-profile-release', default=(ROOT / 'deps/pxa-system/VERSION').read_text().strip(),
-                        help='published capability snapshot; explicitly pin this when a patch retains an older snapshot')
+    parser.add_argument('--store-host-profile-release', default=store_profile_release(
+                        ROOT / 'firmware/components/pxa/src/services/pxa_store_host_profile.h'),
+                        help='published capability snapshot; defaults to the firmware Host profile declaration')
     parser.add_argument('--build-root', type=Path, default=ROOT / 'build/firmware')
     parser.add_argument('--idf-python', type=Path, default=Path(sys.executable))
     parser.add_argument('--littlefs-python', type=Path, default=ROOT / '.pxa-tools/littlefs-venv/bin/littlefs-python')

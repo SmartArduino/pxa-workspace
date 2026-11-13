@@ -16,6 +16,27 @@ class FirmwareLayout(unittest.TestCase):
         self.assertNotIn('doit-gamekit', release.BOARDS)
         self.assertNotIn('doit-gamekit-1', release.BOARDS)
 
+    def test_patch_firmware_uses_its_declared_older_store_snapshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'VERSION').write_text('0.11.1\n')
+            header = root / 'pxa_store_host_profile.h'
+            header.write_text('\n'.join(f'return "esp32-{target}-pxa-0.11.0";'
+                                        for target in ('s3', 's31', 'p4')))
+            self.assertEqual(release.store_profile_release(header), '0.11.0')
+
+    def test_missing_duplicate_or_different_store_snapshots_fail_closed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            header = Path(folder) / 'profile.h'
+            for profiles in [[], [('s3', '0.11.0'), ('s31', '0.11.0')],
+                             [('s3', '0.11.0'), ('s31', '0.11.0'), ('s31', '0.11.0')],
+                             [('s3', '0.11.0'), ('s31', '0.11.0'), ('p4', '0.11.1')]]:
+                with self.subTest(profiles=profiles):
+                    header.write_text('\n'.join(f'return "esp32-{target}-pxa-{version}";'
+                                                for target, version in profiles))
+                    with self.assertRaisesRegex(ValueError, 'common Store capability snapshot'):
+                        release.store_profile_release(header)
+
     def test_factory_tree_is_bound_to_container_inventory_and_version(self):
         def tlv(tag, data):
             return struct.pack('<HH', tag, len(data)) + data
