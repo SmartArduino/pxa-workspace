@@ -1,0 +1,105 @@
+name: 缺陷反馈 / Bug report
+description: 报告可复现的错误、崩溃或异常行为 / Report a bug, crash or unexpected behavior.
+title: '[Bug] '
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        本仓库受理 / This repository covers: ESP 固件、板级驱动、烧录、工作区脚本与显示配置 / ESP firmware, board drivers, flashing, workspace scripts and display profiles。
+
+        - [pxa-system](https://github.com/SmartArduino/pxa-system/issues/new/choose): 系统运行库、服务、UI、SDK、DevKit、Agent Kit、打包工具与模拟器实现 / System runtime, services, UI, SDK, DevKit, Agent Kit, packaging tools and simulator implementation。
+        - [pxa-apps](https://github.com/SmartArduino/pxa-apps/issues/new/choose): PXA 应用、游戏、商城客户端与 common 共享应用代码 / PXA apps, games, store client and shared application code。
+
+        不确定归属时，可按观察到的问题提交，并关联其他仓库中的相关 Issue；同一问题请勿重复提交。 / If unsure, report what you observed and link related issues; avoid duplicate reports.
+        可使用中文或英文填写。 / Chinese or English is welcome.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前检查 / Before submitting
+      options:
+        - label: 我已搜索[现有 Issue](https://github.com/SmartArduino/pxa-workspace/issues?q=is%3Aissue)，未找到相同反馈。 / I searched existing
+            issues and found no duplicate.
+          required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: 涉及模块 / Component
+      options:
+        - 固件构建与烧录 / Firmware build and flashing
+        - 板级驱动与外设 / Board drivers and peripherals
+        - 工作区脚本与 PXADB / Workspace scripts and PXADB
+        - 显示与输入 Profile / Display and input profiles
+        - 出厂预置与交付 / Factory provisioning and delivery
+        - 不确定或其他 / Unsure or other
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: 版本信息 / Versions
+      description: 填写固件版本或下载链接；从源码构建时提供工作区与 pxa-system 的提交。不知道的项目可写 unknown。 / Include the firmware version or download URL,
+        and workspace/system commits for source builds; use unknown if unavailable.
+      placeholder: |-
+        Firmware version / download URL:
+        pxa-workspace commit (git rev-parse HEAD):
+        pxa-system commit (git -C deps/pxa-system rev-parse HEAD):
+        ESP-IDF version (source builds only):
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境 / Environment
+      description: 注明真机板型及硬件版本，或模拟器 Profile；构建、烧录和工具问题另附主机系统及工具版本。不适用的项目可写 N/A。 / Include board/revision or simulator profile,
+        plus host OS/tool versions for build, flash or tool issues; use N/A where appropriate.
+      placeholder: |-
+        Device or simulator:
+        Board / hardware revision / chip:
+        Flash / PSRAM / storage (if relevant):
+        Display size / profile / input (if relevant):
+        Host OS / architecture / tool versions (if relevant):
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 实际表现 / Actual behavior
+      description: 描述具体错误及影响；一次反馈一个问题。 / Describe the error and its impact; report one problem per issue.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: 提供完整命令、配置或最小示例；偶发问题请写明触发条件与频率。 / Include exact commands, configuration or a minimal example; describe triggers
+        and frequency for intermittent issues.
+      placeholder: |-
+        1. 准备板型、固件与配置 / Prepare the board, firmware and configuration
+        2. 执行完整命令或操作 / Run the exact command or action
+        3. 观察结果 / Observe the result
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期表现 / Expected behavior
+      description: 说明在相同步骤下期望发生什么。 / Describe what should happen with the same steps.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志 / Logs
+      description: 粘贴构建、串口、崩溃或模拟器日志，并保留错误前后的上下文；无需手写代码块。提交前移除私钥、令牌和个人信息。 / Paste relevant logs with surrounding context, without
+        code fences; remove private keys, tokens and personal data.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: additional
+    attributes:
+      label: 附件与补充信息 / Attachments and context
+      description: 可拖入截图、录屏或最小复现文件；如已知，补充正常版本、回归范围、变通方法及相关 Issue 链接。 / Attach screenshots, recordings or a minimal reproducer;
+        include known working versions, workarounds and related issues if available.
+    validations:
+      required: false
