@@ -1,252 +1,94 @@
-# PXA ESP Platform
+# PXA Workspace
 
-[简体中文](README.md)
+[简体中文](README.md) · [Documentation](https://pxa.doit.am/docs/) · [Downloads](https://pxa.doit.am/docs/downloads/)
 
-An ESP-IDF product workspace that imports `pxa-system` without depending on a
-legacy product firmware tree. It supports two board entry paths through the
-same `pxa_board_port_t` contract:
+An ESP32 firmware workspace for PXA. Connect displays, touch, buttons, audio and storage to a common application system, then run PXA apps across board profiles and install or update them independently of firmware.
 
-- A new BSP implements the port directly in `firmware/boards/<board>/`.
-- An existing firmware adds a small adapter that maps its current board API to
-  the port after its display becomes ready.
+- **Board integration**: per-board drivers, configuration, partitions and dependencies behind a common build command.
+- **App development**: a desktop simulator for UI and interaction, plus PXADB for device installation, logs and file transfer.
+- **Product delivery**: board-specific system resources and factory presets, with app updates that do not require rebuilding firmware.
 
-## Developing an app? Start with DevKit
+## Preview
 
-You do not need this workspace or ESP-IDF. Download [DevKit 0.7.0](https://pxa.doit.am/docs/downloads/), extract it, then run:
+| System desktop | System settings |
+| :---: | :---: |
+| <img src="docs/images/desktop.en.png" width="300" alt="PXA desktop showing installed applications"> | <img src="docs/images/settings.en.png" width="300" alt="PXA settings with network, appearance and language controls"> |
 
-```sh
-export PATH="$PWD/pxa-devkit-0.7.0-linux-x86_64/bin:$PATH"
-pxa init hello
-pxa run hello
-```
+Captured from the real desktop simulator. Desktop apps are installed separately; device capabilities depend on the board implementation.
 
-C++26 and O3 are the defaults; `pxa.lock` pins the SDK and toolchain. The published binary requires Linux x86_64 and glibc 2.39+. Apps require Core 2.0 and their declared services.
-[Getting started (Chinese)](https://pxa.doit.am/docs/first-app/) · [C++ SDK](deps/pxa-system/sdk/guest-cpp/README.zh-CN.md) · [Release](https://github.com/SmartArduino/pxa-system/releases/tag/v0.7.0) · [Release notes and upgrade (Chinese)](docs/release-0.7.0.zh-CN.md)
+## Choose your starting point
 
-The optional [PXA AI kit](https://pxa.doit.am/docs/ai-development/) adds development/debug/device/release skills, project-scoped agents and repeatable verification scripts. It works with the existing DevKit and adds no device runtime overhead.
+| Your goal | Start here |
+| --- | --- |
+| Create an app | [DevKit quick start](https://pxa.doit.am/docs/first-app/); no firmware build required |
+| Run or modify existing apps | [pxa-apps](https://github.com/SmartArduino/pxa-apps) |
+| Modify firmware, connect hardware or customize a product | Continue below |
+| Change the runtime, system UI or SDK | [pxa-system](https://github.com/SmartArduino/pxa-system) |
 
-Windows x64 users can [build the toolchain, simulator and debugging tools natively](tools/portable/windows/README.md). Windows/macOS users can also use [the cross-platform companion](tools/portable/README.en.md): build and run headless in a container, then use host-native PXADB for USB serial without forwarding devices.
-
-The remaining commands are for system and board development, from this workspace root:
+## Build firmware
 
 ```sh
 git clone --recurse-submodules https://github.com/SmartArduino/pxa-workspace.git
 cd pxa-workspace
-git clone https://github.com/SmartArduino/pxa-apps.git local/pxa-apps
 ```
 
-## Layout
+Prepare the ESP-IDF environment required by your board guide, then build from the repository root. For example:
+
+```sh
+tools/firmware.sh doit-gamekit-2 build
+```
+
+Each board uses its own `build/firmware/<board>/`. Follow its guide for first installation, system fonts, serial settings and subsequent firmware updates.
+
+### Board guides
+
+| Board ID | Device and display | Guide |
+| --- | --- | --- |
+| `doit-gamekit-2` | ESP32-S31, 320×240, touch and controller buttons | [GameKit V2.0](firmware/boards/doit-gamekit-2/README.md) |
+| `esp-mosaico` | ESP32-S31, 480×480, touch and sensors | [ESP-Mosaico](firmware/boards/esp-mosaico/README.md) |
+| `doit-esp32s31-devkit` | ESP32-S31, 480×854 RGB display | [DOIT S31 DevKit](firmware/boards/doit-esp32s31-devkit/README.md) |
+| `espp4-a` | ESP32-P4, 480×854 DSI display | [ESPP4-A](firmware/boards/espp4-a/README.md) |
+| `sensecap-watcher` | ESP32-S3, 412×412 round display and rotary control | [SenseCAP Watcher](firmware/boards/sensecap-watcher/README.md) |
+| `pai-touch` | ESP32-S3, 296×240, touch and audio | [Pai Touch](firmware/boards/pai-touch/README.md) |
+| `epdiy-v7` | ESP32-S3, custom 40-pin e-paper wiring | [EPDiy V7 scope](firmware/boards/epdiy-v7/README.md) |
+
+See [firmware/boards](firmware/boards/) for additional integrations. `doit-gamekit` and `doit-gamekit-1` are no longer maintained or included in new firmware releases; historical sources remain available.
+
+## Develop apps with the simulator and a device
+
+Clone the app repository into the workspace's local directory and start in the simulator:
+
+```sh
+git clone https://github.com/SmartArduino/pxa-apps.git local/pxa-apps
+tools/dev.sh sim pixel-dungeon --source-root local/pxa-apps
+```
+
+With PXA firmware already running on your device, install and launch an app directly:
+
+```sh
+tools/dev.sh device --board doit-gamekit-2 pixel-dungeon --port /dev/ttyACM0
+```
+
+Use your actual serial port. Add `--watch` to rebuild and restart after changes. Run `tools/pxadb-gui.sh` for the desktop device manager; see [PXADB GUI](tools/pxadb-gui/README.md).
+
+## Repository layout
 
 ```text
-firmware/                    The only ESP-IDF project
-firmware/boards/             Per-board drivers, defaults and partitions
-simulator/                   Desktop UI/display-profile simulation profiles
-factory/                     Reproducible board-specific factory profiles
-tools/                       Firmware, App, simulator and factory entry points
-local/pxa-apps/              Separate pxa-apps Git checkout (ignored by this workspace)
-local/                       Ignored App catalog, overrides and outputs
-deps/pxa-system/             Imported upstream system and package tooling
+firmware/          ESP-IDF product, board drivers and system integration
+simulator/         Desktop display and input profiles
+factory/           Board-specific factory presets
+extensions/        Product extension services
+tools/             Firmware, app, simulator and device tools
+deps/pxa-system/   Pinned system submodule
+local/             Local app checkout, overrides and generated output
 ```
 
-Clone the product App repository into `local/pxa-apps`; this workspace ignores
-that checkout. The system keeps legacy examples and signing fixtures
-in `deps/pxa-system/apps/pxa`; new projects use the C++26 pxa init template. The workspace App tooling detects the local
-source root automatically, or accepts `--source-root` explicitly.
+## Further reading
 
-`firmware/boards/pai-touch` is itself an ESP-IDF component. Select another board with
-the CMake cache value `PXA_BOARD`; no global board-type Kconfig choice is
-required. Its `sdkconfig.defaults` is loaded as a board overlay after the
-cross-board root defaults.
+- [Workspace layout and workflow](docs/workspace-layout.md)
+- [App packaging, installation and factory delivery](docs/pxa-app-delivery.md)
+- [Simulator and display profiles](simulator/README.md)
+- [New board template](templates/board/README.md) · [Existing firmware adapter](templates/legacy-board-adapter/README.md)
+- [Cross-platform tools](tools/portable/README.en.md) · [Native Windows builds](tools/portable/windows/README.md)
 
-## Managed dependencies
-
-ESP-IDF dependencies are declared beside the code that owns them. The product
-baseline is in `firmware/main/idf_component.yml`; every board declares its display,
-input, power, connectivity and optional font packages in
-`firmware/boards/<board>/idf_component.yml`. This keeps boards with incompatible driver
-versions in separate dependency graphs. The Component Manager generates the
-board-specific `dependencies.lock.<board>` file; commit it after dependency
-resolution, but do not edit it manually.
-
-## Build a selected board
-
-Build and debug board code through the board wrapper. It uses an independent
-build directory per board.
-
-The `esp-mosaico` profile targets ESP32-S31 with a 480 × 480 CO5300 panel,
-CST92xx touch, ES8311 playback and native USB CDC. See
-[its board guide](firmware/boards/esp-mosaico/README.md) for revision detection,
-the ESP-IDF main environment and hardware limitations.
-
-`doit-gamekit-2` is the maintained V2.0 GameKit profile: ESP32-S31, 320 × 240
-ST7789V TN display, FT6336U touch, 14 keys, MAX98357A and four-bit SDMMC.
-It uses a 120k/100k battery divider, configurable voltage correction and
-active-low USB supply detection on GPIO51. Build with
-`tools/firmware.sh doit-gamekit-2 build`; see the
-[board guide](firmware/boards/doit-gamekit-2/README.md).
-
-`doit-gamekit` and `doit-gamekit-1` are **no longer maintained or included in
-new firmware releases**. Historical sources and profiles remain available.
-Firmware cannot be exchanged between hardware revisions; see the historical
-[GameKit](firmware/boards/doit-gamekit/README.md) and
-[GameKit 1](firmware/boards/doit-gamekit-1/README.md) guides.
-
-`doit-esp32s31-devkit` supports the DOIT ESP32-S31 DevKit with 8 MiB Flash,
-480 × 854 ST7102 RGB display and touch, ES8311 audio and four-bit SDMMC.
-Build with `tools/firmware.sh doit-esp32s31-devkit build`; USB-Uart runs at
-921600 baud. See the [board guide](firmware/boards/doit-esp32s31-devkit/README.md)
-for shared buses, BOOT/LCD chip select and camera connector limitations.
-
-```sh
-tools/firmware.sh pai-touch build
-tools/firmware.sh pai-touch flash --port /dev/ttyACM0 --baud 406800
-tools/firmware.sh pai-touch monitor --port /dev/ttyACM0 --baud 115200
-```
-
-The equivalent direct ESP-IDF build command is:
-
-```sh
-idf.py -C firmware -B build/firmware/pai-touch -DPXA_BOARD=pai-touch build
-```
-
-`PXA_BOARD` selects `firmware/boards/<board>/`, its `board.cmake`,
-`sdkconfig.defaults`, partition table and `idf_component.yml`. `board.cmake`
-selects the matching ESP target before component discovery. The first
-configuration resolves the selected board's managed components and generates
-`firmware/dependencies.lock.<board>`. Do not reuse a build directory for
-another board.
-
-## PXA App Delivery
-
-Firmware builds and PXA App delivery are intentionally separate. App source
-roots are resolved from ignored `local/apps.toml`, so private Apps do not dirty
-this workspace. Normal firmware builds and flashes neither package Apps nor
-write the PXA storage partition. See
-[PXA App Delivery](docs/pxa-app-delivery.md).
-Directory ownership and daily workflows are documented in
-[Workspace Layout](docs/workspace-layout.md).
-
-## Fast PXA Development
-
-`tools/dev.sh` combines incremental App packaging, PXADB replacement and
-launching into one development loop. An App source root is the parent directory
-that contains `<app-id>/`; configure it once in ignored `local/apps.toml`, or
-supply it for a one-off command:
-
-The command argument names the source directory. The output file uses
-`pxa-<app-id>.pxa`, while installation and launch use the ID in the signed
-package manifest. These names may differ.
-
-```toml
-# local/apps.toml
-[apps.my-app]
-source_root = "/home/me/work/pxa-apps"
-```
-
-Simulator mode installs the App, starts the full PXA system (the same path as
-`tools/simulator.sh run`) and automatically opens the App. The launcher,
-settings, system input method, theme, DPI and display shape are available.
-It keeps its PXADB2 service running and restarts the system with the updated App
-after each source save. Host and Guest `pxa_log_*` output is streamed to the terminal:
-
-```sh
-tools/dev.sh sim my-app --watch
-# Or without a local catalog:
-tools/dev.sh sim my-app --source-root /home/me/work/pxa-apps --watch
-tools/dev.sh sim --board sensecap-watcher pixel-dungeon
-tools/dev.sh sim --board esp-mosaico voxel-craft
-```
-
-Simulator mode selects the display profile matching `--board` by default;
-pass `--profile` to override it. Settings and App data use the same persistent
-profile state as `tools/simulator.sh run`. Use `--instance <name>` to keep a
-separate development instance. For standalone App testing, use
-`tools/simulator.sh product --profile <board> --installed <package-id>`.
-`dev.sh` packages only the current target's AOT, omitting the `.wasm` fallback
-(including components declaring `artifact: "both"`);
-explicitly declared Wasm-only components are preserved. Use `tools/app.sh build`
-directly when you need both artifacts.
-
-Device mode reads `PXA_BOARD_TARGET` from `firmware/boards/<board>/board.cmake`
-(default: pai-touch / esp32s3). New boards using a supported architecture need
-no tool-side board-name mapping. `tools/app.sh` and the package wrapper use the
-same reader; explicit `--target` overrides the default, and missing declarations
-fail with an error. Device mode replaces the App in
-the existing firmware without reflashing it. It starts `pxadb logcat` after
-each deployment and releases that USB Serial/JTAG connection before the next
-update:
-
-```sh
-tools/dev.sh device my-app --port /dev/ttyACM0 --baud 2000000 --watch
-```
-
-Combined build, deployment and runtime output is also written to
-`local/dev-logs/<mode>/<app-id>.log`. This is a fast WASM/AOT reload loop, not
-runtime hot reload, so each source update restarts the App process.
-
-## PXADB GUI
-
-`tools/pxadb-gui.sh` opens a desktop front end for the same `pxadb` client used
-by the CLI. It discovers USB devices and running product simulators, streams
-device screenshots into a live preview, injects taps, drags and keys, browses
-and transfers files, shows device logs and manages packages. The preview runs
-at roughly 3-4 FPS on USB firmware using device-encoded JPEG and 15-20 FPS on
-the product simulator; drags pause preview captures so input stays responsive.
-
-```sh
-tools/pxadb-gui.sh
-tools/pxadb-gui.sh --port /dev/ttyACM0
-tools/pxadb-gui.sh --simulator pai-touch
-```
-
-Because PXADB owns the serial port exclusively, close the GUI before using
-`pxadb` or `tools/dev.sh device` on the same port. See
-[PXADB GUI](tools/pxadb-gui/README.md).
-
-## Simulator
-
-`tools/simulator.sh` runs the imported SDL/LVGL standard UI simulator with the
-default `generic` profile. Select another workspace profile explicitly:
-
-```sh
-tools/simulator.sh --profile pai-touch
-```
-
-Standard UI mode runs the complete system and launches installed desktop Guest apps. Manifest-only launcher cards still require a built, installed package.
-
-```sh
-tools/dev.sh sim pixel-dungeon --source-root local/pxa-apps
-# Run an installed app directly, without the system launcher:
-tools/simulator.sh product --profile pai-touch --installed pxa-pixel-dungeon
-```
-
-The simulator uses the same signature and artifact-selection contracts as devices. It validates layout, input and Guest behavior. Drivers, DMA, touch ICs, audio output latency and power must also be checked on hardware. See [Simulator](simulator/README.md).
-
-## Board Contract
-
-The board port provides display creation/profile data and optional controls for
-network, volume, brightness, status publication and diagnostics. It is control
-plane only. DMA submit, framebuffer ownership, pixel conversion and PCM frame
-transfer stay in the board component. The pai-touch direct scanout path is an
-example of this separation.
-
-## Existing Firmware
-
-Do not move the old board implementation. Add an adapter adjacent to it that
-registers a `pxa_board_port_t`, then call `pxa_integration_start()` after the
-existing LVGL display has been initialized. The adapter owns all references to
-legacy `Board`, UI or product classes; neither `pxa-system` nor the generic
-integration component includes them.
-
-## Dependencies
-
-`deps/pxa-system` is a standalone Git checkout pinned with its WAMR and
-page-manager submodules. The ESP host owns its small WAMR/ESP-IDF declaration
-shim directly. Source and CMake files contain
-no path to the original pai-touch demonstration firmware.
-
-## About DOIT
-
-Company: **深圳四博智联科技有限公司 (DOIT)**.
-
-[Company website](https://doit.am/) · [About PXA and DOIT](https://pxa.doit.am/about/)
+For bugs or suggestions, use the [issue templates](https://github.com/SmartArduino/pxa-workspace/issues/new/choose) in Chinese or English. Include your board, firmware version and reproduction steps.
