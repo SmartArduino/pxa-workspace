@@ -46,6 +46,7 @@ def build(root: Path, output: Path, image: Path, image_id: str, devkit_sha: str,
         shutil.copy2(root / 'tools/pxadb/pxa_local_socket.py', stage / 'pxa_local_socket.py')
         shutil.copy2(root / 'tools/pxadb/ui_query.py', stage / 'ui_query.py')
         shutil.copy2(root / 'tools/pxadb/package_compatibility.py', stage / 'package_compatibility.py')
+        shutil.copy2(root / 'tools/pxadb/interaction_contract.py', stage / 'interaction_contract.py')
         shutil.copy2(root / 'deps/pxa-system/LICENSE', stage / 'LICENSE.pxa-system')
         # This copy is convenient, not a trust anchor. Verification requires a
         # separately trusted key; the README explains where to obtain it.
