@@ -278,6 +278,13 @@ pxadb package install app.pxa --volume sd --via auto --yes --port /dev/ttyACM0
 位置能力的固件继续使用 inbox。新版固件也会将旧客户端的 `PACKAGE deploy`
 路由到既有卷；跨卷 inbox 目录需要复制并计入目标卷空间预留。
 
+`package_legacy_update_volume=1` 表示 `PACKAGE install-volume` 也支持旧布局
+应用的原位更新。客户端遇到 `PACKAGES volume=0` 时，通过 `PACKAGE paths`
+取得原私有目录，并结合 `VOLUMES` 选择原来的卷；不能把 `0` 当作首个可用卷。
+固件保留旧私有目录和媒体路径，校验新旧签名、发布序号及事务空间；指定其他卷
+会拒绝更新。独立资源包需要先通过设备的移动功能升级存储布局。没有该能力的
+旧固件仍使用 inbox/设备商城更新，不向任意空闲卷重装。
+
 `PACKAGES` 的 `ambiguous=1` 表示同身份存在多份安装，默认更新会在传输前拒绝。
 若旧客户端已把 SD 应用重复安装到内部旧布局，可明确指定原卷，例如
 `pxadb package install app.pxa --volume sd --yes`。固件先验证并更新原卷的认证安装，

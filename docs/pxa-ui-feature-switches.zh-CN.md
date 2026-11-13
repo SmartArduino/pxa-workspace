@@ -14,6 +14,7 @@
 | `PXSYS_REFERENCE_UI_BATTERY_PERCENT` | 控制电量数字；关闭无线 UI 后仍可显示。 |
 | ESP 状态栏、导航栏、返回手势开关 | 关闭对应功能后，不再向 Guest 发布该功能的边缘预留。屏幕物理安全区和圆角信息继续发布。 |
 | 运行时 `config.features` | 控制角色注册。关闭 Home 后仍能启动其他角色；显式调用 Home 接口返回 NOT_FOUND。 |
+| `PXA_ENABLE_PERMISSIONS` / ESP `CONFIG_PXA_ENABLE_PERMISSIONS` | 默认开启；关闭后编译为全部允许的兼容接口，裁掉权限策略、决策持久化、请求弹窗和应用权限开关。签名、私有数据隔离及资源句柄生命周期保留。 |
 | LVGL snapshot / pinyin / K9 | 快照不可用时卡片最近任务回退为列表；拼音或九键不可用时保留完整键盘。 |
 
 ## 发现并修复的问题

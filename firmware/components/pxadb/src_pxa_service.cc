@@ -1590,7 +1590,7 @@ int PxaLogVprintf(const char* format, va_list arguments) {
 void SendHello(unsigned long sequence) {
     const esp_app_desc_t* app = esp_app_get_description();
     // Keep complete capability and version fields without enlarging log records.
-    char payload[768] = {};
+    char payload[1024] = {};
     char transport_info[72] = {};
 #if CONFIG_PXADB_TRANSPORT_UART
     snprintf(transport_info, sizeof(transport_info),
@@ -1644,7 +1644,7 @@ void SendHello(unsigned long sequence) {
         "";
 #endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;max_fast=3840;package_stream=2;package_legacy=%u;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;package_location=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
+             "protocol=1;mode=normal;capabilities=info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;max_fast=3840;package_stream=2;package_legacy=%u;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;package_legacy_update_volume=1;package_location=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
              kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability, kGrayCapability, kUiCapability, kRuntimeCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
              static_cast<unsigned>(PXA_ENABLE_LEGACY_CONTAINER),
@@ -1669,10 +1669,11 @@ void SendInfo(unsigned long sequence) {
 #if CONFIG_PXA_ENABLED
     const size_t capability_offset = strlen(payload);
     snprintf(payload + capability_offset, sizeof(payload) - capability_offset,
-             ";package_directory_adopt=1;package_receive=1;package_stream=2;board=%s;pxa_version=%s;pxa_core=%u.%u",
+             ";package_directory_adopt=1;package_receive=1;package_stream=2;board=%s;pxa_version=%s;pxa_core=%u.%u;permission_policy=%u",
              PXA_FIRMWARE_BOARD, PXA_VERSION_STRING,
              static_cast<unsigned>(PXA_CORE_VERSION_MAJOR),
-             static_cast<unsigned>(PXA_CORE_VERSION_MINOR));
+             static_cast<unsigned>(PXA_CORE_VERSION_MINOR),
+             static_cast<unsigned>(PXA_ENABLE_PERMISSIONS));
     pxa_sensor_config_t sensors = {};
     pxa_esp_sensor_configure(&sensors);
     size_t used = strlen(payload);

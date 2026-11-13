@@ -428,8 +428,13 @@ without adding an executable application or private image. Install the
 referencing application after its resources are ready; the Host verifies the
 exact signed generation and records its actual volume. Resource installation
 does not adopt or remove legacy manually imported media directories.
-Replacing a legacy installation or moving it to another volume requires an
-explicit migration rather than creating a second private namespace.
+With `package_legacy_update_volume=1`, the same command can update a legacy
+installation on its original native volume, including a completed owned stream
+or a built-in overlay. For `PACKAGES volume=0`, use `PACKAGE paths` and `VOLUMES`
+to find that original volume. Existing private and media paths are retained;
+selecting a different volume is rejected. Moving legacy data or adding separate
+resource packages requires explicit migration through the device's move action.
+Older firmware continues to use the inbox/Store update path.
 
 `PACKAGE move <qualified-identity>` queues the same native confirmation as
 Settings. For a legacy application this explicitly upgrades its storage layout

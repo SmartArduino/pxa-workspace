@@ -18,11 +18,16 @@ def main():
     args = parser.parse_args()
     component = ROOT / "firmware/components/pxa"
     source = (component / "src/package/pxa_esp_package_store.c").read_text()
-    bodies = "\n".join(function(source, signature) for signature in (
+    planning = (component / "src/package/pxa_esp_installations.c").read_text()
+    bodies = "\n".join(function(planning, signature) for signature in (
+        "static pxa_status_t add_file(", "static pxa_status_t plan_contents(",
+        "pxa_status_t pxa_esp_installations_plan(", "pxa_status_t pxa_esp_installations_plan_prepared(",
+    )) + "\n" + "\n".join(function(source, signature) for signature in (
         "static __attribute__((noinline)) pxa_status_t snapshot_legacy_update(",
         "static pxa_status_t legacy_update_space(",
         "static pxa_status_t legacy_update_incoming(",
         "static __attribute__((noinline)) pxa_status_t commit_legacy_update(",
+        "static pxa_status_t install_legacy_on_volume_locked(const char *source,",
     ))
     with tempfile.TemporaryDirectory(prefix="pxa-legacy-update-") as temporary:
         temp = Path(temporary)

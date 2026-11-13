@@ -356,6 +356,7 @@ static pxa_status_t permission_key(pxa_esp_app_storage_t *storage,pxa_bytes_t id
     for(unsigned i=0;i<32;++i) {filename[2*i]=hex[digest[i]>>4];filename[2*i+1]=hex[digest[i]&15];}
     filename[64]=0;return PXA_STATUS_OK;
 }
+#if PXA_ENABLE_PERMISSIONS
 static pxa_status_t permission_directory(pxa_esp_app_storage_t *storage,int create,int *directory) {
     const char *root;char path[PXA_POSIX_APP_PATH_BYTES];*directory=-1;
     pxa_status_t status=pxa_esp_app_storage_root(storage,&root);if(status!=PXA_STATUS_OK)return status;
@@ -435,6 +436,20 @@ static pxa_status_t save_permission(void *context,pxa_bytes_t identity,pxa_bytes
     if(pxa_esp_close(directory)!=0 && status==PXA_STATUS_OK)status=io_error();
     return status;
 }
+#else
+static pxa_status_t load_permission(void *context,pxa_bytes_t identity,pxa_bytes_t name,
+    pxa_bytes_t scope,pxa_permission_decision_t *decision) {
+    (void)context;(void)identity;(void)name;(void)scope;
+    if(!decision)return PXA_STATUS_INVALID_ARGUMENT;
+    *decision=PXA_PERMISSION_ALLOW;return PXA_STATUS_OK;
+}
+static pxa_status_t save_permission(void *context,pxa_bytes_t identity,pxa_bytes_t name,
+    pxa_bytes_t scope,pxa_permission_decision_t decision) {
+    (void)context;(void)identity;(void)name;(void)scope;(void)decision;
+    return PXA_STATUS_OK;
+}
+#endif
+
 pxa_status_t pxa_esp_app_storage_permissions(pxa_esp_app_storage_t *storage,pxa_permission_store_t *store) {
     if(!storage || !store)return PXA_STATUS_INVALID_ARGUMENT;
     *store=(pxa_permission_store_t){sizeof(*store),storage,load_permission,save_permission};return PXA_STATUS_OK;

@@ -1397,6 +1397,7 @@ static void copy_utf8_c_string(char *output, size_t capacity,
     output[size] = '\0';
 }
 
+#if PXA_ENABLE_PERMISSIONS
 static void copy_permission_prompt_text(char *output, size_t capacity,
                                         pxa_bytes_t value,
                                         const char *empty_value) {
@@ -1435,6 +1436,8 @@ static void copy_permission_prompt_text(char *output, size_t capacity,
     output[offset] = '\0';
 }
 
+#endif
+
 static void copy_permission_prompt_name(char *output, size_t capacity,
                                         pxa_bytes_t value,
                                         const char *empty_value) {
@@ -1457,11 +1460,13 @@ static void copy_permission_prompt_name(char *output, size_t capacity,
 }
 
 static void dismiss_runtime_permission_prompt(void) {
+#if PXA_ENABLE_PERMISSIONS
     if (g_host.activation.permission_prompt.prompt_id == 0) return;
     pxa_esp_ui_shell_dismiss_permission_prompt(
         g_host.activation.permission_prompt.prompt_id);
     memset(&g_host.activation.permission_prompt, 0, sizeof(g_host.activation.permission_prompt));
     pxa_esp_surface_runtime_modal_leave();
+#endif
 }
 
 static void dismiss_unresponsive_prompt(void) {
@@ -1476,6 +1481,7 @@ static void dismiss_unresponsive_prompt(void) {
     }
 }
 
+#if PXA_ENABLE_PERMISSIONS
 static pxa_status_t request_runtime_permission_prompt(
     void *context, pxa_component_t component, pxa_request_token_t request_token,
     pxa_bytes_t app_identity, pxa_bytes_t name, pxa_bytes_t scope) {
@@ -1585,6 +1591,8 @@ static pxa_status_t request_runtime_permission_prompt(
              g_host.activation.active_identity, prompt.permission_name);
     return PXA_STATUS_OK;
 }
+
+#endif
 
 bool pxa_esp_host_respond_permission(uint32_t prompt_id, bool granted) {
     pxa_esp_host_command_t command;
@@ -3646,7 +3654,9 @@ static int start_verified(const char *identity) {
     services_config.allocator_context =
         &g_host.activation.activation_memory;
     services_config.allocate = activation_workspace_alloc;
+#if PXA_ENABLE_PERMISSIONS
     services_config.permission_prompt = request_runtime_permission_prompt;
+#endif
     services_config.net_notify = on_net_completion_ready;
     services_config.work_context = NULL;
     services_config.complete_work = complete_work;

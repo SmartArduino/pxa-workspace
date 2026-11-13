@@ -11,6 +11,15 @@ menu "PXA Development Apps"
             Enable the PXA Draft 0.1 Core and signed Package platform.
 
     if PXA_ENABLED
+        config PXA_ENABLE_PERMISSIONS
+            bool "Enable application permission policy and prompts"
+            default y
+            help
+                Turn off to allow every application permission request without
+                storing decisions or showing permission dialogs. The policy
+                engine is replaced with a small ABI adapter. Package signatures,
+                app storage isolation and normal resource ownership still apply.
+
         config PXA_ENABLE_LEGACY_CONTAINER
             bool "Accept legacy Container 0.1 packages"
             default n

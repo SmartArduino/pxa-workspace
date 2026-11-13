@@ -47,7 +47,6 @@ set(PXA_SRCS
     "src/package/pxa_locator_migration.c"
     "src/package/pxa_esp_store_download.c"
     "src/package/pxa_esp_store_cache.c"
-    "src/package/pxa_esp_permission_store.c"
     "src/package/pxa_esp_record_seal.c"
     "src/package/pxa_esp_security.c"
     "src/ui/pxa_esp_ui_assets.c"
@@ -113,6 +112,12 @@ if(NOT EXISTS "${PXSYS_ROOT}/libpxa")
 endif()
 set(PXA_C_CORE_ROOT "${PXSYS_ROOT}/libpxa")
 include("${PXA_C_CORE_ROOT}/cmake/pxaSources.cmake")
+set(PXA_ENABLE_PERMISSIONS "${CONFIG_PXA_ENABLE_PERMISSIONS}")
+if(PXA_ENABLE_PERMISSIONS)
+    list(APPEND PXA_SRCS "src/package/pxa_esp_permission_store.c")
+else()
+    list(APPEND PXA_SRCS "src/package/pxa_esp_permission_allow_all.c")
+endif()
 pxa_collect_sources(PXA_LIB_SOURCES "${PXA_C_CORE_ROOT}")
 list(APPEND PXA_LIB_SOURCES "${PXA_C_CORE_ROOT}/adapters/network/pxa_lan_native.c")
 list(APPEND PXA_SRCS
@@ -220,7 +225,8 @@ if(CONFIG_PXA_RENDER_ACCEL)
         PXA_RASTER_FILL_RGB565=pxa_render_fill_rgb565)
 endif()
 target_compile_definitions(${COMPONENT_LIB} PUBLIC
-    PXA_ENABLE_LEGACY_CONTAINER=$<BOOL:${CONFIG_PXA_ENABLE_LEGACY_CONTAINER}>)
+    PXA_ENABLE_LEGACY_CONTAINER=$<BOOL:${CONFIG_PXA_ENABLE_LEGACY_CONTAINER}>
+    PXA_ENABLE_PERMISSIONS=$<BOOL:${CONFIG_PXA_ENABLE_PERMISSIONS}>)
 if(PXA_BOARD STREQUAL "espp4-a")
     target_compile_definitions(${COMPONENT_LIB} PUBLIC PXA_AUDIO_MIXER_PACKETS=24)
 endif()

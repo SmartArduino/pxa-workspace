@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 #include "pxa_esp_install_approval.h"
 #include "pxa_esp_legacy_update.h"
+#include "pxa_esp_installations.h"
 #include "pxa/posix/pxa_posix_installer.h"
 #include "pxa/posix/pxa_posix_fs.h"
 #include "pxa/openssl/pxa_openssl.h"
@@ -16,8 +17,13 @@
 #define PXA_ESP_PACKAGE_MAX_ASSET_PATH 512
 #define esp_alloc(n) calloc(1,n)
 #define heap_caps_free free
-typedef struct {int installed,volume_local,ambiguous,built_in;char root[160];} pxa_esp_package_entry_t;
-static struct {pxa_posix_installer_t *installer;pxa_posix_installer_config_t installer_config;} store,*g_store=&store;
+static char test_mount[512];
+#define CONFIG_PXA_MOUNT_POINT test_mount
+typedef struct {
+    int installed,volume_local,ambiguous,built_in;
+    char root[160],id[65],identity[131];uint8_t publisher_key_id[32];
+} pxa_esp_package_entry_t;
+static struct {int legacy_ready;pxa_posix_installer_t *installer;pxa_posix_installer_config_t installer_config;} store,*g_store=&store;
 static pxa_esp_package_entry_t entry;
 static uint8_t encoded[65536],workspace[262144];
 static pxa_volume_registry_t *registry;
@@ -25,6 +31,24 @@ static pxa_volume_info_t volume;
 static uint64_t epoch;
 static char adopted[512];
 static unsigned layout_writes;
+static int path_is_within(const char *p,const char *parent) {
+    size_t n=strlen(parent);return !strncmp(p,parent,n)&&(!p[n]||p[n]=='/');
+}
+struct pxa_esp_installations {pxa_volume_info_t volume;};
+static struct pxa_esp_installations planning_owner;
+static pxa_status_t pxa_esp_storage_volume(uint64_t e,pxa_volume_info_t *out) {return pxa_volume_get(registry,e,out);}
+static pxa_status_t pxa_esp_storage_refresh_volume(uint64_t e) {return e==epoch?PXA_STATUS_OK:PXA_STATUS_UNAVAILABLE;}
+static pxa_status_t pxa_esp_storage_plan(const pxa_install_requirements_t *r,uint64_t a,uint64_t m,pxa_install_plan_t *out) {
+    return pxa_install_plan_evaluate(registry,r,a,m,out);
+}
+static pxa_status_t pxa_esp_storage_reserve_plan(pxa_install_plan_t *p) {return pxa_install_plan_reserve(registry,p);}
+static pxa_status_t pxa_esp_storage_release_plan(pxa_install_plan_t *p) {return pxa_install_plan_release(registry,p);}
+pxa_status_t pxa_esp_installations_open(uint64_t e,pxa_esp_installations_t **out) {
+    pxa_status_t s=pxa_volume_get(registry,e,&planning_owner.volume);*out=s?NULL:&planning_owner;return s;
+}
+static pxa_status_t close_volume_operation(pxa_esp_installations_t **owner,pxa_status_t status) {*owner=NULL;return status;}
+static pxa_status_t available(pxa_esp_installations_t *owner) {return owner==&planning_owner?PXA_STATUS_OK:PXA_STATUS_UNAVAILABLE;}
+uint64_t pxa_esp_installations_private_initial_bytes(void) {assert(!"Legacy update never creates a new private image");return 0;}
 static pxa_esp_package_entry_t *find_entry(const char *id) {(void)id;return entry.installed?&entry:NULL;}
 static int is_directory(const char *p) {struct stat s;return !lstat(p,&s)&&S_ISDIR(s.st_mode);}
 static int pxa_host_container_stream_volume_path(uint64_t e,const char *p) {return e==epoch&&!strcmp(p,adopted);}
@@ -75,7 +99,7 @@ static void copy_stream_fixture(const char *source) {
     assert(realpath("stream",adopted));
 }
 int main(int argc,char **argv) {
-    assert(argc==2);assert(!chdir(argv[1]));
+    assert(argc==2);assert(realpath(argv[1],test_mount));assert(!chdir(argv[1]));
     pxa_bytes_t der=file_bytes("publisher.der");pxa_openssl_publisher_key_t key={der.data,der.size};
     uint8_t publisher[32];SHA256(der.data,der.size,publisher);
     void *reg=calloc(1,pxa_volume_registry_workspace_size(1));assert(reg);
@@ -84,9 +108,11 @@ int main(int argc,char **argv) {
     volume.capabilities=PXA_VOLUME_READ|PXA_VOLUME_WRITE|PXA_VOLUME_RANDOM_READ|PXA_VOLUME_INSTALLABLE|PXA_VOLUME_PRIVATE_NATIVE;
     volume.total_bytes=volume.free_bytes=16000000;volume.space_known=3;volume.allocation_unit=4096;
     assert(!pxa_volume_register(registry,&volume,&epoch));volume.mount_epoch=epoch;
-    for(unsigned builtin=0;builtin<2;++builtin) {
-        char state[32],root[160],save[256],source1[512],source2[512];
-        snprintf(state,sizeof(state),"state%u",builtin);assert(!mkdir(state,0700));
+    for(unsigned scenario=0;scenario<4;++scenario) {
+        unsigned builtin=scenario%2,direct=scenario>=2;
+        char state[512],state_name[32],root[160],save[640],source1[512],source2[512];
+        snprintf(state_name,sizeof(state_name),"state%u",scenario);assert(!mkdir(state_name,0700));
+        assert(realpath(state_name,state));store.legacy_ready=1;
         assert(realpath("source1",source1)&&realpath("source2",source2));
         pxa_posix_installer_config_t *config=&store.installer_config;memset(config,0,sizeof(*config));
         config->struct_size=sizeof(*config);config->storage_root=state;
@@ -101,12 +127,47 @@ int main(int argc,char **argv) {
         /* Provision an owner/private directory, as the old runtime does. */
         assert(!pxa_posix_installer_install(store.installer,source1,&result,&disposition));
         entry=(pxa_esp_package_entry_t){.installed=1,.built_in=builtin};strcpy(entry.root,root);
+        strcpy(entry.id,"volume-test");memcpy(entry.publisher_key_id,publisher,32);
+        for(unsigned i=0;i<32;++i)snprintf(entry.identity+2*i,3,"%02x",publisher[i]);
+        strcat(entry.identity,":volume-test");
         snprintf(save,sizeof(save),"%s/data",state);assert(!mkdir(save,0700));
         const char *leaf=strrchr(root,'/');assert(leaf);
         strcat(save,leaf);assert(!mkdir(save,0700));strcat(save,"/save");text_file(save,"private-save");
         if(builtin) {
-            char owner[256];snprintf(owner,sizeof(owner),"%s/owners%s",state,leaf);assert(!unlink(owner));
+            char owner[640];snprintf(owner,sizeof(owner),"%s/owners%s",state,leaf);assert(!unlink(owner));
             assert(!pxa_posix_fs_remove_tree(root));strcpy(entry.root,source1);
+        }
+        if(direct) {
+            unsigned before=layout_writes;
+            assert(!read_source_into_store(source2,&result,1));
+            assert(install_legacy_on_volume_locked(source2,epoch+1,&entry,&result)==PXA_STATUS_BAD_STATE);
+            assert(layout_writes==before);saved(save);
+            const char *transfer=source2;
+            if(!builtin) {copy_stream_fixture(source2);transfer=adopted;}
+            assert(!read_source_into_store(transfer,&result,1));
+            assert(!pxa_volume_update(registry,epoch,PXA_VOLUME_READY,16000000,100000,3));
+            assert(install_legacy_on_volume_locked(transfer,epoch,&entry,&result)==PXA_STATUS_QUOTA_EXCEEDED);
+            assert(!pxa_volume_get(registry,epoch,&volume)&&!volume.reserved_bytes);
+            assert(layout_writes==before);saved(save);
+            assert(!pxa_volume_update(registry,epoch,PXA_VOLUME_READY,16000000,16000000,3));
+            assert(!read_source_into_store(transfer,&result,1));
+            assert(!install_legacy_on_volume_locked(transfer,epoch,&entry,&result));
+            assert(!entry.built_in);saved(save);
+            if(!builtin)assert(!is_directory(adopted));
+            assert(!pxa_volume_get(registry,epoch,&volume)&&!volume.reserved_bytes);
+            assert(!read_source_into_store(source2,&result,1));before=layout_writes;
+            assert(!install_legacy_on_volume_locked(source2,0,&entry,&result)); /* Same signed version. */
+            assert(layout_writes==before);saved(save);
+            assert(!read_source_into_store(source1,&result,1));
+            assert(install_legacy_on_volume_locked(source1,epoch,&entry,&result)==PXA_STATUS_DENIED);
+            assert(!read_source_into_store(source2,&result,1));
+            copy_stream_fixture(source2);
+            FILE *f=fopen("stream/artifacts/main.wasm","r+b");assert(f);assert(fputc(1,f)!=EOF&&!fclose(f));
+            assert(!read_source_into_store(adopted,&result,1));
+            assert(install_legacy_on_volume_locked(adopted,epoch,&entry,&result)!=PXA_STATUS_OK);
+            assert(!pxa_volume_get(registry,epoch,&volume)&&!volume.reserved_bytes);saved(save);
+            assert(!pxa_posix_fs_remove_tree("stream"));
+            pxa_posix_installer_deinit(store.installer);free(memory);continue;
         }
         pxa_esp_install_approval_t approval={.legacy_update=1,.legacy_builtin=builtin};
         strcpy(approval.legacy_root,entry.root);strcpy(approval.record.app_id,"volume-test");
@@ -146,5 +207,5 @@ int main(int argc,char **argv) {
         pxa_posix_installer_deinit(store.installer);free(memory);
     }
     assert(layout_writes>=2);free((void *)der.data);free(reg);
-    puts("Legacy updates: signed old/new snapshots, private-data retention, built-in overlay, wrong source, stale approval, downgrade and released lease passed");
+    puts("Legacy updates: signed snapshots, private-data retention, built-in overlay, direct volume/stream/same-version updates, wrong volume, quota, tampered payload, stale approval, downgrade and released lease passed");
 }

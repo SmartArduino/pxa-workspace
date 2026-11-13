@@ -1,0 +1,20 @@
+{
+  "format": "pxa-package-source-0.2",
+  "id": "pxa-permission-build-test",
+  "version": "1.0.0",
+  "release_sequence": 1,
+  "name": "Permission build-mode probe",
+  "description": "Device acceptance fixture for permission policy build modes",
+  "min_sdk": [2, 1],
+  "build": {
+    "system": "cmake",
+    "native_stack_checks": true,
+    "linear_memory": {"maximum_bytes": 131072, "pinned": false}
+  },
+  "components": [{
+    "id": "main",
+    "kind": "ui",
+    "wasi": {"version": "preview1", "libc": "wasi-libc", "features": []},
+    "services": ["log", "permission"]
+  }]
+}

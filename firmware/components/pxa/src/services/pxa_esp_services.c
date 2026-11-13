@@ -221,6 +221,7 @@ static pxa_status_t esp_get_mac(void *context, uint16_t kind,
     return PXA_STATUS_OK;
 }
 
+#if PXA_ENABLE_PERMISSIONS
 static pxa_status_t collect_declarations(
     pxa_esp_services_t *services, const pxa_esp_services_config_t *host,
     pxa_esp_services_result_t *result) {
@@ -260,22 +261,24 @@ static pxa_status_t collect_declarations(
     }
     return PXA_STATUS_OK;
 }
+#endif
 
 static pxa_status_t initialize_permission(
     pxa_esp_services_t *services, const pxa_esp_services_config_t *host,
     pxa_esp_services_result_t *result) {
     pxa_permission_config_t config;
-    pxa_permission_store_t store;
     pxa_status_t status;
     size_t workspace_size;
+    memset(&config, 0, sizeof(config));
+    config.struct_size = sizeof(config);
+#if PXA_ENABLE_PERMISSIONS
+    pxa_permission_store_t store;
     status = collect_declarations(services, host, result);
     if (status != PXA_STATUS_OK) return status;
     if(host->app_storage) {
         status=pxa_esp_app_storage_permissions(host->app_storage,&store);
         if(status!=PXA_STATUS_OK)return fail(result,"bind-app-permissions",status,PXA_ESP_SERVICES_ISSUE_NONE);
     } else pxa_esp_permission_store_bind(&store);
-    memset(&config, 0, sizeof(config));
-    config.struct_size = sizeof(config);
     config.app_identity = (pxa_bytes_t){(const uint8_t *)host->identity,
                                         strlen(host->identity)};
     config.declarations = services->declarations;
@@ -295,6 +298,7 @@ static pxa_status_t initialize_permission(
     config.prompt_context = host->permission_prompt_context;
     config.prompt = host->permission_prompt;
     config.store = store;
+#endif
     workspace_size = pxa_permission_service_workspace_size(&config);
     status = allocate_workspace(host, workspace_size,
                                 &services->permission_workspace, result,
@@ -1204,7 +1208,10 @@ pxa_status_t pxa_esp_services_initialize(
     if (services == NULL || config == NULL || result == NULL ||
         config->runtime == NULL || config->manifest == NULL ||
         config->identity == NULL || config->identity[0] == '\0' ||
-        config->allocate == NULL || config->permission_prompt == NULL ||
+        config->allocate == NULL ||
+#if PXA_ENABLE_PERMISSIONS
+        config->permission_prompt == NULL ||
+#endif
         config->net_notify == NULL ||
         config->color_scheme > PXA_UI_COLOR_SCHEME_DARK) {
         if (result != NULL) {
