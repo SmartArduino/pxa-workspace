@@ -57,10 +57,12 @@ struct UserPreferences {
     bool has_palette = false;
     bool has_volume = false;
     bool has_brightness = false;
+    bool has_locale = false;
     uint8_t scheme = 0;
     uint8_t palette = 0;
     uint8_t volume = 0;
     uint8_t brightness = 0;
+    char locale[PXSYS_LOCALE_TAG_MAX_BYTES + 1u] = {};
     pxsys_reference_idle_policy_t idle_policy = {30, 120, 10};
 };
 
@@ -77,13 +79,16 @@ uint32_t g_display_height = 0;
 UserPreferences g_preferences;
 bool g_theme_observer_registered = false;
 bool g_status_observer_registered = false;
+bool g_locale_observer_registered = false;
 bool g_theme_observer_seen = false;
 bool g_status_observer_seen = false;
+bool g_locale_observer_seen = false;
 uint8_t g_observed_volume = 0;
 uint8_t g_observed_brightness = 0;
 
 void LoadUserPreferences() {
     g_preferences = {};
+    g_locale_observer_seen = false;
     nvs_handle_t handle;
     if (nvs_open(kPreferencesNamespace, NVS_READONLY, &handle) != ESP_OK)
         return;
@@ -99,6 +104,16 @@ void LoadUserPreferences() {
     g_preferences.has_brightness =
         nvs_get_u8(handle, "bright", &g_preferences.brightness) == ESP_OK &&
         g_preferences.brightness >= 2 && g_preferences.brightness <= 100;
+    size_t locale_bytes = sizeof(g_preferences.locale);
+    pxsys_locale_snapshot_t locale = {};
+    if (nvs_get_str(handle, "locale", g_preferences.locale, &locale_bytes) == ESP_OK &&
+        locale_bytes >= 3 && locale_bytes <= sizeof(g_preferences.locale) &&
+        g_preferences.locale[locale_bytes - 1u] == '\0' &&
+        pxsys_locale_snapshot_init(&locale,
+            pxsys_string(g_preferences.locale, locale_bytes - 1u)) == PXSYS_STATUS_OK) {
+        std::memcpy(g_preferences.locale, locale.tag, locale.tag_size + 1u);
+        g_preferences.has_locale = true;
+    }
     pxsys_reference_idle_policy_t saved = {};
     if (nvs_get_u16(handle, "dim_sec", &saved.dim_after_seconds) == ESP_OK &&
         nvs_get_u16(handle, "lock_sec", &saved.lock_after_seconds) == ESP_OK &&
@@ -109,6 +124,33 @@ void LoadUserPreferences() {
         saved.dim_percent >= 2 && saved.dim_percent <= 100)
         g_preferences.idle_policy = saved;
     nvs_close(handle);
+}
+
+const char* InitialLocale(const char* product_default) {
+    return g_preferences.has_locale ? g_preferences.locale : product_default;
+}
+
+void SaveLocale(void*, const pxsys_locale_snapshot_t* locale) {
+    if (pxsys_locale_snapshot_validate(locale) != PXSYS_STATUS_OK) return;
+    /* Subscription immediately publishes its initial snapshot. Do not write
+     * the product default back over an absent preference during startup. */
+    if (!g_locale_observer_seen) {
+        g_locale_observer_seen = true;
+        return;
+    }
+    if (g_preferences.has_locale &&
+        std::strcmp(g_preferences.locale, locale->tag) == 0) return;
+    nvs_handle_t handle;
+    if (nvs_open(kPreferencesNamespace, NVS_READWRITE, &handle) != ESP_OK) return;
+    esp_err_t result = nvs_set_str(handle, "locale", locale->tag);
+    if (result == ESP_OK) result = nvs_commit(handle);
+    nvs_close(handle);
+    if (result == ESP_OK) {
+        std::memcpy(g_preferences.locale, locale->tag, locale->tag_size + 1u);
+        g_preferences.has_locale = true;
+    } else {
+        ESP_LOGW(kTag, "Could not save language: %s", esp_err_to_name(result));
+    }
 }
 
 bool SaveIdlePolicy(void*, const pxsys_reference_idle_policy_t* policy) {
@@ -1275,7 +1317,7 @@ bool CreateSystem(const pxa_board_port_t* board,
             &system_config.initial_theme,
             static_cast<pxsys_theme_palette_t>(g_preferences.palette));
     if (pxsys_locale_snapshot_init(&system_config.initial_locale,
-            pxsys_string_from_cstr(profile->locale)) != PXSYS_STATUS_OK) {
+            pxsys_string_from_cstr(InitialLocale(profile->locale))) != PXSYS_STATUS_OK) {
         return false;
     }
     system_config.initial_display = initial_display;
@@ -1442,6 +1484,10 @@ bool CreateSystem(const pxa_board_port_t* board,
         pxsys_standard_system_theme(g_system), nullptr, SaveTheme);
     if (status != PXSYS_STATUS_OK) return false;
     g_theme_observer_registered = true;
+    status = pxsys_locale_service_subscribe(
+        pxsys_standard_system_locale(g_system), nullptr, SaveLocale);
+    if (status != PXSYS_STATUS_OK) return false;
+    g_locale_observer_registered = true;
     status = pxsys_system_status_service_subscribe(
         pxsys_standard_system_status(g_system), nullptr, SaveLevels);
     if (status != PXSYS_STATUS_OK) return false;
@@ -1572,8 +1618,14 @@ extern "C" void pxa_integration_stop(void) {
             pxsys_standard_system_theme(g_system), nullptr, SaveTheme);
         g_theme_observer_registered = false;
     }
+    if (g_locale_observer_registered && g_system != nullptr) {
+        (void)pxsys_locale_service_unsubscribe(
+            pxsys_standard_system_locale(g_system), nullptr, SaveLocale);
+        g_locale_observer_registered = false;
+    }
     g_theme_observer_seen = false;
     g_status_observer_seen = false;
+    g_locale_observer_seen = false;
     if (g_display_observer_registered && g_system != nullptr) {
         (void)pxsys_display_service_unsubscribe(
             pxsys_standard_system_display(g_system), nullptr,

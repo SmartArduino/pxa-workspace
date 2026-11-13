@@ -11,8 +11,10 @@ FIXTURE=r'''
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <string>
+#include "pxsys/locale.h"
 #define ESP_LOGW(...) ((void)0)
 #define ESP_LOGI(...) ((void)0)
 constexpr int ESP_OK=0,NVS_READONLY=0,NVS_READWRITE=1;
@@ -26,12 +28,14 @@ int nvs_open(const char*,int mode,int* h) {*h=1;return mode==NVS_READONLY && fla
 void nvs_close(int) {}
 int nvs_get_u8(int,const char* key,uint8_t* v) {auto i=flash.find(key);if(i==flash.end())return -1;*v=i->second;return 0;}
 int nvs_get_u16(int,const char*,uint16_t*) {return -1;}
+int nvs_get_str(int,const char*,char*,size_t*) {return -1;}
 int nvs_set_u8(int,const char* key,uint8_t v) {flash[key]=v;return 0;}
 int nvs_commit(int) {++commits;return 0;}
 // PREFERENCES
 const char *kPreferencesNamespace="pxa_user";
 UserPreferences g_preferences;
 bool g_status_observer_seen=false;
+bool g_locale_observer_seen=false;
 uint8_t g_observed_volume=0,g_observed_brightness=0;
 // LOAD
 // SAVE
@@ -89,8 +93,15 @@ def main():
     unit=unit.replace('// SAVE',function(integration,'void SaveLevels(')).replace('// SETTER',setter)
     with tempfile.TemporaryDirectory(prefix='pxa-volume-') as temp:
         source=Path(temp)/'test.cpp';source.write_text(unit);binary=Path(temp)/'test'
+        include=root/'deps/pxa-system/system/core/include'
+        objects=[]
+        for name in ('locale','types'):
+            obj=Path(temp)/(name+'.o');objects.append(str(obj))
+            subprocess.run([os.environ.get('CC','clang'),'-std=c99',
+                '-fsanitize=address,undefined','-I'+str(include),'-c',
+                str(root/('deps/pxa-system/system/core/src/'+name+'.c')),'-o',str(obj)],check=True)
         subprocess.run([os.environ.get('CXX','clang++'),'-std=c++17','-Wall','-Wextra','-Werror',
-            '-fsanitize=address,undefined',str(source),'-o',str(binary)],check=True)
+            '-fsanitize=address,undefined','-I'+str(include),str(source),*objects,'-o',str(binary)],check=True)
         subprocess.run([str(binary)],check=True)
 
 if __name__=='__main__':main()
