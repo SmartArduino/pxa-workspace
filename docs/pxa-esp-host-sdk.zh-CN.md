@@ -2,7 +2,7 @@
 
 这是固件集成包。开发 PXA App 使用 Guest DevKit；让现有固件运行 App 使用本包。
 包内含固定的 libpxa、PXA System、WAMR、PageManager、ESP Host、系统桥接、
-LVGL 输入同步和 PXADB。它不包含板级驱动、产品主程序、旧应用或开发私钥。
+LVGL 输入同步、渲染辅助、通用板级 API、时钟服务和 PXADB。它不包含板级驱动、产品主程序、旧应用或开发私钥。
 
 ## 固件依赖与产品边界
 

@@ -21,6 +21,7 @@ COMPONENTS = (
     "pxa_system_standard", "pxa_system_esp", "pxa_system_renderer_lvgl",
     "pxa_system_renderer_headless", "pxa_system_reference_ui", "pxa_lvgl_input",
     "pxa_lvgl_memory", "pxadb", "page_manager",
+    "pxa_render_accel", "pxa_board_api", "pxa_system_clock",
 )
 
 
