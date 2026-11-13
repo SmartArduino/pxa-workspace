@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import contextlib
+import errno
 import hashlib
 import http.server
 import ipaddress
@@ -180,6 +181,20 @@ class SerialLineReader:
     @property
     def in_waiting(self) -> int:
         return self.serial_port.in_waiting + len(self.buffer)
+
+    def write(self, data: bytes) -> int:
+        if os.name == "posix" and getattr(self.serial_port, "write_timeout", None) == 0:
+            # pyserial retries EAGAIN even with write_timeout=0. A stopped CDC
+            # endpoint can therefore trap its write loop forever, preventing
+            # the client's own command/upload deadline from running.
+            try:
+                return os.write(self.serial_port.fileno(), data)
+            except OSError as error:
+                if error.errno in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EALREADY,
+                                   errno.EINPROGRESS, errno.EINTR):
+                    return 0
+                raise serial.SerialException(f"write failed: {error}") from error
+        return self.serial_port.write(data)
 
     def readline(self) -> bytes:
         deadline = time.monotonic() + self.idle_timeout

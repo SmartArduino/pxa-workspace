@@ -505,6 +505,58 @@ class NativeHostDiscoveryTest(unittest.TestCase):
 
 
 class SerialLineReaderTest(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix", "POSIX non-blocking descriptors")
+    def test_full_descriptor_returns_control_to_client_deadline(self) -> None:
+        read_fd, write_fd = os.pipe()
+        try:
+            os.set_blocking(write_fd, False)
+            while True:
+                try:
+                    os.write(write_fd, b"x" * 4096)
+                except BlockingIOError:
+                    break
+            port = SimpleNamespace(write_timeout=0, fileno=lambda: write_fd,
+                                   write=mock.Mock(side_effect=AssertionError("pyserial would retry EAGAIN")))
+            reader = pxadb.SerialLineReader(port)
+            self.assertEqual(reader.write(b"hello"), 0)
+            client = object.__new__(pxadb.PxaDbClient)
+            client.serial, client.timeout = reader, 2.0
+            with mock.patch.object(pxadb.time, "monotonic", side_effect=[0.0, 0.1, 10.1]), \
+                    mock.patch.object(pxadb.time, "sleep"):
+                with self.assertRaisesRegex(pxadb.PxaDbError, "write timed out"):
+                    client._write_bulk_bytes(b"hello")
+            port.write.assert_not_called()
+        finally:
+            os.close(read_fd)
+            os.close(write_fd)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX non-blocking descriptors")
+    def test_partial_descriptor_write_reports_only_accepted_bytes(self) -> None:
+        read_fd, write_fd = os.pipe()
+        try:
+            os.set_blocking(write_fd, False)
+            port = SimpleNamespace(write_timeout=0, fileno=lambda: write_fd,
+                                   write=mock.Mock(side_effect=AssertionError("unexpected delegated write")))
+            payload = b"x" * (1024 * 1024)
+            written = pxadb.SerialLineReader(port).write(payload)
+            self.assertGreater(written, 0)
+            self.assertLess(written, len(payload))
+            self.assertEqual(os.read(read_fd, written), payload[:written])
+        finally:
+            os.close(read_fd)
+            os.close(write_fd)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX serial errors")
+    def test_disconnected_descriptor_keeps_serial_exception_contract(self) -> None:
+        port = SimpleNamespace(write_timeout=0, fileno=lambda: -1)
+        with self.assertRaises(pxadb.serial.SerialException):
+            pxadb.SerialLineReader(port).write(b"hello")
+
+    def test_other_write_modes_keep_driver_behavior(self) -> None:
+        port = SimpleNamespace(write_timeout=1, write=mock.Mock(return_value=3))
+        self.assertEqual(pxadb.SerialLineReader(port).write(b"abc"), 3)
+        port.write.assert_called_once_with(b"abc")
+
     def test_reassembles_lines_without_byte_reads(self) -> None:
         port = FakeBufferedSerial([
             b"PXADB1 1 OK YQ", b"==\nPXADB1 2 LOG eA==\n",
