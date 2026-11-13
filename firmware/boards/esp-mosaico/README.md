@@ -513,8 +513,7 @@ waiting for the previous snapshot; transfer duration excludes TE waiting.
 time, and counts PPA/CPU direct frames and accelerated background fills.
 `ui_transfer` adds `compact_total`, `compact_enabled` and `draw_rows`.
 The compact counter is cumulative since boot (32-bit wrap); `fps` counts panel
-completions within the log interval. See the [UI optimization report](docs/ui-performance-optimization.zh-CN.md)
-for the baseline, reproducible tests, transfer-volume comparison and device limits.
+completions within the log interval.
 GameRender presentation telemetry is recorded at actual transfer completion,
 with the raster-ready timestamp carried through the flush queue.
 The top `FPS26.4` HUD counts successful content transfers and updates about once
@@ -555,17 +554,23 @@ streamed music; its sampling clock no longer depends on rendering. Prepared
 long effects use a 1.5 MiB PSRAM asset-cache ceiling inside the shared 2 MiB
 resource budget, rather than allocating that capacity at startup.
 
-The 16 MiB NOR flash layout reserves 4 MiB for the factory firmware and
-`0xBF0000` bytes for the `pxa_data` LittleFS partition. SPI NAND,
-IMU, magnetometer, status LED, haptic motor and light sleep
-are not exposed by this port. See the [PXA integration audit](docs/pxa-integration-audit.zh-CN.md)
-for connected interfaces, remaining hardware-specific work and validation limits.
-Follow-up input, audio and power fixes are documented in the
-[reliability and UI latency report](docs/reliability-and-ui-latency.zh-CN.md).
-Further worker handoff measurements are in [the parallel pipeline report](docs/ui-parallel-pipeline-20261016.zh-CN.md).
+The Core 1 UI task renders into retained RGB565 pixels. Its final LVGL flush
+hands ownership to the existing Core 0 transfer task, which creates the PPA
+snapshot before returning the source buffer to LVGL. QSPI transfer can then
+overlap the next frame's rendering. Painting waits while the source is being
+copied; screenshots and display changes also wait for in-flight transfers.
 
-Actual settings/shade measurements and the retained UI drawing path are recorded
-in the [device profiling report](docs/ui-device-profile-20261016.zh-CN.md).
+The 16 MiB NOR partition table reserves 5 MiB for the factory application at
+`0x10000` and `0xAF0000` bytes for the `pxa_data` LittleFS partition at
+`0x510000`. The separate SPI NAND volume and onboard peripherals are described
+in the hardware sections above.
+
+Before an app-only firmware update, verify that the device's partition table
+matches the target image. Older 4 MiB application layouts need a data backup
+and a full-image migration; writing a larger app into that old layout can
+overwrite its data partition. Full images provision fonts and the Store but
+replace existing internal data. App-only updates preserve the installed apps,
+fonts, Store and settings when the partition table matches.
 
 ## Build and use
 
