@@ -663,7 +663,11 @@ void Board::Sd() {
     // card through the CMD/D0-D3 pull-ups, then release its signals.
     // Merely resetting P4 does not reset a card left in a failed transfer.
     const gpio_config_t power = {.pin_bit_mask = 1ULL << 4, .mode = GPIO_MODE_OUTPUT};
-    if (gpio_set_level(GPIO_NUM_4, 1) != ESP_OK || gpio_config(&power) != ESP_OK) return;
+    // Limit the P-MOS gate slew rate: the default drive can disconnect the USB
+    // UART bridge when an inserted card is powered. Keep SD signal drive unchanged.
+    if (gpio_set_level(GPIO_NUM_4, 1) != ESP_OK ||
+        gpio_set_drive_capability(GPIO_NUM_4, GPIO_DRIVE_CAP_0) != ESP_OK ||
+        gpio_config(&power) != ESP_OK) return;
     constexpr uint64_t signals = (1ULL << 39) | (1ULL << 40) | (1ULL << 41) |
         (1ULL << 42) | (1ULL << 43) | (1ULL << 44);
     const gpio_config_t discharge = {.pin_bit_mask = signals, .mode = GPIO_MODE_OUTPUT};
