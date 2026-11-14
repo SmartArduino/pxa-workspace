@@ -52,6 +52,7 @@ private:
 
     bool InitializeDisplay();
     bool InitializeTouch();
+    bool RegisterInteraction();
     bool InitializeAdc();
     bool InitializeWifi();
     void InitializeButtons();
@@ -90,6 +91,7 @@ private:
     std::atomic<uint8_t> display_rotation_{0};
     pxa_board_common::BootScreen boot_screen_;
     esp_lcd_touch_handle_t touch_ = nullptr;
+    bool touch_ready_ = false;
     lv_indev_t* physical_pointers_[kTouchMaxPointers] = {};
     portMUX_TYPE touch_lock_ = portMUX_INITIALIZER_UNLOCKED;
     bool touch_slot_pressed_[kTouchMaxPointers] = {};

@@ -8,6 +8,7 @@
 #include <src/misc/cache/instance/lv_image_header_cache.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -21,6 +22,7 @@
 #include <driver/ledc.h>
 #include <driver/spi_common.h>
 #include <esp_err.h>
+#include <esp_app_desc.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
@@ -37,6 +39,7 @@
 #include <freertos/task.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
+#include <pxa/pxa_host_interaction.h>
 #include <pxa_board_api.h>
 #include <pxsys/reference_lvgl.h>
 #include <pxsys/standard_system.h>
@@ -202,7 +205,8 @@ bool PaiTouchHardware::Initialize() {
         }
         nvs_close(performance_handle);
     }
-    if (!InitializeTouch()) ESP_LOGW(kTag, "Continuing without touch input");
+    touch_ready_ = InitializeTouch();
+    if (!touch_ready_) ESP_LOGW(kTag, "Continuing without touch input");
     if (!PaiTouchInitializeCamera()) ESP_LOGW(kTag, "Camera port unavailable");
     if (!InitializeAdc()) return false;
     InitializeButtons();
@@ -217,6 +221,8 @@ bool PaiTouchHardware::Initialize() {
     };
     ESP_ERROR_CHECK(esp_timer_create(&timer_config, &status_timer_));
     ESP_ERROR_CHECK(esp_timer_start_periodic(status_timer_, 1000 * 1000));
+    if (touch_ready_ && !RegisterInteraction())
+        ESP_LOGW(kTag, "Physical touch interaction description unavailable");
     return true;
 }
 
@@ -396,6 +402,52 @@ bool PaiTouchHardware::SetDisplayRotation(uint8_t rotation) {
     }
     if (cancel) cancel(cancel_context);
     return true;
+}
+
+// Published once before Host/PXADB; no injected-input capability is inferred.
+bool PaiTouchHardware::RegisterInteraction() {
+    if (!touch_ready_) return false;
+    unsigned contacts = 0;
+    // Physical contact0 must have a route; a hole cannot count as a contact.
+    for (auto* pointer : physical_pointers_) {
+        if (!pointer) break;
+        ++contacts;
+    }
+    if (!contacts) return false;
+    const auto* app = esp_app_get_description();
+    if (!app || !app->project_name[0] || !app->version[0] ||
+        !std::memchr(app->project_name, 0, sizeof(app->project_name)) ||
+        !std::memchr(app->version, 0, sizeof(app->version))) return false;
+    uint8_t any = 0, common = 0xff;
+    for (const auto byte : app->app_elf_sha256) { any |= byte; common &= byte; }
+    if (!any || common == 0xff) return false;
+    static const std::array<char, 65> build_id = [app] {
+        std::array<char, 65> text{};
+        static constexpr char hex[] = "0123456789abcdef";
+        for (size_t i = 0; i < sizeof(app->app_elf_sha256); ++i) {
+            text[i * 2] = hex[app->app_elf_sha256[i] >> 4];
+            text[i * 2 + 1] = hex[app->app_elf_sha256[i] & 15];
+        }
+        return text;
+    }();
+    static const pxa_interaction_control_t controls[] = {{"touchscreen", "触摸屏"}};
+    static const pxa_interaction_binding_t bindings[] = {
+        {"tap", "touchscreen", PXA_INTERACTION_TAP, 0, -1}};
+    static const pxa_interaction_mode_t modes[] = {{"touch", "touch", bindings, 1}};
+    static const pxa_host_interaction_t descriptor = {
+        .struct_size = sizeof(pxa_host_interaction_t),
+        .vendor = "unknown", .model = "pai-touch", .hardware_revision = "unknown",
+        .firmware_id = app->project_name, .firmware_version = app->version,
+        .build_id = build_id.data(), .profile_id = "pxa.reference.pai-touch.touch", .revision = 1,
+        .width = PAI_DISPLAY_WIDTH, .height = PAI_DISPLAY_HEIGHT, .shape = "rounded",
+        .touch = 1, .simultaneous = -1, .max_contacts = static_cast<int8_t>(contacts),
+        .controls = controls, .control_count = 1, .modes = modes, .mode_count = 1,
+    };
+    return pxa_host_interaction_register_with_viewport(&descriptor,
+        [](void* context, uint16_t* width, uint16_t* height) {
+            static_cast<PaiTouchHardware*>(context)->DisplaySize(width, height);
+            return *width && *height;
+        }, this);
 }
 
 bool PaiTouchHardware::InitializeTouch() {

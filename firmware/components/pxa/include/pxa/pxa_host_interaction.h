@@ -55,6 +55,18 @@ typedef struct {
 /* Register once before starting Host/PXADB tasks. Descriptor and all borrowed
  * strings/arrays remain immutable and alive until reboot. No Guest is started. */
 bool pxa_host_interaction_register(const pxa_host_interaction_t *descriptor);
+/* Optional live logical viewport. Called once per snapshot and must write a
+ * consistent nonzero pair from one rotation sample, without changing input or
+ * starting a Guest. False/incomplete output makes that snapshot unreported.
+ * Registration remains once-only across both entry points; the descriptor
+ * layout and register()'s static-dimension behavior are unchanged. Query and
+ * context remain alive until reboot; concurrent queries hold no display or
+ * Host lock, so the product must make the callback safe for those calls. */
+typedef bool (*pxa_interaction_viewport_query_t)(void *context,
+                                               uint16_t *width, uint16_t *height);
+bool pxa_host_interaction_register_with_viewport(
+    const pxa_host_interaction_t *descriptor,
+    pxa_interaction_viewport_query_t query, void *context);
 /* Writes one bounded JSON snapshot, excluding device serial/MAC/account data.
  * False means unreported/invalid/insufficient capacity; output_size is zero. */
 bool pxa_host_interaction_describe(char *output, size_t capacity, size_t *output_size);

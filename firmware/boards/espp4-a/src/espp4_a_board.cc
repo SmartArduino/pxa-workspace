@@ -13,6 +13,7 @@
 #include "espp4_a_usb.h"
 #include "espp4_a_ui_render.h"
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <atomic>
 #include <cstring>
@@ -22,6 +23,7 @@
 #include <driver/uart.h>
 #include <driver/uart_vfs.h>
 #include <esp_heap_caps.h>
+#include <esp_app_desc.h>
 #include <esp_attr.h>
 #include <esp_lcd_mipi_dsi.h>
 #include <esp_lcd_touch_st7123.h>
@@ -33,6 +35,7 @@
 #include <esp_vfs_fat.h>
 #include <esp_wifi.h>
 #include <pxa/pxa_host.h>
+#include <pxa/pxa_host_interaction.h>
 #include <pxa_board_api.h>
 #include <pxa/display_rotation.h>
 #include <pxa_board_common/boot_screen.h>
@@ -117,6 +120,7 @@ public:
     }
 private:
     bool Touch();
+    bool RegisterInteraction();
     bool Pointers();
     void CancelPointers();
     void Sd();
@@ -139,6 +143,7 @@ private:
     esp_lcd_touch_handle_t touch_ = nullptr;
     esp_lcd_panel_io_handle_t touch_io_ = nullptr;
     uint8_t touch_slots_ = 0;
+    bool touch_ready_ = false;
     std::atomic<uint32_t> touch_pending_{1}, touch_irq_count_{0}, touch_irq_observed_{0};
     espp4_a::TouchSchedule touch_schedule_;
     uint32_t touch_reads_ = 0, touch_errors_ = 0;
@@ -281,7 +286,8 @@ bool Board::Initialize() {
     if (esp_lv_decoder_init(&decoder_) != ESP_OK || !Espp4AInitializeJpegImages(decoder_)) return false;
     boot_.Show(display_);
     InitialFrame();
-    if (!Touch()) ESP_LOGW(kTag, "Touch unavailable; PXADB input remains available");
+    touch_ready_ = Touch();
+    if (!touch_ready_) ESP_LOGW(kTag, "Touch unavailable; PXADB input remains available");
     if (!Pointers()) return false;
     const gpio_config_t button = {.pin_bit_mask = 1ULL << 35, .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE};
@@ -324,6 +330,8 @@ bool Board::Initialize() {
     else ESP_LOGW(kTag, "Radio SDMMC initialization pending; TF mount deferred");
     ESP_LOGI(kTag, "ST7102 480x854 DSI 440Mbps / BOOT GPIO35 / UART0 %u",
              unsigned(CONFIG_ESP_CONSOLE_UART_BAUDRATE));
+    if (touch_ready_ && !RegisterInteraction())
+        ESP_LOGW(kTag, "Physical touch interaction description unavailable");
     return true;
 }
 
@@ -588,6 +596,53 @@ void Board::InitialFrame() {
             static_cast<unsigned long>(esp_log_timestamp()), completed_us_);
     }
     lv_unlock(); Unlock();
+}
+
+// Published once before Host/PXADB; no injected-input capability is inferred.
+bool Board::RegisterInteraction() {
+    if (!touch_ready_) return false;
+    unsigned contacts = 0;
+    // Physical contact0 must have a route; a hole cannot count as a contact.
+    for (auto* pointer : pointers_) {
+        if (!pointer) break;
+        ++contacts;
+    }
+    contacts = std::min<unsigned>(contacts, touch_slots_);
+    if (!contacts) return false;
+    const auto* app = esp_app_get_description();
+    if (!app || !app->project_name[0] || !app->version[0] ||
+        !std::memchr(app->project_name, 0, sizeof(app->project_name)) ||
+        !std::memchr(app->version, 0, sizeof(app->version))) return false;
+    uint8_t any = 0, common = 0xff;
+    for (const auto byte : app->app_elf_sha256) { any |= byte; common &= byte; }
+    if (!any || common == 0xff) return false;
+    static const std::array<char, 65> build_id = [app] {
+        std::array<char, 65> text{};
+        static constexpr char hex[] = "0123456789abcdef";
+        for (size_t i = 0; i < sizeof(app->app_elf_sha256); ++i) {
+            text[i * 2] = hex[app->app_elf_sha256[i] >> 4];
+            text[i * 2 + 1] = hex[app->app_elf_sha256[i] & 15];
+        }
+        return text;
+    }();
+    static const pxa_interaction_control_t controls[] = {{"touchscreen", "触摸屏"}};
+    static const pxa_interaction_binding_t bindings[] = {
+        {"tap", "touchscreen", PXA_INTERACTION_TAP, 0, -1}};
+    static const pxa_interaction_mode_t modes[] = {{"touch", "touch", bindings, 1}};
+    static const pxa_host_interaction_t descriptor = {
+        .struct_size = sizeof(pxa_host_interaction_t),
+        .vendor = "unknown", .model = "espp4-a", .hardware_revision = "unknown",
+        .firmware_id = app->project_name, .firmware_version = app->version,
+        .build_id = build_id.data(), .profile_id = "pxa.reference.espp4-a.touch", .revision = 1,
+        .width = kWidth, .height = kHeight, .shape = "rectangle",
+        .touch = 1, .simultaneous = -1, .max_contacts = static_cast<int8_t>(contacts),
+        .controls = controls, .control_count = 1, .modes = modes, .mode_count = 1,
+    };
+    return pxa_host_interaction_register_with_viewport(&descriptor,
+        [](void* context, uint16_t* width, uint16_t* height) {
+            static_cast<Board*>(context)->DisplaySize(width, height);
+            return *width && *height;
+        }, this);
 }
 
 bool Board::Touch() {

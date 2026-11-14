@@ -29,6 +29,7 @@ idf_component_register(
     PRIV_REQUIRES
         78__esp-wifi-connect
         esp_adc
+        esp_app_format
         esp_driver_gpio
         esp_driver_i2c
         esp_driver_ledc

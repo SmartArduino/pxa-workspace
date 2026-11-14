@@ -4,7 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 
-static const pxa_host_interaction_t *registered;
+typedef struct {
+    const pxa_host_interaction_t *descriptor;
+    pxa_interaction_viewport_query_t viewport;
+    void *viewport_context;
+} registration_t;
+static registration_t registration;
+static const registration_t *registered;
+static uint32_t registration_claimed;
 typedef struct { char *bytes; size_t capacity, size; bool ok; } writer_t;
 static void put(writer_t *w, const char *format, ...) {
     if (!w->ok) return;
@@ -42,8 +49,9 @@ static bool valid_kind(const char *kind) {
     return kind && (!strcmp(kind,"focus") || !strcmp(kind,"controller") ||
                     !strcmp(kind,"touch") || !strcmp(kind,"pointer"));
 }
-bool pxa_host_interaction_register(const pxa_host_interaction_t *d) {
-    if (!d || d->struct_size != sizeof(*d) || registered || !d->revision ||
+bool pxa_host_interaction_register_with_viewport(const pxa_host_interaction_t *d,
+        pxa_interaction_viewport_query_t query, void *context) {
+    if (!d || d->struct_size != sizeof(*d) || !d->revision ||
         !d->width || !d->height || !valid_shape(d->shape) ||
         d->control_count > 32 || d->mode_count > 16 || d->exclusive_count > 16 || d->reserved_count > 32 ||
         (d->control_count && !d->controls) || (d->mode_count && !d->modes) ||
@@ -53,20 +61,41 @@ bool pxa_host_interaction_register(const pxa_host_interaction_t *d) {
             !d->modes[i].binding_count || d->modes[i].binding_count > 32) return false;
     for (size_t i=0; i<d->exclusive_count; ++i)
         if (!d->exclusive[i].controls || d->exclusive[i].count < 2 || d->exclusive[i].count > 8) return false;
-    registered = d;
+    /* Claim before touching shared storage: two concurrent registrants must
+     * never overwrite one another's descriptor/callback/context tuple. The
+     * acquire/release pointer publishes only the fully initialized record.
+     * GCC/Clang atomics retain the existing C99 source requirement. */
+    uint32_t expected = 0;
+    if (!__atomic_compare_exchange_n(&registration_claimed, &expected, 1, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return false;
+    registration.descriptor = d;
+    registration.viewport = query;
+    registration.viewport_context = context;
+    __atomic_store_n(&registered, &registration, __ATOMIC_RELEASE);
     return true;
+}
+bool pxa_host_interaction_register(const pxa_host_interaction_t *d) {
+    return pxa_host_interaction_register_with_viewport(d, NULL, NULL);
 }
 bool pxa_host_interaction_describe(char *output, size_t capacity, size_t *output_size) {
     if (output_size) *output_size = 0;
-    if (!output || !capacity || !output_size || !registered) return false;
-    const pxa_host_interaction_t *d = registered;
+    if (output && capacity) output[0] = 0;
+    const registration_t *entry = __atomic_load_n(&registered, __ATOMIC_ACQUIRE);
+    if (!output || !capacity || !output_size || !entry) return false;
+    const pxa_host_interaction_t *d = entry->descriptor;
+    uint16_t width = d->width, height = d->height;
+    if (entry->viewport) {
+        width = height = 0;
+        if (!entry->viewport(entry->viewport_context, &width, &height) || !width || !height)
+            return false;
+    }
     writer_t w = {output, capacity < PXA_INTERACTION_MAX_BYTES+1 ? capacity : PXA_INTERACTION_MAX_BYTES+1, 0, true};
     put(&w,"{\"schema\":\"pxa-device-interaction-1\",\"identity\":{");
     field(&w,"vendor",d->vendor); put(&w,","); field(&w,"model",d->model); put(&w,",");
     field(&w,"hardware_revision",d->hardware_revision); put(&w,","); field(&w,"firmware_id",d->firmware_id); put(&w,",");
     field(&w,"firmware_version",d->firmware_version); put(&w,","); field(&w,"build_id",d->build_id);
     put(&w,"},\"profile\":{"); field(&w,"id",d->profile_id); put(&w,",\"revision\":%u},",(unsigned)d->revision);
-    put(&w,"\"display\":{\"width\":%u,\"height\":%u,",d->width,d->height); field(&w,"shape",d->shape);
+    put(&w,"\"display\":{\"width\":%u,\"height\":%u,",width,height); field(&w,"shape",d->shape);
     put(&w,"},\"physical\":{\"touch\":"); tri(&w,d->touch);
     put(&w,",\"max_contacts\":");
     if (d->max_contacts < 0) put(&w,"null"); else put(&w,"%d",d->max_contacts);
