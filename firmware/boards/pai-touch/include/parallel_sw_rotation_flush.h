@@ -15,6 +15,7 @@
 #if CONFIG_PXA_ENABLED
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_surface_transform.h>
+#include <pxa_board_api.h>
 #endif
 
 #include <atomic>
@@ -1258,6 +1259,7 @@ private:
                     1, std::memory_order_release);
 #if CONFIG_PXA_ENABLED
                 pxa_esp_surface_note_display_frame_presented(completed_us);
+                pxa_board_performance_note_frame();
                 if (context->output_source[buffer_index] ==
                         kFrameSourceSurface ||
                     context->output_source[buffer_index] ==

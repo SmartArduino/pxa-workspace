@@ -37,6 +37,7 @@
 #include <freertos/task.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
+#include <pxa_board_api.h>
 #include <pxsys/reference_lvgl.h>
 #include <pxsys/standard_system.h>
 #include <pxsys/task_manager.h>
@@ -964,6 +965,9 @@ bool PaiTouchHardware::ConfigurePxadbControls() {
     adapter.width = PAI_DISPLAY_WIDTH;
     adapter.height = PAI_DISPLAY_HEIGHT;
     adapter.max_pointers = kTouchMaxPointers;
+    adapter.presentation_fps_x10 = [](void*) {
+        return pxa_board_performance_refresh();
+    };
     adapter.display_size = [](void* context, uint16_t* width, uint16_t* height) {
         static_cast<PaiTouchHardware*>(context)->DisplaySize(width, height);
     };
