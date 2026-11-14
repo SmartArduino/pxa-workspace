@@ -66,6 +66,7 @@ static esp_err_t stream_http_event(esp_http_client_event_t *event) {
     if (!pxa_http_stream_header(
             &h->stream, (const uint8_t *)event->header_key, strlen(event->header_key),
             (const uint8_t *)event->header_value, strlen(event->header_value))) {
+        pxa_http_stream_limit(&h->stream, PXA_HTTP_LIMIT_HEADERS);
         h->stream.error = PXA_STATUS_LIMIT_EXCEEDED;
         return ESP_FAIL;
     }
@@ -220,6 +221,7 @@ static void stream_step(pxa_esp_net_state_t *net, pxa_esp_net_slot_t *slot) {
                 h->response_status == 304)
                 body_length = 0;
             if (body_length != UINT64_MAX && body_length > s->max_body_bytes) {
+                pxa_http_stream_limit(s, PXA_HTTP_LIMIT_BODY);
                 stream_finish(net, slot, PXA_STATUS_LIMIT_EXCEEDED);
                 goto schedule;
             }
@@ -249,6 +251,7 @@ static void stream_step(pxa_esp_net_state_t *net, pxa_esp_net_slot_t *slot) {
             amount = esp_http_client_read(h->client, (char *)block, (int)available);
             if (amount > 0 && (size_t)amount <= available) {
                 if (s->received_bytes == s->max_body_bytes) {
+                    pxa_http_stream_limit(s, PXA_HTTP_LIMIT_BODY);
                     stream_finish(net, slot, PXA_STATUS_LIMIT_EXCEEDED);
                     goto schedule;
                 }

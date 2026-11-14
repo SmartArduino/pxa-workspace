@@ -349,6 +349,22 @@ static void test_stream(pxa_net_backend_t *b) {
       }
     }
     r.buffer_bytes = 512;
+    for (unsigned kind = 0; kind < 3; ++kind) {
+        mock_mode = kind == 1 ? 1 : 0;
+        r.max_body_bytes = kind == 2 ? 8192 : 100;
+        r.response_header_bytes = kind == 2 ? 16 : 1024;
+        assert(b->open_exchange(NULL,&r,&exchange) == PXA_STATUS_OK);
+        assert(b->exchange_io(NULL,exchange,PXA_HTTP_IO_LIMIT_REASON,NULL,0) == PXA_STATUS_WOULD_BLOCK);
+        for (unsigned steps = 0; steps < 16 &&
+             !(pxa_http_stream_state(&http_stream(exchange)->stream) & PXA_HTTP_STREAM_DONE); ++steps) step_stream();
+        assert(http_stream(exchange)->stream.error == PXA_STATUS_LIMIT_EXCEEDED);
+        assert(b->exchange_io(NULL,exchange,PXA_HTTP_IO_LIMIT_REASON,NULL,0) ==
+               (kind == 2 ? (int32_t)PXA_HTTP_LIMIT_HEADERS : (int32_t)PXA_HTTP_LIMIT_BODY));
+        assert(mock_offset == (kind == 1 ? 101u : 0u));
+        b->close_exchange(NULL,exchange); step_stream();
+        assert(live_allocations == 1 && !queued_count);
+    }
+    r.max_body_bytes = 8192; r.response_header_bytes = 1024;
     mock_mode=2; r.method=PXA_NET_METHOD_POST; r.upload_bytes=65536;
     assert(b->open_exchange(NULL,&r,&exchange)==PXA_STATUS_OK);
     step_stream();step_stream();
