@@ -1,11 +1,13 @@
 # PXA 固件工作区 0.11.1
 
 状态：发布准备中。系统与工具变化见
-[PXA 0.11.1 与 Agent Kit 0.7.3](../deps/pxa-system/docs/release-0.11.1.zh-CN.md)。
+[PXA 0.11.1 与 Agent Kit 0.7.4](../deps/pxa-system/docs/release-0.11.1.zh-CN.md)。
 
 Pai Touch 使用优先级 4 的摄像头工作任务，使 RGB/JPEG 工作及时完成；共享板级
 实现仍默认优先级 2，各板可设置 `PXA_BOARD_VISION_TASK_PRIORITY`。
 保留 GC2145 单帧缓冲、原有分辨率和颜色转换路径。
+Pai Touch 接通 `PERF FPS` 查询，统计实际完成的 LCD 传输；静止画面没有新帧时
+返回 0。采样无需打开逐帧性能探针，也无需反复查询包含存储扫描的 `INFO`。
 
 ESPP4-A 使用 LVGL 原生 DIRECT 显示模式并减少桌面与状态栏重复合成。
 PXADB 支持原生 USB 和 UART-DEBUG 双通道，UART 默认 2,000,000 波特率；
@@ -27,6 +29,9 @@ retain the shared default of 2. The GC2145 resolution, color conversion and sing
 frame buffer are unchanged. ESPP4-A uses native LVGL DIRECT presentation and avoids
 redundant launcher/status overlay composition. PXADB supports both native USB and
 UART-DEBUG; UART defaults to 2 Mbps with a 1 Mbps fallback for suitable bridges.
+Pai Touch exposes completed LCD presentation FPS through `PERF FPS`; static screens
+report zero when no new frames complete. Sampling does not require the per-frame
+probe or repeated storage-scanning `INFO` requests.
 
 Seven maintained board images include the system font and Store. USB and UART have
 independent protocol sessions. The web installation panel identifies authorized ports
