@@ -635,6 +635,76 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         frames = client.request("HELLO")
         self.assertEqual(frames[-1].payload, "ready")
 
+    def test_lost_six_base64_bytes_rejects_partial_packages_reply(self) -> None:
+        # Exact damaged PKG line from the P4 UART capture: "FsbGVk" was lost
+        # from the encoded installed=1 field (228 -> 222 payload characters).
+        damaged = (
+            b"PXADB1 487666167 PKG "
+            b"MTc5ODJhY2QwODQ5Mzk0NDA1OTcxM2FlZTlhNTYxMzVkZDRhMDgwZWNhYWY3YWE3"
+            b"N2RmMTFmZGYzMTAyZDE3MTpweGEtY2FtZXJhCeebuOacugkwLjQuMQlidWlsdGluPTA7"
+            b"aW5zdGPTE7c3RhZ2VkPTA7ZW5hYmxlZD0xO2FjdGl2ZT0xO2FyY2hpdmVkPTA7"
+            b"YW1iaWd1b3VzPTA7dm9sdW1lPTA=\n"
+        )
+        payload = (
+            "17982acd08493944059713aee9a56135dd4a080ecaaf7aa77df11fdf3102d171:"
+            "pxa-camera\t相机\t0.4.1\tbuiltin=0;installed=1;staged=0;enabled=1;"
+            "active=1;archived=0;ambiguous=0;volume=0"
+        )
+        complete = encoded_frame(487666167, "PKG", payload)
+        self.assertEqual(len(complete.split()[3]), 228)
+        self.assertEqual(len(damaged.split()[3]), 222)
+        self.assertEqual(complete.replace(b"FsbGVk", b"", 1), damaged)
+        self.assertIsNone(pxadb.parse_frame(damaged))
+        client = fake_client([
+            encoded_frame(487666167, "PKG", "pxa-store"),
+            damaged, encoded_frame(487666167, "OK", ""),
+        ])
+        client.sequence = 487666166
+        client.log_subscribed = True
+        raw: list[bytes] = []
+        client.raw_callback = raw.append
+        with self.assertRaisesRegex(pxadb.PxaDbError,
+                                    "^invalid PXADB response frame$"):
+            client.request("PACKAGES")
+        self.assertEqual(client.serial.writes, [b"PXADB1 487666167 PACKAGES\n"])
+        self.assertEqual(raw, [])  # Never print the malformed reply's payload.
+        self.assertEqual(client.serial.lines, [encoded_frame(487666167, "OK", "")])
+
+    def test_malformed_matching_reply_never_replays_mutation_or_input(self) -> None:
+        for command in ("PACKAGE deploy pxa-test", "PACKAGE install-volume 17 cGE=",
+                        "FSCOPY c291cmNl dGFyZ2V0", "INPUT tap 0 1 12 34"):
+            for damaged in (b"PXADB1 1 OK !!!\n", b"PXADB1 1 PKG\n"):
+                with self.subTest(command=command, damaged=damaged):
+                    client = fake_client([damaged, encoded_frame(1, "OK", "completed")])
+                    with self.assertRaisesRegex(pxadb.PxaDbError,
+                                                "^invalid PXADB response frame$"):
+                        client.request(command)
+                    self.assertEqual(client.serial.writes,
+                                     [f"PXADB1 1 {command}\n".encode("ascii")])
+                    self.assertEqual(client.serial.lines, [encoded_frame(1, "OK", "completed")])
+
+    def test_malformed_other_sequences_and_raw_console_keep_their_behavior(self) -> None:
+        noise = [b"\n", b"I (42) boot complete\r\n", b"PXADB1 0 LOG !!!\n",
+                 b"PXADB1 10 PKG !!!\n", b"PXADB1 1suffix PKG !!!\n",
+                 b"console: PXADB1 1 PKG !!!\n"]
+        for subscribed in (False, True):
+            with self.subTest(subscribed=subscribed):
+                client = fake_client(noise + [encoded_frame(0, "LOG", "42\tready"),
+                                             encoded_frame(2, "OK", "other"),
+                                             encoded_frame(1, "OK", "done")])
+                client.log_subscribed = subscribed
+                logs: list[pxadb.Frame] = []
+                raw: list[bytes] = []
+                client.log_callback = logs.append
+                client.raw_callback = raw.append
+                self.assertEqual(client.request("HELLO"), [pxadb.Frame(1, "OK", "done")])
+                self.assertEqual(raw, noise if subscribed else [])
+                self.assertEqual(logs, [pxadb.Frame(0, "LOG", "42\tready")] if subscribed else [])
+                expected = [pxadb.Frame(2, "OK", "other")]
+                if not subscribed:
+                    expected.insert(0, pxadb.Frame(0, "LOG", "42\tready"))
+                self.assertEqual(client.pending_frames, expected)
+
     def test_hello_retries_after_a_missed_response(self) -> None:
         client = fake_client([encoded_frame(2, "OK", "ready")])
         calls = 0
@@ -1440,6 +1510,8 @@ class PxaDbLogStreamingTest(unittest.TestCase):
             "screenshot SHA-256 mismatch")))
         self.assertTrue(pxadb.screenshot_retryable(pxadb.PxaDbError(
             "device returned an empty screenshot")))
+        self.assertTrue(pxadb.screenshot_retryable(pxadb.PxaDbError(
+            "invalid PXADB response frame")))
         self.assertFalse(pxadb.screenshot_retryable(pxadb.PxaDbError(
             "screenshot_rate_limited")))
         self.assertFalse(pxadb.screenshot_retryable(pxadb.PxaDbError(
@@ -1462,6 +1534,46 @@ class PxaDbLogStreamingTest(unittest.TestCase):
             self.assertEqual(pxadb.command_screenshot(arguments), 0)
         self.assertEqual(client.__enter__().request.call_count, 2)
         sleep.assert_called_once_with(0.3)
+
+    def test_screenshot_retake_keeps_three_attempts_and_full_frame_sha(self) -> None:
+        arguments = pxadb.build_parser().parse_args(["screenshot", "capture.jpg", "--jpeg"])
+        payload = b"\xff\xd8actual complete frame\xff\xd9"
+        encoded = base64.b64encode(payload).decode("ascii")
+        digest = hashlib.sha256(payload).hexdigest()
+        client = fake_client([
+            encoded_frame(1, "META", f"format=jpeg;bytes={len(payload)};sha256={digest}"),
+            b"PXADB1 1 DATA !!!\n", encoded_frame(1, "OK", ""),
+            encoded_frame(2, "META", f"format=jpeg;bytes={len(payload)};sha256={'0' * 64}"),
+            encoded_frame(2, "DATA", "0\t" + encoded), encoded_frame(2, "OK", ""),
+            encoded_frame(3, "META", f"format=jpeg;bytes={len(payload)};sha256={digest}"),
+            encoded_frame(3, "DATA", "0\t" + encoded), encoded_frame(3, "OK", ""),
+        ])
+        with mock.patch.object(pxadb, "resolve_pxadb_port", return_value="/unused"), \
+                mock.patch.object(pxadb, "open_client", return_value=contextlib.nullcontext(client)), \
+                mock.patch.object(pxadb, "write_screenshot") as write, \
+                mock.patch.object(pxadb.time, "sleep") as sleep:
+            self.assertEqual(pxadb.command_screenshot(arguments), 0)
+        self.assertEqual(client.serial.writes,
+                         [f"PXADB1 {i} SCREENSHOT JPEG\n".encode("ascii") for i in (1, 2, 3)])
+        self.assertEqual(sleep.call_args_list, [mock.call(0.3), mock.call(0.3)])
+        capture = write.call_args.args[0]
+        self.assertEqual(capture.data, payload)
+        self.assertEqual(capture.metadata["sha256"], digest)
+        self.assertEqual(client.pending_frames, [pxadb.Frame(1, "OK", "")])
+
+    def test_screenshot_invalid_matching_reply_stops_after_three_attempts(self) -> None:
+        arguments = pxadb.build_parser().parse_args(["screenshot", "capture.jpg", "--jpeg"])
+        client = fake_client([f"PXADB1 {i} DATA !!!\n".encode("ascii") for i in (1, 2, 3)])
+        with mock.patch.object(pxadb, "resolve_pxadb_port", return_value="/unused"), \
+                mock.patch.object(pxadb, "open_client", return_value=contextlib.nullcontext(client)), \
+                mock.patch.object(pxadb, "write_screenshot") as write, \
+                mock.patch.object(pxadb.time, "sleep") as sleep:
+            with self.assertRaisesRegex(pxadb.PxaDbError, "^invalid PXADB response frame$"):
+                pxadb.command_screenshot(arguments)
+        self.assertEqual(client.serial.writes,
+                         [f"PXADB1 {i} SCREENSHOT JPEG\n".encode("ascii") for i in (1, 2, 3)])
+        self.assertEqual(sleep.call_args_list, [mock.call(0.3), mock.call(0.3)])
+        write.assert_not_called()
 
     def test_screenshot_data_frames_decode_binary(self) -> None:
         payload = b"\xff\xd8\x00\xff\xd9"

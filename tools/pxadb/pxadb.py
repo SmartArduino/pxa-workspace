@@ -587,6 +587,10 @@ class PxaDbClient:
                 continue
             frame = parse_frame(raw)
             if frame is None:
+                # A reply for this request must never disappear as console
+                # noise: a later OK would otherwise accept a partial result.
+                if raw.startswith(f"{PROTOCOL} {sequence} ".encode("ascii")):
+                    raise PxaDbError("invalid PXADB response frame")
                 if self.log_subscribed:
                     self._emit_raw(raw)
                 continue
@@ -2734,6 +2738,7 @@ RETRYABLE_SCREENSHOT_ERRORS = (
     "chunk offset mismatch", "invalid screenshot chunk offset",
     "invalid screenshot data", "screenshot size mismatch",
     "screenshot SHA-256 mismatch", "empty screenshot",
+    "invalid PXADB response frame",
 )
 
 
