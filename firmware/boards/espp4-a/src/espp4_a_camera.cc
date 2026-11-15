@@ -2,6 +2,7 @@
 #include "espp4_a_camera.h"
 #include "espp4_a_camera_buffers.h"
 #include "espp4_a_camera_geometry.h"
+#include "espp4_a_camera_image.h"
 #include <pxa_board_common/vision_port.h>
 #include <pxa_board_common/vision_jpeg_preview.h>
 #include <pxa/pxa_esp_resource_memory.h>
@@ -32,6 +33,12 @@ extern "C" {
 #include <atomic>
 #include <cstring>
 #include <cmath>
+
+#ifndef PXA_ESPP4_CAMERA_DMA_IMAGE_SELFTEST
+#define PXA_ESPP4_CAMERA_DMA_IMAGE_SELFTEST 0
+#endif
+static_assert(PXA_ESPP4_CAMERA_DMA_IMAGE_SELFTEST == 0 ||
+              PXA_ESPP4_CAMERA_DMA_IMAGE_SELFTEST == 1);
 
 namespace {
 constexpr char kTag[] = "espp4_camera";
@@ -90,7 +97,8 @@ struct Camera {
     uint32_t red_gain = 256, blue_gain = 256;
     uint64_t wait_us = 0, sample_us = 0, encode_us = 0;
     unsigned captures = 0, previews = 0;
-    unsigned stale_drops = 0;
+    unsigned stale_drops = 0, preview_allocation_offset = 0, preview_intermediate_copies = 0;
+    size_t cache_alignment = 0;
 };
 // CSI callbacks and all state touched by them remain accessible during Flash writes.
 DRAM_ATTR Camera camera;
@@ -161,6 +169,9 @@ void Finish(void*) {
     pxa_raster_asset_release(camera.pending_preview); camera.pending_preview = nullptr;
     if (camera.done) while (xSemaphoreTake(camera.done, 0) == pdTRUE) {}
 }
+#if PXA_ESPP4_CAMERA_DMA_IMAGE_SELFTEST
+pxa_status_t CameraDmaImageSelftest();
+#endif
 pxa_status_t PrepareProfile(void*, const pxa_camera_profile_t& profile) {
     Finish(nullptr);
     if (profile.id < 1 || profile.id > sizeof(kProfiles) / sizeof(kProfiles[0])) return PXA_STATUS_UNSUPPORTED;
@@ -175,6 +186,7 @@ pxa_status_t PrepareProfile(void*, const pxa_camera_profile_t& profile) {
     camera.wait_us = camera.sample_us = camera.encode_us = 0;
     camera.captures = camera.previews = 0;
     camera.stale_drops = 0;
+    camera.preview_allocation_offset = camera.preview_intermediate_copies = 0;
     if (!camera.done) camera.done = xSemaphoreCreateBinaryStatic(&camera.done_storage);
     auto error = esp_cam_sensor_xclk_allocate(ESP_CAM_SENSOR_XCLK_ESP_CLOCK_ROUTER, &camera.xclk);
     if (error != ESP_OK) return Error("MCLK allocate", error);
@@ -207,6 +219,7 @@ pxa_status_t PrepareProfile(void*, const pxa_camera_profile_t& profile) {
     if ((error = esp_cache_get_alignment(MALLOC_CAP_SPIRAM, &alignment)) != ESP_OK || !alignment)
         return PXA_STATUS_INTERNAL;
     const auto align = [alignment](size_t n) { return (n + alignment - 1) & ~(alignment - 1); };
+    camera.cache_alignment = alignment;
     camera.stride = align(kSensorBytes);
     const bool native = espp4_a::CameraNativePixels(camera.width, camera.height);
     const bool direct_native = native && !camera.portrait;
@@ -239,6 +252,11 @@ pxa_status_t PrepareProfile(void*, const pxa_camera_profile_t& profile) {
     camera.preview_dma = camera.ppa ? camera.scaled + camera.scaled_stride : nullptr;
     camera.columns = reinterpret_cast<uint16_t*>(camera.scaled + camera.scaled_stride + preview_bytes);
     espp4_a::CameraColumns(camera.columns, camera.crop_width, camera.portrait ? camera.height : camera.width);
+#if PXA_ESPP4_CAMERA_DMA_IMAGE_SELFTEST
+    // Opt-in RAM/DMA differential proof uses its OWN source before CSI exists.
+    const pxa_status_t dma_image_test = CameraDmaImageSelftest();
+    if (dma_image_test != PXA_STATUS_OK) return dma_image_test;
+#endif
     // LDO3 is already held by the DSI panel. Never release/reconfigure that shared rail.
     esp_cam_ctlr_csi_config_t csi{};
     csi.ctlr_id = 0; csi.h_res = kSensorWidth; csi.v_res = kSensorHeight;
@@ -372,10 +390,15 @@ pxa_status_t AcquireFrame(const uint16_t** output) {
     camera.wait_us += esp_timer_get_time() - begin;
     return PXA_STATUS_OK;
 }
-void* AllocateImage(void*, size_t bytes) {
+void* AllocateImageResource(size_t bytes) {
     return pxa_memory_allocate(pxa_esp_device_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_FRAME), bytes);
 }
-void ReleaseImage(void*, void* pointer) { pxa_memory_release(pointer); }
+void ReleaseImageResource(void* pointer) { pxa_memory_release(pointer); }
+// Both contexts outlive every immutable image, including retained task previews.
+const espp4_a::CameraImageAllocator kImageAllocators[] = {
+    {0, AllocateImageResource, ReleaseImageResource},
+    {PXA_ASSET_IMAGE_ALIGNMENT, AllocateImageResource, ReleaseImageResource},
+};
 bool PpaImage(const uint16_t* source, void* output, size_t capacity, unsigned width, unsigned height) {
     if (!camera.ppa || camera.ppa_failed) return false;
     ppa_srm_oper_config_t scale{};
@@ -396,6 +419,9 @@ bool PpaImage(const uint16_t* source, void* output, size_t capacity, unsigned wi
     ESP_LOGW(kTag, "PPA image unavailable: %s; using CPU transform", esp_err_to_name(error));
     return false;
 }
+#if PXA_ESPP4_CAMERA_DMA_IMAGE_SELFTEST
+#include "espp4_a_camera_dma_image_selftest.inc"
+#endif
 pxa_status_t MakePreview(const uint16_t* source, pxa_raster_asset_t** output) {
     const int64_t begin = esp_timer_get_time();
     const bool use_ppa = camera.ppa && !camera.ppa_failed;
@@ -408,20 +434,41 @@ pxa_status_t MakePreview(const uint16_t* source, pxa_raster_asset_t** output) {
     info.payload_offset = PXA_ASSET_FILE_HEADER_BYTES; info.width = width; info.height = height;
     info.decoded_bytes = width * height * 2; info.stored_bytes = info.decoded_bytes + PXA_ASSET_FILE_HEADER_BYTES;
     uint8_t* bytes = nullptr;
-    const auto result = pxa_asset_object_create(&info, AllocateImage, ReleaseImage, nullptr, output, &bytes);
+    auto create_image = [&] {
+        return pxa_asset_object_create(&info, espp4_a::CameraImageAllocate, espp4_a::CameraImageRelease,
+            const_cast<espp4_a::CameraImageAllocator*>(&kImageAllocators[camera.preview_allocation_offset]), output, &bytes);
+    };
+    auto result = create_image();
     if (result != PXA_STATUS_OK) return result;
+    bool direct_preview = use_ppa && espp4_a::CameraImageDmaReady(bytes, info.decoded_bytes, camera.cache_alignment);
+    if (use_ppa && !direct_preview && espp4_a::CameraImageDmaSize(info.decoded_bytes, camera.cache_alignment)) {
+        // The public 64-byte payload alignment has only two classes modulo128.
+        // Discover the opaque object's class once; do not depend on its layout.
+        pxa_raster_asset_release(*output); *output = nullptr; bytes = nullptr;
+        camera.preview_allocation_offset ^= 1u;
+        result = create_image();
+        if (result != PXA_STATUS_OK) return result;
+        direct_preview = espp4_a::CameraImageDmaReady(bytes, info.decoded_bytes, camera.cache_alignment);
+    }
     auto* pixels = reinterpret_cast<uint16_t*>(bytes);
     // Native profiles use a fixed 7/16-size PPA preview; CPU fallback
     // samples CSI directly. Neither creates a full-resolution CPU copy.
-    if (PpaImage(source, camera.preview_dma, espp4_a::kCameraPpaPreviewBytes, width, height)) {
-        const auto error = esp_cache_msync(camera.preview_dma,
-            espp4_a::kCameraPpaPreviewBytes, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+    camera.preview_intermediate_copies = 0;
+    void* const preview_target = direct_preview ? static_cast<void*>(pixels) : camera.preview_dma;
+    const size_t preview_capacity = direct_preview ? info.decoded_bytes : espp4_a::kCameraPpaPreviewBytes;
+    if (PpaImage(source, preview_target, preview_capacity, width, height)) {
+        const auto error = esp_cache_msync(preview_target,
+            preview_capacity, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
         if (error != ESP_OK) {
             pxa_raster_asset_release(*output); *output = nullptr;
             return Error("PPA preview", error);
         }
-        // Only the small preview crosses into immutable Core image storage.
-        std::memcpy(pixels, camera.preview_dma, width * height * 2);
+        // PPA completes before the image is published. Retained Core images are
+        // never reused as DMA targets; unusual alignments keep the copy path.
+        if (!direct_preview) {
+            std::memcpy(pixels, camera.preview_dma, width * height * 2);
+            camera.preview_intermediate_copies = 1;
+        }
     } else {
         if (use_ppa) { // A failed DMA attempt may leave the full CSI image uncached.
             const auto error = esp_cache_msync(const_cast<uint16_t*>(source), camera.stride, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
@@ -438,7 +485,7 @@ pxa_status_t MakePreview(const uint16_t* source, pxa_raster_asset_t** output) {
         ESP_LOGI(kTag, "pipeline: preview=%u capture=%u wait_avg_us=%llu sample_avg_us=%llu encode_avg_us=%llu extent=%ux%u preview_ppa=%u preview_intermediate_copies=%u jpeg_copies=0 stale_drops=%u csi_done=%lu errors=0x%lx",
             camera.previews, camera.captures, camera.wait_us / camera.previews,
             camera.sample_us / camera.previews, camera.captures ? camera.encode_us / camera.captures : 0, width, height,
-            camera.ppa && !camera.ppa_failed, camera.ppa && !camera.ppa_failed ? 1u : 0u,
+            camera.ppa && !camera.ppa_failed, camera.preview_intermediate_copies,
             camera.stale_drops, static_cast<unsigned long>(camera.completions.load()), static_cast<unsigned long>(camera.errors.load()));
     return PXA_STATUS_OK;
 }

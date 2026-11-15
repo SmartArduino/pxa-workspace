@@ -83,3 +83,14 @@ if(TARGET lvgl_docoder_lib)
     target_compile_definitions(lvgl_docoder_lib PRIVATE ESP_LV_ENABLE_HW_JPEG=0)
     target_link_libraries(lvgl_docoder_lib PRIVATE idf::espressif__freetype)
 endif()
+
+# DPI and CSI share IDF's private dw_gdma0 interrupt group. The board creates
+# DPI on its pinned main task; camera driver setup must stay on that core.
+idf_component_get_property(espp4_board_common pxa_board_common COMPONENT_LIB)
+target_compile_definitions(${espp4_board_common} PRIVATE PXA_BOARD_VISION_PIN_TO_INITIALIZING_CORE=1)
+
+# Diagnostic RAM/DMA proof only. Uses no CSI frame, filesystem or app image.
+option(PXA_ESPP4_CAMERA_DMA_IMAGE_SELFTEST "Compare synthetic PPA staging and Core image DMA before CSI start" OFF)
+if(PXA_ESPP4_CAMERA_DMA_IMAGE_SELFTEST)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_ESPP4_CAMERA_DMA_IMAGE_SELFTEST=1)
+endif()

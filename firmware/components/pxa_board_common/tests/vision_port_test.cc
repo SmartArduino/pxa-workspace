@@ -76,6 +76,11 @@ int main() {
     backend_registration_failure=false;
     assert(pxa_board_vision_port_initialize(&driver));
     assert(pxa_test_stack_bytes==PXA_BOARD_VISION_STACK_BYTES);
+#if PXA_BOARD_VISION_PIN_TO_INITIALIZING_CORE
+    assert(pxa_test_pinned_core==pxa_test_current_core);
+#else
+    assert(pxa_test_pinned_core==-1);
+#endif
 #if PXA_BOARD_VISION_STACK_EXTERNAL
     assert(vision.stack && pxa_test_heap_live==1);
 #endif

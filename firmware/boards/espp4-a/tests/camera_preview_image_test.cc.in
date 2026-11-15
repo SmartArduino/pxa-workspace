@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: Apache-2.0
+#undef NDEBUG
+#include "espp4_a_camera_image.h"
+#include "espp4_a_camera_geometry.h"
+#include <pxa/raster_assets.h>
+#include <pxa/resource_budget.h>
+#include <cassert>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+#include <map>
+#include <atomic>
+#include <algorithm>
+#include <cstdio>
+struct Block { unsigned char* base; size_t total,bytes; };
+static std::map<void*,Block> blocks;
+static unsigned raw_offset,raw_calls,fail_call;
+static void* raw_allocate(void*,size_t bytes) {
+    ++raw_calls;if(raw_calls==fail_call)return nullptr;
+    size_t total=bytes+512;auto* base=static_cast<unsigned char*>(std::malloc(total));assert(base);
+    std::memset(base,0xa7,total);uintptr_t aligned=(reinterpret_cast<uintptr_t>(base)+127)&~uintptr_t(127);
+    auto* result=reinterpret_cast<unsigned char*>(aligned+128+raw_offset);
+    assert(result>=base && result+bytes<=base+total);blocks.emplace(result,Block{base,total,bytes});return result;
+}
+static void raw_release(void*,void* pointer) {
+    auto it=blocks.find(pointer);assert(it!=blocks.end());auto b=it->second;auto* p=static_cast<unsigned char*>(pointer);
+    for(auto* q=b.base;q<p;++q)assert(*q==0xa7);
+    for(auto* q=p+b.bytes;q<b.base+b.total;++q)assert(*q==0xa7);
+    blocks.erase(it);std::free(b.base);
+}
+static pxa_memory_budget_t budget;
+static pxa_memory_allocator_t allocator{&budget,0,PXA_MEMORY_EXTERNAL,PXA_MEMORY_FRAME,nullptr,raw_allocate,raw_release};
+static const pxa_memory_allocator_t* pxa_esp_device_resource_allocator(unsigned cls,unsigned kind) {
+    assert(cls==PXA_MEMORY_EXTERNAL && kind==PXA_MEMORY_FRAME);return &allocator;
+}
+static size_t charged() {pxa_memory_stats_t s{};assert(!pxa_memory_budget_stats(&budget,0,&s));return s.charged[PXA_MEMORY_EXTERNAL];}
+static void init() {assert(blocks.empty());pxa_memory_budget_config_t c{};c.limit[1]=64*1024*1024;assert(!pxa_memory_budget_init(&budget,&c));assert(!pxa_memory_owner_open(&budget,c.limit,&allocator.owner));raw_calls=fail_call=0;}
+constexpr unsigned kSensorWidth=1920,kSensorHeight=1080;
+struct Camera {
+    void* ppa=nullptr;bool ppa_failed=false,portrait=false;unsigned width=1920,height=1080;
+    unsigned crop_x=0,crop_width=1920;uint16_t* columns=nullptr;void* preview_dma=nullptr;size_t stride=1920*1080*2;
+    unsigned preview_allocation_offset=0,preview_intermediate_copies=0;size_t cache_alignment=128;
+    uint64_t wait_us=0,sample_us=0,encode_us=0;unsigned frames=0,previews=0,captures=0,stale_drops=0;
+    std::atomic<uint32_t> completions{0},errors{0};
+} camera;
+static unsigned ppa_calls,cache_calls;static bool fake_ppa_failure,fake_cache_failure;
+constexpr int ESP_OK=0,ESP_CACHE_MSYNC_FLAG_DIR_M2C=1;
+static long long esp_timer_get_time() {static long long clock=0;return ++clock;}
+#define ESP_LOGI(...) do{}while(0)
+static constexpr const char* kTag="test";
+static pxa_status_t Error(const char*,int) {return PXA_STATUS_IO_ERROR;}
+static int esp_cache_msync(void*,size_t,int) {++cache_calls;return fake_cache_failure ? -1:0;}
+static unsigned current_nonce;
+static uint16_t pattern(unsigned i,unsigned nonce) {return uint16_t((i*33u+7u+nonce*719u)^0x5982u);}
+static bool PpaImage(const uint16_t*,void* output,size_t capacity,unsigned w,unsigned h) {
+    if(!camera.ppa || camera.ppa_failed)return false;++ppa_calls;
+    if(fake_ppa_failure || !espp4_a::CameraImageDmaReady(output,capacity,camera.cache_alignment)) {camera.ppa_failed=true;return false;}
+    assert(capacity>=size_t(w)*h*2);auto* pixels=static_cast<uint16_t*>(output);
+    for(unsigned i=0;i<w*h;++i)pixels[i]=pattern(i,current_nonce);return true;
+}
+static void UpdateControls(const uint16_t*,unsigned,unsigned) {}
+// PRODUCTION_BODIES
+
+int main() {
+    static_assert(alignof(std::max_align_t)<=PXA_ASSET_IMAGE_ALIGNMENT);
+    std::vector<uint16_t> source(kSensorWidth*kSensorHeight);
+    for(unsigned i=0;i<source.size();++i)source[i]=uint16_t(i*23u+9u);
+    void* staging=nullptr;assert(!posix_memalign(&staging,256,espp4_a::kCameraPpaPreviewBytes+256));
+    unsigned scenarios=0;
+    for(raw_offset=0;raw_offset<128;raw_offset+=alignof(std::max_align_t))for(bool portrait:{false,true})for(unsigned alignment:{32,64,128,256}) {
+        init();camera.ppa=reinterpret_cast<void*>(1);camera.ppa_failed=false;camera.portrait=portrait;camera.width=portrait?1080:1920;camera.height=portrait?1920:1080;camera.cache_alignment=alignment;camera.preview_allocation_offset=0;camera.preview_dma=staging;fake_ppa_failure=fake_cache_failure=false;ppa_calls=cache_calls=0;
+        std::vector<pxa_raster_asset_t*> retained;
+        std::map<pxa_raster_asset_t*,unsigned> expected_nonces;
+        for(unsigned frame=0;frame<6;++frame) {
+            current_nonce=frame+1;
+            pxa_raster_asset_t* image=nullptr;auto status=MakePreview(source.data(),&image);if(status || !image){std::fprintf(stderr,"raw_offset=%u portrait=%u alignment=%u frame=%u status=%u calls=%u fail=%u charged=%zu\n",raw_offset,portrait,alignment,frame,unsigned(status),raw_calls,fail_call,charged());std::abort();}pxa_asset_object_view_t view{};pxa_asset_object_view(image,&view);
+            if(alignment<=128) {
+                assert(!camera.ppa_failed && camera.preview_intermediate_copies==0 && !(reinterpret_cast<uintptr_t>(view.data)&(alignment-1)));
+                auto* pixels=reinterpret_cast<const uint16_t*>(view.data);for(unsigned i=0;i<view.width*view.height;++i)assert(pixels[i]==pattern(i,current_nonce));expected_nonces[image]=current_nonce;
+            }
+            size_t all_payloads=view.bytes;for(auto* old:retained){pxa_asset_object_view_t old_view{};pxa_asset_object_view(old,&old_view);all_payloads+=old_view.bytes;if(expected_nonces.contains(old)){auto* old_pixels=reinterpret_cast<const uint16_t*>(old_view.data);for(unsigned i=0;i<old_view.width*old_view.height;++i)assert(old_pixels[i]==pattern(i,expected_nonces.at(old)));}}assert(charged()>all_payloads && charged()<all_payloads+1024*(retained.size()+1));
+            pxa_asset_object_retain(image);pxa_asset_object_release(image);retained.push_back(image);
+            if(retained.size()>4){pxa_asset_object_release(retained.front());retained.erase(retained.begin());}
+        }
+        // Retained task previews may outlive this mutable camera session.
+        camera.ppa=nullptr;camera.cache_alignment=0;camera.preview_allocation_offset=0;
+        for(auto* image:retained)pxa_asset_object_release(image);assert(!charged() && blocks.empty());++scenarios;
+    }
+    // Real Core create handles first allocation failure and the alignment retry failure.
+    for(unsigned fail:{1,2}) {init();camera.ppa=reinterpret_cast<void*>(1);camera.ppa_failed=false;camera.portrait=false;camera.width=1920;camera.height=1080;camera.cache_alignment=128;camera.preview_allocation_offset=0;fail_call=fail;pxa_raster_asset_t* image=nullptr;assert(MakePreview(source.data(),&image)==PXA_STATUS_RESOURCE_LIMIT && !image);assert(!charged() && blocks.empty());++scenarios;}
+    for(unsigned error:{1,2}) {init();camera.ppa=reinterpret_cast<void*>(1);camera.ppa_failed=false;camera.cache_alignment=128;camera.preview_allocation_offset=0;fake_ppa_failure=error==1;fake_cache_failure=error==2;pxa_raster_asset_t* image=nullptr;auto result=MakePreview(source.data(),&image);if(error==2)assert(result==PXA_STATUS_IO_ERROR && !image);else {assert(!result && image && camera.ppa_failed);pxa_asset_object_release(image);}assert(!charged() && blocks.empty());++scenarios;}
+    espp4_a::CameraImageAllocator invalid=kImageAllocators[0];invalid.offset=1;assert(!espp4_a::CameraImageAllocate(&invalid,100));assert(!espp4_a::CameraImageAllocate(nullptr,100));assert(!espp4_a::CameraImageAllocate(const_cast<espp4_a::CameraImageAllocator*>(&kImageAllocators[0]),SIZE_MAX));assert(!espp4_a::CameraImageAllocate(const_cast<espp4_a::CameraImageAllocator*>(&kImageAllocators[0]),0));
+    for(unsigned n:{0,1,63,65,129})assert(!espp4_a::CameraImageDmaSize(n,128));for(unsigned a:{0,3,192,256})assert(!espp4_a::CameraImageDmaSize(1024,a));
+    std::free(staging);std::printf("actual MakePreview + public Core create/reference lifetime + actual resource budget: %u scenarios passed\n",scenarios);
+}

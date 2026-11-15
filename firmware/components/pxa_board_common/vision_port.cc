@@ -21,6 +21,11 @@
 #ifndef PXA_BOARD_VISION_TASK_PRIORITY
 #define PXA_BOARD_VISION_TASK_PRIORITY 2
 #endif
+#ifndef PXA_BOARD_VISION_PIN_TO_INITIALIZING_CORE
+#define PXA_BOARD_VISION_PIN_TO_INITIALIZING_CORE 0
+#endif
+static_assert(PXA_BOARD_VISION_PIN_TO_INITIALIZING_CORE == 0 ||
+              PXA_BOARD_VISION_PIN_TO_INITIALIZING_CORE == 1);
 static_assert(PXA_BOARD_VISION_TASK_PRIORITY > 0);
 #if defined(configMAX_PRIORITIES)
 static_assert(PXA_BOARD_VISION_TASK_PRIORITY < configMAX_PRIORITIES);
@@ -293,8 +298,15 @@ bool pxa_board_vision_port_initialize(const PxaBoardVisionDriver* driver) {
         PXA_BOARD_VISION_STACK_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!vision.stack) return false;
 #endif
+#if PXA_BOARD_VISION_PIN_TO_INITIALIZING_CORE
+    // Drivers sharing a private DMA interrupt group must allocate callbacks on
+    // the same core as the board's earlier display/DMA initialization.
+    vision.task = xTaskCreateStaticPinnedToCore(Worker, "pxa_vision", PXA_BOARD_VISION_STACK_BYTES,
+        nullptr, PXA_BOARD_VISION_TASK_PRIORITY, vision.stack, &vision.task_storage, xPortGetCoreID());
+#else
     vision.task = xTaskCreateStatic(Worker, "pxa_vision", PXA_BOARD_VISION_STACK_BYTES,
         nullptr, PXA_BOARD_VISION_TASK_PRIORITY, vision.stack, &vision.task_storage);
+#endif
     if (!vision.task) {
 #if PXA_BOARD_VISION_STACK_EXTERNAL
         heap_caps_free(vision.stack); vision.stack = nullptr;
