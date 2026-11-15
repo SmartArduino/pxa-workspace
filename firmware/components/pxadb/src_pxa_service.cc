@@ -355,11 +355,22 @@ bool SendFrameTo(Session& session, unsigned long sequence, const char* type, con
     const int length = snprintf(line, sizeof(line), "\n%s %lu %s %s\n", kProtocol, sequence, type,
                                 payload_length == 0 ? "-" : encoded);
     if (length <= 0 || static_cast<size_t>(length) >= sizeof(line)) return false;
-    // ESP_LOG uses the same USB Serial/JTAG output. Keep raw console text on
-    // either side of a complete response so the host can always resynchronize.
+    // Newlib vprintf serializes console output with its FILE lock, not the
+    // ESP_LOG tag-level mutex. Hold the same locks over every transport chunk,
+    // including direct stderr diagnostics, to keep logs outside this frame.
+#if CONFIG_LIBC_NEWLIB
+    flockfile(stdout);
+    flockfile(stderr);
+#else
     esp_log_impl_lock();
+#endif
     const bool sent = WriteAll(session, line, static_cast<size_t>(length), generation);
+#if CONFIG_LIBC_NEWLIB
+    funlockfile(stderr);
+    funlockfile(stdout);
+#else
     esp_log_impl_unlock();
+#endif
     return sent;
 }
 

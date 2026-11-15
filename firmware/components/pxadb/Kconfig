@@ -66,6 +66,26 @@ menu "PXADB development service"
         default 115200
         depends on PXADB_ENABLED && (PXADB_TRANSPORT_UART || PXADB_UART_SECONDARY)
 
+    config PXADB_UART_TX_BURST_BYTES
+        int "Maximum UART transmit burst (0 disables pacing)"
+        range 0 1024
+        default 0
+        depends on PXADB_ENABLED && (PXADB_TRANSPORT_UART || PXADB_UART_SECONDARY)
+        help
+            Limit each reply write and drain the preceding burst before
+            sending the next. USB-UART bridges without hardware flow control
+            can need this at high rates. Zero keeps continuous transmission;
+            native USB is not paced.
+
+    config PXADB_UART_TX_GAP_US
+        int "Idle time between UART transmit bursts (microseconds)"
+        range 0 10000
+        default 100
+        depends on PXADB_ENABLED && (PXADB_TRANSPORT_UART || PXADB_UART_SECONDARY) && PXADB_UART_TX_BURST_BYTES > 0
+        help
+            Allow the USB-UART receiver to drain its buffer after the preceding
+            bytes have left the UART. This pause applies to PXADB replies.
+
     config PXADB_AUTOSTART
         bool "Start PXADB automatically after boot"
         depends on PXADB_ENABLED

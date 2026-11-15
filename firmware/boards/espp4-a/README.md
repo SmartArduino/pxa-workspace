@@ -224,6 +224,10 @@ EN / BOOT，串口保留 UART0 启动日志和硬件自动下载，运行期默�
 并给主机工具传入相同的 `--baud`。已有构建目录需同步更新其 `sdkconfig`；
 板级 defaults 不会覆盖旧配置。板载 CH340X 的额定上限为
 [2 Mbps](https://www.wch.cn/products/CH340.html)，不将 3 Mbps 作为该接口的支持档位。
+本板默认将 PXADB 回复拆成 32 字节突发，并在 UART 排空后留出 100 微秒间隔，
+给无硬件流控的 USB 串口接收端留出缓冲余量。板级配置分别为
+`CONFIG_PXADB_UART_TX_BURST_BYTES` 和 `CONFIG_PXADB_UART_TX_GAP_US`；突发长度
+设为 `0` 可关闭。此设置不改变波特率或原生 USB 的发送方式。
 ROM 下载握手仍使用 115200，应用运行日志会切换到上述配置的速率。
 
 本板 CH340X 的 RTS 直接连接 EN，DTR 直接连接 BOOT。Linux 打开 tty 时可能

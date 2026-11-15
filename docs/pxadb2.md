@@ -22,6 +22,12 @@ an earlier connection generation are discarded. Log records fan out to each
 subscriber's bounded queue, with independent drop counts. Closing one
 connection does not unsubscribe the other.
 
+Newlib firmware holds the `stdout` and `stderr` stream locks across every
+transport chunk of a reply. Console logs and direct standard-error diagnostics
+therefore remain outside the complete PXADB1 line. The ESP_LOG tag-level mutex
+alone does not serialize `vprintf` output. Board ports must route their normal
+console through the same UART driver instead of writing directly to its FIFO.
+
 A single control task polls both endpoints to avoid allocating another large
 internal-RAM stack. Partial lines and binary bodies do not block the other
 parser; synchronous package, filesystem and capture commands still serialize.

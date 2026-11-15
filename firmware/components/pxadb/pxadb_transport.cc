@@ -7,6 +7,7 @@
 #if CONFIG_PXADB_TRANSPORT_UART || CONFIG_PXADB_UART_SECONDARY
 #include <driver/gpio.h>
 #include <driver/uart.h>
+#include <esp_rom_sys.h>
 extern "C" unsigned pxadb_uart_rx_buffer_capacity(void);
 #endif
 #if CONFIG_PXADB_TRANSPORT_USB_CDC
@@ -111,6 +112,16 @@ int TransportRead(Transport transport, uint8_t* bytes, size_t size, uint32_t tim
 int TransportWrite(Transport transport, const uint8_t* bytes, size_t size) {
     if (TransportIsUart(transport)) {
 #if CONFIG_PXADB_TRANSPORT_UART || CONFIG_PXADB_UART_SECONDARY
+        if (!size) return 0;
+#if CONFIG_PXADB_UART_TX_BURST_BYTES > 0
+        // Drain before writing: a timeout must not mark accepted bytes as
+        // unwritten, since WriteAll may retry a write that makes no progress.
+        if (uart_wait_tx_done(kUart, kIoTimeout) != ESP_OK) return -1;
+#if CONFIG_PXADB_UART_TX_GAP_US > 0
+        esp_rom_delay_us(CONFIG_PXADB_UART_TX_GAP_US);
+#endif
+        size = std::min<size_t>(size, CONFIG_PXADB_UART_TX_BURST_BYTES);
+#endif
         return uart_write_bytes(kUart, bytes, size);
 #else
         return -1;

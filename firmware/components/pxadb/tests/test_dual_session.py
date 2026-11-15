@@ -292,11 +292,13 @@ def main():
     with tempfile.TemporaryDirectory(prefix='pxadb-dual-session-') as temporary:
         unit, binary = Path(temporary)/'test.cpp', Path(temporary)/'test'
         unit.write_text(source.replace('TEMP_ROOT', temporary))
-        subprocess.run([os.environ.get('CXX', 'clang++'), '-std=c++17', '-Wall', '-Wextra', '-Werror',
-            '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-pthread',
-            '-I' + str(component/'tests/stubs'), '-I' + str(component/'include'),
-            str(unit), '-lmbedcrypto', '-o', str(binary)], check=True)
-        subprocess.run([str(binary)], check=True, timeout=30)
+        for newlib in (0, 1):
+            subprocess.run([os.environ.get('CXX', 'clang++'), '-std=c++17', '-Wall', '-Wextra', '-Werror',
+                '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-pthread',
+                f'-DCONFIG_LIBC_NEWLIB={newlib}',
+                '-I' + str(component/'tests/stubs'), '-I' + str(component/'include'),
+                str(unit), '-lmbedcrypto', '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=30)
 
 
 if __name__ == '__main__':

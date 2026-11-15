@@ -1,6 +1,6 @@
 # PXA 固件工作区 0.11.1
 
-状态：发布准备中。系统与工具变化见
+状态：[已正式发布](https://github.com/SmartArduino/pxa-workspace/releases/tag/v0.11.1)。系统与工具变化见
 [PXA 0.11.1 与 Agent Kit 0.7.4](../deps/pxa-system/docs/release-0.11.1.zh-CN.md)。
 
 Pai Touch 使用优先级 4 的摄像头工作任务，使 RGB/JPEG 工作及时完成；共享板级
@@ -24,7 +24,7 @@ Mosaico 与 Korvo 的旧布局迁移说明见发行包 README；不要将更大�
 
 ## English
 
-Preparation only. Pai Touch raises its camera worker priority to 4 while other boards
+Released. Pai Touch raises its camera worker priority to 4 while other boards
 retain the shared default of 2. The GC2145 resolution, color conversion and single
 frame buffer are unchanged. ESPP4-A uses native LVGL DIRECT presentation and avoids
 redundant launcher/status overlay composition. PXADB supports both native USB and
