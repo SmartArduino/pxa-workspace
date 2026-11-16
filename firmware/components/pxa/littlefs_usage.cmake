@@ -37,7 +37,7 @@ function(pxa_configure_littlefs_usage component_dir)
         message(FATAL_ERROR "Expected exactly one reviewed LittleFS driver source")
     endif()
     set_property(TARGET ${library} PROPERTY SOURCES ${sources} "${output}")
-    target_include_directories(${library} PRIVATE "${driver}/src"
+    target_include_directories(${library} PRIVATE "${driver}/src" "${driver}/src/littlefs"
         "${component_dir}/src/services")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${tool}"
         "${source}" "${component_dir}/src/services/pxa_littlefs_usage.h")

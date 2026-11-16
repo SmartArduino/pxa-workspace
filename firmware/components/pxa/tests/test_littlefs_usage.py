@@ -64,9 +64,15 @@ def main():
         # its actual target instead of compiling an unused generated copy.
         cmake = output / "cmake"
         cmake.mkdir()
+        (cmake / "header_smoke.c").write_text('''#include <stdlib.h>
+#include "pxa_littlefs_usage.h"
+int smoke(lfs_t *fs) { lfs_size_t used; return pxa_littlefs_usage_count(fs, calloc, free, &used); }
+''')
         (cmake / "CMakeLists.txt").write_text(f'''cmake_minimum_required(VERSION 3.20)
 project(usage_adapter C)
 add_library(driver OBJECT "{source}" "{library / 'lfs.c'}")
+add_library(header_smoke OBJECT header_smoke.c)
+target_include_directories(header_smoke PRIVATE $<TARGET_PROPERTY:driver,INCLUDE_DIRECTORIES>)
 set_source_files_properties("{source}" PROPERTIES
  COMPILE_FLAGS "-DLFS_CONFIG=lfs_config.h"
  COMPILE_DEFINITIONS "REVIEWED_SOURCE_CONFIG=1")
@@ -97,6 +103,7 @@ endfunction()
 cmake_language(DEFER CALL check_sources)
 ''')
         subprocess.run(["cmake", "-S", str(cmake), "-B", str(cmake / "build")], check=True)
+        subprocess.run(["cmake", "--build", str(cmake / "build"), "--target", "header_smoke"], check=True)
         sources = (cmake / "build/sources.txt").read_text().split(";")
         assert str(source) not in sources
         assert str(library / "lfs.c") in sources
