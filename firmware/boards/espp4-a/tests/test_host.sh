@@ -22,6 +22,10 @@ mkdir -p "$test_build"
 "$test_build/pixels_test"
 "${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
+    -I"$test_dir/../include" "$test_dir/ppa_rows_test.cc" -o "$test_build/ppa_rows_test"
+"$test_build/ppa_rows_test"
+"${CXX:-c++}" -std=c++20 -Wall -Wextra -Werror -g \
+    -fsanitize=address,undefined -fno-omit-frame-pointer \
     -I"$test_dir/../include" -I"$project_dir/firmware/components/pxa_board_common/include" \
     "$test_dir/scanout_test.cc" -o "$test_build/scanout_test"
 "$test_build/scanout_test"

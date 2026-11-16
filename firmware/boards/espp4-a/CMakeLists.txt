@@ -29,6 +29,11 @@ if(PXA_ESPP4_SD_SELFTEST)
     target_sources(${COMPONENT_LIB} PRIVATE tests/sd_device_test.cc)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_ESPP4_SD_SELFTEST=1)
 endif()
+option(PXA_ESPP4_LVGL_PPA_FILL "Use PPA for large opaque native LVGL fills" ON)
+option(PXA_ESPP4_LVGL_PPA_SELFTEST "Verify PPA pixels and cache guards at first native fill" OFF)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    PXA_ESPP4_LVGL_PPA_FILL=$<BOOL:${PXA_ESPP4_LVGL_PPA_FILL}>
+    PXA_ESPP4_LVGL_PPA_SELFTEST=$<BOOL:${PXA_ESPP4_LVGL_PPA_SELFTEST}>)
 option(PXA_ESPP4_PIXEL_SELFTEST "Include P4 pixel differential tests" OFF)
 option(PXA_ESPP4_PPA_FILL "Use PPA for cache-line-aligned bulk clears (benchmark first)" OFF)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_ESPP4_PIXEL_ACCEL=$<BOOL:${PXA_ESPP4_PIXEL_ACCEL}>)
