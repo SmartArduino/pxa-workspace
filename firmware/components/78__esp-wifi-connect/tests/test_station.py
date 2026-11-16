@@ -99,7 +99,8 @@ inline int configure_result=ESP_OK;
 inline wifi_config_t last_config{};
 inline int esp_wifi_set_config(int,const wifi_config_t* c){++radio_configs;last_config=*c;return configure_result;}
 inline int esp_wifi_disconnect(){++radio_disconnects;wifi_event_sta_disconnected_t e{8};return esp_event_post(WIFI_EVENT,WIFI_EVENT_STA_DISCONNECTED,&e,sizeof(e),0);}
-inline int esp_wifi_connect(){++radio_connects;return ESP_OK;}
+inline int connect_result=ESP_OK;
+inline int esp_wifi_connect(){++radio_connects;return connect_result;}
 inline int esp_wifi_scan_start(void*,bool){++radio_scans;return ESP_OK;}
 inline int esp_wifi_scan_stop(){return ESP_OK;}
 inline int esp_wifi_stop(){return ESP_OK;}
@@ -200,9 +201,42 @@ int main(){
  visible_ssid="doit-6";
  assert(station.ScanNetworks(&networks,true) && radio_connects==joins+1);
  }
+ {
+ // Losing a healthy link must mark each re-association as in flight.
+ // Otherwise the next disconnect is discarded and automatic recovery stops.
+ WifiStation station;station.Start();int notifications=0;
+ station.OnDisconnected([&](int){++notifications;});
+ assert(station.Connect("doit-6","saved-password"));pump();
+ ip_event_got_ip_t ip{};deliver(IP_EVENT,IP_EVENT_STA_GOT_IP,&ip);
+ const int joins=radio_connects,retries=scan_rearms;
+ wifi_event_sta_disconnected_t lost{203};
+ for(int i=0;i<5;++i){deliver(WIFI_EVENT,WIFI_EVENT_STA_DISCONNECTED,&lost);assert(radio_connects==joins+i+1);}
+ deliver(WIFI_EVENT,WIFI_EVENT_STA_DISCONNECTED,&lost);
+ assert(radio_connects==joins+5&&scan_rearms==retries+1&&notifications==1);
+ visible_ssid="doit-6";wait_hook=[]{deliver(WIFI_EVENT,WIFI_EVENT_SCAN_DONE,nullptr);};
+ std::vector<WifiNetwork> networks;
+ assert(station.ScanNetworks(&networks,true)&&radio_connects==joins+6);
+ deliver(IP_EVENT,IP_EVENT_STA_GOT_IP,&ip);assert(station.IsConnected());
+ // An immediate driver error produces no later disconnect event. It must
+ // re-arm scanning instead of leaving the admission flag stuck forever.
+ const int rearmed=scan_rearms,attempts=radio_connects;connect_result=ESP_FAIL;
+ deliver(WIFI_EVENT,WIFI_EVENT_STA_DISCONNECTED,&lost);connect_result=ESP_OK;
+ assert(radio_connects==attempts+1&&scan_rearms==rearmed+1);
+ assert(station.ScanNetworks(&networks,true)&&radio_connects==attempts+2);
+ // Exhaust the new attempt, then fail automatic configuration/start calls.
+ for(int i=0;i<6;++i)deliver(WIFI_EVENT,WIFI_EVENT_STA_DISCONNECTED,&lost);
+ const int before_auto=radio_connects,before_timer=scan_rearms;
+ configure_result=ESP_FAIL;
+ assert(station.ScanNetworks(&networks,true));configure_result=ESP_OK;
+ assert(radio_connects==before_auto&&scan_rearms==before_timer+1);
+ connect_result=ESP_FAIL;
+ assert(station.ScanNetworks(&networks,true));connect_result=ESP_OK;
+ assert(radio_connects==before_auto+1&&scan_rearms==before_timer+2);
+ assert(station.ScanNetworks(&networks,true)&&radio_connects==before_auto+2);
+ }
  wait_hook={};
  assert(registrations.empty());
- puts("Station: saved-network auto join after UI scans, single-consumer results, retry scheduling, association isolation and recovery passed");
+ puts("Station: saved-network auto join after UI scans, single-consumer results, retry scheduling, association isolation, link-loss retries, driver errors and recovery passed");
 }
 '''
 

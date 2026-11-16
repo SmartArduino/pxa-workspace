@@ -3,6 +3,7 @@
 #include "doit_gamekit_2_battery.h"
 #include "doit_gamekit_2_config.h"
 #include "doit_gamekit_2_input.h"
+#include "doit_gamekit_2_interaction.h"
 #include "doit_gamekit_2_navigation.h"
 #include "doit_gamekit_2_rotation.h"
 #include "doit_gamekit_2_refresh.h"
@@ -23,6 +24,7 @@
 #include <driver/sdmmc_host.h>
 #include <driver/spi_master.h>
 #include <esp_heap_caps.h>
+#include <esp_app_desc.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_log.h>
 #include <esp_littlefs.h>
@@ -110,6 +112,7 @@ public:
 private:
     bool InitializeDisplay();
     bool InitializeButtons();
+    bool RegisterInteraction();
     bool InitializeTouch();
     void PollTouch(uint32_t now);
     void CancelTouch();
@@ -221,6 +224,7 @@ bool Gamekit::Initialize() {
     touch_ready_ = InitializeTouch();
     if (!touch_ready_) ESP_LOGW(kTag, "FT6336U unavailable; button navigation remains active");
 #endif
+    if (!RegisterInteraction()) ESP_LOGW(kTag, "Physical input description unavailable");
     // S31 ADC conversions and Wi-Fi PHY temperature reads nest the RTC and
     // analog register spinlocks in opposite orders. Run both on the Wi-Fi
     // core so their interrupt-masked critical sections cannot overlap across
@@ -288,6 +292,35 @@ bool Gamekit::Initialize() {
     ESP_LOGI(kTag, "%s: 320x240 %s, 14 keys, SDMMC, FT6336U=%s",
              kName, kPanelName, touch_ready_ ? "ready" : "unavailable");
     return true;
+}
+
+bool Gamekit::RegisterInteraction() {
+    const auto* app = esp_app_get_description();
+    if (!app || !app->project_name[0] || !app->version[0] ||
+        !std::memchr(app->project_name, 0, sizeof(app->project_name)) ||
+        !std::memchr(app->version, 0, sizeof(app->version))) return false;
+    uint8_t any = 0, common = 0xff;
+    for (const auto byte : app->app_elf_sha256) { any |= byte; common &= byte; }
+    if (!any || common == 0xff) return false;
+    static const std::array<char, 65> build_id = [app] {
+        std::array<char, 65> text{};
+        static constexpr char hex[] = "0123456789abcdef";
+        for (size_t i = 0; i < sizeof(app->app_elf_sha256); ++i) {
+            text[i * 2] = hex[app->app_elf_sha256[i] >> 4];
+            text[i * 2 + 1] = hex[app->app_elf_sha256[i] & 15];
+        }
+        return text;
+    }();
+    const unsigned contacts = PhysicalTouchContacts(
+        touch_ready_, touch_pointers_[0] != nullptr, touch_pointers_[1] != nullptr);
+#if CONFIG_PXA_DOIT2_TOUCH
+    constexpr bool touch_enabled = true;
+#else
+    constexpr bool touch_enabled = false;
+#endif
+    static const auto descriptor = InteractionDescription(app->project_name,
+        app->version, build_id.data(), touch_enabled, contacts);
+    return pxa_host_interaction_register(&descriptor);
 }
 
 bool Gamekit::InitializeDisplay() {

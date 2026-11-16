@@ -191,6 +191,7 @@ void WifiStation::ConnectNow(const std::string& ssid, const std::string& passwor
         ESP_LOGW(TAG, "Could not start selected connection: %s", esp_err_to_name(result));
         manual_connect_pending_ = false;
         connecting_ = false;
+        ScheduleScan();
     }
 }
 
@@ -417,11 +418,21 @@ void WifiStation::StartConnect() {
         wifi_config.sta.bssid_set = true;
     }
     wifi_config.sta.listen_interval = 10;
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-
+    const esp_err_t configured = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (configured != ESP_OK) {
+        ESP_LOGW(TAG, "Could not configure saved network: %s", esp_err_to_name(configured));
+        connecting_ = false;
+        ScheduleScan();
+        return;
+    }
     reconnect_count_ = 0;
     connecting_ = true;
-    ESP_ERROR_CHECK(esp_wifi_connect());
+    const esp_err_t result = esp_wifi_connect();
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "Could not start saved connection: %s", esp_err_to_name(result));
+        connecting_ = false;
+        ScheduleScan();
+    }
 }
 
 int8_t WifiStation::GetRssi() {
@@ -529,7 +540,17 @@ void WifiStation::WifiEventHandler(void* arg, esp_event_base_t event_base, int32
         if (!was_connected && !this_->connecting_) return;
         
         if (this_->reconnect_count_ < MAX_RECONNECT_COUNT) {
-            esp_wifi_connect();
+            // GOT_IP clears this flag. A reconnect from a healthy link must
+            // set it again, or its next failure is mistaken for an idle event.
+            this_->connecting_ = true;
+            const esp_err_t result = esp_wifi_connect();
+            if (result != ESP_OK) {
+                ESP_LOGW(TAG, "Could not restart connection: %s", esp_err_to_name(result));
+                this_->manual_connect_pending_ = false;
+                this_->connecting_ = false;
+                this_->ScheduleScan();
+                return;
+            }
             this_->reconnect_count_++;
             ESP_LOGI(TAG, "Reconnecting %s (attempt %d / %d)", this_->ssid_.c_str(), this_->reconnect_count_, MAX_RECONNECT_COUNT);
             return;

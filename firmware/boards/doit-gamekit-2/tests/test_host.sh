@@ -17,4 +17,5 @@ done
     -o "$test_build/battery_test"
 "$test_build/battery_test"
 python3 "$project_dir/firmware/components/pxa_integration/tests/test_wifi_preferences.py"
+PXA_TEST_OUTPUT="$test_build/interaction" python3 "$test_dir/test_interaction.py"
 echo "DOIT GameKit 2 input, touch, native portrait wire and battery tests passed"
