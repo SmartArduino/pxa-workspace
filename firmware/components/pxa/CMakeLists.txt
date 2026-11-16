@@ -295,3 +295,7 @@ endif()
 if(DEFINED PXA_NAMESPACE_ISSUERS_SOURCE AND NOT PXA_NAMESPACE_ISSUERS_SOURCE STREQUAL "")
     target_sources(${COMPONENT_LIB} PRIVATE "${PXA_NAMESPACE_ISSUERS_SOURCE}")
 endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/littlefs_usage.cmake")
+cmake_language(EVAL CODE
+    "cmake_language(DEFER DIRECTORY \"${CMAKE_SOURCE_DIR}\" CALL pxa_configure_littlefs_usage \"${CMAKE_CURRENT_LIST_DIR}\")")
