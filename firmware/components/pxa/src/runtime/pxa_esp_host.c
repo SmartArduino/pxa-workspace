@@ -3456,7 +3456,9 @@ static void host_service_capabilities(pxa_package_activation_profile_t *capabili
             if (service_capabilities[index].service == PXA_CLOCK_SERVICE_ID)
                 service_capabilities[index].features = PXA_CLOCK_FEATURE_TIMING;
             if (service_capabilities[index].service == PXA_ASSETS_SERVICE_ID)
-                service_capabilities[index].features = PXA_ASSETS_FEATURE_IMAGE_DECODE | PXA_ASSETS_FEATURE_IMAGE_FRAMES;
+                service_capabilities[index].features = PXA_ASSETS_FEATURE_IMAGE_DECODE |
+                    PXA_ASSETS_FEATURE_IMAGE_FRAMES | PXA_ASSETS_FEATURE_LARGE_IMAGES |
+                    PXA_ASSETS_FEATURE_IMAGE_INPUT_LIMITS;
             if (service_capabilities[index].service == PXA_FS_SERVICE_ID)
                 service_capabilities[index].features = fs_features;
             if (service_capabilities[index].service == PXA_GAME_RENDER_SERVICE_ID)
