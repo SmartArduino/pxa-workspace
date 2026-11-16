@@ -14,11 +14,11 @@
  * Unknown targets must not claim another target's capabilities. */
 static const char *pxa_store_host_profile(void) {
 #if defined(CONFIG_IDF_TARGET_ESP32S3) && CONFIG_IDF_TARGET_ESP32S3
-    return "esp32-s3-pxa-0.11.0";
+    return "esp32-s3-pxa-0.11.2";
 #elif defined(CONFIG_IDF_TARGET_ESP32S31) && CONFIG_IDF_TARGET_ESP32S31
-    return "esp32-s31-pxa-0.11.0";
+    return "esp32-s31-pxa-0.11.2";
 #elif defined(CONFIG_IDF_TARGET_ESP32P4) && CONFIG_IDF_TARGET_ESP32P4
-    return "esp32-p4-pxa-0.11.0";
+    return "esp32-p4-pxa-0.11.2";
 #else
     return NULL;
 #endif
