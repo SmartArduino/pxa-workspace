@@ -221,7 +221,9 @@ Host 可使用 `pxa/resource_budget.h` 的 `pxa_memory_budget_init`、`pxa_memor
 
 `pxa_memory_budget_config_t.temporary_limit[2]` 现已对 TEMPORARY 增加全局专项硬限额，配置零禁止该类别分配。它和原来的全局/应用总额度同时生效，不预留物理内存，也不保证其他资源占用后仍有足够解码空间。并发任务、扩容新旧块和退役应用尚未释放的临时块都在同一限额内；峰值通过 global/owner 的 `temporary_peak[2]` 独立报告。临时额度不足直接拒绝，不触发无法改善此额度的纹理淘汰。实际未接入分配器的第三方开销及栈上工作区仍要单独核算。
 
-ESP 配置 `CONFIG_PXA_RESOURCE_TEMPORARY_INTERNAL_BYTES` / `CONFIG_PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES`，当前默认 16 KiB / 512 KiB。desktop 使用同名去掉 `CONFIG_` 的环境变量，支持零；总额度更小时仍以总额度为限。这些是可调整的保守上限，不是已测得的实际 codec 峰值或真机性能保证。Host 编写者必须显式填写新 config 字段；零初始化后未设置即禁止 TEMPORARY。
+ESP 默认启用 `CONFIG_PXA_RESOURCE_PSRAM_AUTO`：外部资源总额度为检测到的 PSRAM 的一半，临时额度为四分之一，均不预留物理内存。每次外部实际分配还检查原生堆的空闲量与最大连续块，并保留 PSRAM 的八分之一（至少 256 KiB）供其他原生使用者使用。关闭自动策略后，使用显式 external / temporary external 配置；内部临时额度默认仍为 16 KiB。desktop 的默认外部总额度 / 临时额度为 4 MiB / 2 MiB，可通过 `PXA_RESOURCE_EXTERNAL_BYTES` / `PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES` 覆盖，临时额度支持零；总额度更小时仍以总额度为限。这些是可调整的上限，不是实际 codec 峰值或真机性能保证。Host 编写者必须显式填写临时 config 字段；零初始化后未设置即禁止 TEMPORARY。
+
+`pxa_memory_allocator_available` 只读取当前 owner、全局与临时额度的剩余量，不分配、回收或预留内存。Assets 2.7 的 `IMAGE_INPUT_LIMITS` 在此基础上扣除输出与 codec 工作空间，并结合可选原生堆回调，给出普通图片编码输入的建议预算。查询与使用之间仍可能发生竞争或碎片变化，真正分配时必须继续执行预算与原生堆检查。
 
 产品 Host 当前接入范围、默认额度、真实测试结果和未完成项见执行记录的“共享资源预算”章节。目前 ESP 短音效、音乐输出/重采样缓冲、设备常驻 ring/音频 RTOS 存储，以及当前链接的 Ogg/Vorbis/Opus codec 分配入口已经接入；独立短音效缓存表已由共享 Assets 对象替代。LVGL 实际解码、其他任务/显示及板级驱动内存、desktop codec 私有分配仍待覆盖或完整汇总，不得据接口存在就认为统一预算或异步 UI 已完成。
 
