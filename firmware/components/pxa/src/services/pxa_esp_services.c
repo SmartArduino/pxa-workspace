@@ -908,6 +908,12 @@ static pxa_status_t initialize_assets(
     config.image_backend = pxa_esp_rom_image_backend();
     config.image_allocator = pxa_esp_resource_allocator(PXA_MEMORY_EXTERNAL,PXA_MEMORY_IMAGE);
     config.image_temporary_allocator = pxa_esp_resource_allocator(PXA_MEMORY_EXTERNAL,PXA_MEMORY_TEMPORARY);
+    config.image_memory_available = pxa_esp_resource_image_memory;
+#if CONFIG_ESP_ROM_HAS_JPEG_DECODE
+    /* ROM JPEG uses charged 4KiB source chunks; PNG is incremental. The
+     * fallback LVGL whole-image backend retains the legacy encoded ceiling. */
+    config.image_max_encoded_bytes = PXA_IMAGE_ENCODED_MAX_BYTES;
+#endif
     /* Runtime-only images need no installed catalog, resident asset cache or
      * package I/O worker. Keep those costs out of a reader's baseline. */
     pxa_bytes_t catalog_path = {(const uint8_t *)PXA_ASSET_INDEX_PATH,sizeof(PXA_ASSET_INDEX_PATH)-1};

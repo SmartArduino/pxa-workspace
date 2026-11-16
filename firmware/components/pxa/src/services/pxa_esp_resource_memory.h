@@ -18,6 +18,8 @@ pxa_status_t pxa_esp_resource_memory_end(void);
 const pxa_memory_allocator_t *pxa_esp_resource_allocator(unsigned cls, unsigned kind);
 void *pxa_esp_resource_allocate(unsigned cls, unsigned kind, size_t bytes);
 void pxa_esp_resource_memory_stats(pxa_memory_stats_t *stats, size_t *fixed_bytes);
+/* Native heap after the same headroom guard used by actual allocations. */
+pxa_status_t pxa_esp_resource_image_memory(void *, size_t *available, size_t *largest);
 #ifdef __cplusplus
 }
 #endif

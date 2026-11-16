@@ -1,5 +1,6 @@
 #include "pxa_esp_resource_memory.h"
 #include "pxa_esp_assets.h"
+#include "pxa_esp_resource_policy.h"
 #if defined(ESP_PLATFORM)
 #include "sdkconfig.h"
 #include "esp_heap_caps.h"
@@ -16,6 +17,9 @@
 #endif
 #ifndef CONFIG_PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES
 #define CONFIG_PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES (512u * 1024u)
+#endif
+#ifndef CONFIG_PXA_RESOURCE_PSRAM_AUTO
+#define CONFIG_PXA_RESOURCE_PSRAM_AUTO 0
 #endif
 static pxa_memory_budget_t resource_budget;
 static pxa_memory_owner_t resource_device_owner;
@@ -35,6 +39,13 @@ static void enter(void *context) { portENTER_CRITICAL((portMUX_TYPE *)context); 
 static void leave(void *context) { portEXIT_CRITICAL((portMUX_TYPE *)context); }
 static void *raw_allocate(void *context, size_t bytes) {
     unsigned cls = (unsigned)(uintptr_t)context;
+    if (cls == PXA_MEMORY_EXTERNAL) {
+        size_t available = pxa_esp_resource_psram_available(
+            heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
+            heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        if (bytes > available || bytes > heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM))
+            return NULL;
+    }
     return heap_caps_malloc(bytes, MALLOC_CAP_8BIT |
         (cls == PXA_MEMORY_EXTERNAL ? MALLOC_CAP_SPIRAM : MALLOC_CAP_INTERNAL));
 }
@@ -57,13 +68,16 @@ static pxa_status_t reap_retired(void) {
     return result;
 }
 pxa_status_t pxa_esp_resource_memory_initialize(void) {
-    const size_t limits[2] = {CONFIG_PXA_RESOURCE_INTERNAL_BYTES, CONFIG_PXA_RESOURCE_EXTERNAL_BYTES};
+    size_t limits[2] = {CONFIG_PXA_RESOURCE_INTERNAL_BYTES, 0}, temporary;
     if (resource_initialized) return PXA_STATUS_OK;
+    pxa_esp_resource_psram_limits(heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
+        CONFIG_PXA_RESOURCE_PSRAM_AUTO, CONFIG_PXA_RESOURCE_EXTERNAL_BYTES,
+        CONFIG_PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES, &limits[1], &temporary);
     const pxa_memory_budget_config_t config = {
         .limit = {limits[0], limits[1]}, .lock_context = &resource_lock,
         .lock = enter, .unlock = leave, .reclaim = request_reclaim,
         .temporary_limit = {CONFIG_PXA_RESOURCE_TEMPORARY_INTERNAL_BYTES,
-                            CONFIG_PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES}
+                            temporary}
     };
     pxa_status_t status = pxa_memory_budget_init(&resource_budget, &config);
     if (status != PXA_STATUS_OK) return status;
@@ -82,7 +96,6 @@ const pxa_memory_allocator_t *pxa_esp_device_resource_allocator(unsigned cls, un
         ? &resource_device_allocators[cls][kind] : NULL;
 }
 pxa_status_t pxa_esp_resource_memory_begin(void) {
-    const size_t limits[2] = {CONFIG_PXA_RESOURCE_INTERNAL_BYTES, CONFIG_PXA_RESOURCE_EXTERNAL_BYTES};
     if (resource_active >= 0) return PXA_STATUS_BUSY;
     pxa_status_t status = pxa_esp_resource_memory_initialize();
     if (status != PXA_STATUS_OK) return status;
@@ -90,7 +103,8 @@ pxa_status_t pxa_esp_resource_memory_begin(void) {
     unsigned slot;
     for (slot = 0; slot < RESOURCE_ACTIVATIONS && resource_activations[slot].owner; ++slot) {}
     if (slot == RESOURCE_ACTIVATIONS) return PXA_STATUS_RESOURCE_LIMIT;
-    status = pxa_memory_owner_open(&resource_budget, limits, &resource_activations[slot].owner);
+    status = pxa_memory_owner_open(&resource_budget, resource_budget.config.limit,
+        &resource_activations[slot].owner);
     if (status != PXA_STATUS_OK) return status;
     for (unsigned c = 0; c < PXA_MEMORY_CLASSES; ++c)
         for (unsigned k = 0; k < PXA_MEMORY_KINDS; ++k)
@@ -119,5 +133,13 @@ void pxa_esp_resource_memory_stats(pxa_memory_stats_t *stats, size_t *fixed_byte
         memset(stats, 0, sizeof(*stats));
         if (resource_initialized) (void)pxa_memory_budget_stats(&resource_budget, 0, stats);
     }
+}
+pxa_status_t pxa_esp_resource_image_memory(void *context, size_t *available, size_t *largest) {
+    (void)context;
+    if (!available || !largest) return PXA_STATUS_INVALID_ARGUMENT;
+    *available = pxa_esp_resource_psram_available(heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
+        heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    *largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+    return PXA_STATUS_OK;
 }
 #endif

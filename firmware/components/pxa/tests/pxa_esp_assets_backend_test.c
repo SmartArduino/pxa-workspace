@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#define PXA_TEST_HEAP_SNAPSHOT 1
 #undef NDEBUG
 #include "pxa_test_platform.h"
 #include <pthread.h>
@@ -41,6 +42,17 @@ static pxa_status_t io_fail_once;
 static __thread unsigned cache_lock_depth;
 static struct {void *pointer; size_t bytes; unsigned caps;} allocations[96];
 static size_t live_allocations, live_bytes, peak_pixel_bytes[2], pixel_bytes[2];
+static size_t forced_heap_free, forced_heap_largest;
+size_t heap_caps_get_total_size(unsigned caps) { (void)caps; return 8u*1024u*1024u; }
+size_t heap_caps_get_free_size(unsigned caps) {
+    (void)caps; assert(!budget_lock_depth);
+    pthread_mutex_lock(&memory_mutex);
+    size_t free_bytes = forced_heap_free ? forced_heap_free : 8u*1024u*1024u-live_bytes;
+    pthread_mutex_unlock(&memory_mutex); return free_bytes;
+}
+size_t heap_caps_get_largest_free_block(unsigned caps) {
+    return forced_heap_largest ? forced_heap_largest : heap_caps_get_free_size(caps);
+}
 static unsigned notices;
 static int64_t fake_clock_us;
 static unsigned fake_delays;
@@ -599,6 +611,13 @@ int main(int argc, char **argv) {
     assert(task_count == 1 && __atomic_load_n(&notices, __ATOMIC_RELAXED));
     pthread_mutex_lock(&task_mutex); task_exit = 1; pthread_cond_signal(&task_condition); pthread_mutex_unlock(&task_mutex);
     assert(!pthread_join(task_thread, NULL));
+    assert(!pxa_esp_resource_memory_begin());
+    forced_heap_free=1;
+    assert(!pxa_esp_resource_allocate(PXA_MEMORY_EXTERNAL,PXA_MEMORY_IMAGE,64));
+    forced_heap_free=0;forced_heap_largest=1;
+    assert(!pxa_esp_resource_allocate(PXA_MEMORY_EXTERNAL,PXA_MEMORY_IMAGE,64));
+    forced_heap_largest=0;
+    assert(!pxa_esp_resource_memory_end());
     puts("ESP assets: cancelled reads, frame-held shutdown, repeated activation and zero leaked allocations passed");
     return 0;
 }

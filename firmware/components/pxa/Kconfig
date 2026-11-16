@@ -93,9 +93,19 @@ menu "PXA Development Apps"
                 task stacks, control blocks, queues and mutex. Other task
                 stacks, DMA/frame buffers and platform heaps remain separate.
 
+        config PXA_RESOURCE_PSRAM_AUTO
+            bool "Size PXA resource quotas from detected PSRAM"
+            default y
+            help
+                No memory is reserved. Total resource quota is half of detected
+                PSRAM and the temporary quota is one quarter. Every external
+                allocation also checks actual free/largest heap and leaves
+                one eighth (at least 256 KiB) for UI and native consumers.
+                Disable to use the explicit resource ceilings below.
+
         config PXA_RESOURCE_EXTERNAL_BYTES
             int "Shared resource PSRAM budget"
-            range 65536 8388608
+            range 65536 33554432
             default 2097152
             help
                 Shared by file textures, dynamic uploads, resource index/cache
@@ -116,7 +126,7 @@ menu "PXA Development Apps"
 
         config PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES
             int "Shared temporary resource PSRAM ceiling"
-            range 0 8388608
+            range 0 33554432
             default 524288
             help
                 Additional global ceiling for temporary decode buffers and

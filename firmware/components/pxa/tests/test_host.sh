@@ -54,6 +54,7 @@ build_and_run() {
   (cd "$build_dir" && "./$name")
 }
 
+build_and_run resource_policy "$tests_dir/resource_policy_test.c"
 build_and_run ui_event_text \
   "${adapter_includes[@]}" "$tests_dir/pxa_host_ui_event_text_test.c"
 build_and_run maintenance \

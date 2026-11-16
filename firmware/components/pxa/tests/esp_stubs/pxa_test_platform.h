@@ -92,6 +92,15 @@ void *heap_caps_aligned_alloc(size_t, size_t, unsigned);
 void *heap_caps_aligned_calloc(size_t, size_t, size_t, unsigned);
 void heap_caps_free(void *);
 size_t heap_caps_get_allocated_size(void *);
+#ifdef PXA_TEST_HEAP_SNAPSHOT
+size_t heap_caps_get_total_size(unsigned);
+size_t heap_caps_get_free_size(unsigned);
+size_t heap_caps_get_largest_free_block(unsigned);
+#else
+static inline size_t heap_caps_get_total_size(unsigned caps) { (void)caps; return 8u*1024u*1024u; }
+static inline size_t heap_caps_get_free_size(unsigned caps) { (void)caps; return 8u*1024u*1024u; }
+static inline size_t heap_caps_get_largest_free_block(unsigned caps) { (void)caps; return 8u*1024u*1024u; }
+#endif
 QueueHandle_t xQueueCreateWithCaps(unsigned, size_t, unsigned);
 int xQueueReceive(QueueHandle_t, void *, uint32_t);
 int xQueueSendToBack(QueueHandle_t, const void *, uint32_t);
