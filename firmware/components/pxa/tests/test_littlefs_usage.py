@@ -55,7 +55,8 @@ def main():
         command = ["cc", "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
                    "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
                    "-DLFS_NO_DEBUG", "-DLFS_NO_WARN", "-DLFS_NO_ERROR",
-                   "-I" + str(library), "-I" + str(COMPONENT / "src/services"),
+                   "-I" + str(library), "-I" + str(args.driver_dir / "src"),
+                   "-I" + str(COMPONENT / "src/services"),
                    "-I" + str(output), str(COMPONENT / "tests/littlefs_usage_test.c"),
                    str(library / "lfs.c"), str(library / "lfs_util.c"), "-o", str(binary)]
         subprocess.run(command, check=True)
@@ -64,6 +65,8 @@ def main():
         # its actual target instead of compiling an unused generated copy.
         cmake = output / "cmake"
         cmake.mkdir()
+        (cmake / "public").mkdir()
+        (cmake / "public/lfs.h").write_text('#error "Public raw LittleFS API must remain disabled"\n')
         (cmake / "header_smoke.c").write_text('''#include <stdlib.h>
 #include "pxa_littlefs_usage.h"
 int smoke(lfs_t *fs) { lfs_size_t used; return pxa_littlefs_usage_count(fs, calloc, free, &used); }
@@ -71,6 +74,7 @@ int smoke(lfs_t *fs) { lfs_size_t used; return pxa_littlefs_usage_count(fs, call
         (cmake / "CMakeLists.txt").write_text(f'''cmake_minimum_required(VERSION 3.20)
 project(usage_adapter C)
 add_library(driver OBJECT "{source}" "{library / 'lfs.c'}")
+target_include_directories(driver PUBLIC "${{CMAKE_CURRENT_SOURCE_DIR}}/public")
 add_library(header_smoke OBJECT header_smoke.c)
 target_include_directories(header_smoke PRIVATE $<TARGET_PROPERTY:driver,INCLUDE_DIRECTORIES>)
 set_source_files_properties("{source}" PROPERTIES

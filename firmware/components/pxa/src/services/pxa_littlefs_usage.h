@@ -2,7 +2,9 @@
 #ifndef PXA_LITTLEFS_USAGE_H
 #define PXA_LITTLEFS_USAGE_H
 
-#include "lfs.h"
+/* Driver-internal header: remain under its semaphore, without enabling the
+ * optional public raw API that bypasses the VFS locking boundary. */
+#include "littlefs/lfs.h"
 #include <stddef.h>
 #include <stdint.h>
 
