@@ -67,6 +67,9 @@ def main():
         (cmake / "CMakeLists.txt").write_text(f'''cmake_minimum_required(VERSION 3.20)
 project(usage_adapter C)
 add_library(driver OBJECT "{source}" "{library / 'lfs.c'}")
+set_source_files_properties("{source}" PROPERTIES
+ COMPILE_FLAGS "-DLFS_CONFIG=lfs_config.h"
+ COMPILE_DEFINITIONS "REVIEWED_SOURCE_CONFIG=1")
 function(idf_component_get_property output component property)
  if(property STREQUAL "COMPONENT_LIB")
   set(${{output}} driver PARENT_SCOPE)
@@ -82,6 +85,14 @@ cmake_language(EVAL CODE "cmake_language(DEFER DIRECTORY \\\"${{CMAKE_SOURCE_DIR
 function(check_sources)
  get_target_property(sources driver SOURCES)
  file(WRITE "${{CMAKE_BINARY_DIR}}/sources.txt" "${{sources}}")
+ get_source_file_property(flags "${{CMAKE_BINARY_DIR}}/pxa-littlefs-usage/esp_littlefs.c"
+  TARGET_DIRECTORY driver COMPILE_FLAGS)
+ get_source_file_property(defs "${{CMAKE_BINARY_DIR}}/pxa-littlefs-usage/esp_littlefs.c"
+  TARGET_DIRECTORY driver COMPILE_DEFINITIONS)
+ if(NOT flags STREQUAL "-DLFS_CONFIG=lfs_config.h" OR
+    NOT defs STREQUAL "REVIEWED_SOURCE_CONFIG=1")
+  message(FATAL_ERROR "Generated driver lost its source compilation configuration")
+ endif()
 endfunction()
 cmake_language(DEFER CALL check_sources)
 ''')

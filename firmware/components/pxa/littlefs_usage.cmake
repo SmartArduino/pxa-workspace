@@ -13,6 +13,22 @@ function(pxa_configure_littlefs_usage component_dir)
     foreach(item IN LISTS sources)
         get_filename_component(name "${item}" NAME)
         if(name STREQUAL "esp_littlefs.c")
+            if(IS_ABSOLUTE "${item}")
+                set(original "${item}")
+            else()
+                set(original "${driver}/${item}")
+            endif()
+            # The managed driver applies LFS_CONFIG per source, including its
+            # allocator and log configuration. Preserve that compilation scope.
+            foreach(property COMPILE_FLAGS COMPILE_OPTIONS COMPILE_DEFINITIONS
+                             INCLUDE_DIRECTORIES LANGUAGE)
+                get_source_file_property(value "${original}"
+                    TARGET_DIRECTORY ${library} ${property})
+                if(NOT value STREQUAL "NOTFOUND")
+                    set_source_files_properties("${output}"
+                        TARGET_DIRECTORY ${library} PROPERTIES ${property} "${value}")
+                endif()
+            endforeach()
             list(REMOVE_ITEM sources "${item}")
             math(EXPR matches "${matches} + 1")
         endif()
