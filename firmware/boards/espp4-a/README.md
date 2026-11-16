@@ -24,6 +24,13 @@ SmartArduino ESPP4-A / ESP32-P4 DevKit v1.1 的 PXA 板级适配。
 | BOOT | GPIO35：短按返回，长按后松开回桌面；休眠时先唤醒 |
 | 调试 | UART0 TX37 / RX38，2000000；连接板载 CH340X 的 UART-DEBUG Type-C |
 
+运行态串口波特率由 `CONFIG_PXADB_UART_BAUD` 与
+`CONFIG_ESP_CONSOLE_UART_BAUDRATE` 配置，电脑端须使用同一速率。
+板载 UART-DEBUG 链路在高波特率下仍可能丢失回复字节，ROM 烧录也可能中断；
+不能以命令返回成功代替内容校验。必要时用 `--baud 115200` 进行 ROM 烧录，
+这不会改变应用启动后的串口速率。降低运行态速率需同步修改上述配置并重建固件。
+原生 USB 传输不使用 UART 波特率。
+
 默认界面显示密度为 240 DPI，使文字、间距和控件相对 200 DPI 放大约 20%，
 便于在这块屏幕上阅读。应用通过显示环境获取密度；像素画布仍按应用自己的缩放策略显示。
 二级缓存使用 128 KiB，为无线 DMA、TLS 和应用安装线程保留足够的内部 RAM。
