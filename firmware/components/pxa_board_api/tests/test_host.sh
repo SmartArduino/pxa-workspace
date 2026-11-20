@@ -4,7 +4,9 @@ tests_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_dir="$(cd "$tests_dir/../../../.." && pwd)"
 build_dir="$(mktemp -d "${TMPDIR:-/tmp}/board-performance.XXXXXX")"
 trap 'rm -rf -- "$build_dir"' EXIT
+for autostart in 0 1; do
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -g -pthread \
+  -DCONFIG_PXADB_AUTOSTART="$autostart" \
   -ffunction-sections -fdata-sections -Wl,--gc-sections \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   -I"$tests_dir/stubs" -I"$tests_dir/../include" \
@@ -17,3 +19,6 @@ trap 'rm -rf -- "$build_dir"' EXIT
   "$tests_dir/performance_test.c" "$tests_dir/../pxa_board_api.c" \
   -o "$build_dir/performance_test"
 "$build_dir/performance_test"
+"$build_dir/performance_test" 0
+"$build_dir/performance_test" 1
+done

@@ -87,12 +87,13 @@ menu "PXADB development service"
             bytes have left the UART. This pause applies to PXADB replies.
 
     config PXADB_AUTOSTART
-        bool "Start PXADB automatically after boot"
+        bool "Enable PXADB at boot by default"
         depends on PXADB_ENABLED
-        default n
+        default y
         help
-            Start PXADB from a bounded background retry task after platform
-            initialization. Keep this disabled in production firmware.
+            Select the initial PXADB preference when it has not been saved.
+            The user's PXADB switch in Settings is saved and takes precedence
+            on subsequent normal boots.
 
     config PXADB_TASK_STACK_SIZE
         int "PXADB control task stack size (bytes)"

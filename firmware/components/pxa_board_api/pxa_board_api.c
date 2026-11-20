@@ -1,5 +1,6 @@
 #include "pxa_board_api.h"
 #include "pxa/display_rotation.h"
+#include "sdkconfig.h"
 
 #include <nvs.h>
 #include <esp_log.h>
@@ -56,7 +57,10 @@ bool pxa_board_display_set_orientation(uint8_t preference) {
 static _Atomic uint8_t g_performance_loaded;
 static _Atomic uint8_t g_performance_overlay;
 static _Atomic uint8_t g_performance_log;
-static _Atomic uint8_t g_pxa_debug_enabled = 1;
+#ifndef CONFIG_PXADB_AUTOSTART
+#define CONFIG_PXADB_AUTOSTART 0
+#endif
+static _Atomic uint8_t g_pxa_debug_enabled = CONFIG_PXADB_AUTOSTART;
 /* These two flags share one byte, filling the old settings alignment gap. */
 enum { SAMPLE_BUSY = 1, SAMPLE_INITIALIZED = 2 };
 static _Atomic uint8_t g_performance_sampling;

@@ -1579,7 +1579,7 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     if (board->configure_diagnostics != nullptr &&
         !board->configure_diagnostics(board->context))
         ESP_LOGW(kTag, "Board diagnostics are unavailable");
-#if CONFIG_PXADB_AUTOSTART
+#if CONFIG_PXADB_ENABLED
     // PXADB task stacks need contiguous internal RAM; reserve them before
     // the Guest runtime starts allocating its own tasks.
     if (pxa_board_performance_get(PXSYS_REFERENCE_PXADB)) {

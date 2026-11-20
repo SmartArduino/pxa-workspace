@@ -7,6 +7,16 @@ tools remain compatible.
 
 ## Firmware USB and UART sessions
 
+Supported boards enable PXADB by default. Its switch is visible under
+**Settings → About device → Developer options**. Use the independent build
+settings below to change either default.
+
+- `CONFIG_PXSYS_REFERENCE_UI_HIDE_DEVELOPER_OPTIONS=y` hides the section until
+  the user taps **System version** seven times.
+- `CONFIG_PXADB_AUTOSTART=n` starts with PXADB off when there is no saved
+  preference. The switch in Settings is saved and takes precedence on normal
+  boots.
+
 The firmware retains the primary transport choice and can additionally enable
 `CONFIG_PXADB_UART_SECONDARY` with a native USB primary. The UART port, pins and
 baud rate must match the board's reserved debug interface; this does not add

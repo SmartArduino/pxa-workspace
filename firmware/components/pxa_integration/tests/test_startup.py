@@ -34,7 +34,7 @@ FIXTURE = r'''
 #include <cstring>
 #include <vector>
 #define CONFIG_LV_USE_FREETYPE 1
-#define CONFIG_PXADB_AUTOSTART 0
+#define CONFIG_PXADB_ENABLED 1
 #define PXA_ESP_HOST_CJK_FONT_PATH "/font.ttf"
 #define PXA_ESP_HOST_TAG "host-test"
 #define LV_FREETYPE_FONT_RENDER_MODE_BITMAP 0
@@ -138,7 +138,19 @@ bool CreateSystem(const pxa_board_port_t*,const pxa_product_profile_t*,
 bool CreateSystem(const pxa_board_port_t*,const pxa_product_profile_t*) {
     ++shell_calls; return true;
 }
-namespace pxadb { void Stop() {} }
+using esp_err_t = int;
+constexpr esp_err_t ESP_OK = 0;
+constexpr int PXSYS_REFERENCE_PXADB = 2;
+bool pxadb_enabled = false;
+unsigned pxadb_starts = 0;
+bool pxa_board_performance_get(int option) {
+    assert(option == PXSYS_REFERENCE_PXADB);
+    return pxadb_enabled;
+}
+namespace pxadb {
+esp_err_t Start() { ++pxadb_starts; return ESP_OK; }
+void Stop() {}
+}
 bool pxa_host_start_runtime() { assert(shell_calls==1); return true; }
 extern "C" void pxa_integration_stop() { g_system=nullptr; }
 // STARTUP
@@ -154,9 +166,12 @@ int main() {
             media_queries=media_selections=0;
             media_selected=media_case==0; media_select_success=media_case==1;
             display_available=host_success=true; initialized=mounted=clock_ready=false; font_pixels.clear();
+            pxadb_enabled=early;
+            pxadb_starts=0;
             board={nullptr,early,initialize,display,profile,nullptr,nullptr,nullptr,nullptr,nullptr};
             pxa_product_profile_t product{sizeof(pxa_product_profile_t),true};
             assert(pxa_integration_start(&product));
+            assert(pxadb_starts==unsigned(pxadb_enabled));
             assert(initialize_calls==1 && mounted_calls==1 && font_pixels.size()==6 && lock_depth==0);
             assert(media_queries==1 && media_selections==(media_selected?0u:1u));
           }

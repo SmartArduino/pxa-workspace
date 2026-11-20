@@ -9,15 +9,26 @@
 
 static _Atomic int64_t now_us;
 static uint8_t overlay = 1;
+static int pxadb_preference = -1;
 int64_t esp_timer_get_time(void) { return atomic_load(&now_us); }
 esp_err_t nvs_open(const char* name, int mode, nvs_handle_t* out) {
     (void)name; (void)mode; *out = 1; return ESP_OK;
 }
 esp_err_t nvs_get_u8(nvs_handle_t handle, const char* key, uint8_t* out) {
-    (void)handle; *out = strcmp(key, "overlay") == 0 ? overlay : 0; return ESP_OK;
+    (void)handle;
+    if (strcmp(key, "pxadb") == 0) {
+        if (pxadb_preference < 0) return -1;
+        *out = (uint8_t)pxadb_preference;
+    } else {
+        *out = strcmp(key, "overlay") == 0 ? overlay : 0;
+    }
+    return ESP_OK;
 }
 esp_err_t nvs_set_u8(nvs_handle_t handle, const char* key, uint8_t value) {
-    (void)handle; if (strcmp(key, "overlay") == 0) overlay = value; return ESP_OK;
+    (void)handle;
+    if (strcmp(key, "overlay") == 0) overlay = value;
+    if (strcmp(key, "pxadb") == 0) pxadb_preference = value;
+    return ESP_OK;
 }
 esp_err_t nvs_commit(nvs_handle_t handle) { (void)handle; return ESP_OK; }
 void nvs_close(nvs_handle_t handle) { (void)handle; }
@@ -82,7 +93,13 @@ static void test_concurrent_completions(void) {
     assert(pxa_board_performance_refresh() == 40000);
 }
 
-int main(void) {
+int main(int argc, char** argv) {
+    if (argc == 2) pxadb_preference = argv[1][0] - '0';
+    bool expected = pxadb_preference < 0 ? CONFIG_PXADB_AUTOSTART : pxadb_preference != 0;
+    assert(pxa_board_performance_get(PXSYS_REFERENCE_PXADB) == expected);
+    assert(pxa_board_performance_set(PXSYS_REFERENCE_PXADB, !expected));
+    assert(pxa_board_performance_get(PXSYS_REFERENCE_PXADB) == !expected);
+    assert(pxadb_preference == !expected);
     test_rate();
     test_pixels();
     test_concurrent_completions();

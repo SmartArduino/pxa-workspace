@@ -1,0 +1,1 @@
+/* Host tests pass the SDK configuration symbols on the compiler command line. */

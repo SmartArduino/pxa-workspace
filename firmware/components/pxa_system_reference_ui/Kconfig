@@ -90,6 +90,14 @@ menu "PXA System UI selection"
             Files & storage pages. Each page appears in Settings only when the
             product wires its provider and sets the matching feature bit.
 
+    config PXSYS_REFERENCE_UI_HIDE_DEVELOPER_OPTIONS
+        bool "Hide Developer options by default"
+        default n
+        depends on PXSYS_REFERENCE_UI_BUILTIN_SETTINGS
+        help
+            Require seven taps on System version in About device to reveal
+            Developer options. This only controls visibility in Settings.
+
     config PXSYS_REFERENCE_UI_LAUNCHER_COLUMNS
         int "Launcher app columns per page"
         range 1 8

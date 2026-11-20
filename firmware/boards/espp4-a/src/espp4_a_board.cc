@@ -1076,7 +1076,7 @@ bool Board::Diagnostics() {
     adapter.presentation_fps_x10 = [](void*) { return pxa_board_performance_refresh(); };
     const auto result = pxadb::ConfigureTestControl(&adapter);
     if (runtime_stack_reserve_) {
-#if CONFIG_PXADB_AUTOSTART
+#if CONFIG_PXADB_ENABLED
         // Complete diagnostics allocations while the runtime block is pinned.
         // The integration's following Start() call is idempotent.
         if (pxa_board_performance_get(PXSYS_REFERENCE_PXADB)) (void)pxadb::Start();
