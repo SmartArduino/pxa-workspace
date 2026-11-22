@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: MIT. Identical C source and flags in both guests. */
+/* SPDX-License-Identifier: MIT */
+/* Identical C source and flags in both guests. */
 #include "bench_kernel.h"
 #include <string.h>
 static uint32_t memory[32768];

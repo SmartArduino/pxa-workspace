@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: MIT. Reference checksums, not a desktop speed score. */
+/* SPDX-License-Identifier: MIT */
+/* Reference checksums, not a desktop speed score. */
 #include "bench_kernel.h"
 #include <stdio.h>
 #include <stdlib.h>

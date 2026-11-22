@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: MIT. Bounded integer-only guest log formatting. */
+/* SPDX-License-Identifier: MIT */
+/* Bounded integer-only guest log formatting. */
 #include <aster/app.h>
 #include <stdint.h>
 static char line[240];

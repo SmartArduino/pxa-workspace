@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: MIT. ESP32-S3 has no PPA peripheral. */
+/* SPDX-License-Identifier: MIT */
+/* ESP32-S3 has no PPA peripheral. */
 #include <stdint.h>
 #include <stdbool.h>
 bool aster_idf_ppa_fill_rgb565(uint16_t *p,uint32_t pitch,uint32_t height,
