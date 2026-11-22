@@ -2,6 +2,7 @@
 #include "pxa_esp_services.h"
 #include "pxa/pxa_esp_sensor.h"
 #include "pxa/pxa_esp_haptics.h"
+#include "pxa/pxa_esp_video.h"
 #if PXA_ENABLE_WIFI_LOCATION
 extern pxa_status_t pxa_esp_wifi_location_read(void *, pxa_wl_snapshot_t *);
 #endif
@@ -719,6 +720,15 @@ static pxa_status_t initialize_bounded_services(
         return fail(result, "initialize-sensor-service", status,
                     PXA_ESP_SERVICES_ISSUE_NONE);
     }
+    workspace_size = pxa_video_service_workspace_size();
+    status = allocate_workspace(host, workspace_size, &services->video_workspace,
+        result, "allocate-video-service");
+    if (status == PXA_STATUS_OK)
+        status = pxa_video_service_init(services->video_workspace, workspace_size,
+            host->runtime, pxa_esp_video_backend(), &services->video);
+    if (status != PXA_STATUS_OK)
+        return fail(result, "initialize-video-service", status, PXA_ESP_SERVICES_ISSUE_NONE);
+
     workspace_size = pxa_haptics_service_workspace_size();
     status = allocate_workspace(host, workspace_size, &services->haptics_workspace,
         result, "allocate-haptics-service");
@@ -1175,6 +1185,7 @@ static pxa_status_t register_services(
                  "register-scheduler-service");
     PXA_REGISTER(pxa_sensor_service_register(services->sensor),
                  "register-sensor-service");
+    PXA_REGISTER(pxa_video_service_register(services->video), "register-video-service");
     PXA_REGISTER(pxa_haptics_service_register(services->haptics), "register-haptics-service");
 #if PXA_ENABLE_PERIPHERALS
     if (services->peripherals) {

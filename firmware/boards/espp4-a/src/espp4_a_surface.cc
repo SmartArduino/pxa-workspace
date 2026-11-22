@@ -6,6 +6,7 @@
 #include <array>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_surface_transform.h>
+#include <pxa/display_rotation.h>
 #include <pxa_board_common/surface_rgb565_rows.h>
 namespace espp4_a {
 using PixelPair = uint32_t __attribute__((may_alias));
@@ -56,6 +57,21 @@ bool CoversDisplayOpaque(const pxa_esp_surface_frame_t& frame, int width, int he
     if (width <= 0 || height <= 0 || !IsOpaqueSurface(frame) || frame.x || frame.y) return false;
     const int scale = pxa_surface_fit_scale(frame.width, frame.height, width, height);
     return scale && frame.width * scale == width && frame.height * scale == height;
+}
+bool CanRotateSurfaceDirect(const pxa_esp_surface_frame_t& frame,int width,int height) {
+    return CoversDisplayOpaque(frame,width,height) && frame.width==width && frame.height==height &&
+        frame.stride_bytes==uint32_t(width)*2 && !(reinterpret_cast<uintptr_t>(frame.pixels)&1);
+}
+void OverlayRgb565RectToNative(const uint16_t* patch,uint16_t* output,int x,int y,
+    unsigned width,unsigned height,unsigned nw,unsigned nh,uint8_t rotation) {
+    if(!patch || !output || !nw || !nh)return;
+    const int64_t lw=pxa_display_logical_width(nw,nh,rotation),lh=pxa_display_logical_height(nw,nh,rotation);
+    for(unsigned row=0;row<height;++row)for(unsigned column=0;column<width;++column) {
+        int64_t px=int64_t(x)+column,py=int64_t(y)+row;
+        if(px<0 || py<0 || px>=lw || py>=lh)continue;
+        uint32_t nx,ny;pxa_display_logical_to_native(nw,nh,rotation,px,py,&nx,&ny);
+        output[size_t(ny)*nw+nx]=patch[size_t(row)*width+column];
+    }
 }
 
 // Full opaque 2x frames need no retained LVGL pixels. Read two aligned source

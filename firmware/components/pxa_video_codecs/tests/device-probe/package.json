@@ -1,0 +1,35 @@
+{
+  "format": "pxa-package-source-0.2",
+  "id": "pxa-video-probe",
+  "version": "0.1.0",
+  "release_sequence": 1,
+  "name": "Video decoder probe",
+  "description": "Host H264 High Profile and MJPEG decoder acceptance fixture",
+  "build": {
+    "system": "cmake",
+    "linear_memory": {
+      "maximum_bytes": 1048576,
+      "pinned": false
+    }
+  },
+  "components": [
+    {
+      "id": "main",
+      "kind": "ui",
+      "cmake_target": "main",
+      "services": [
+        "video",
+        "clock",
+        "log"
+      ],
+      "wasi": {
+        "version": "preview1",
+        "libc": "wasi-libc",
+        "features": [
+          "monotonic-clock",
+          "wall-clock"
+        ]
+      }
+    }
+  ]
+}

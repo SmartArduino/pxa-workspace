@@ -10,9 +10,9 @@ std::atomic<spi_device_handle_t> panel_device{nullptr};
 std::atomic<uint32_t> faults{0};
 std::atomic<bool> staging{false};
 // Reserved before camera/Wi-Fi allocations fragment internal SRAM. Two slots
-// match the LCD IO queue depth. Each holds four physical 240-pixel lines.
+// match the LCD IO queue depth. Each holds one full DMA chunk.
 struct Stage {
-    alignas(16) std::array<uint8_t, 1920> bytes;
+    alignas(16) std::array<uint8_t, kPaiLcdTransferBytes> bytes;
     spi_transaction_t* transaction = nullptr;
     const void* source = nullptr;
 };
@@ -45,7 +45,7 @@ esp_err_t __real_spi_device_queue_trans(spi_device_handle_t, spi_transaction_t*,
 
 esp_err_t __wrap_spi_bus_get_max_transaction_len(spi_host_device_t host, size_t* bytes) {
     const auto result = __real_spi_bus_get_max_transaction_len(host, bytes);
-    // IDF rounds a requested 1920-byte bus limit to a full DMA descriptor
+    // IDF rounds the requested bus limit to a full DMA descriptor
     // (4092 bytes). Keep the LCD chunk size within our reserved fallback slots.
     if (result == ESP_OK && bytes && binding_host.load() == int(host) && *bytes > stages[0].bytes.size())
         *bytes = stages[0].bytes.size();

@@ -23,6 +23,7 @@
 #include <esp_lv_decoder.h>
 #include <esp_netif_sntp.h>
 #include <esp_timer.h>
+#include <esp_rom_sys.h>
 #include <esp_vfs_fat.h>
 #include <esp_wifi.h>
 #include <pxa/pxa_host.h>
@@ -70,6 +71,7 @@ private:
     bool diagnostic_phase_ = false;
 #endif
     bool Touch();
+    bool TouchRead(uint16_t, uint8_t*, size_t);
     bool Pointers();
     void CancelPointers();
     void Sd();
@@ -89,9 +91,12 @@ private:
     esp_lcd_panel_handle_t panel_ = nullptr;
     i2c_master_bus_handle_t bus_ = nullptr;
     bool touch_ = false;
-    esp_lcd_panel_io_handle_t touch_io_ = nullptr;
+    i2c_master_dev_handle_t touch_io_ = nullptr;
     uint8_t touch_slots_ = 0;
     uint32_t touch_success_ms_ = 0;
+    uint32_t touch_poll_ms_ = 0;
+    uint32_t touch_reads_ = 0, touch_errors_ = 0, touch_reports_ = 0;
+    uint8_t touch_header_ = 0;
     doit_s31::TouchReport physical_{};
     esp_lv_decoder_handle_t decoder_ = nullptr;
     uint16_t* frames_[2]{};
@@ -313,6 +318,15 @@ void Board::InitialFrame() {
     lv_unlock(); Unlock();
 }
 
+bool Board::TouchRead(uint16_t reg, uint8_t* output, size_t size) {
+    // Use Protocol A's STOP between setting the 16-bit register and read.
+    // esp_lcd's generic I2C adapter uses a repeated START instead.
+    const uint8_t address[] = {uint8_t(reg >> 8), uint8_t(reg)};
+    if (i2c_master_transmit(touch_io_, address, sizeof(address), 20) != ESP_OK) return false;
+    esp_rom_delay_us(5); // Standard-mode tBUF, also required after STOP.
+    return i2c_master_receive(touch_io_, output, size, 20) == ESP_OK;
+}
+
 bool Board::Touch() {
     i2c_master_bus_config_t bus_config{};
     bus_config.i2c_port = I2C_NUM_0; bus_config.sda_io_num = GPIO_NUM_0;
@@ -320,12 +334,9 @@ bool Board::Touch() {
     bus_config.glitch_ignore_cnt = 7; bus_config.flags.enable_internal_pullup = true;
     // SPI initialization is finished and CS remains high before this bus owns GPIO0/1.
     if (i2c_new_master_bus(&bus_config, &bus_) != ESP_OK) return false;
-    esp_lcd_panel_io_i2c_config_t io_config{};
-    io_config.dev_addr = 0x55; io_config.control_phase_bytes = 1;
-    io_config.lcd_cmd_bits = 16; io_config.scl_speed_hz = 100000;
-    io_config.transaction_timeout_ms = 20;
-    io_config.flags.disable_control_phase = true;
-    if (esp_lcd_new_panel_io_i2c(bus_, &io_config, &touch_io_) != ESP_OK) return false;
+    const gpio_config_t irq = {.pin_bit_mask = 1ULL << 38, .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE};
+    if (gpio_config(&irq) != ESP_OK) return false;
     if (i2c_master_probe(bus_, 0x55, 20) != ESP_OK) {
         ESP_LOGW(kTag, "ST7102 touch at 0x55 did not ACK; check the separate JP4 cable");
         for (unsigned address : {0x14u, 0x18u, 0x38u, 0x5du})
@@ -333,18 +344,55 @@ bool Board::Touch() {
                 ESP_LOGI(kTag, "Shared I2C0 ACK: 0x%02x", address);
         return false;
     }
+    i2c_device_config_t device{};
+    device.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    device.device_address = 0x55; device.scl_speed_hz = 100000;
+    device.scl_wait_us = 10000;
+    if (i2c_master_bus_add_device(bus_, &device, &touch_io_) != ESP_OK) return false;
+    // Do not pulse RESET: GPIO9 is shared with the running display.
+    uint8_t status = 0xff;
+    bool ready = false;
+    for (unsigned attempt = 0; attempt < 25; ++attempt) {
+        if (TouchRead(1, &status, 1) && status == 0) { ready = true; break; }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    if (!ready) {
+        ESP_LOGW(kTag, "ST7102 touch not ready, status=0x%02x (device=%u error=%u)",
+            status, status & 15, status >> 4);
+        return false;
+    }
     uint8_t info[16]{};
-    if (esp_lcd_panel_io_rx_param(touch_io_, 0, info, sizeof(info)) != ESP_OK ||
-        !info[9] || info[9] > doit_s31::kTouchPointers) return false;
+    if (!TouchRead(0, info, sizeof(info))) {
+        ESP_LOGW(kTag, "ST7102 touch identity read failed");
+        return false;
+    }
     touch_slots_ = info[9];
     const unsigned width = (info[5] & 0x3f) * 256u + info[6];
     const unsigned height = (info[7] & 0x3f) * 256u + info[8];
     ESP_LOGI(kTag, "ST7102 touch FW %02x, revision %02x%02x%02x%02x, range %ux%u",
         info[0], info[12], info[13], info[14], info[15], width, height);
-    if (width != kWidth || height != kHeight) return false;
+    if (info[1] || !touch_slots_ || touch_slots_ > doit_s31::kTouchPointers ||
+        width != kWidth || height != kHeight) {
+        ESP_LOGW(kTag, "ST7102 touch identity invalid: status=0x%02x, slots=%u", info[1], touch_slots_);
+        return false;
+    }
     touch_ = true;
     touch_success_ms_ = lv_tick_get();
     ESP_LOGI(kTag, "ST7102 touch ready at I2C0 0x55: %u independent fingers", touch_slots_);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    uint8_t current[12]{};
+    if (TouchRead(0, current, sizeof(current)) &&
+        current[0] == info[0] && current[1] == 0 &&
+        current[10] == info[10] && current[11] == info[11])
+        ESP_LOGW(kTag, "Touch interface responds but sensing counter is unchanged; check module FW/CFG and shared reset");
+    for(int i=0;i<5;i++){
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        if (TouchRead(0, current, sizeof(current))){
+            ESP_LOGW(kTag, "0A: %02x, 0B: %02x", current[10], current[11]);
+        }else{
+            ESP_LOGW(kTag, "%d read failed", i);
+        }
+    }
     return true;
 }
 
@@ -406,10 +454,18 @@ bool Board::Wake() {
 }
 void Board::Input() {
     const uint32_t now = lv_tick_get();
-    if (touch_ && touch_slots_) {
-        doit_s31::TouchReport report;
+    if (touch_ && touch_slots_ && now - touch_poll_ms_ >=
+        (gpio_get_level(GPIO_NUM_38) == 0 ? 5u : 10u)) {
+        touch_poll_ms_ = now;
+        auto report = physical_;
+        ++touch_reads_;
         const bool ok = doit_s31::ReadTouch([this](int reg, uint8_t* p, size_t n) {
-            return esp_lcd_panel_io_rx_param(touch_io_, reg, p, n) == ESP_OK;
+            if (!TouchRead(uint16_t(reg), p, n)) return false;
+            if (reg == 0x10) {
+                touch_header_ = *p;
+                if (*p & 8) ++touch_reports_;
+            }
+            return true;
         }, touch_slots_, kWidth, kHeight, report);
         if (ok) {
             touch_success_ms_ = now;
@@ -419,8 +475,11 @@ void Board::Input() {
                 [](const auto& p) { return p.pressed; });
             const auto previous_count = std::count_if(physical_.begin(), physical_.end(),
                 [](const auto& p) { return p.pressed; });
-            if (count != previous_count && (count >= 2 || previous_count >= 2))
-                ESP_LOGI(kTag, "Physical touch contacts: %u", unsigned(count));
+            if (count != previous_count) {
+                const auto first = std::find_if(report.begin(), report.end(), [](const auto& p) { return p.pressed; });
+                ESP_LOGI(kTag, "Physical touch contacts: %u, first=%u,%u", unsigned(count),
+                    first == report.end() ? 0 : first->x, first == report.end() ? 0 : first->y);
+            }
             if (any && !pressed_) {
                 CancelPointers();
                 if (takeover_) takeover_(takeover_context_);
@@ -438,9 +497,12 @@ void Board::Input() {
                 }
             }
             physical_ = report; pressed_ = any;
-        } else if (pressed_ && now - touch_success_ms_ >= 150) {
-            CancelPointers(); physical_ = {}; pressed_ = false; touch_blocked_ = true;
-            ESP_LOGW(kTag, "Touch read timed out; all fingers cancelled until release");
+        } else {
+            ++touch_errors_;
+            if (pressed_ && now - touch_success_ms_ >= 150) {
+                CancelPointers(); physical_ = {}; pressed_ = false; touch_blocked_ = true;
+                ESP_LOGW(kTag, "Touch read timed out; all fingers cancelled until release");
+            }
         }
     }
 
@@ -526,6 +588,13 @@ void Board::Loop() {
                 static_cast<unsigned long>(stats.scans), static_cast<unsigned long>(stats.delayed),
                 static_cast<unsigned long>(stats.max_interval_us), missed_surfaces_);
             missed_surfaces_ = 0;
+            if (touch_) {
+                uint8_t info[16]{};
+                const bool valid = TouchRead(0, info, sizeof(info));
+                ESP_LOGI(kTag, "Touch: IRQ=%d status=0x%02x control=0x%02x scan=%u read=%d header=0x%02x polls=%lu errors=%lu reports=%lu",
+                    gpio_get_level(GPIO_NUM_38), info[1], info[2], unsigned(info[10])*256+info[11], valid, touch_header_,
+                    (unsigned long)touch_reads_, (unsigned long)touch_errors_, (unsigned long)touch_reports_);
+            }
         }
         const uint32_t delay = lv_timer_handler();
         lv_unlock(); Unlock();

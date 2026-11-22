@@ -365,7 +365,8 @@ bool Esp32S31Korvo1Hardware::InitializeDisplay() {
     const lvgl_port_cfg_t port_config = {
         .task_priority = 4,
         .task_stack = 12288,
-        .task_affinity = 1,
+        // Keep input and render dispatch off the Guest audio producer's core.
+        .task_affinity = 0,
         .task_max_sleep_ms = 100,
         .task_stack_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT,
         .timer_period_ms = 2,
@@ -1027,7 +1028,16 @@ bool Esp32S31Korvo1Hardware::CancelInjectedPointer(uint8_t id) {
 
 bool Esp32S31Korvo1Hardware::RouteInjectedKey(pxadb::TestControlKey key) {
     switch (key) {
-        case pxadb::TestControlKey::kBack:
+        case pxadb::TestControlKey::kBack: {
+            lv_lock();
+            const lv_result_t result = lv_async_call([](void* context) {
+                auto* self = static_cast<Esp32S31Korvo1Hardware*>(context);
+                if (self->reference_ui_ != nullptr)
+                    (void)pxsys_reference_lvgl_back(self->reference_ui_);
+            }, this);
+            lv_unlock();
+            return result == LV_RESULT_OK;
+        }
         case pxadb::TestControlKey::kHome:
             NavigateHome();
             return true;

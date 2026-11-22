@@ -50,7 +50,7 @@ target_link_libraries(${_korvo_led_lib} PRIVATE idf::heap)
 target_compile_options(${_korvo_led_lib} PRIVATE -include esp_heap_caps.h)
 
 option(PXA_KORVO_TOUCH_TRACE "Log physical touch reports and edges for device verification" OFF)
-option(PXA_KORVO_LVGL_PIE "Use exact Core1 PIE ARGB8888 to RGB565 block blending" OFF)
+option(PXA_KORVO_LVGL_PIE "Use exact Core1 PIE ARGB8888 to RGB565 block blending" ON)
 option(PXA_KORVO_LVGL_DIAGNOSTICS "Log LVGL accelerator hits and CPU runtime counters" OFF)
 option(PXA_KORVO_LVGL_SELF_TEST "Compare the PIE renderer against native LVGL on startup" OFF)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

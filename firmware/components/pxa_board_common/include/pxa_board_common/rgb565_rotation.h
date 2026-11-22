@@ -64,19 +64,23 @@ inline void CaptureRotatedRgb565(const uint16_t* native, uint16_t* logical,
         }
 }
 
-// Integer scaling and rotation share one copy; no intermediate 320x240 frame.
-inline void RotateScaledRgb565(const uint16_t* source, size_t source_stride,
-                              uint16_t* native, int width, int height, int scale,
-                              LandscapeRotation rotation) {
-    if (scale == 1) {
-        RotateRgb565(source, source_stride, native, width, height, rotation);
-        return;
-    }
+namespace detail {
+// FixedScale is zero for the generic path. The common 2x and 4x paths can
+// duplicate each pixel with fixed stores instead of a loop per pixel.
+template<int FixedScale>
+inline void RotateScaledRgb565Impl(const uint16_t* source, size_t source_stride,
+                                  uint16_t* native, int width, int height, int dynamic_scale,
+                                  LandscapeRotation rotation) {
     constexpr int block = 16;
+    const int scale = FixedScale != 0 ? FixedScale : dynamic_scale;
     uint16_t tile[block][block];
+    const bool reverse = rotation == LandscapeRotation::Deg270;
+    const int source_step = reverse ? -1 : 1;
     const int output_height = height * scale;
     for (int y0 = 0; y0 < height; y0 += block) {
         const int y1 = std::min(y0 + block, height);
+        const int tile_height = y1 - y0;
+        const int first_source_row = reverse ? tile_height - 1 : 0;
         for (int x0 = 0; x0 < width; x0 += block) {
             const int x1 = std::min(x0 + block, width);
             for (int y = y0; y < y1; ++y)
@@ -85,17 +89,38 @@ inline void RotateScaledRgb565(const uint16_t* source, size_t source_stride,
             for (int x = x0; x < x1; ++x) {
                 for (int dx = 0; dx < scale; ++dx) {
                     const int column = x * scale + dx;
-                    auto* row = rotation == LandscapeRotation::Deg270
+                    auto* row = reverse
                         ? native + column * output_height + (height - y1) * scale
                         : native + (width * scale - 1 - column) * output_height + y0 * scale;
-                    for (int i = y0; i < y1; ++i) {
-                        const int y = rotation == LandscapeRotation::Deg270 ? y1 - 1 - (i - y0) : i;
-                        const auto color = tile[y - y0][x - x0];
-                        for (int dy = 0; dy < scale; ++dy) *row++ = color;
+                    int source_row = first_source_row;
+                    for (int i = 0; i < tile_height; ++i, source_row += source_step) {
+                        const auto color = tile[source_row][x - x0];
+                        if constexpr (FixedScale == 0) {
+                            for (int dy = 0; dy < scale; ++dy) row[dy] = color;
+                        } else {
+                            row[0] = row[1] = color;
+                            if constexpr (FixedScale == 4) row[2] = row[3] = color;
+                        }
+                        row += scale;
                     }
                 }
             }
         }
     }
+}
+}
+
+// Integer scaling and rotation share one copy; no intermediate 320x240 frame.
+inline void RotateScaledRgb565(const uint16_t* source, size_t source_stride,
+                              uint16_t* native, int width, int height, int scale,
+                              LandscapeRotation rotation) {
+    if (scale == 1)
+        RotateRgb565(source, source_stride, native, width, height, rotation);
+    else if (scale == 2)
+        detail::RotateScaledRgb565Impl<2>(source, source_stride, native, width, height, 2, rotation);
+    else if (scale == 4)
+        detail::RotateScaledRgb565Impl<4>(source, source_stride, native, width, height, 4, rotation);
+    else
+        detail::RotateScaledRgb565Impl<0>(source, source_stride, native, width, height, scale, rotation);
 }
 }

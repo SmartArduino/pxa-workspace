@@ -26,7 +26,9 @@
 #define close pxa_esp_close
 #define fstat pxa_esp_fstat
 #define fstatat pxa_esp_fstatat
+#define fdopendir pxa_esp_fdopendir
 #define mkdirat pxa_esp_mkdirat
+#define renameat pxa_esp_renameat
 #define fsync pxa_esp_fsync
 #endif
 
@@ -465,27 +467,37 @@ static pxa_status_t add_file(const pxa_volume_info_t *volume,uint64_t size,uint6
 static pxa_status_t plan_contents(pxa_esp_installations_t *owner,
     const pxa_package_manifest_t *manifest,uint64_t transfer,uint8_t new_private,uint8_t prepared,pxa_install_plan_t *output) {
     if(!output)return PXA_STATUS_INVALID_ARGUMENT;
-    memset(output,0,sizeof(*output));pxa_status_t status=available(owner);pxa_volume_info_t volume;
-    if(status==PXA_STATUS_OK)status=pxa_esp_storage_refresh_volume(owner->volume.mount_epoch);
-    if(status==PXA_STATUS_OK)status=pxa_esp_storage_volume(owner->volume.mount_epoch,&volume);
+    memset(output,0,sizeof(*output));pxa_status_t status=available(owner);
     if(status!=PXA_STATUS_OK)return status;
+    /* Geometry is fixed for this mount epoch. The planner refreshes free
+     * space before evaluating the requirements. */
+    const pxa_volume_info_t *volume=&owner->volume;
     uint64_t bytes=0,directories=manifest?16:8;
-    for(uint16_t i=0;manifest && i<manifest->file_count;++i) {
-        if(!prepared)status=add_file(&volume,manifest->files[i].size,&bytes);
-        if(status!=PXA_STATUS_OK)return status;
-        for(size_t j=0;j<manifest->files[i].path.size;++j)if(manifest->files[i].path.data[j]=='/')++directories;
-    }
     if(manifest && !prepared) {
-        status=add_file(&volume,manifest->encoded.size,&bytes);
-        if(status==PXA_STATUS_OK)status=add_file(&volume,PXA_POSIX_INSTALLER_SIGNATURE_ENVELOPE_BYTES,&bytes);
+        /* The canonical inventory groups paths with a common parent. Count
+         * each new directory once. Prepared trees already own their files
+         * and directories on this volume. */
+        pxa_bytes_t previous={0};
+        for(uint16_t i=0;i<manifest->file_count;++i) {
+            status=add_file(volume,manifest->files[i].size,&bytes);
+            if(status!=PXA_STATUS_OK)return status;
+            const pxa_bytes_t path=manifest->files[i].path;
+            size_t common=0;
+            while(common<path.size && common<previous.size &&
+                    path.data[common]==previous.data[common])++common;
+            for(size_t j=common;j<path.size;++j)if(path.data[j]=='/')++directories;
+            previous=path;
+        }
+        status=add_file(volume,manifest->encoded.size,&bytes);
+        if(status==PXA_STATUS_OK)status=add_file(volume,PXA_POSIX_INSTALLER_SIGNATURE_ENVELOPE_BYTES,&bytes);
     }
-    if(status==PXA_STATUS_OK && new_private && !(volume.capabilities&PXA_VOLUME_PRIVATE_NATIVE))
-        status=add_file(&volume,pxa_esp_installations_private_initial_bytes(),&bytes);
+    if(status==PXA_STATUS_OK && new_private && !(volume->capabilities&PXA_VOLUME_PRIVATE_NATIVE))
+        status=add_file(volume,pxa_esp_installations_private_initial_bytes(),&bytes);
     if(status!=PXA_STATUS_OK)return status;
-    uint64_t metadata=directories*volume.allocation_unit;
+    uint64_t metadata=directories*volume->allocation_unit;
     if(bytes>UINT64_MAX-metadata)return PXA_STATUS_LIMIT_EXCEEDED;
     pxa_install_requirements_t requirements={bytes+metadata,0,0,0,4096};
-    status=add_file(&volume,transfer,&requirements.app_temporary_bytes);
+    status=add_file(volume,transfer,&requirements.app_temporary_bytes);
     return status==PXA_STATUS_OK?pxa_esp_storage_plan(&requirements,owner->volume.mount_epoch,0,output):status;
 }
 pxa_status_t pxa_esp_installations_plan(pxa_esp_installations_t *owner,
@@ -621,12 +633,140 @@ pxa_status_t pxa_esp_installations_reset_data(pxa_esp_installations_t *owner,con
      * fallback can resurrect a deleted data generation. */
     return retire_old_data(home);
 }
+#define REMOVED_HOMES ".removed-apps"
+#define REMOVED_HOME_NAME_BYTES 33u
+
+static pxa_status_t detach_home(pxa_esp_installations_t *owner,
+    const char *locator, uint64_t expected, pxa_posix_app_home_t *home) {
+    pxa_status_t status = pxa_posix_app_store_lookup(&owner->config, locator, home);
+    if (status != PXA_STATUS_OK) return status;
+    if (home->record.generation != expected) {
+        memset(home, 0, sizeof(*home));
+        return PXA_STATUS_BAD_STATE;
+    }
+    char removed[PXA_POSIX_APP_PATH_BYTES], parent[PXA_POSIX_APP_PATH_BYTES];
+    int length = snprintf(removed, sizeof(removed), "%s/" REMOVED_HOMES, owner->root);
+    const char *leaf = strrchr(home->home, '/');
+    if (!leaf || length < 0 || (size_t)length >= sizeof(removed)) {
+        memset(home, 0, sizeof(*home));
+        return PXA_STATUS_LIMIT_EXCEEDED;
+    }
+    size_t parent_bytes = (size_t)(leaf - home->home);
+    memcpy(parent, home->home, parent_bytes);
+    parent[parent_bytes] = '\0';
+    ++leaf;
+    char retired[REMOVED_HOME_NAME_BYTES];
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0; i < sizeof(home->record.install_id); ++i) {
+        retired[i * 2] = hex[home->record.install_id[i] >> 4];
+        retired[i * 2 + 1] = hex[home->record.install_id[i] & 15];
+    }
+    retired[sizeof(retired) - 1] = '\0';
+
+    int source = -1, target = -1;
+    int detached = 0;
+    status = PXA_STATUS_IO_ERROR;
+    if (mkdir(removed, 0700) == 0) {
+        int root = open(owner->root, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+        if (root < 0) goto done;
+        int synced = fsync(root);
+        close(root);
+        if (synced != 0) goto done;
+    } else if (errno != EEXIST) goto done;
+    target = open(removed, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+    if (target < 0) goto done;
+    struct stat existing;
+    if (fstatat(target, retired, &existing, AT_SYMLINK_NOFOLLOW) == 0) {
+        status = PXA_STATUS_BUSY;
+        goto done;
+    }
+    if (errno != ENOENT) goto done;
+    source = open(parent, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+    if (source < 0 || renameat(source, leaf, target, retired) != 0) goto done;
+    /* A complete home stops being discoverable in one namespace operation.
+     * Its signed records and private state remain together until reclamation. */
+    detached = 1;
+    if (fsync(target) == 0 && fsync(source) == 0) status = PXA_STATUS_OK;
+done:
+    if (source >= 0) close(source);
+    if (target >= 0) close(target);
+    if (!detached) memset(home, 0, sizeof(*home));
+    return status;
+}
+
+static int removed_home_name(const char *name) {
+    return strlen(name) == REMOVED_HOME_NAME_BYTES - 1 &&
+        strspn(name, "0123456789abcdef") == REMOVED_HOME_NAME_BYTES - 1;
+}
+
+pxa_status_t pxa_esp_installations_reclaim_removed(uint64_t epoch) {
+    pxa_status_t status = pxa_esp_volumes_retain(epoch);
+    if (status != PXA_STATUS_OK) return status;
+    pxa_volume_info_t volume;
+    char root[PXA_ESP_STORAGE_PATH_BYTES], path[PXA_POSIX_APP_PATH_BYTES];
+    status = pxa_esp_storage_volume(epoch, &volume);
+    if (status != PXA_STATUS_OK) goto done;
+    if (volume.state != PXA_VOLUME_READY || volume.ambiguous ||
+        !(volume.capabilities & PXA_VOLUME_WRITE)) {
+        status = PXA_STATUS_UNAVAILABLE;
+        goto done;
+    }
+    status = pxa_esp_storage_volume_path(epoch, root, sizeof(root));
+    if (status != PXA_STATUS_OK) goto done;
+    int length = snprintf(path, sizeof(path), "%s/PXA/" REMOVED_HOMES, root);
+    if (length < 0 || (size_t)length + REMOVED_HOME_NAME_BYTES + 1 > sizeof(path)) {
+        status = PXA_STATUS_LIMIT_EXCEEDED;
+        goto done;
+    }
+    char last[REMOVED_HOME_NAME_BYTES] = {0};
+    int reclaimed = 0;
+    for (;;) {
+        path[length] = '\0';
+        int root_fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+        if (root_fd < 0) {
+            if (errno != ENOENT) status = PXA_STATUS_IO_ERROR;
+            break;
+        }
+        DIR *directory = fdopendir(root_fd);
+        if (!directory) {
+            close(root_fd);
+            status = PXA_STATUS_IO_ERROR;
+            break;
+        }
+        char next[REMOVED_HOME_NAME_BYTES] = {0};
+        struct dirent *entry;
+        errno = 0;
+        while ((entry = readdir(directory)) != NULL) {
+            const char *name = entry->d_name;
+            if (removed_home_name(name) && strcmp(name, last) > 0 &&
+                    (!next[0] || strcmp(name, next) < 0))
+                memcpy(next, name, sizeof(next));
+        }
+        int read_error = errno;
+        if (closedir(directory) != 0 || read_error) {
+            status = PXA_STATUS_IO_ERROR;
+            break;
+        }
+        if (!next[0]) break;
+        memcpy(last, next, sizeof(last));
+        path[length] = '/';
+        memcpy(path + length + 1, next, sizeof(next));
+        pxa_status_t removed = pxa_posix_fs_remove_tree(path);
+        if (removed == PXA_STATUS_OK) reclaimed = 1;
+        else if (removed != PXA_STATUS_NOT_FOUND && status == PXA_STATUS_OK) status = removed;
+    }
+    if (reclaimed) (void)pxa_esp_storage_refresh_volume(epoch);
+done:
+    pxa_esp_volumes_release(epoch);
+    return status;
+}
+
 pxa_status_t pxa_esp_installations_remove(pxa_esp_installations_t *owner,const char *locator,
     uint64_t expected,uint8_t keep_data,pxa_posix_app_home_t *home) {
     if(home)memset(home,0,sizeof(*home));
     if(!home || keep_data>1)return PXA_STATUS_INVALID_ARGUMENT;
     pxa_status_t status=available(owner);if(status!=PXA_STATUS_OK)return status;
     status=visible(owner,locator);if(status!=PXA_STATUS_OK)return status;
-    status=pxa_posix_app_store_archive(&owner->config,locator,expected,home);
-    return status==PXA_STATUS_OK && !keep_data?pxa_posix_fs_remove_tree(home->home):status;
+    return keep_data ? pxa_posix_app_store_archive(&owner->config,locator,expected,home)
+                     : detach_home(owner,locator,expected,home);
 }

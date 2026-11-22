@@ -20,6 +20,7 @@ set(PXA_SRCS
     "src/services/pxa_esp_fs_worker.c"
     "src/services/pxa_esp_sensor.c"
     "src/services/pxa_esp_haptics.c"
+    "src/services/pxa_esp_video.c"
     "src/services/pxa_esp_fs_roots.c"
     "src/services/pxa_esp_volumes.c"
     "src/services/pxa_esp_image_blockdev.c"

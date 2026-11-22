@@ -51,24 +51,36 @@ static void test_rate(void) {
 }
 
 static void test_pixels(void) {
-    enum { W = 480, H = 32 };
-    uint16_t full[W * H], tiled[W * H];
-    for (int i = 0; i < W * H; ++i) full[i] = tiled[i] = 0x1234;
+    enum { W = 480, H = 32, LEFT = (W - PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) / 2 };
+    uint16_t full[W * H], tiled[W * H], rotated[W * H];
+    for (int i = 0; i < W * H; ++i) full[i] = tiled[i] = rotated[i] = 0x1234;
     pxa_board_performance_draw_rgb565(full, W, H, W, 0, 0, W, H, false);
-    // Decimal point of FPS00.0 must be visible and not confused with a space.
-    assert(full[11 * W + 250] == 0xffff);
-    assert(full[3 * W + 250] == 0);
+    // The value's decimal point is drawn on its baseline.
+    assert(full[11 * W + LEFT + 54] != full[3 * W + LEFT + 54]);
     // Partial scanout bands, arbitrary strides and byte orders reproduce the
-    // same image without touching pixels outside the 60x16 HUD rectangle.
+    // same image without touching pixels outside the HUD rectangle.
     for (int y = 0; y < H; y += 3) for (int x = 0; x < W; x += 19) {
         int w = x + 19 > W ? W - x : 19;
         int h = y + 3 > H ? H - y : 3;
         pxa_board_performance_draw_rgb565(tiled + y * W + x, W, H, W,
                                          x, y, w, h, true);
     }
-    assert(memcmp(full, tiled, sizeof(full)) == 0);
-    for (int y = 0; y < H; ++y) for (int x = 0; x < W; ++x)
-        if (y >= 16 || x < 210 || x >= 270) assert(full[y * W + x] == 0x1234);
+    pxa_board_performance_draw_panel_rgb565(rotated, W, H, 0, 9000, 21000);
+    for (int y = 0; y < H; ++y) for (int x = 0; x < W; ++x) {
+        const int i = y * W + x;
+        const int panel = x * H + H - 1 - y;
+        if (y >= PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT || x < LEFT ||
+            x >= LEFT + PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) {
+            assert(full[i] == 0x1234 && tiled[i] == 0x1234 && rotated[panel] == 0x1234);
+        } else {
+            assert(tiled[i] == __builtin_bswap16(full[i]));
+            if (x < LEFT + 74) assert(rotated[panel] == tiled[i]);
+        }
+    }
+    const uint16_t dark = full[LEFT];
+    pxa_board_performance_set_light_theme(true);
+    pxa_board_performance_draw_rgb565(full, W, H, W, 0, 0, W, H, false);
+    assert(dark != full[LEFT]);
     uint16_t guard = 0xabcd;
     pxa_board_performance_draw_rgb565(&guard, W, H, 1, INT32_MIN, 0, 1, 1, false);
     pxa_board_performance_draw_rgb565(&guard, W, H, 1, INT32_MAX, 0, 1, 1, false);

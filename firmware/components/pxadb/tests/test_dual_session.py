@@ -63,6 +63,7 @@ void vTaskDelay(unsigned) {std::this_thread::yield();}
 std::mutex tx_lock,log_lock;
 void* s_tx_mutex=&tx_lock;
 std::atomic<bool> tx_waiting{false};
+std::atomic<bool> s_primary_shares_console{true};
 int xSemaphoreTake(void* p,unsigned) {tx_waiting=true;static_cast<std::mutex*>(p)->lock();return pdTRUE;}
 void xSemaphoreGive(void* p) {if(p==s_tx_mutex)static_cast<std::mutex*>(p)->unlock();}
 void esp_log_impl_lock() {log_lock.lock();}

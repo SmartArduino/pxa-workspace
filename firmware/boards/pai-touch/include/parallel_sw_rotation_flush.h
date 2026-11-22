@@ -32,8 +32,8 @@ namespace zuowei_pai_touch {
 
 // Direct-mode RGB565 output with the board's fixed panel mounting correction
 // and an additional App-requested quarter-turn rotation.
-// LVGL only redraws dirty logical regions. On the last flush, two cores rotate
-// the complete logical frame into one of two physical buffers. A separate task
+// LVGL only redraws dirty logical regions. On the last flush, two cores update
+// the affected rows in one of two physical buffers. A separate task
 // serializes TE-synchronized SPI transfers. Rotation can fill one physical
 // buffer while the panel IO owns the other; IO completion releases only the
 // submitted physical buffer.
@@ -100,7 +100,7 @@ public:
 
         for (uint8_t i = 0; i < kOutputBufferCount; ++i) {
             /* SPI reads these buffers directly from PSRAM. Keep every frame
-             * and 4-line transfer boundary cache aligned so the driver never
+             * and transfer boundary cache aligned so the driver never
              * needs a private DMA bounce buffer. */
             context->outputs[i] = static_cast<uint16_t*>(
                 heap_caps_aligned_alloc(kOutputDmaAlignment,
@@ -223,6 +223,7 @@ public:
             xSemaphoreGive(context->rotation_lock);
             return false;
         }
+        context->lvgl_output[output_index].valid = false;
         uint16_t* output = RenderOutput(context, output_index);
 #if CONFIG_PXA_ENABLED
         const uint32_t rotation_started_us =
@@ -235,7 +236,8 @@ public:
             static_cast<uint32_t>(esp_timer_get_time()) - rotation_started_us;
 #endif
         if (copied) {
-            CompositePerformanceOverlay(context, output);
+            CompositePerformanceOverlay(context, output,
+                context->performance_overlay_enabled.load(std::memory_order_relaxed));
             FinishRotation(context, output_index);
             context->output_frame_id[output_index] = frame_id;
             context->output_source[output_index] = kFrameSourceSurface;
@@ -337,6 +339,8 @@ public:
             c->logical_width = pxa_display_logical_width(c->native_height, c->native_width, rotation);
             c->logical_height = pxa_display_logical_height(c->native_height, c->native_width, rotation);
             c->split_column = AlignSplit(c->logical_width / 2, c->logical_width);
+            for (auto& output : c->lvgl_output) output.valid = false;
+            c->lvgl_frame_rows = {};
             c->last_completed_output.store(-1);
             c->app_rotation.store(rotation);
         }
@@ -460,6 +464,7 @@ private:
     static constexpr uint8_t kOutputBufferCount = 2;
     static constexpr uint8_t kReadyQueueLength = 1;
     static constexpr size_t kOutputDmaAlignment = 64;
+    static_assert(kPaiLcdTransferBytes % kOutputDmaAlignment == 0);
     // LVGL is pinned to CPU1. Keep this half-frame worker on CPU0 so the two
     // halves rotate concurrently; the submit task remains unpinned and takes
     // priority when a TE-synchronized transfer is ready.
@@ -484,11 +489,30 @@ private:
     static constexpr uint8_t kFrameSourceSurface = 1;
     static constexpr uint8_t kFrameSourceComposed = 2;
 
+    struct Rows {
+        int32_t first = INT32_MAX;
+        int32_t end = 0;
+
+        void Include(Rows rows) {
+            if (rows.first < first) first = rows.first;
+            if (rows.end > end) end = rows.end;
+        }
+    };
+
+    struct LvglOutput {
+        Rows dirty;
+        bool valid = false;
+        bool overlay = false;
+    };
+
     struct Context {
         lv_display_t* display = nullptr;
         esp_lcd_panel_io_handle_t panel_io = nullptr;
         esp_lcd_panel_handle_t panel = nullptr;
         uint16_t* outputs[kOutputBufferCount] = {};
+        LvglOutput lvgl_output[kOutputBufferCount];
+        Rows lvgl_frame_rows;
+        Rows rotation_rows;
         uint16_t* rotation_stage = nullptr;
         std::atomic<uint8_t> app_rotation{0};
         size_t output_bytes = 0;
@@ -644,86 +668,20 @@ private:
                 c->native_width, c->native_height, r);
     }
 
-    static uint8_t GlyphRow(char character, uint8_t row) {
-        static const uint8_t digits[][5] = {
-            {7, 5, 5, 5, 7}, {2, 6, 2, 2, 7}, {7, 1, 7, 4, 7},
-            {7, 1, 7, 1, 7}, {5, 5, 7, 1, 1}, {7, 4, 7, 1, 7},
-            {7, 4, 7, 5, 7}, {7, 1, 2, 2, 2}, {7, 5, 7, 5, 7},
-            {7, 5, 7, 1, 7},
-        };
-        static const uint8_t f[] = {7, 4, 6, 4, 4};
-        static const uint8_t p[] = {6, 5, 6, 4, 4};
-        static const uint8_t s[] = {7, 4, 7, 1, 7};
-        static const uint8_t r[] = {6, 5, 6, 5, 5};
-        static const uint8_t m[] = {5, 7, 7, 5, 5};
-        if (row >= 5) return 0;
-        if (character >= '0' && character <= '9')
-            return digits[character - '0'][row];
-        switch (character) {
-            case 'F': return f[row];
-            case 'P': return p[row];
-            case 'S': return s[row];
-            case 'R': return r[row];
-            case 'M': return m[row];
-            case '.': return row == 4 ? 2 : 0;
-            default: return 0;
-        }
-    }
-
-    static void OverlayPixel(Context* context, uint16_t* output, int32_t x,
-                             int32_t y, uint16_t color) {
-        if (x < 0 || y < 0 || x >= context->logical_width ||
-            y >= context->logical_height)
-            return;
-        const int32_t physical_x = context->logical_height - 1 - y;
-        const int32_t physical_y = x;
-        output[static_cast<size_t>(physical_y) * context->logical_height +
-               physical_x] = __builtin_bswap16(color);
-    }
-
-    static void OverlayFill(Context* context, uint16_t* output, int32_t x,
-                            int32_t y, int32_t width, int32_t height,
-                            uint16_t color) {
-        for (int32_t yy = y; yy < y + height; ++yy)
-            for (int32_t xx = x; xx < x + width; ++xx)
-                OverlayPixel(context, output, xx, yy, color);
-    }
-
-    static void OverlayText(Context* context, uint16_t* output, int32_t x,
-                            int32_t y, const char* text, uint16_t color) {
-        constexpr int32_t kScale = 2;
-        for (; text != nullptr && *text != '\0'; ++text, x += 8) {
-            for (uint8_t row = 0; row < 5; ++row) {
-                const uint8_t bits = GlyphRow(*text, row);
-                for (uint8_t column = 0; column < 3; ++column)
-                    if ((bits & (1u << (2u - column))) != 0)
-                        OverlayFill(context, output, x + column * kScale,
-                                    y + row * kScale, kScale, kScale, color);
-            }
-        }
-    }
-
-    static void CompositePerformanceOverlay(Context* context, uint16_t* output) {
-        if (context == nullptr || output == nullptr ||
-            !context->performance_overlay_enabled.load(
-                std::memory_order_relaxed))
-            return;
-        char line[40];
-        const uint32_t fps = context->performance_fps_x10.load(
-            std::memory_order_relaxed);
-        const uint32_t rotate_us = context->performance_rotate_us.load(
-            std::memory_order_relaxed);
-        const uint32_t send_us = context->performance_send_us.load(
-            std::memory_order_relaxed);
-        snprintf(line, sizeof(line), "FPS%lu.%lu R%lu M%lu",
-                 static_cast<unsigned long>(fps / 10),
-                 static_cast<unsigned long>(fps % 10),
-                 static_cast<unsigned long>(rotate_us / 1000),
-                 static_cast<unsigned long>(send_us / 1000));
-        const int32_t width = static_cast<int32_t>(strlen(line)) * 8 + 8;
-        const int32_t x = (context->logical_width - width) / 2;
-        OverlayFill(context, output, x, 0, width, 16, 0x0000);
-        OverlayText(context, output, x + 4, 3, line, 0xffff);
+    static void CompositePerformanceOverlay(Context* context, uint16_t* output,
+                                            bool enabled) {
+#if CONFIG_PXA_ENABLED
+        if (!enabled) return;
+        pxa_board_performance_draw_panel_rgb565(
+            output, context->logical_width, context->logical_height,
+            context->performance_fps_x10.load(std::memory_order_relaxed),
+            context->performance_rotate_us.load(std::memory_order_relaxed),
+            context->performance_send_us.load(std::memory_order_relaxed));
+#else
+        (void)context;
+        (void)output;
+        (void)enabled;
+#endif
     }
 
     static const char* FrameSourceName(uint8_t source) {
@@ -841,19 +799,24 @@ private:
 
     static void RotateColumns(const uint16_t* source, uint16_t* output,
                               int32_t source_width, int32_t source_height,
-                              int32_t first_column, int32_t last_column
+                              int32_t first_column, int32_t last_column, Rows rows
 #if CONFIG_PXA_ENABLED
                               , const pxa_esp_surface_frame_t* surface
 #endif
                               ) {
-        alignas(16) uint16_t tile[kTileSize][kTileSize];
 #if CONFIG_PXA_ENABLED
+        if (surface == nullptr) {
+            RotateDirectColumns(source, output, source_width, source_height,
+                                first_column, last_column, false, rows.first, rows.end);
+            return;
+        }
         const uint8_t surface_scale = SurfaceCompositionScale(
             surface, source_width, source_height);
 #endif
-        for (int32_t y0 = 0; y0 < source_height; y0 += kTileSize) {
-            const int32_t y1 = (y0 + kTileSize < source_height) ?
-                y0 + kTileSize : source_height;
+        alignas(16) uint16_t tile[kTileSize][kTileSize];
+        for (int32_t y0 = rows.first; y0 < rows.end; y0 += kTileSize) {
+            const int32_t y1 = (y0 + kTileSize < rows.end) ?
+                y0 + kTileSize : rows.end;
             for (int32_t x0 = first_column; x0 < last_column; x0 += kTileSize) {
                 const int32_t x1 = (x0 + kTileSize < last_column) ?
                     x0 + kTileSize : last_column;
@@ -1037,12 +1000,14 @@ private:
     static void RotateDirectColumns(const uint16_t* source, uint16_t* output,
                                     int32_t source_width, int32_t source_height,
                                     int32_t first_column, int32_t last_column,
-                                    bool byte_swapped) {
+                                    bool byte_swapped, int32_t first_row = 0,
+                                    int32_t end_row = -1) {
+        if (end_row < 0) end_row = source_height;
         alignas(16) uint16_t tile[kTileSize][kTileSize];
-        for (int32_t y0 = 0; y0 < source_height; y0 += kTileSize) {
-            const int32_t y1 = y0 + kTileSize < source_height
+        for (int32_t y0 = first_row; y0 < end_row; y0 += kTileSize) {
+            const int32_t y1 = y0 + kTileSize < end_row
                                    ? y0 + kTileSize
-                                   : source_height;
+                                   : end_row;
             for (int32_t x0 = first_column; x0 < last_column; x0 += kTileSize) {
                 const int32_t x1 = x0 + kTileSize < last_column
                                        ? x0 + kTileSize
@@ -1169,7 +1134,8 @@ private:
             } else {
                 RotateColumns(context->source, context->job_output,
                               context->logical_width, context->logical_height,
-                              context->split_column, context->logical_width
+                              context->split_column, context->logical_width,
+                              context->rotation_rows
 #if CONFIG_PXA_ENABLED
                               , context->has_surface_frame
                                     ? &context->surface_frame : nullptr
@@ -1583,15 +1549,23 @@ private:
 #if CONFIG_ZUOWEI_PAI_TOUCH_DISPLAY_PERF_LOG
         ++context->flush_area_count;
 #endif
+        const Rows area_rows{LV_MAX(0, area->y1),
+                             LV_MIN(context->logical_height, area->y2 + 1)};
+        if (area_rows.first < area_rows.end) context->lvgl_frame_rows.Include(area_rows);
         if (!lv_display_flush_is_last(display)) {
             lv_display_flush_ready(display);
             return;
         }
 
+        const Rows frame_rows = context->lvgl_frame_rows;
+        context->lvgl_frame_rows = {};
         if (xSemaphoreTake(context->rotation_lock, portMAX_DELAY) != pdTRUE) {
             lv_display_flush_ready(display);
             return;
         }
+        // Each buffer keeps its own missed rows, including frames discarded
+        // from the ready queue. Only the buffer owned by this flush is written.
+        for (auto& output : context->lvgl_output) output.dirty.Include(frame_rows);
         if (context->direct_scanout_active) {
             lv_display_flush_ready(display);
             xSemaphoreGive(context->rotation_lock);
@@ -1623,6 +1597,15 @@ private:
         context->has_surface_frame =
             pxa_esp_surface_acquire_latest(&context->surface_frame);
 #endif
+        const bool overlay = context->performance_overlay_enabled.load(
+            std::memory_order_relaxed);
+        bool plain = context->app_rotation.load() == 0;
+#if CONFIG_PXA_ENABLED
+        plain = plain && !context->has_surface_frame;
+#endif
+        auto& target = context->lvgl_output[buffer_index];
+        context->rotation_rows = plain && target.valid && (!target.overlay || overlay)
+            ? target.dirty : Rows{0, context->logical_height};
         const uint32_t rotation_started_us =
             static_cast<uint32_t>(esp_timer_get_time());
         uint32_t main_us = 0;
@@ -1636,7 +1619,8 @@ private:
             const uint32_t main_started_us =
                 static_cast<uint32_t>(esp_timer_get_time());
             RotateColumns(source, output, context->logical_width,
-                          context->logical_height, 0, context->split_column
+                          context->logical_height, 0, context->split_column,
+                          context->rotation_rows
 #if CONFIG_PXA_ENABLED
                           , context->has_surface_frame
                                 ? &context->surface_frame : nullptr
@@ -1669,7 +1653,7 @@ private:
                     static_cast<uint32_t>(esp_timer_get_time());
                 RotateColumns(source, output, context->logical_width,
                               context->logical_height, 0,
-                              context->logical_width
+                              context->logical_width, context->rotation_rows
 #if CONFIG_PXA_ENABLED
                               , context->has_surface_frame
                                     ? &context->surface_frame : nullptr
@@ -1685,7 +1669,8 @@ private:
             const uint32_t main_started_us =
                 static_cast<uint32_t>(esp_timer_get_time());
             RotateColumns(source, output, context->logical_width,
-                          context->logical_height, 0, context->logical_width
+                          context->logical_height, 0, context->logical_width,
+                          context->rotation_rows
 #if CONFIG_PXA_ENABLED
                           , context->has_surface_frame
                                 ? &context->surface_frame : nullptr
@@ -1707,8 +1692,9 @@ private:
         }
 #endif
 
-        CompositePerformanceOverlay(context, output);
+        CompositePerformanceOverlay(context, output, overlay);
         FinishRotation(context, buffer_index);
+        target = LvglOutput{{}, plain, overlay};
 
         uint8_t output_source = kFrameSourceLvgl;
         uint64_t output_frame_id = 0;

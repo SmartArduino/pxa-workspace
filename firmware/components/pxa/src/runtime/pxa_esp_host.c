@@ -34,6 +34,9 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#if LV_USE_OS == LV_OS_FREERTOS
+#include "src/core/lv_global.h"
+#endif
 
 #include "pxa/activation.h"
 #include "pxa/assets.h"
@@ -88,7 +91,7 @@
 #define PXA_ESP_HOST_TAG "PxaHost"
 #define PXA_ESP_HOST_MAX_APP_ID PXA_HOST_COMMAND_MAX_IDENTITY_BYTES
 #define PXA_ESP_HOST_MAX_PATH 160
-#define PXA_ESP_HOST_MAX_SERVICES (22 + PXA_VOICE_TRIGGER_SERVICE_COUNT + PXA_PERIPHERALS_SERVICE_COUNT)
+#define PXA_ESP_HOST_MAX_SERVICES (23 + PXA_VOICE_TRIGGER_SERVICE_COUNT + PXA_PERIPHERALS_SERVICE_COUNT)
 #if PXA_ENABLE_PERIPHERALS
 #define PXA_PERIPHERALS_SERVICE_COUNT 1
 #else
@@ -312,6 +315,7 @@ typedef struct {
 } pxa_esp_host_t;
 
 static pxa_esp_host_t g_host;
+static int32_t g_canvas_covered_top;
 static void cooperative_exit(pxa_stop_reason_t reason) {
     if (!g_host.cooperative_exit_pending) g_host.cooperative_exit_reason = reason;
     g_host.cooperative_exit_pending = 1;
@@ -2340,6 +2344,26 @@ static pxa_status_t esp_lvgl_execute(
     return PXA_STATUS_OK;
 }
 
+static pxa_status_t esp_lvgl_execute_canvas(
+    pxa_lvgl_ui_execute_callback_fn callback, void *callback_data, void *user_data) {
+#if LV_USE_OS == LV_OS_FREERTOS
+    if (__atomic_load_n(&g_canvas_covered_top, __ATOMIC_ACQUIRE) > 0) {
+        /* The regular LVGL lock waits indefinitely. During an opaque pull,
+         * let the Guest refill audio if the renderer still owns that mutex. */
+        SemaphoreHandle_t lock = LV_GLOBAL_DEFAULT()->lv_general_mutex.xMutex;
+        if (lock != NULL) {
+            if (xSemaphoreTakeRecursive(lock, pdMS_TO_TICKS(8)) != pdTRUE)
+                return PXA_STATUS_WOULD_BLOCK;
+            callback(callback_data);
+            lv_unlock();
+            pxa_esp_surface_require_composition();
+            return PXA_STATUS_OK;
+        }
+    }
+#endif
+    return esp_lvgl_execute(callback, callback_data, user_data);
+}
+
 pxa_status_t pxa_esp_host_inspect_ui(char *output, size_t capacity, size_t *size) {
     if (!g_host.initialized || !g_host.ui_adapter) return PXA_STATUS_BAD_STATE;
     return pxa_lvgl_ui_inspect_json(g_host.ui_adapter, output, capacity, size);
@@ -3418,6 +3442,7 @@ static void host_service_capabilities(pxa_package_activation_profile_t *capabili
             HOST_SERVICE_VERSION(IPC),
             HOST_SERVICE_VERSION(SENSOR),
             HOST_SERVICE_VERSION(HAPTICS),
+            HOST_SERVICE_VERSION(VIDEO),
             HOST_SERVICE_VERSION(NET),
             HOST_SERVICE_VERSION(AUDIO),
             HOST_SERVICE_VERSION(PERMISSION),
@@ -4787,6 +4812,8 @@ static void sync_ui_lifecycle(void) {
             host_window_apply(NULL, &configuration) == PXA_STATUS_OK)
             g_host.window_orientation_foreground = requested;
     }
+    pxa_video_service_set_foreground(g_host.activation.services.video,
+        effective ? component : PXA_COMPONENT_INVALID);
     pxa_haptics_service_set_foreground(g_host.activation.services.haptics,
         effective ? component : PXA_COMPONENT_INVALID);
 #if PXA_ENABLE_PERIPHERALS
@@ -5668,6 +5695,7 @@ bool pxa_esp_host_initialize(void) {
     ui_config.allocate = esp_ui_alloc;
     ui_config.release = esp_ui_free;
     ui_config.execute = esp_lvgl_execute;
+    ui_config.execute_canvas = esp_lvgl_execute_canvas;
     ui_config.primary_environment.surface = PXA_UI_PRIMARY_SURFACE;
     ui_config.primary_environment.density_q16 = UINT32_C(1) << 16;
     ui_config.primary_environment.font_scale_q16 = UINT32_C(1) << 16;
@@ -5933,6 +5961,11 @@ bool pxa_esp_host_set_app_foreground(const char *identity,
     portEXIT_CRITICAL(&g_process_state_lock);
     wake_runtime_thread();
     return true;
+}
+
+void pxa_esp_ui_set_canvas_covered_top(int32_t height) {
+    pxa_lvgl_ui_set_canvas_covered_top(g_host.ui_adapter, height);
+    __atomic_store_n(&g_canvas_covered_top, height, __ATOMIC_RELEASE);
 }
 
 bool pxa_esp_host_set_display_interactive(bool interactive) {

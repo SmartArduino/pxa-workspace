@@ -10,6 +10,8 @@ typedef struct {
     pxa_host_container_stream_t *stream;
     pxa_status_t status;
     uint64_t bytes,feed_us;
+    pxa_container_fetch_progress_fn progress;
+    void *context;
 } fetch_sink_t;
 
 static esp_err_t receive_body(esp_http_client_event_t *event) {
@@ -20,17 +22,24 @@ static esp_err_t receive_body(esp_http_client_event_t *event) {
         sink->status=pxa_host_container_stream_feed(sink->stream,event->data,(size_t)event->data_len);
         sink->feed_us+=(uint64_t)(esp_timer_get_time()-start);
         sink->bytes+=(size_t)event->data_len;
+        if(sink->status==PXA_STATUS_OK && sink->progress)
+            sink->progress(sink->context,sink->bytes);
     }
     return sink->status==PXA_STATUS_OK?ESP_OK:ESP_FAIL;
 }
 
 pxa_status_t pxa_host_container_stream_fetch(pxa_host_container_stream_t *stream,const char *url) {
+    return pxa_host_container_stream_fetch_with_progress(stream,url,NULL,NULL);
+}
+
+pxa_status_t pxa_host_container_stream_fetch_with_progress(pxa_host_container_stream_t *stream,
+    const char *url,pxa_container_fetch_progress_fn progress,void *context) {
     /* This endpoint is armed over the local development session. The host
      * serves exactly one package under an unguessable, short-lived URL.
      * Signatures and the caller-supplied digest remain mandatory; network
      * bytes never become executable before the normal installation commit. */
     if(!stream || !url || strncmp(url,"http://",7) || !url[7])return PXA_STATUS_INVALID_ARGUMENT;
-    fetch_sink_t sink={.stream=stream,.status=PXA_STATUS_OK};
+    fetch_sink_t sink={.stream=stream,.status=PXA_STATUS_OK,.progress=progress,.context=context};
     esp_http_client_config_t config={.url=url,.method=HTTP_METHOD_GET,.timeout_ms=30000,
         .disable_auto_redirect=true,.event_handler=receive_body,.user_data=&sink,.buffer_size=16384};
     esp_http_client_handle_t client=esp_http_client_init(&config);

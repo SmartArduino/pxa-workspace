@@ -80,6 +80,8 @@ struct PowerControlAdapter {
 };
 
 esp_err_t ConfigurePowerControl(const PowerControlAdapter* adapter);
+// Set before Start when the primary debug port has no system console writers.
+void ConfigurePrimaryTransportConsoleSharing(bool shares_console);
 
 // Starts the configured primary transport and optional independent UART
 // endpoint. One control task serializes commands; transfer ownership is per

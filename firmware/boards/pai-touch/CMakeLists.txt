@@ -69,6 +69,12 @@ target_link_options(${COMPONENT_LIB} INTERFACE
     "LINKER:--wrap=spi_bus_get_max_transaction_len"
     "LINKER:--wrap=spi_device_get_trans_result"
     "LINKER:--wrap=spi_device_queue_trans")
+set(PXA_PAI_LCD_TRANSFER_LINES 4 CACHE STRING "Physical RGB565 lines per LCD SPI DMA transaction (4 or 8)")
+if(NOT PXA_PAI_LCD_TRANSFER_LINES MATCHES "^(4|8)$")
+    message(FATAL_ERROR "PXA_PAI_LCD_TRANSFER_LINES must be 4 or 8")
+endif()
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    PXA_PAI_LCD_TRANSFER_LINES=${PXA_PAI_LCD_TRANSFER_LINES})
 set(PXA_PAI_DISPLAY_DMA_TEST_FAULTS 0 CACHE STRING "Test-only completed LCD DMA faults to inject at boot")
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PXA_PAI_DISPLAY_DMA_TEST_FAULTS=${PXA_PAI_DISPLAY_DMA_TEST_FAULTS})

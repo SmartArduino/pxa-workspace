@@ -80,6 +80,8 @@ bool Espp4AInitializeUsb() {
         (void)tinyusb_driver_uninstall();
         vTaskDelete(download_task); download_task = nullptr; return false;
     }
+    // Console output uses UART0 (and optionally USB Serial/JTAG), not CDC.
+    pxadb::ConfigurePrimaryTransportConsoleSharing(false);
     ESP_LOGI(kTag, "USB HS CDC ready: ESPP4-A %s; 1200-baud DTR falling edge enters ROM", serial);
     return true;
 }

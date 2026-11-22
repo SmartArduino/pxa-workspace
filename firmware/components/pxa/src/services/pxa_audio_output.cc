@@ -29,7 +29,8 @@ constexpr size_t kDecoderInputBytes = 768;
 constexpr size_t kDecoderOutputBytes = 16384;
 constexpr size_t kConvertedSamples = 2048;
 constexpr uint32_t kMusicTaskStackBytes = 20480;
-constexpr uint32_t kOutputTaskStackBytes = 4096;
+// Mixing six resident voices, music and the board sink needs driver/log headroom.
+constexpr uint32_t kOutputTaskStackBytes = 8192;
 }
 
 // ESP-IDF task stack depths are bytes. All RTOS backing storage is charged
@@ -618,6 +619,7 @@ void PxaAudioOutput::Run() {
     uint32_t legacy_phase = 0, timer_phase = 0;
     int32_t legacy_previous = 0, legacy_current = 0;
     bool legacy_primed = false;
+    uint32_t stack_report_frames = 0;
     for (;;) {
         uint32_t frame_music_token=0;
         bool sounds_active = false;
@@ -712,6 +714,11 @@ void PxaAudioOutput::Run() {
         xSemaphoreGive(music_mutex_);
         }
         const bool written=write_(write_context_, frame.pcm, frame.samples);
+        if (++stack_report_frames >= sample_rate_ / kFrameSamples * 30u) {
+            stack_report_frames = 0;
+            ESP_LOGI(kTag, "Output task stack free: %u bytes",
+                     static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+        }
         if (!written)
             ESP_LOGW(kTag, "Physical audio write failed");
         // Keep the in-flight marker set until failure is latched, so the

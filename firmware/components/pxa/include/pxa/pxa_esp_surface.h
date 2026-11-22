@@ -199,6 +199,9 @@ struct _lv_obj_t;
  * Up to PXA_ESP_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS roots are supported. */
 void pxa_esp_system_overlay_set_reference_objects(
     struct _lv_obj_t *const *objects, size_t count);
+/* Suppress live Canvas painting under a full-width opaque shell overlay.
+ * The shell invalidates rows it uncovers. Call under the LVGL lock. */
+void pxa_esp_ui_set_canvas_covered_top(int32_t height);
 void pxa_esp_surface_set_fill_bands_callback(
     pxa_esp_surface_fill_bands_fn callback, void *context);
 /* Trusted LVGL content changed and must be composed above the Surface until
@@ -217,6 +220,8 @@ void pxa_esp_surface_set_host_visible(bool visible);
 /* Temporarily give output to an LVGL application snapshot/Recents, without
  * altering the running application's lifecycle or lock visibility gates. */
 void pxa_esp_surface_set_presentation_visible(bool visible);
+/* Suppress guest pixels while the system owns the full-screen debug installer. */
+void pxa_esp_surface_set_debug_install_visible(bool visible);
 void pxa_esp_surface_set_display_unlocked(bool unlocked);
 /* A modal/visibility transition arms a barrier at the last submitted frame.
  * Direct scanout may resume only with a newer complete frame; LVGL composition

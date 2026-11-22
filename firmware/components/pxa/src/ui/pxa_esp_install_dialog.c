@@ -4,9 +4,13 @@
 #include "pxa_esp_dialog_style.h"
 #include "pxa_esp_install_capacity.h"
 #include "pxa/ui.h"
+#include "pxa/pxa_debug_install.h"
+#include "pxa/pxa_esp_surface.h"
 #include "esp_heap_caps.h"
 #include "lvgl.h"
 #include <stdio.h>
+#include <string.h>
+#include <pthread.h>
 #include <stdlib.h>
 
 typedef struct {
@@ -229,8 +233,9 @@ static void show(void *context) {
         lv_obj_t *text=lv_label_create(button);lv_label_set_text(text,i?(dialog->prompt.legacy_upgrade?(zh?"升级":"Upgrade"):
             dialog->prompt.move?(zh?"移动":"Move"):
             dialog->prompt.download_only?(zh?"下载":"Download"):(zh?"安装":"Install")):(zh?"取消":"Cancel"));
-        lv_obj_set_width(text,LV_PCT(100));lv_label_set_long_mode(text,LV_LABEL_LONG_DOT);
-        lv_obj_center(text);lv_obj_add_event_cb(button,respond,LV_EVENT_CLICKED,(void *)(uintptr_t)i);
+        lv_label_set_long_mode(text,LV_LABEL_LONG_DOT);
+        pxa_lvgl_dialog_center_action_label(text);
+        lv_obj_add_event_cb(button,respond,LV_EVENT_CLICKED,(void *)(uintptr_t)i);
         lv_obj_add_event_cb(button,key,LV_EVENT_KEY|LV_EVENT_PREPROCESS,NULL);
     }
     pxa_esp_system_overlay_add(dialog->mask);update_details();
@@ -348,3 +353,196 @@ int pxa_esp_ui_shell_post_file_prepare_progress(uint32_t id,const char *name) {
     return post_progress(id,name,PROGRESS_VERIFY,0);
 }
 void pxa_esp_ui_shell_post_file_install_result(uint32_t id,int32_t status) {post_result(id,status,1);}
+
+/* The transport owns the transaction. The LVGL task samples one atomic
+ * value, even for large packages, so receiving bytes never queues UI work. */
+enum { DEBUG_PERCENT_UNKNOWN = 255, DEBUG_DONE = 4, DEBUG_FAILED,
+       DEBUG_CANCELLED, DEBUG_NO_SPACE, DEBUG_VERIFY_FAILED };
+static uint32_t g_debug_token, g_debug_progress;
+static bool g_debug_active;
+typedef struct {
+    char name[PXA_DEBUG_INSTALL_NAME_CAPACITY];
+    char version[PXA_DEBUG_INSTALL_VERSION_CAPACITY];
+    uint64_t bytes;
+} debug_install_preview_t;
+static pthread_mutex_t g_debug_preview_lock = PTHREAD_MUTEX_INITIALIZER;
+static debug_install_preview_t g_debug_preview;
+/* Only LVGL owns the timer, displayed generation, and widgets. */
+static lv_timer_t *g_debug_timer;
+static uint32_t g_debug_displayed_token;
+static struct {
+    lv_obj_t *mask, *title, *stage, *bar;
+    uint32_t shown, result_tick;
+} g_debug_ui;
+
+bool pxa_debug_install_active(void) {
+    return __atomic_load_n(&g_debug_active, __ATOMIC_ACQUIRE);
+}
+
+static void debug_install_close(void) {
+    if(g_debug_ui.mask)lv_obj_delete(g_debug_ui.mask);
+    memset(&g_debug_ui,0,sizeof(g_debug_ui));
+}
+
+static void debug_install_render_progress(uint32_t value) {
+    const uint32_t phase=value>>8, percent=value&255u;
+    if(phase>=DEBUG_DONE && g_debug_ui.shown==value &&
+       lv_tick_elaps(g_debug_ui.result_tick)>=1400) {
+        debug_install_close();
+        pxa_esp_surface_set_debug_install_visible(false);
+        return;
+    }
+    if(phase<DEBUG_DONE)lv_display_trigger_activity(lv_obj_get_display(g_debug_ui.mask));
+    if(g_debug_ui.shown==value)return;
+    g_debug_ui.shown=value;
+    const bool zh=pxa_esp_host_locale_is_chinese();
+    if(phase>=DEBUG_DONE) {
+        g_debug_ui.result_tick=lv_tick_get();
+        lv_label_set_text(g_debug_ui.title,zh?"安装结果":"Installation result");
+    }
+    const bool receiving=phase==PXA_DEBUG_INSTALL_RECEIVE;
+    lv_obj_set_hidden(g_debug_ui.bar,!receiving || percent==DEBUG_PERCENT_UNKNOWN);
+    if(receiving && percent!=DEBUG_PERCENT_UNKNOWN) {
+        lv_bar_set_value(g_debug_ui.bar,(int32_t)percent,LV_ANIM_OFF);
+        lv_label_set_text_fmt(g_debug_ui.stage,zh?"正在接收安装包 · %u%%":"Receiving package · %u%%",
+                              (unsigned)percent);
+        return;
+    }
+    const char *message=receiving?(zh?"正在接收安装包…":"Receiving package…"):
+        phase==PXA_DEBUG_INSTALL_VERIFY?(zh?"正在校验安装包…":"Verifying package…"):
+        phase==PXA_DEBUG_INSTALL_WRITE?(zh?"正在写入并安装…":"Writing and installing…"):
+        phase==DEBUG_DONE?(zh?"安装完成":"Installation complete"):
+        phase==DEBUG_CANCELLED?(zh?"安装已中止":"Installation interrupted"):
+        phase==DEBUG_NO_SPACE?(zh?"安装空间不足":"Not enough storage"):
+        phase==DEBUG_VERIFY_FAILED?(zh?"安装包校验失败":"Package verification failed"):
+        (zh?"安装失败，请在调试工具中查看原因":"Installation failed. See the debug tool.");
+    lv_label_set_text(g_debug_ui.stage,message);
+}
+
+static void debug_install_show(lv_display_t *display, const debug_install_preview_t *preview) {
+    debug_install_close();
+    g_debug_ui.mask=lv_obj_create(lv_display_get_layer_sys(display));
+    pxa_esp_dialog_style_mask(g_debug_ui.mask);
+    lv_obj_set_style_bg_color(g_debug_ui.mask,color(PXA_UI_THEME_SURFACE),0);
+    lv_obj_set_style_bg_opa(g_debug_ui.mask,LV_OPA_COVER,0);
+    lv_obj_t *panel=lv_obj_create(g_debug_ui.mask);
+    pxa_esp_dialog_style_panel(panel);
+    lv_obj_set_size(panel,LV_PCT(85),LV_SIZE_CONTENT);
+    lv_obj_set_style_max_width(panel,pxa_esp_dialog_px(380),0);
+    lv_obj_set_style_pad_row(panel,pxa_esp_dialog_spacing(3),0);
+    lv_obj_set_flex_flow(panel,LV_FLEX_FLOW_COLUMN);
+    lv_obj_center(panel);
+    g_debug_ui.title=lv_label_create(panel);
+    lv_obj_set_width(g_debug_ui.title,LV_PCT(100));
+    lv_obj_set_style_text_font(g_debug_ui.title,font(),0);
+    lv_label_set_long_mode(g_debug_ui.title,LV_LABEL_LONG_WRAP);
+    const bool zh=pxa_esp_host_locale_is_chinese();
+    lv_label_set_text(g_debug_ui.title,zh?"正在安装":"Installing");
+    if(preview->name[0]) {
+        lv_obj_t *name=lv_label_create(panel);
+        lv_obj_set_width(name,LV_PCT(100));
+        lv_obj_set_style_text_font(name,font(),0);
+        lv_label_set_long_mode(name,LV_LABEL_LONG_DOT);
+        lv_label_set_text(name,preview->name);
+    }
+    if(preview->version[0] || preview->bytes) {
+        char details[PXA_DEBUG_INSTALL_VERSION_CAPACITY+64]={};
+        int length=0;
+        if(preview->version[0])
+            length=snprintf(details,sizeof(details),zh?"版本 %s":"Version %s",preview->version);
+        if(preview->bytes) {
+            const unsigned long long bytes=preview->bytes;
+            const unsigned unit=bytes>=1024*1024?1024*1024:bytes>=1024?1024:1;
+            const char *separator=length?" · ":"";
+            const char *label=zh?"安装包":"Package";
+            if(unit==1)snprintf(details+length,sizeof(details)-(size_t)length,
+                               "%s%s %llu B",separator,label,bytes);
+            else snprintf(details+length,sizeof(details)-(size_t)length,"%s%s %llu.%llu %s",
+                          separator,label,bytes/unit,(bytes%unit)*10/unit,unit==1024?"KiB":"MiB");
+        }
+        lv_obj_t *info=lv_label_create(panel);
+        lv_obj_set_width(info,LV_PCT(100));
+        lv_label_set_long_mode(info,LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_font(info,caption_font(),0);
+        lv_obj_set_style_text_color(info,color(PXA_UI_THEME_MUTED),0);
+        lv_label_set_text(info,details);
+    }
+    g_debug_ui.stage=lv_label_create(panel);
+    lv_obj_set_width(g_debug_ui.stage,LV_PCT(100));
+    lv_label_set_long_mode(g_debug_ui.stage,LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(g_debug_ui.stage,caption_font(),0);
+    lv_obj_set_style_text_color(g_debug_ui.stage,color(PXA_UI_THEME_MUTED),0);
+    g_debug_ui.bar=lv_bar_create(panel);
+    lv_obj_set_size(g_debug_ui.bar,LV_PCT(100),pxa_esp_dialog_px(6));
+    lv_obj_set_style_bg_color(g_debug_ui.bar,color(PXA_UI_THEME_PRIMARY),LV_PART_INDICATOR);
+    pxa_esp_surface_set_debug_install_visible(true);
+}
+
+static void debug_install_poll(lv_timer_t *timer) {
+    (void)timer;
+    if (__atomic_load_n(&g_debug_token, __ATOMIC_ACQUIRE) != g_debug_displayed_token) {
+        lv_display_t *display = lv_display_get_default();
+        if (!display) return;
+        debug_install_preview_t preview;
+        pthread_mutex_lock(&g_debug_preview_lock);
+        const uint32_t token = __atomic_load_n(&g_debug_token, __ATOMIC_RELAXED);
+        const uint32_t progress = __atomic_load_n(&g_debug_progress, __ATOMIC_ACQUIRE);
+        preview = g_debug_preview;
+        pthread_mutex_unlock(&g_debug_preview_lock);
+        g_debug_displayed_token = token;
+        debug_install_show(display, &preview);
+        debug_install_render_progress(progress);
+    } else if (g_debug_ui.mask) {
+        const uint32_t progress = __atomic_load_n(&g_debug_progress, __ATOMIC_ACQUIRE);
+        if (__atomic_load_n(&g_debug_token, __ATOMIC_ACQUIRE) == g_debug_displayed_token)
+            debug_install_render_progress(progress);
+    }
+}
+
+void pxa_debug_install_bind(void) {
+    lv_lock();
+    if (!g_debug_timer) g_debug_timer = lv_timer_create(debug_install_poll, 200, NULL);
+    lv_unlock();
+}
+
+uint32_t pxa_debug_install_begin(const char *name,const char *version,uint64_t bytes) {
+    debug_install_preview_t preview = {.bytes = bytes};
+    snprintf(preview.name,sizeof(preview.name),"%s",name?name:"");
+    snprintf(preview.version,sizeof(preview.version),"%s",version?version:"");
+    pthread_mutex_lock(&g_debug_preview_lock);
+    if (pxa_debug_install_active()) {
+        pthread_mutex_unlock(&g_debug_preview_lock);
+        return 0;
+    }
+    uint32_t token = __atomic_load_n(&g_debug_token, __ATOMIC_RELAXED) + 1;
+    if (!token) token = 1;
+    g_debug_preview = preview;
+    __atomic_store_n(&g_debug_progress,(PXA_DEBUG_INSTALL_RECEIVE<<8)|DEBUG_PERCENT_UNKNOWN,__ATOMIC_RELEASE);
+    __atomic_store_n(&g_debug_active,true,__ATOMIC_RELEASE);
+    __atomic_store_n(&g_debug_token,token,__ATOMIC_RELEASE);
+    pthread_mutex_unlock(&g_debug_preview_lock);
+    return token;
+}
+
+void pxa_debug_install_progress(uint32_t token,pxa_debug_install_phase_t phase,
+                                uint64_t received,uint64_t total) {
+    if(!token || token!=__atomic_load_n(&g_debug_token,__ATOMIC_ACQUIRE) ||
+       !pxa_debug_install_active())return;
+    /* The transport admits at most a 32-bit payload. Saturate before fixed
+     * point conversion, so a corrupted count also cannot overflow. */
+    total=total>UINT32_MAX?UINT32_MAX:total;
+    received=received>total?total:received;
+    const uint32_t pct=total?(uint32_t)(received*100u/total):DEBUG_PERCENT_UNKNOWN;
+    __atomic_store_n(&g_debug_progress,((uint32_t)phase<<8)|pct,__ATOMIC_RELEASE);
+}
+
+void pxa_debug_install_end(uint32_t token,int32_t status) {
+    if(!token || token!=__atomic_load_n(&g_debug_token,__ATOMIC_ACQUIRE) ||
+       !pxa_debug_install_active())return;
+    const uint32_t phase=status==PXA_STATUS_OK?DEBUG_DONE:
+        status==PXA_STATUS_CANCELLED?DEBUG_CANCELLED:
+        status==PXA_STATUS_QUOTA_EXCEEDED?DEBUG_NO_SPACE:
+        status==PXA_STATUS_DENIED?DEBUG_VERIFY_FAILED:DEBUG_FAILED;
+    __atomic_store_n(&g_debug_progress,phase<<8,__ATOMIC_RELEASE);
+    __atomic_store_n(&g_debug_active,false,__ATOMIC_RELEASE);
+}

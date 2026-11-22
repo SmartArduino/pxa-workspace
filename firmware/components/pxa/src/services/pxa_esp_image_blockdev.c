@@ -36,9 +36,13 @@ typedef struct {
 /* Mapped read-only storage: no per-image erase buffer in SRAM or PSRAM. */
 #define ERASED_16 255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255
 #define ERASED_256 ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16,ERASED_16
-static const uint8_t erased_block[IMAGE_BLOCK_BYTES]={
-    ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,
-    ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256};
+#define ERASED_4096 ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256,ERASED_256
+/* A mapped erased extent avoids sixteen separate FAT writes inside one Guest
+ * import without a temporary or per-image allocation. */
+static const uint8_t erased_block[PXA_ESP_IMAGE_EXTENT_BYTES]={
+    ERASED_4096,ERASED_4096,ERASED_4096,ERASED_4096,ERASED_4096,ERASED_4096,ERASED_4096,ERASED_4096,
+    ERASED_4096,ERASED_4096,ERASED_4096,ERASED_4096,ERASED_4096,ERASED_4096,ERASED_4096,ERASED_4096};
+#undef ERASED_4096
 #undef ERASED_256
 #undef ERASED_16
 
@@ -149,8 +153,7 @@ static esp_err_t select_extent(image_device_t *image,uint32_t index,int writing)
         int failed=pxa_esp_unlinkat(image->directory,pending,0)!=0 && errno!=ENOENT;
         if(!failed)fd=pxa_esp_openat(image->directory,pending,O_RDWR|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
         if(fd<0)failed=1;
-        for(size_t at=0;!failed && at<bytes;at+=IMAGE_BLOCK_BYTES)
-            if(!available(image) || raw_transfer(fd,(void *)erased_block,at,IMAGE_BLOCK_BYTES,1)!=ESP_OK)failed=1;
+        if(!failed && (!available(image) || raw_transfer(fd,(void *)erased_block,0,bytes,1)!=ESP_OK))failed=1;
         if(fd>=0) {
             if(!failed && fsync(fd))failed=1;
             if(pxa_esp_close(fd))failed=1;

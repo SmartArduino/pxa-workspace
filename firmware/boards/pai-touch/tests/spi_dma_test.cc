@@ -24,13 +24,13 @@ int main() {
     spi_device_handle_t panel, other;
     size_t maximum = 0;
     PaiTouchDisplayDmaBeginBinding(2);
-    assert(__wrap_spi_bus_get_max_transaction_len(2, &maximum) == ESP_OK && maximum == 1920);
+    assert(__wrap_spi_bus_get_max_transaction_len(2, &maximum) == ESP_OK && maximum == kPaiLcdTransferBytes);
     assert(__wrap_spi_bus_add_device(2, nullptr, &panel) == ESP_OK);
     PaiTouchDisplayDmaEndBinding();
     assert(__wrap_spi_bus_get_max_transaction_len(2, &maximum) == ESP_OK && maximum == 4092);
     assert(__wrap_spi_bus_add_device(3, nullptr, &other) == ESP_OK);
-    uint8_t pixels[1920]{}; pixels[12] = 42;
-    spi_transaction_t transaction{SPI_TRANS_DMA_USE_PSRAM | SPI_TRANS_DMA_TX_FAIL, 15360, pixels};
+    uint8_t pixels[kPaiLcdTransferBytes]{}; pixels[12] = 42;
+    spi_transaction_t transaction{SPI_TRANS_DMA_USE_PSRAM | SPI_TRANS_DMA_TX_FAIL, kPaiLcdTransferBytes * 8, pixels};
     returned = &transaction; returned_status = ESP_ERR_INVALID_STATE;
     spi_transaction_t* output = nullptr;
     unsigned inflight = 1;
@@ -52,8 +52,8 @@ int main() {
     assert(__wrap_spi_device_get_trans_result(panel, &output, 1) == ESP_OK);
     assert(transaction.tx_buffer == pixels);
     // Two distinct in-flight descriptors retain their own SRAM pixels.
-    spi_transaction_t second{SPI_TRANS_DMA_USE_PSRAM, 15360, pixels};
-    spi_transaction_t third{SPI_TRANS_DMA_USE_PSRAM, 15360, pixels};
+    spi_transaction_t second{SPI_TRANS_DMA_USE_PSRAM, kPaiLcdTransferBytes * 8, pixels};
+    spi_transaction_t third{SPI_TRANS_DMA_USE_PSRAM, kPaiLcdTransferBytes * 8, pixels};
     transaction.flags = SPI_TRANS_DMA_USE_PSRAM;
     assert(__wrap_spi_device_queue_trans(panel, &transaction, 1) == ESP_OK);
     assert(__wrap_spi_device_queue_trans(panel, &second, 1) == ESP_OK);
@@ -66,7 +66,7 @@ int main() {
     assert(__wrap_spi_device_get_trans_result(panel, &output, 1) == ESP_OK && second.tx_buffer == pixels);
     queued_status = ESP_ERR_NO_MEM;
     assert(__wrap_spi_device_queue_trans(panel, &third, 1) == ESP_ERR_NO_MEM && third.tx_buffer == pixels);
-    queued_status = ESP_OK; third.flags = SPI_TRANS_DMA_USE_PSRAM; third.length = 32768;
+    queued_status = ESP_OK; third.flags = SPI_TRANS_DMA_USE_PSRAM; third.length = (kPaiLcdTransferBytes + 1) * 8;
     assert(__wrap_spi_device_queue_trans(panel, &third, 1) == ESP_ERR_INVALID_ARG);
     returned = nullptr; returned_status = ESP_ERR_TIMEOUT;
     output = &transaction;

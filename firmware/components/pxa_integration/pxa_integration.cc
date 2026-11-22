@@ -193,6 +193,8 @@ void IdleScreenOff(void* context) {
 }
 
 void SaveTheme(void*, const pxsys_theme_snapshot_t* theme) {
+    if (theme != nullptr)
+        pxa_board_performance_set_light_theme(theme->effective_scheme == PXSYS_COLOR_SCHEME_LIGHT);
     if (theme == nullptr || !g_theme_observer_seen) {
         g_theme_observer_seen = true;
         return;
@@ -1443,6 +1445,8 @@ bool CreateSystem(const pxa_board_port_t* board,
         };
         ui_config.system_overlay_objects_changed =
             [](void*, lv_obj_t* const* objects, size_t count) {
+                pxa_esp_ui_set_canvas_covered_top(
+                    count ? pxsys_reference_lvgl_covered_top(g_reference_ui) : 0);
                 pxa_esp_system_overlay_set_reference_objects(objects, count);
             };
         ui_config.performance_context = const_cast<pxa_board_port_t*>(board);
@@ -1579,6 +1583,11 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     if (board->configure_diagnostics != nullptr &&
         !board->configure_diagnostics(board->context))
         ESP_LOGW(kTag, "Board diagnostics are unavailable");
+#if PXA_START_RUNTIME_BEFORE_PXADB
+    // Pai Touch needs the larger contiguous runtime stack before allocating
+    // the debugger's internal stack. Both stacks must remain flash-safe.
+    if (!pxa_host_start_runtime()) return false;
+#endif
 #if CONFIG_PXADB_ENABLED
     // PXADB task stacks need contiguous internal RAM; reserve them before
     // the Guest runtime starts allocating its own tasks.
@@ -1596,10 +1605,12 @@ extern "C" bool pxa_integration_start(const pxa_product_profile_t* profile) {
     // Report the saved presentation time after diagnostics switches the UART
     // rate, so the final marker is not interrupted by the baud-rate change.
     ESP_LOGI(kTag, "Startup UI ready at %lu ms", static_cast<unsigned long>(ui_ready_ms));
+#if !PXA_START_RUNTIME_BEFORE_PXADB
     if (!pxa_host_start_runtime()) {
         pxadb::Stop();
         return false;
     }
+#endif
     /* The runtime performs the initial built-in package scan on its own task.
      * Do not repeat it here: this startup task must return so the UI can keep
      * presenting while Wi-Fi associates and the catalog is populated. */

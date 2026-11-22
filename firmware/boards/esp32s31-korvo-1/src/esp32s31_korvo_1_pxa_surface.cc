@@ -14,6 +14,7 @@
 #include <freertos/task.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_surface_transform.h>
+#include <pxa_board_common/surface_rgb565_rows.h>
 #include <pxa_board_api.h>
 #include <pxa_board_common/display_completion.h>
 
@@ -217,6 +218,16 @@ void ComposeRgb565(const pxa_esp_surface_frame_t& frame, uint8_t* pixels) {
     const int32_t bottom = std::min<int32_t>(
         geometry.origin_y + geometry.height, KORVO_DISPLAY_HEIGHT);
     if (left >= right || top >= bottom) return;
+
+    if (geometry.scale == 1 && frame.opaque_ui_region_count == 0) {
+        auto* destination = reinterpret_cast<uint16_t*>(pixels) +
+            size_t(top) * KORVO_DISPLAY_WIDTH + left;
+        const auto* source = frame.pixels + size_t(top - geometry.origin_y) * frame.stride_bytes
+            + size_t(left - geometry.origin_x) * sizeof(uint16_t);
+        pxa::board::CopyRgb565Rows(destination, KORVO_DISPLAY_WIDTH, source,
+                                  frame.stride_bytes, right - left, bottom - top);
+        return;
+    }
 
     if (geometry.scale > 1 && frame.opaque_ui_region_count == 0) {
         /* Expand once into internal task-stack memory, then burst-copy each

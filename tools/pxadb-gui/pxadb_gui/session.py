@@ -478,14 +478,23 @@ class DeviceSession:
         source, identity = pxadb.package_source(local, None)
 
         def action(session: "DeviceSession") -> object:
-            session.signals.status.emit(f"staging {identity}")
-            try:
-                pxadb.stage_package_files(pxadb.NormalFsClient(session._client),
-                                          source, identity, session._timeout, publish=False)
-                session.signals.status.emit(f"installing {identity}")
-                session._client.request(f"PACKAGE deploy {identity}", timeout=120.0)
-            finally:
-                pxadb.clear_staged_source(session._client, identity)
+            last_done = -1
+
+            def report(done: int, total: int) -> None:
+                nonlocal last_done
+                if done == last_done:
+                    return
+                last_done = done
+                session.signals.progress.emit(f"install {identity}", done, total)
+                if done == total:
+                    session.signals.status.emit(f"verifying and installing {identity}")
+
+            session.signals.status.emit(f"installing {identity}")
+            args = pxadb.build_parser().parse_args([
+                "package", "install", str(source), "--yes", "--timeout", str(session._timeout),
+            ])
+            pxadb.command_package_install(args, connection=session._client,
+                                          quiet=True, progress=report)
             return identity
 
         self._enqueue(f"install {identity}", action)

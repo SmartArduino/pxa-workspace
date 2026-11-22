@@ -1,0 +1,6 @@
+config ASTER_P4_DUAL_CORE_RENDER
+    bool "Use existing Aster dual-core pixel worker on Pai Touch"
+    default y
+config ASTER_P4_AUTORUN_DIAGNOSTIC
+    bool
+    default n

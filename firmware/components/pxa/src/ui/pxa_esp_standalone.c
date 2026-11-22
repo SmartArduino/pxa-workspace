@@ -11,6 +11,7 @@
 #include "lvgl.h"
 
 #include "pxa_esp_host.h"
+#include "../runtime/pxa_esp_ime.h"
 #include "pxa_esp_dialog_layout.h"
 #include "pxa_esp_dialog_style.h"
 #include "pxa_esp_system_overlay.h"
@@ -94,9 +95,9 @@ static void close_launch(void) {
         g_launch_timeout = NULL;
     }
     if (g_launch_overlay != NULL) {
-        pxa_esp_system_overlay_remove(g_launch_overlay);
         lv_obj_delete(g_launch_overlay);
         g_launch_overlay = NULL;
+        pxa_esp_system_overlay_set_fullscreen_opaque(false);
     }
     if (g_launch_icon.release != NULL)
         g_launch_icon.release(g_launch_icon.release_context);
@@ -115,8 +116,6 @@ static void launch_timeout(lv_timer_t *timer) {
 static void show_launch(void *context) {
     launch_copy_t *copy = (launch_copy_t *)context;
     pxa_esp_package_icon_source_t source;
-    lv_obj_t *icon;
-    int32_t icon_size;
     if (strcmp(g_requested_launch_identity, copy->identity) != 0) {
         free(copy);
         return;
@@ -140,36 +139,31 @@ static void show_launch(void *context) {
                               system_color(PXA_UI_THEME_BACKGROUND), 0);
     lv_obj_set_style_bg_opa(g_launch_overlay, LV_OPA_COVER, 0);
     lv_obj_set_clickable(g_launch_overlay, true);
+    lv_obj_set_scrollable(g_launch_overlay, false);
     lv_obj_move_to_index(g_launch_overlay, 0);
 
-    icon_size = lv_display_get_horizontal_resolution(lv_display_get_default()) / 4;
-    if (icon_size < 56) icon_size = 56;
-    if (icon_size > 88) icon_size = 88;
-    icon = lv_obj_create(g_launch_overlay);
-    lv_obj_remove_style_all(icon);
-    lv_obj_set_size(icon, icon_size, icon_size);
-    lv_obj_set_style_radius(icon, icon_size / 4, 0);
-    lv_obj_set_style_bg_color(icon, system_color(PXA_UI_THEME_PRIMARY), 0);
-    lv_obj_set_style_bg_opa(icon, LV_OPA_COVER, 0);
-    lv_obj_center(icon);
     if (g_launch_icon.image_dsc != NULL) {
-        lv_obj_t *image = lv_image_create(icon);
-        lv_obj_set_size(image, LV_PCT(100), LV_PCT(100));
+        lv_display_t *display = lv_obj_get_display(g_launch_overlay);
+        const int32_t short_side = LV_MIN(lv_display_get_horizontal_resolution(display),
+                                          lv_display_get_vertical_resolution(display));
+        const int32_t icon_size = LV_MIN(short_side, LV_CLAMP(48, short_side / 6, 80));
+        lv_obj_t *image = lv_image_create(g_launch_overlay);
+        lv_obj_set_size(image, icon_size, icon_size);
         lv_image_set_src(image, g_launch_icon.image_dsc);
         lv_image_set_inner_align(image, LV_IMAGE_ALIGN_CONTAIN);
         lv_obj_center(image);
     } else {
-        lv_obj_t *symbol = lv_label_create(icon);
+        lv_obj_t *symbol = lv_label_create(g_launch_overlay);
         lv_label_set_text(symbol, LV_SYMBOL_LIST);
         lv_obj_set_style_text_color(symbol,
-                                    system_color(PXA_UI_THEME_ON_PRIMARY), 0);
+                                    system_color(PXA_UI_THEME_PRIMARY), 0);
         lv_obj_set_style_text_font(symbol, pxa_esp_ui_shell_icon_font(), 0);
         lv_obj_center(symbol);
     }
     g_launch_timeout = lv_timer_create(launch_timeout, 30000, NULL);
     if (g_launch_timeout != NULL)
         lv_timer_set_repeat_count(g_launch_timeout, 1);
-    pxa_esp_system_overlay_add(g_launch_overlay);
+    pxa_esp_system_overlay_set_fullscreen_opaque(true);
     free(copy);
 }
 
@@ -234,7 +228,7 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
                         (void *)(uintptr_t)0);
     lv_obj_t *left_label = lv_label_create(left);
     lv_label_set_text(left_label, left_text);
-    lv_obj_center(left_label);
+    pxa_lvgl_dialog_center_action_label(left_label);
 
     lv_obj_t *right = lv_button_create(panel);
     pxa_esp_dialog_style_action(right,right_action);
@@ -245,7 +239,7 @@ static lv_obj_t *create_dialog(const char *title, const char *body,
                         (void *)(uintptr_t)1);
     lv_obj_t *right_label = lv_label_create(right);
     lv_label_set_text(right_label, right_text);
-    lv_obj_center(right_label);
+    pxa_lvgl_dialog_center_action_label(right_label);
     pxa_esp_system_overlay_add(mask);
     return mask;
 }
@@ -326,40 +320,55 @@ static void dismiss_unresponsive(void *context) {
 }
 
 static void toast_timeout(lv_timer_t *timer) {
-    (void)timer;
-    close_dialog(&g_toast);
-    g_toast_timer = NULL;
+    lv_timer_pause(timer);
+    if (g_toast == NULL) return;
+    lv_obj_set_hidden(g_toast, true);
+    pxa_esp_system_overlay_remove(g_toast);
 }
 
 static void show_toast(void *context) {
     toast_copy_t *copy = (toast_copy_t *)context;
-    if (g_toast_timer != NULL) {
-        lv_timer_delete(g_toast_timer);
-        g_toast_timer = NULL;
+    if (g_toast_timer == NULL)
+        g_toast_timer = lv_timer_create(toast_timeout, copy->duration_ms, NULL);
+    if (g_toast_timer == NULL) {
+        free(copy);
+        return;
     }
-    close_dialog(&g_toast);
-    g_toast = lv_label_create(lv_layer_top());
-    lv_label_set_text(g_toast, copy->message);
-    lv_label_set_long_mode(g_toast, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(g_toast, LV_PCT(82));
-    lv_obj_align(g_toast, LV_ALIGN_BOTTOM_MID, 0, -38);
-    lv_obj_set_style_bg_color(g_toast, system_color(PXA_UI_THEME_SURFACE), 0);
-    lv_obj_set_style_bg_opa(g_toast, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(g_toast, system_color(PXA_UI_THEME_TEXT), 0);
-    lv_obj_set_style_border_color(g_toast, system_color(PXA_UI_THEME_BORDER), 0);
-    lv_obj_set_style_border_width(g_toast, 1, 0);
-    lv_obj_set_style_pad_hor(g_toast, pxa_esp_dialog_spacing(3), 0);
-    lv_obj_set_style_pad_ver(g_toast, pxa_esp_dialog_px(9), 0);
-    lv_obj_set_style_radius(g_toast, pxa_esp_dialog_radius(3), 0);
-    lv_obj_set_style_text_align(g_toast, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(g_toast, system_body_font(), 0);
-    g_toast_timer = lv_timer_create(toast_timeout, copy->duration_ms, NULL);
-    pxa_esp_system_overlay_add(g_toast);
-    if (g_toast_timer != NULL)
-        lv_timer_set_repeat_count(g_toast_timer, 1);
-    else {
-        close_dialog(&g_toast);
+    if (g_toast == NULL) {
+        g_toast = lv_label_create(lv_layer_top());
+        lv_obj_set_size(g_toast, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_hidden(g_toast, true);
     }
+    const pxa_lvgl_dialog_style_t style = pxa_esp_dialog_theme();
+    pxa_lvgl_toast_style(g_toast, &style);
+    const int32_t width = lv_display_get_horizontal_resolution(lv_display_get_default());
+    lv_obj_set_style_max_width(g_toast, LV_MAX(1, LV_MIN(pxa_esp_dialog_px(388),
+                               width - pxa_esp_dialog_px(24))), 0);
+    if (strcmp(lv_label_get_text(g_toast), copy->message) != 0)
+        lv_label_set_text(g_toast, copy->message);
+    int32_t bottom = pxa_esp_dialog_px(36);
+    int32_t top = 0;
+    lv_obj_t *keyboard = pxa_esp_ime_navigation_root();
+    if (keyboard != NULL) {
+        lv_area_t area;
+        lv_obj_get_coords(keyboard, &area);
+        const int32_t height = lv_display_get_vertical_resolution(lv_display_get_default());
+        if (width >= pxa_esp_dialog_px(450) && area.y1 < height * 3 / 5)
+            top = pxa_esp_dialog_px(32);
+        else
+            bottom = LV_MAX(bottom, height - area.y1 + pxa_esp_dialog_px(12));
+    }
+    lv_obj_align(g_toast, top ? LV_ALIGN_TOP_MID : LV_ALIGN_BOTTOM_MID, 0, top ? top : -bottom);
+    if (lv_obj_is_hidden(g_toast)) {
+        lv_obj_set_hidden(g_toast, false);
+        lv_obj_move_foreground(g_toast);
+        pxa_esp_system_overlay_add(g_toast);
+    } else {
+        pxa_esp_system_overlay_refresh();
+    }
+    lv_timer_set_period(g_toast_timer, copy->duration_ms);
+    lv_timer_reset(g_toast_timer);
+    lv_timer_resume(g_toast_timer);
     free(copy);
 }
 

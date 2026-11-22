@@ -25,11 +25,7 @@ static inline int32_t pxa_esp_dialog_radius(unsigned units) {
 static inline void pxa_esp_dialog_style_mask(lv_obj_t *mask) {
     lv_obj_remove_style_all(mask);
     lv_obj_set_size(mask,LV_PCT(100),LV_PCT(100));
-    lv_obj_set_style_bg_color(mask,lv_color_black(),0);
-    lv_obj_set_style_bg_opa(mask,LV_OPA_60,0);
-    lv_obj_set_clickable(mask,true);
-    lv_obj_set_click_focusable(mask,false);
-    lv_obj_set_scrollable(mask,false);
+    pxa_lvgl_dialog_scrim_style(mask,lv_color_black());
 }
 static inline void pxa_esp_dialog_style_scrollbar(lv_obj_t *object) {
     lv_obj_set_style_width(object,pxa_esp_dialog_px(2),LV_PART_SCROLLBAR);
@@ -45,8 +41,8 @@ static inline pxa_lvgl_dialog_style_t pxa_esp_dialog_theme(void) {
     if(!label) label = pxa_esp_host_ui_body_font();
     return (pxa_lvgl_dialog_style_t){
         .surface = pxa_esp_dialog_color(PXA_UI_THEME_SURFACE),
-        .container = pxa_esp_dialog_color(PXA_UI_THEME_SURFACE_CONTAINER),
-        .panel = pxa_esp_dialog_color(PXA_UI_THEME_SURFACE_CONTAINER_HIGH),
+        .container = pxa_esp_dialog_color(PXA_UI_THEME_SURFACE_CONTAINER_HIGH),
+        .panel = pxa_esp_dialog_color(PXA_UI_THEME_SURFACE_CONTAINER_LOW),
         .text = pxa_esp_dialog_color(PXA_UI_THEME_TEXT),
         .muted = pxa_esp_dialog_color(PXA_UI_THEME_MUTED),
         .outline = pxa_esp_dialog_color(PXA_UI_THEME_OUTLINE_VARIANT),

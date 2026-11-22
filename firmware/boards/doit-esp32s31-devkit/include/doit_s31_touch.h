@@ -36,11 +36,16 @@ template<class Read>
 bool ReadTouch(Read read, unsigned slots, uint16_t width, uint16_t height,
                TouchReport& report) {
     if (!slots || slots > kTouchPointers) return false;
-    uint8_t status;
-    if (!read(0x10, &status, 1)) return false;
-    if (!(status & 8)) { report = {}; return true; }
-    std::array<uint8_t, kTouchPointers * 7> bytes{};
-    if (!read(0x14, bytes.data(), slots * 7)) return false;
-    return DecodeTouch(std::span<const uint8_t>(bytes.data(), slots * 7), width, height, report);
+    // The reporting table is latched until the last supported slot is read.
+    // Fetch its four-byte header, fixed slots and trailing checksum together.
+    std::array<uint8_t, 5 + kTouchPointers * 7> bytes;
+    bytes.fill(0xff);
+    if (!read(0x10, bytes.data(), 5 + slots * 7)) return false;
+    const uint8_t status = bytes[0];
+    if (status & 0x80) return false; // Controller requests reset; do not publish stale data.
+    // A proximity/gesture event (or no new IRQ) is not a finger release.
+    // Only a coordinate report with all slots invalid releases the contacts.
+    if (!(status & 8)) return true;
+    return DecodeTouch(std::span<const uint8_t>(bytes.data() + 4, slots * 7), width, height, report);
 }
 } // namespace doit_s31

@@ -85,8 +85,9 @@ void pxa_board_performance_note_frame(void);
 /* Sample approximately once a second. Safe alongside completion callbacks;
  * calling this while idle publishes zero without generating a content frame. */
 uint32_t pxa_board_performance_refresh(void);
+void pxa_board_performance_set_light_theme(bool light);
 enum {
-    PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH = 60,
+    PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH = 126,
     PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT = 16,
 };
 void pxa_board_performance_draw_rgb565(uint16_t* pixels, uint16_t viewport_width,
@@ -94,6 +95,11 @@ void pxa_board_performance_draw_rgb565(uint16_t* pixels, uint16_t viewport_width
                                        int32_t origin_x, int32_t origin_y,
                                        uint16_t width, uint16_t height,
                                        bool byte_swapped);
+/* Pai Touch presents into an already transposed, byte-swapped panel buffer.
+ * Its rotation and transfer times are averages from the board's existing sample. */
+void pxa_board_performance_draw_panel_rgb565(uint16_t* pixels, uint16_t width,
+                                             uint16_t height, uint32_t fps_x10,
+                                             uint32_t rotate_us, uint32_t transfer_us);
 
 #ifdef __cplusplus
 }

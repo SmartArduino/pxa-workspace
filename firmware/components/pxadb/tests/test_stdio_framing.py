@@ -15,6 +15,7 @@ FIXTURE = r'''
 #include <mbedtls/base64.h>
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <cstdio>
 #include <cstdint>
@@ -29,6 +30,8 @@ constexpr unsigned kIoTimeout=1000, configTICK_RATE_HZ=1000;
 constexpr size_t kMaxEncodedPayload=2048;
 constexpr int pdTRUE=1;
 const char* kProtocol="PXADB1";
+struct Transport {static constexpr int kPrimary=0;};
+std::atomic<bool> s_primary_shares_console{true};
 struct Session {
     std::atomic<bool> active{true};
     std::atomic<uint32_t> generation{1};
@@ -89,6 +92,27 @@ int main() {
     if(ftrylockfile(stderr))return 5;
     funlockfile(stderr);
 #endif
+    // A dedicated link must still reply while another task owns the console.
+    s_primary_shares_console=false;
+    std::atomic<bool> replied{false};
+#if CONFIG_LIBC_NEWLIB
+    flockfile(stdout);
+    flockfile(stderr);
+#else
+    esp_log_impl_lock();
+#endif
+    std::thread dedicated([&] {replied=SendFrame(66,"OK","dedicated");});
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(1);
+    while(!replied && std::chrono::steady_clock::now()<deadline)
+        std::this_thread::yield();
+    assert(replied);
+#if CONFIG_LIBC_NEWLIB
+    funlockfile(stderr);
+    funlockfile(stdout);
+#else
+    esp_log_impl_unlock();
+#endif
+    dedicated.join();
 }
 '''
 

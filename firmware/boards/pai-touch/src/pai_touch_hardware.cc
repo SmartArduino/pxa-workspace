@@ -53,9 +53,12 @@
 namespace {
 constexpr char kTag[] = "PaiTouchHw";
 constexpr uint32_t kLcdClockHz = 80 * 1000 * 1000;
-constexpr int kLcdTransferLines = 4;
+static_assert(kPaiLcdTransferBytes ==
+              PAI_DISPLAY_HEIGHT * PXA_PAI_LCD_TRANSFER_LINES * sizeof(uint16_t));
+static_assert(PAI_DISPLAY_WIDTH % PXA_PAI_LCD_TRANSFER_LINES == 0);
 constexpr int kLcdQueueDepth = 2;
 constexpr uint32_t kTouchPollMs = 5;
+constexpr uint32_t kDisplayRefreshMs = 12;
 // Release every contact when the controller stops answering, otherwise a
 // failed I2C read would leave a pointer latched down.
 constexpr int64_t kTouchReleaseTimeoutUs = 150 * 1000;
@@ -254,7 +257,7 @@ bool PaiTouchHardware::InitializeDisplay() {
     bus.sclk_io_num = PAI_LCD_CLOCK;
     bus.quadwp_io_num = GPIO_NUM_NC;
     bus.quadhd_io_num = GPIO_NUM_NC;
-    bus.max_transfer_sz = PAI_DISPLAY_HEIGHT * kLcdTransferLines * sizeof(uint16_t);
+    bus.max_transfer_sz = kPaiLcdTransferBytes;
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO));
 
     esp_lcd_panel_io_spi_config_t io = {};
@@ -266,7 +269,7 @@ bool PaiTouchHardware::InitializeDisplay() {
     io.lcd_cmd_bits = 8;
     io.lcd_param_bits = 8;
     /* Rotation buffers live in aligned PSRAM. ESP32-S3 DMA can consume them
-     * directly, avoiding two internal 1920-byte bounce buffers per frame. */
+     * directly, avoiding an SRAM copy for each DMA transaction in normal operation. */
     io.flags.psram_dma_direct = true;
     PaiTouchDisplayDmaBeginBinding(SPI2_HOST);
     const auto io_result = esp_lcd_new_panel_io_spi(SPI2_HOST, &io, &panel_io_);
@@ -361,6 +364,9 @@ bool PaiTouchHardware::InitializeDisplay() {
             // Board code owns mounting and App rotations, including input.
             lv_display_set_rotation(display_, LV_DISPLAY_ROTATION_0);
             lv_display_set_resolution(display_, PAI_DISPLAY_WIDTH, PAI_DISPLAY_HEIGHT);
+            // Let the display worker pick up fresh damage between TE pulses.
+            // A valid saved sdkconfig may still have the old 32 ms default.
+            lv_timer_set_period(lv_display_get_refr_timer(display_), kDisplayRefreshMs);
         }
     }
     lv_unlock();

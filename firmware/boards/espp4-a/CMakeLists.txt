@@ -5,7 +5,7 @@ idf_component_register(
     INCLUDE_DIRS include
     PRIV_INCLUDE_DIRS vendor/gc4023/include vendor/gc4023
         "${PXSYS_ROOT}/libpxa/adapters/include"
-    PRIV_REQUIRES esp_app_format esp_driver_gpio esp_driver_i2c esp_driver_i2s pxa_render_accel
+    PRIV_REQUIRES pxa_video_codecs esp_app_format esp_driver_gpio esp_driver_i2c esp_driver_i2s pxa_render_accel
         esp_driver_cam esp_driver_isp esp_driver_jpeg esp_driver_ppa
         espressif__esp_cam_sensor espressif__esp_sccb_intf espressif__esp_new_jpeg
         esp_driver_ledc esp_driver_sdmmc esp_driver_uart esp_lcd esp_hw_support esp_timer

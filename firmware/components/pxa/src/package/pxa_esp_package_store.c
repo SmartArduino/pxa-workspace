@@ -167,6 +167,8 @@ typedef struct {
     SemaphoreHandle_t transaction_lock;
     SemaphoreHandle_t sync_lock;
     TaskHandle_t sync_task;
+    TaskHandle_t reclaim_task;
+    bool reclaim_requested;
     pxa_esp_package_store_sync_fn sync_callback;
     void *sync_callback_user_data;
     uint32_t builtin_scan_generation;
@@ -174,6 +176,7 @@ typedef struct {
 } pxa_esp_package_store_t;
 
 static pxa_esp_package_store_t *g_store;
+static bool schedule_removed_home_reclamation(void);
 
 static int manifest_workspace_for_encoded(const uint8_t *encoded,
                                           size_t encoded_size,
@@ -1792,6 +1795,7 @@ bool pxa_esp_package_store_initialize(void) {
     ESP_LOGI(PXA_ESP_PACKAGE_TAG, "Package store ready (%d installed)",
              (int)g_store->entry_count);
     ESP_LOGI(PXA_ESP_PACKAGE_TAG, "Catalog total: %lu ms", (unsigned long)(esp_log_timestamp()-started_ms));
+    schedule_removed_home_reclamation();
     return true;
 }
 
@@ -1944,6 +1948,45 @@ void pxa_esp_package_store_sync_builtins(void) {
     if (!store_is_initialized() || !g_store->legacy_ready || !take_lock(g_store->sync_lock)) return;
     sync_builtins_locked();
     release_lock(g_store->sync_lock);
+}
+
+static void reclaim_removed_homes_task(void *arg) {
+    (void)arg;
+    while (take_lock(g_store->metadata_lock)) {
+        if (!g_store->reclaim_requested) {
+            g_store->reclaim_task = NULL;
+            release_lock(g_store->metadata_lock);
+            break;
+        }
+        g_store->reclaim_requested = false;
+        release_lock(g_store->metadata_lock);
+        pxa_volume_info_t volumes[PXA_ESP_STORAGE_MAX_VOLUMES];
+        const size_t count = pxa_esp_storage_volumes(volumes, PXA_ESP_STORAGE_MAX_VOLUMES);
+        for (size_t i = 0; i < count && i < PXA_ESP_STORAGE_MAX_VOLUMES; ++i) {
+            const pxa_volume_info_t *volume = &volumes[i];
+            if (volume->state != PXA_VOLUME_READY || volume->ambiguous ||
+                !(volume->capabilities & PXA_VOLUME_WRITE)) continue;
+            pxa_status_t status = pxa_esp_installations_reclaim_removed(volume->mount_epoch);
+            if (status != PXA_STATUS_OK && status != PXA_STATUS_UNAVAILABLE)
+                ESP_LOGW(PXA_ESP_PACKAGE_TAG, "Removed home cleanup pending: volume=%llu status=%ld",
+                         (unsigned long long)volume->mount_epoch, (long)status);
+        }
+    }
+    vTaskDeleteWithCaps(NULL);
+}
+
+static bool schedule_removed_home_reclamation(void) {
+    if (!take_lock(g_store->metadata_lock)) return false;
+    g_store->reclaim_requested = true;
+    if (!g_store->reclaim_task &&
+        xTaskCreateWithCaps(reclaim_removed_homes_task, "pxa_pkg_reclaim",
+            PXA_ESP_PACKAGE_SYNC_TASK_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1,
+            &g_store->reclaim_task, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
+        ESP_LOGW(PXA_ESP_PACKAGE_TAG, "Removed home cleanup could not start");
+    }
+    const bool scheduled = g_store->reclaim_task != NULL;
+    release_lock(g_store->metadata_lock);
+    return scheduled;
 }
 
 static void builtin_sync_task(void *arg) {
@@ -2931,7 +2974,11 @@ pxa_status_t pxa_esp_package_store_prepare_resources(pxa_esp_install_approval_t 
     pxa_package_manifest_t *manifest=NULL;pxa_package_limits_t limits;pxa_container_header_t header;
     pxa_posix_installer_result_t result={0};char empty_root[1];size_t workspace;
     pxa_esp_installations_t *owner=NULL;pxa_status_t status;
-    struct {pxa_volume_info_t volumes[PXA_ESP_STORAGE_MAX_VOLUMES];char relative[256],path[512],mount[PXA_ESP_STORAGE_PATH_BYTES];} *scratch=NULL;
+    struct {
+        pxa_volume_info_t volumes[PXA_ESP_STORAGE_MAX_VOLUMES];
+        char relative[256],path[512],mount[PXA_ESP_STORAGE_PATH_BYTES];
+        pxa_install_record_t candidate;
+    } *scratch=NULL;
     if(!take_lock(g_store->transaction_lock))return PXA_STATUS_UNAVAILABLE;
     if(!take_lock(g_store->metadata_lock)) {release_lock(g_store->transaction_lock);return PXA_STATUS_UNAVAILABLE;}
     approval->media_count=0;memset(approval->media_fit,0,sizeof(approval->media_fit));
@@ -2958,17 +3005,26 @@ pxa_status_t pxa_esp_package_store_prepare_resources(pxa_esp_install_approval_t 
     }
     scratch=heap_caps_calloc(1,sizeof(*scratch),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
     if(!scratch) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
-    status=pxa_esp_installations_media_path(&approval->record,scratch->relative,sizeof(scratch->relative));
-    if(status!=PXA_STATUS_OK)goto done;
     size_t count=pxa_esp_storage_volumes(scratch->volumes,PXA_ESP_STORAGE_MAX_VOLUMES);
-    for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
+    for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES &&
+        approval->media_count<PXA_ESP_INSTALL_CHOICES;++i) {
         pxa_volume_info_t *volume=&scratch->volumes[i];struct stat info;
         if(volume->state!=PXA_VOLUME_READY || volume->ambiguous || !(volume->capabilities&PXA_VOLUME_READ))continue;
         if(pxa_esp_storage_volume_path(volume->mount_epoch,scratch->mount,sizeof(scratch->mount))!=PXA_STATUS_OK)continue;
-        int n=snprintf(scratch->path,sizeof(scratch->path),"%s/%s",scratch->mount,scratch->relative);
-        if(n<0 || (size_t)n>=sizeof(scratch->path))continue;
+        /* A fresh installation has no media volume yet. Publisher directory
+         * names also vary by volume, so resolve each reuse hint independently.
+         * A missing directory is normal when the signed resources will be
+         * downloaded; the new placement is bound when the plan is reserved. */
+        scratch->candidate=approval->record;
+        scratch->candidate.media_volume=volume->id;
+        int reuse=0;
+        if(pxa_esp_installations_media_path(&scratch->candidate,scratch->relative,sizeof(scratch->relative))==PXA_STATUS_OK) {
+            int n=snprintf(scratch->path,sizeof(scratch->path),"%s/%s",scratch->mount,scratch->relative);
+            reuse=n>=0 && (size_t)n<sizeof(scratch->path) &&
+                stat(scratch->path,&info)==0 && S_ISDIR(info.st_mode);
+        }
         pxa_esp_install_choice_t *choice=&approval->media_choices[approval->media_count];memset(choice,0,sizeof(*choice));
-        if(stat(scratch->path,&info)==0 && S_ISDIR(info.st_mode))choice->reuse=1;
+        if(reuse)choice->reuse=1;
         else {
             const uint64_t writable=PXA_VOLUME_READ|PXA_VOLUME_WRITE|PXA_VOLUME_INSTALLABLE;
             if(!manifest || (volume->capabilities&writable)!=writable)continue;
@@ -3838,14 +3894,15 @@ static bool uninstall_package(const char *identity, bool keep_data) {
         if(status==PXA_STATUS_OK)status=pxa_esp_installations_remove(owner,storage_key,generation,keep_data,&home);
         ESP_LOGI(PXA_ESP_PACKAGE_TAG,"Remove files: %lu ms",(unsigned long)(esp_log_timestamp()-phase_ms));phase_ms=esp_log_timestamp();
         status=close_volume_operation(&owner,status);
-        (void)pxa_esp_storage_refresh_volume(epoch);
+        if(keep_data)(void)pxa_esp_storage_refresh_volume(epoch);
         ESP_LOGI(PXA_ESP_PACKAGE_TAG,"Remove refresh: %lu ms",(unsigned long)(esp_log_timestamp()-phase_ms));
         if(take_lock(g_store->metadata_lock)) {
             entry=find_entry(canonical);
             if(entry && entry->volume_local && entry->mount_epoch==epoch && !memcmp(entry->install_id,install_id,16)) {
-                if(status==PXA_STATUS_OK && !keep_data) {
+                if(home.record.generation && !keep_data) {
+                    const bool restage = entry->staged;
                     remove_entry_at((size_t)(entry-g_store->entries));
-                    (void)scan_inbox(0);
+                    if(restage)(void)scan_inbox(0);
                 } else if(home.record.generation) {
                     entry->install_generation=home.record.generation;entry->archived=1;
                     entry->installed=0;entry->enabled=0;entry->root[0]=0;
@@ -3854,7 +3911,10 @@ static bool uninstall_package(const char *identity, bool keep_data) {
             release_lock(g_store->metadata_lock);
         } else status=PXA_STATUS_UNAVAILABLE;
         ESP_LOGI(PXA_ESP_PACKAGE_TAG,"Remove total: %lu ms status=%ld",(unsigned long)(esp_log_timestamp()-started_ms),(long)status);
-        release_lock(g_store->transaction_lock);return status==PXA_STATUS_OK;
+        release_lock(g_store->transaction_lock);
+        if(!keep_data && home.record.generation && !schedule_removed_home_reclamation())
+            (void)pxa_esp_installations_reclaim_removed(epoch);
+        return status==PXA_STATUS_OK;
     }
     if(entry) {
         char relative[130];uint16_t flags=0;

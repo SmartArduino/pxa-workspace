@@ -380,11 +380,13 @@ class PackagePanel(QWidget):
         if not source:
             return
         try:
-            _path, identity = pxadb.package_source(source, None)
+            path, identity = pxadb.package_source(source, None)
+            publisher = pxadb.package_publisher_root(path)
         except Exception as error:
             QMessageBox.warning(self, "Install", str(error))
             return
-        if self._installed(identity):
+        if self._installed(identity) or (publisher is not None and
+                                         self._installed(publisher.hex() + ":" + identity)):
             answer = QMessageBox.question(
                 self, "Replace package",
                 f"{identity} is already installed and will be replaced "

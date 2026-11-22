@@ -21,14 +21,21 @@ FIXTURE = r'''
 #define CONFIG_PXADB_UART_SECONDARY 1
 #define CONFIG_PXADB_TRANSPORT_USB_CDC 1
 #define TINYUSB_CDC_ACM_0 0
+#define STDOUT_FILENO 1
 namespace pxadb {
 enum class Transport {kPrimary,kUart};
 constexpr int kUart=0,kIoTimeout=1000,ESP_OK=0;
+bool kUseConsoleVfs=false;
 std::string uart,usb;
 std::vector<char> events;
 size_t short_limit=10000;
 int drain_result=ESP_OK;
 unsigned delay_us=0;
+int write(int fd,const uint8_t* bytes,size_t count) {
+    assert(fd==STDOUT_FILENO);
+    events.push_back('C');uart.append(reinterpret_cast<const char*>(bytes),count);
+    return static_cast<int>(count);
+}
 int uart_wait_tx_done(int,int) {events.push_back('D');return drain_result;}
 void esp_rom_delay_us(unsigned n) {events.push_back('G');delay_us+=n;}
 int uart_write_bytes(int,const uint8_t* bytes,size_t count) {
@@ -79,6 +86,13 @@ int main() {
     const auto previous_delay=delay_us;events.clear();
     assert(TransportWrite(Transport::kPrimary,bytes,source.size())==static_cast<int>(source.size()));
     assert(usb==source&&delay_us==previous_delay&&(events==std::vector<char>{'U','F'}));
+    // The console lock owns a whole frame, independent of UART burst tuning.
+    kUseConsoleVfs=true;
+    uart.clear();events.clear();
+    assert(TransportWriteChunk(Transport::kUart)>=4096);
+    assert(TransportWriteChunk(Transport::kPrimary)==256);
+    assert(TransportWrite(Transport::kUart,bytes,source.size())==static_cast<int>(source.size()));
+    assert(uart==source&&(events==std::vector<char>{'C'}));
 }
 '''
 
@@ -87,7 +101,7 @@ def main():
     production = (ROOT / 'firmware/components/pxadb/pxadb_transport.cc').read_text()
     source = FIXTURE.replace('// TRANSPORT', '\n'.join(
         function(production, name) for name in
-        ('bool TransportIsUart(', 'int TransportWrite(')))
+        ('bool TransportIsUart(', 'int TransportWrite(', 'size_t TransportWriteChunk(')))
     with tempfile.TemporaryDirectory(prefix='pxadb-uart-pacing-') as temporary:
         path = Path(temporary)
         unit, binary = path / 'test.cc', path / 'test'

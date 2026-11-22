@@ -4,8 +4,33 @@
 #include <cassert>
 #include <cstdio>
 #include <vector>
+#include <pxa/display_rotation.h>
 
 int main() {
+    {
+        std::vector<uint16_t> pixels(854*480);
+        pxa_esp_surface_frame_t f{};f.visible=1;f.pixels=reinterpret_cast<const uint8_t*>(pixels.data());
+        f.width=854;f.height=480;f.stride_bytes=1708;f.format=PXA_SURFACE_FORMAT_RGB565;
+        assert(espp4_a::CanRotateSurfaceDirect(f,854,480));
+        f.stride_bytes+=4;assert(!espp4_a::CanRotateSurfaceDirect(f,854,480));f.stride_bytes-=4;
+        f.opaque_ui_region_count=1;assert(!espp4_a::CanRotateSurfaceDirect(f,854,480));f.opaque_ui_region_count=0;
+        f.system_alpha_plane.visible=1;assert(!espp4_a::CanRotateSurfaceDirect(f,854,480));
+        f.system_alpha_plane.visible=0;f.ui_alpha_plane.visible=1;assert(!espp4_a::CanRotateSurfaceDirect(f,854,480));
+        f.ui_alpha_plane.visible=0;f.x=1;assert(!espp4_a::CanRotateSurfaceDirect(f,854,480));
+    }
+    for(uint8_t r=0;r<4;++r)for(int x:{-2,0,3})for(int y:{-1,0,2}) {
+        constexpr unsigned nw=7,nh=11,pw=5,ph=3;
+        unsigned lw=pxa_display_logical_width(nw,nh,r),lh=pxa_display_logical_height(nw,nh,r);
+        std::vector<uint16_t> logical(lw*lh,0x1234),expected(nw*nh),actual(nw*nh+2,0x5abc),patch(pw*ph);
+        for(unsigned i=0;i<patch.size();++i)patch[i]=uint16_t(i*997);
+        for(unsigned j=0;j<ph;++j)for(unsigned i=0;i<pw;++i)
+            if(int(i)+x>=0 && int(j)+y>=0 && int(i)+x<int(lw) && int(j)+y<int(lh))logical[(j+y)*lw+i+x]=patch[j*pw+i];
+        pxa_display_rgb565_to_native(logical.data(),expected.data(),nw,nh,r);
+        std::fill(actual.begin()+1,actual.end()-1,0x1234);
+        espp4_a::OverlayRgb565RectToNative(patch.data(),actual.data()+1,x,y,pw,ph,nw,nh,r);
+        assert(std::equal(expected.begin(),expected.end(),actual.begin()+1));
+        assert(actual.front()==0x5abc && actual.back()==0x5abc);
+    }
     // Opaque redraws must replace old guest pixels after a move or resize,
     // while clearing only the backdrop. Compare against a full clean buffer.
     for (const auto& [w,h] : {std::pair{7,11},std::pair{480,854},std::pair{854,480}}) {
@@ -295,6 +320,34 @@ int main() {
                 bg = pxa_esp_surface_blend_alpha_pixel(bg, overlay[at], alpha[at], 197);
             }
         }
+        assert(actual == expected);
+    }
+    // Empty groups between small opaque/translucent clusters, with a
+    // different alignment on each row and a clipped final load.
+    {
+        constexpr int width = 31, height = 7, plane_width = 27, plane_height = 5;
+        std::array<uint16_t, width * height> base, actual, expected;
+        std::array<uint16_t, plane_width * plane_height> colors;
+        std::array<uint8_t, 1 + plane_width * plane_height> alpha{};
+        base.fill(0x39c7);
+        colors.fill(0xffe0);
+        frame = {};
+        frame.visible = 1; frame.width = width; frame.height = height;
+        frame.format = PXA_SURFACE_FORMAT_RGB565; frame.stride_bytes = width * 2;
+        frame.pixels = reinterpret_cast<const uint8_t*>(base.data());
+        frame.system_alpha_plane = {colors.data(), alpha.data() + 1, plane_width * 2,
+                                    plane_width, 6, 2, plane_width, plane_height, 201, 1, 0};
+        expected = base;
+        for (int y = 0; y < plane_height; ++y) {
+            for (int x : {0, 1, 7, 20, 24, 25}) {
+                const auto a = uint8_t((x + y) % 2 ? 255 : 67);
+                alpha[1 + y * plane_width + x] = a;
+                if (x + 6 < width)
+                    expected[(y + 2) * width + x + 6] =
+                        pxa_esp_surface_blend_alpha_pixel(base[0], colors[0], a, 201);
+            }
+        }
+        espp4_a::Compose(frame, actual.data(), 0, 0, width, height, width, width, height);
         assert(actual == expected);
     }
     puts("ESPP4-A: Surface stride, scaling, premultiplied ARGB spans and trusted overlays passed");

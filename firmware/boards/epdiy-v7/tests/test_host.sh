@@ -2,7 +2,7 @@
 set -euo pipefail
 test_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_dir="$(cd "$test_dir/../../../.." && pwd)"
-test_build="$project_dir/build/tests/epdiy-v7"
+test_build="${PXA_TEST_OUTPUT:-$project_dir/local/artifacts/epdiy-v7/$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$test_build"
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -g \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
@@ -19,6 +19,7 @@ for orientation in portrait landscape; do
         -fsanitize=address,undefined -fno-omit-frame-pointer \
         -I"$test_build/$orientation" -I"$test_dir/../include" \
         -I"$project_dir/firmware/components/pxa/include" \
+        -I"$project_dir/firmware/components/pxa_board_common/include" \
         -I"$project_dir/deps/pxa-system/libpxa/include" \
         "$test_dir/surface_test.cc" "$test_dir/../src/epdiy_surface.cc" \
         -o "$test_build/$orientation/surface_test"

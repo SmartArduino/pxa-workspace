@@ -23,6 +23,7 @@ static size_t body_size=5u*1024u*1024u,metadata_size=64+12+216,read_offset;
 static unsigned random_id,completions,deletes,confirmations,installs,transfers,reservations,releases;
 static bool approve=true,short_body,short_metadata,bad_metadata,low_space,reserve_fail,stale_record,cancel_prompt;
 static bool is_metadata,old_server;
+static bool interrupt_metadata_once,interrupt_body_once;
 static bool http_live;
 static bool with_resources,reuse_resources,bad_resources,resource_commit_fail;
 static unsigned resource_commits,retained[4];
@@ -61,6 +62,10 @@ int64_t esp_http_client_fetch_headers(esp_http_client_handle_t c) {(void)c;retur
 int esp_http_client_read(esp_http_client_handle_t c,char *out,int n) {
     (void)c;assert(is_metadata);
     size_t limit=metadata_size-(short_metadata?1:0),got=(size_t)n;
+    if(interrupt_metadata_once && read_offset>=17) {
+        interrupt_metadata_once=false;
+        return -1;
+    }
     if(got>limit-read_offset)got=limit-read_offset;
     if(got>17)got=17;
     memcpy(out,(resource_request?resource_body:body)+read_offset,got);read_offset+=got;return (int)got;
@@ -74,6 +79,10 @@ esp_err_t esp_http_client_perform(esp_http_client_handle_t c) {
         size_t n=remaining>4096?4096:remaining;e.data=(resource_request?resource_body:body)+offset;e.data_len=(int)n;
         if(http.event_handler(&e)!=ESP_OK)return ESP_FAIL;
         remaining-=n;offset+=n;
+        if(interrupt_body_once) {
+            interrupt_body_once=false;
+            return ESP_ERR_TIMEOUT;
+        }
     }
     return ESP_OK;
 }
@@ -250,11 +259,20 @@ int main(void) {
         pxa_write_u32(b+60,pxa_container_crc32(b,60));
     }
     value=job(0);pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_OK && !exists(&value) && stream_finishes==1);
+    value=job(0);
+    interrupt_metadata_once=interrupt_body_once=true;
+    unsigned metadata_before=metadata_requests, transfer_before=transfers;
+    unsigned approvals_before=confirmations, installs_before=installs;
+    pxa_esp_store_worker(&value);
+    assert(value.status==PXA_STATUS_OK && !exists(&value) && stream_finishes==2);
+    assert(metadata_requests==metadata_before+2 && transfers==transfer_before+2);
+    assert(confirmations==approvals_before+1 && installs==installs_before+1);
     value=job(0);short_body=true;pxa_esp_store_worker(&value);short_body=false;
-    assert(value.status!=PXA_STATUS_OK && !exists(&value) && stream_finishes==1);
+    assert(value.status!=PXA_STATUS_OK && !exists(&value) && stream_finishes==2);
     value=job(0);value.digest[0]^=1;pxa_esp_store_worker(&value);assert(value.status==PXA_STATUS_DENIED && !exists(&value));
-    value=job(0);stream_reject=true;pxa_esp_store_worker(&value);stream_reject=false;
-    assert(value.status!=PXA_STATUS_OK && !exists(&value));
+    value=job(0);stream_reject=true;transfer_before=transfers;
+    pxa_esp_store_worker(&value);stream_reject=false;
+    assert(value.status!=PXA_STATUS_OK && !exists(&value) && transfers==transfer_before+1);
     value=job(0);stale_record=true;pxa_esp_store_worker(&value);stale_record=false;
     assert(value.status==PXA_STATUS_BAD_STATE && !exists(&value));
     with_resources=true;reuse_resources=false;value=job(0);pxa_esp_store_worker(&value);

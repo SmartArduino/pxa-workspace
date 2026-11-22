@@ -22,6 +22,9 @@ pxa_status_t pxa_host_container_stream_finish(pxa_host_container_stream_t *);
 /* Fetch signed container bytes from an explicitly supplied HTTP URL. No
  * redirects; success includes full container and file verification. */
 pxa_status_t pxa_host_container_stream_fetch(pxa_host_container_stream_t *,const char *url);
+typedef void (*pxa_container_fetch_progress_fn)(void *,uint64_t received);
+pxa_status_t pxa_host_container_stream_fetch_with_progress(pxa_host_container_stream_t *,
+    const char *url,pxa_container_fetch_progress_fn,void *);
 void pxa_host_container_stream_close(pxa_host_container_stream_t *);
 #ifdef __cplusplus
 }

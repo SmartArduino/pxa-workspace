@@ -48,5 +48,23 @@ int main() {
     frame.stride_bytes = 3; tile.fill(0x1234);
     Compose(frame, tile.data(), 10, 20, 1, 1, 6);
     assert(tile[0] == 0x1234);
+
+    // Native-width rows use the shared copy path before grayscale packing.
+    std::array<uint16_t, 2 * kWidth> packed{}, composed{};
+    packed.front() = 0xf800;
+    packed[kWidth] = 0x07e0;
+    packed.back() = 0x001f;
+    frame = {};
+    frame.pixels = reinterpret_cast<const uint8_t*>(packed.data());
+    frame.visible = 1;
+    frame.width = kWidth;
+    frame.height = 2;
+    frame.stride_bytes = kWidth * sizeof(uint16_t);
+    frame.format = PXA_SURFACE_FORMAT_RGB565;
+    frame.y = 20;
+    frame.system_alpha_plane = {&system, &opaque, 2, 1, 0, 21, 1, 1, 255, 1, 0};
+    Compose(frame, composed.data(), 0, 20, kWidth, 2, kWidth);
+    packed[kWidth] = system;
+    assert(composed == packed);
     printf("EPDiy %dx%d Surface scaling, stride, ARGB and trusted overlays passed\n", kWidth, kHeight);
 }

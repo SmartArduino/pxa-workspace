@@ -75,10 +75,12 @@ pxa_status_t pxa_esp_installations_set_enabled(pxa_esp_installations_t *,const c
  * if only post-commit garbage collection failed. */
 pxa_status_t pxa_esp_installations_reset_data(pxa_esp_installations_t *,const char *locator,
     uint64_t expected_generation,uint64_t expected_data_generation,pxa_posix_app_home_t *);
-/* Requires the Host's idle-home lease. Archive retains private data and local
- * identity; full removal retires the entire home after the archive commits. */
+/* Requires the Host's idle-home lease. Full removal detaches the home for
+ * background reclamation. Output records any completed detach, even if the
+ * final filesystem barrier fails. */
 pxa_status_t pxa_esp_installations_remove(pxa_esp_installations_t *,const char *locator,
     uint64_t expected_generation,uint8_t keep_data,pxa_posix_app_home_t *);
+pxa_status_t pxa_esp_installations_reclaim_removed(uint64_t epoch);
 /* Caller owns the returned activation session and closes it after all services.
  * Home must be the authenticated local record from load/install, not a
  * discovery snapshot. This does not reverify installed package contents. */

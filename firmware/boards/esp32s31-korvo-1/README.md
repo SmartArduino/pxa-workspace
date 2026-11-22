@@ -49,10 +49,10 @@ tools/firmware.sh esp32s31-korvo-1 build
 ```
 
 Use `/dev/ttyUSB0` to flash or monitor the connected board.
-An optional Core1 PIE straight-ARGB8888-to-RGB565 renderer is available with
-`-DPXA_KORVO_LVGL_PIE=ON`. It keeps two SW workers on separate cores and uses
-the native renderer on Core0 and for unsupported formats. It is off by default;
-performance gains depend on how much of the UI uses matching straight-ARGB draws.
+The Core1 PIE renderer is enabled by default. It keeps two LVGL software draw
+workers on separate cores and accelerates compatible RGB565 fills and
+straight-ARGB8888 compositing on Core1. Core0 and unsupported draws use the
+native paths. Set `-DPXA_KORVO_LVGL_PIE=OFF` to disable it.
 PXADB uses 2000000 baud. Check the generated console configuration when
 diagnosing early boot: ESP-IDF's default UART choice forces 115200 baud even
 if the defaults request 2000000; PXADB switches the UART after initialization.

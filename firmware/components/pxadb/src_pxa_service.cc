@@ -53,6 +53,9 @@
 
 #if CONFIG_PXA_ENABLED
 #include "pxa/pxa_host.h"
+#include "pxa/pxa_debug_install.h"
+#include "pxa/wire_generated.h"
+#include "pxa/device_runtime_info_generated.h"
 #include "pxa/pxa_host_interaction.h"
 #include "pxa/pxa_container_stream.h"
 #include "pxa/pxa_esp_surface.h"
@@ -181,6 +184,7 @@ struct FileUpload {
     char expected_sha256[65] = {};
     bool has_expected_sha256 = false;
     bool refresh_pxa_inbox = false;
+    bool track_install_progress = false;
 };
 
 struct ControlParser {
@@ -210,6 +214,11 @@ struct Session {
     std::atomic<uint32_t> dropped_logs{0};
     QueueHandle_t log_queue = nullptr;
     bool package_staging = false;
+#if CONFIG_PXA_ENABLED
+    uint32_t install_ui = 0;
+    uint64_t install_bytes = 0;
+    uint64_t install_total = 0;
+#endif
 };
 Session s_sessions[kSessionCount];
 // Only the single control task selects this context. Async input replies and
@@ -225,6 +234,7 @@ void ResetBulkUpload() {
 }
 
 std::atomic<bool> s_running{false};
+std::atomic<bool> s_primary_shares_console{true};
 std::atomic<bool> s_task_active{false};
 std::atomic<bool> s_autostart_active{false};
 std::atomic<bool> s_autostart_cancelled{false};
@@ -355,6 +365,8 @@ bool SendFrameTo(Session& session, unsigned long sequence, const char* type, con
     const int length = snprintf(line, sizeof(line), "\n%s %lu %s %s\n", kProtocol, sequence, type,
                                 payload_length == 0 ? "-" : encoded);
     if (length <= 0 || static_cast<size_t>(length) >= sizeof(line)) return false;
+    if (session.transport == Transport::kPrimary && !s_primary_shares_console.load())
+        return WriteAll(session, line, static_cast<size_t>(length), generation);
     // Newlib vprintf serializes console output with its FILE lock, not the
     // ESP_LOG tag-level mutex. Hold the same locks over every transport chunk,
     // including direct stderr diagnostics, to keep logs outside this frame.
@@ -399,11 +411,44 @@ bool FileUploadActive() {
     return CurrentSession().upload.file != nullptr;
 }
 
-void AbortFileUpload() {
+#if CONFIG_PXA_ENABLED
+void BeginInstallUi(pxa_debug_install_phase_t phase, uint64_t received=0, uint64_t total=0,
+                    const char* name=nullptr, const char* version=nullptr) {
+    auto& token=CurrentSession().install_ui;
+    if(!token)token=pxa_debug_install_begin(name,version,total);
+    pxa_debug_install_progress(token,phase,received,total);
+}
+
+bool DecodeInstallLabel(const char* value, char* buffer, size_t capacity) {
+    if (!value || !strcmp(value, "-")) return true;
+    size_t length = 0;
+    if (mbedtls_base64_decode(reinterpret_cast<uint8_t*>(buffer), capacity - 1, &length,
+            reinterpret_cast<const uint8_t*>(value), strlen(value)) != 0) return false;
+    for (size_t i = 0; i < length; ++i) {
+        const unsigned char byte = buffer[i];
+        if (byte < ' ' || byte == 127) return false;
+    }
+    buffer[length] = '\0';
+    return pxa_device_info_valid_utf8(reinterpret_cast<const uint8_t*>(buffer), length);
+}
+
+void EndInstallUi(pxa_status_t status) {
+    auto& token=CurrentSession().install_ui;
+    pxa_debug_install_end(token,status);
+    token=0;
+    CurrentSession().install_bytes = 0;
+    CurrentSession().install_total = 0;
+}
+#endif
+
+void AbortFileUpload(bool keep_install_ui=false) {
     ResetBulkUpload();
 #if CONFIG_PXA_ENABLED
     pxa_host_container_stream_close(CurrentSession().upload.stream);
     CurrentSession().upload.stream = nullptr;
+    if(!keep_install_ui)EndInstallUi(PXA_STATUS_CANCELLED);
+#else
+    (void)keep_install_ui;
 #endif
     if (CurrentSession().upload.file != nullptr) {
         fclose(CurrentSession().upload.file);
@@ -861,7 +906,8 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
         SendFrame(sequence, "OK", "");
         return;
     }
-    AbortFileUpload();
+    const bool inbox_upload = IsPxaInboxPath(relative);
+    AbortFileUpload(inbox_upload);
     bool external = false;
 #if CONFIG_PXA_ENABLED
     external = pxa_esp_storage_debug_path(relative, system_unlocked, CurrentSession().upload.temporary,
@@ -902,6 +948,7 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
     }
     CurrentSession().upload.refresh_pxa_inbox =
         ShouldRefreshPxaInboxAfterUpload(relative);
+    CurrentSession().upload.track_install_progress = inbox_upload;
     if (CurrentSession().upload.remaining == 0) {
         const bool refresh_pxa_inbox = CurrentSession().upload.refresh_pxa_inbox;
         fclose(CurrentSession().upload.file);
@@ -929,7 +976,8 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
 
 #if CONFIG_PXA_ENABLED
 void StartFsStream(unsigned long sequence, const char* encoded_path,
-                   const char* size_text, const char* expected_sha256,const char* epoch_text=nullptr) {
+                   const char* size_text, const char* expected_sha256, const char* epoch_text,
+                   const char* encoded_name, const char* encoded_version) {
     char relative[kFsPathLength] = {}, path[kFsAbsolutePathLength] = {};
     char* end = nullptr;
     errno=0;unsigned long size = size_text?strtoul(size_text,&end,10):0;
@@ -937,7 +985,7 @@ void StartFsStream(unsigned long sequence, const char* encoded_path,
         SendFrame(sequence,"ERR","invalid_stream_upload");return;
     }
     uint64_t epoch=0;
-    if(epoch_text) {
+    if(epoch_text && strcmp(epoch_text, "-")) {
         errno=0;epoch=strtoull(epoch_text,&end,10);
         if(errno || !epoch || epoch_text[0]=='-' || end==epoch_text || *end) {
             SendFrame(sequence,"ERR","invalid_stream_volume");return;
@@ -955,13 +1003,20 @@ void StartFsStream(unsigned long sequence, const char* encoded_path,
         if(!CurrentSession().upload.remaining)SendFrame(sequence,"OK","");else SendFsUploadReady(sequence);
         return;
     }
-    AbortFileUpload();
+    char name[PXA_DEBUG_INSTALL_NAME_CAPACITY]={}, version[PXA_DEBUG_INSTALL_VERSION_CAPACITY]={};
+    if (!DecodeInstallLabel(encoded_name,name,sizeof(name)) ||
+        !DecodeInstallLabel(encoded_version,version,sizeof(version))) {
+        SendFrame(sequence,"ERR","invalid_install_metadata");return;
+    }
+    AbortFileUpload(true);
+    BeginInstallUi(PXA_DEBUG_INSTALL_RECEIVE,0,size,name,version);
     uint8_t digest[32];
     for (size_t i=0;i<32;++i) {char hex[3]={expected_sha256[i*2],expected_sha256[i*2+1],0};digest[i]=strtoul(hex,nullptr,16);}
     CurrentSession().package_staging = true;
     pxa_status_t status=epoch?pxa_host_container_stream_begin_volume(epoch,path,size,digest,&CurrentSession().upload.stream):
         pxa_host_container_stream_begin(path,size,digest,&CurrentSession().upload.stream);
     if (status!=PXA_STATUS_OK) {
+        EndInstallUi(status);
         SendFrame(sequence,"ERR",status==PXA_STATUS_RESOURCE_LIMIT?"insufficient_memory":"stream_open_failed");return;
     }
     CurrentSession().upload.total=CurrentSession().upload.remaining=size;
@@ -980,9 +1035,15 @@ void FetchFsStream(unsigned long sequence,const char* encoded_url) {
         memchr(url,0,bytes) || memchr(url,'\r',bytes) || memchr(url,'\n',bytes)) {
         SendFrame(sequence,"ERR","invalid_fetch_url");return;
     }
-    const pxa_status_t status=pxa_host_container_stream_fetch(CurrentSession().upload.stream,url);
+    const pxa_status_t status=pxa_host_container_stream_fetch_with_progress(
+        CurrentSession().upload.stream,url,[](void*,uint64_t received) {
+            const size_t total=CurrentSession().upload.total;
+            pxa_debug_install_progress(CurrentSession().install_ui,
+                received>=total?PXA_DEBUG_INSTALL_VERIFY:PXA_DEBUG_INSTALL_RECEIVE,received,total);
+        },nullptr);
     if(status==PXA_STATUS_OK)CurrentSession().upload.remaining=0;
-    if(status!=PXA_STATUS_OK || !CurrentSession().upload.stream_epoch)AbortFileUpload();
+    if(status!=PXA_STATUS_OK)EndInstallUi(status);
+    if(status!=PXA_STATUS_OK || !CurrentSession().upload.stream_epoch)AbortFileUpload(true);
     SendFrame(sequence,status==PXA_STATUS_OK?"OK":"ERR",status==PXA_STATUS_OK?"":
         status==PXA_STATUS_RESOURCE_LIMIT?"insufficient_memory":"stream_fetch_failed");
 }
@@ -996,10 +1057,15 @@ void CommitFsUploadBytes(unsigned long sequence, const uint8_t* bytes, size_t le
         pxa_status_t status=pxa_host_container_stream_feed(CurrentSession().upload.stream,bytes,length);
         if (status==PXA_STATUS_OK) {
             CurrentSession().upload.remaining-=length;
+            const size_t total=CurrentSession().upload.total;
+            pxa_debug_install_progress(CurrentSession().install_ui,
+                CurrentSession().upload.remaining?PXA_DEBUG_INSTALL_RECEIVE:PXA_DEBUG_INSTALL_VERIFY,
+                total-CurrentSession().upload.remaining,total);
             if (CurrentSession().upload.remaining) {SendFsUploadReady(sequence);return;}
             status=pxa_host_container_stream_finish(CurrentSession().upload.stream);
         }
-        if(status!=PXA_STATUS_OK || !CurrentSession().upload.stream_epoch)AbortFileUpload();
+        if(status!=PXA_STATUS_OK)EndInstallUi(status);
+        if(status!=PXA_STATUS_OK || !CurrentSession().upload.stream_epoch)AbortFileUpload(true);
         SendFrame(sequence,status==PXA_STATUS_OK?"OK":"ERR",status==PXA_STATUS_OK?"":
             status==PXA_STATUS_RESOURCE_LIMIT?"insufficient_memory":"stream_verification_failed");
         return;
@@ -1015,6 +1081,15 @@ void CommitFsUploadBytes(unsigned long sequence, const uint8_t* bytes, size_t le
         return;
     }
     CurrentSession().upload.remaining -= length;
+#if CONFIG_PXA_ENABLED
+    auto& session = CurrentSession();
+    if (session.upload.track_install_progress && session.install_total) {
+        session.install_bytes += std::min<uint64_t>(length, session.install_total - session.install_bytes);
+        pxa_debug_install_progress(session.install_ui,
+            session.install_bytes == session.install_total ? PXA_DEBUG_INSTALL_VERIFY : PXA_DEBUG_INSTALL_RECEIVE,
+            session.install_bytes, session.install_total);
+    }
+#endif
     if (CurrentSession().upload.remaining != 0) {
         SendFsUploadReady(sequence);
         return;
@@ -1123,11 +1198,12 @@ size_t ConsumeFsBulk(const uint8_t* input, size_t available) {
     // Detach before commit: a failed write/abort must not free this buffer twice.
     const BulkUpload batch = CurrentSession().bulk;
     CurrentSession().bulk = {};
+    if (!batch.bytes) return amount + 1;  // Drain after a timeout already reported.
     if(batch.fast) {
-        // Empty delimiter cancels even between frames. Two delimiters also
-        // recover a truncated/oversized frame before the next text command.
+        // Leave binary mode without discarding verified bytes. FSABORT is
+        // the explicit cancellation. Two delimiters also drain partial frames.
         if(!batch.used && !batch.draining) {
-            free(batch.bytes);AbortFileUpload();return amount+1;
+            free(batch.bytes);return amount+1;
         }
         uint32_t sequence=uint32_t(batch.sequence);uint64_t offset=0;size_t length=0;
         size_t decoded=batch.draining?0:decode_bulk_size(batch.bytes,batch.used,batch.expected+24);
@@ -1140,7 +1216,7 @@ size_t ConsumeFsBulk(const uint8_t* input, size_t available) {
             else if(!FileUploadActive() || offset!=CurrentSession().upload.total-CurrentSession().upload.remaining ||
                     length>CurrentSession().upload.remaining) {valid=false;error="offset_mismatch";}
         }
-        if(!valid) {AbortFileUpload();SendFrame(sequence,"ERR",error);}
+        if(!valid) SendFrame(sequence,"ERR",error);
         else CommitFsUploadBytes(sequence,batch.bytes+20,length);
         if(valid && FileUploadActive() && CurrentSession().upload.remaining) {
             CurrentSession().bulk=batch;CurrentSession().bulk.used=0;CurrentSession().bulk.last_us=esp_timer_get_time();
@@ -1596,7 +1672,7 @@ void SendHello(unsigned long sequence) {
         "";
 #endif
     snprintf(payload, sizeof(payload),
-             "protocol=1;mode=normal;capabilities=interaction-info,info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;max_fast=3840;package_stream=2;package_legacy=%u;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;package_legacy_update_volume=1;package_location=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
+             "protocol=1;mode=normal;capabilities=interaction-info,info,memory,logcat,packages,package-storage,package-move-data,package-deploy,package-run,package-stop,fs,reboot,doctor%s%s%s%s%s%s%s;max_chunk=%u;fs_offset=1;fs_sha256=1;fs_chunk_crc32=1;fs_bulk_cobs=1;max_bulk=2048;fs_fast=1;fs_fast_resume=1;max_fast=3840;package_stream=2;package_install_ui=1;package_install_meta=1;package_legacy=%u;package_codecs=0,1,2;package_max_block=32768;package_stream_volume=1;package_legacy_update_volume=1;package_location=1;stream_fetch=1;target=%s;serial=%s;version=%s%s",
              kTestCapabilities, kPowerCapabilities, kPerfCapabilities,kFpsCapability, kGrayCapability, kUiCapability, kRuntimeCapability,
              static_cast<unsigned>(kFsUploadChunkSize),
              static_cast<unsigned>(PXA_ENABLE_LEGACY_CONTAINER),
@@ -2535,7 +2611,9 @@ void HandlePackageInstallVolume(unsigned long sequence,const char* epoch_text,co
     if(owned && (CurrentSession().upload.remaining || CurrentSession().upload.stream_epoch!=epoch || strcmp(source,CurrentSession().upload.destination))) {
         SendFrame(sequence,"ERR","stream_install_not_ready");return;
     }
+    BeginInstallUi(PXA_DEBUG_INSTALL_WRITE);
     const int32_t status=pxa_host_install_package_file_on_volume(source,uint64_t(epoch));
+    EndInstallUi(status);
     if(owned)AbortFileUpload();
     char payload[64]={};snprintf(payload,sizeof(payload),"install_status=%" PRId32,status);
     SendFrame(sequence,status==0?"OK":"ERR",payload);
@@ -2650,7 +2728,13 @@ void HandlePackageAction(unsigned long sequence, const char* action, const char*
     if (!pxa_host_ready()) {
         SendFrame(sequence, "ERR", "pxa_unavailable");
     } else {
+        const bool installing=requested_action==PXA_HOST_APP_ACTION_INSTALL;
+        if(installing) {
+            const char* separator = strrchr(identity, ':');
+            BeginInstallUi(PXA_DEBUG_INSTALL_WRITE,0,0,separator?separator+1:identity);
+        }
         const bool success = pxa_host_manage_app(requested_action, identity);
+        if(installing)EndInstallUi(success?PXA_STATUS_OK:PXA_STATUS_IO_ERROR);
         SendFrame(sequence, success ? "OK" : "ERR", success ? "" : "package_action_failed");
     }
 #else
@@ -2711,7 +2795,10 @@ void HandlePackageDeploy(unsigned long sequence, const char* identity) {
     pxa_host_package_deploy_result_t result = {};
     ESP_LOGI(kTag, "Package deploy started: %s stack_free=%uB", identity,
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+    const char* separator = strrchr(identity, ':');
+    BeginInstallUi(PXA_DEBUG_INSTALL_WRITE,0,0,separator?separator+1:identity);
     const bool success = pxa_host_deploy_package_detailed(identity, &result);
+    EndInstallUi(success?PXA_STATUS_OK:result.status?result.status:PXA_STATUS_IO_ERROR);
     ESP_LOGI(kTag,
              "Package deploy finished: %s success=%u stage=%s status=%" PRId32
              " stack_free=%uB",
@@ -2799,6 +2886,15 @@ void HandleCommand(char* line) {
         return;
     }
 
+#if CONFIG_PXA_ENABLED
+    if(pxa_debug_install_active() &&
+       (!strcmp(command,"REBOOT") || !strcmp(command,"POWEROFF") ||
+        (!strcmp(command,"INPUT") && argument &&
+         strcmp(argument,"CANCEL") && strcmp(argument,"SYNC")))) {
+        SendFrame(sequence,"ERR","install_in_progress");
+        return;
+    }
+#endif
     if (!AdmitMutation(sequence, command, argument)) return;
     if (strcmp(command, "HELLO") == 0) {
         ResetControlSession(true);
@@ -2935,7 +3031,7 @@ void HandleCommand(char* line) {
         SendFrame(sequence, "OK", "aborted");
 #if CONFIG_PXA_ENABLED
     } else if (strcmp(command, "FSINSTALL") == 0 && argument && second_argument && third_argument) {
-        StartFsStream(sequence, argument, second_argument, third_argument,argument_count>3?arguments[3]:nullptr);
+        StartFsStream(sequence, argument, second_argument, third_argument, arguments[3], arguments[4], arguments[5]);
     } else if (strcmp(command,"FSFETCH")==0 && argument) {
         FetchFsStream(sequence,argument);
 #endif
@@ -3000,6 +3096,29 @@ void HandleCommand(char* line) {
     } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
                strcmp(argument, "move-data") == 0 && second_argument != nullptr && third_argument != nullptr) {
         HandlePackageMoveData(sequence,second_argument,third_argument);
+    } else if (!strcmp(command, "PACKAGE") && argument && !strcmp(argument, "receive-progress")) {
+#if CONFIG_PXA_ENABLED
+        char* size_end = nullptr;
+        errno = 0;
+        const uint64_t total = second_argument ? strtoull(second_argument, &size_end, 10) : 0;
+        char name[PXA_DEBUG_INSTALL_NAME_CAPACITY]={}, version[PXA_DEBUG_INSTALL_VERSION_CAPACITY]={};
+        if (argument_count < 2 || argument_count > 4 || errno || !total ||
+            second_argument[0] == '-' || *size_end) {
+            SendFrame(sequence, "ERR", "invalid_package_size");
+        } else if (!DecodeInstallLabel(third_argument,name,sizeof(name)) ||
+                   !DecodeInstallLabel(arguments[3],version,sizeof(version))) {
+            SendFrame(sequence, "ERR", "invalid_install_metadata");
+        } else if (CurrentSession().install_ui || FileUploadActive()) {
+            SendFrame(sequence, "ERR", "install_in_progress");
+        } else {
+            CurrentSession().package_staging = true;
+            CurrentSession().install_total = total;
+            BeginInstallUi(PXA_DEBUG_INSTALL_RECEIVE, 0, total, name, version);
+            SendFrame(sequence, "OK", "");
+        }
+#else
+        SendFrame(sequence, "ERR", "pxa_disabled");
+#endif
     } else if (strcmp(command, "PACKAGE") == 0 && argument != nullptr &&
                strcmp(argument, "publish") == 0 && second_argument != nullptr) {
 #if CONFIG_PXA_ENABLED
@@ -3264,9 +3383,10 @@ bool PollControlSession(Session& session) {
         if (session.bulk.bytes && static_cast<uint64_t>(esp_timer_get_time()) - session.bulk.last_us > 10000000u) {
             const unsigned long sequence = session.bulk.sequence;
             const bool partial = session.bulk.used != 0;
-            if (session.bulk.fast) { AbortFileUpload(); session.bulk.draining = partial; }
-            else { free(session.bulk.bytes); session.bulk.bytes = nullptr; session.bulk.draining = true; }
-            SendFrame(sequence, "ERR", "bulk_timeout");
+            const bool fast = session.bulk.fast;
+            ResetBulkUpload();
+            session.bulk.draining = !fast || partial;
+            if (!fast) SendFrame(sequence, "ERR", "bulk_timeout");
         }
         const uint64_t last_us = session.last_activity_us.load();
         const auto now = static_cast<uint64_t>(esp_timer_get_time());
@@ -3569,6 +3689,14 @@ esp_err_t StartAutostart() {
     return ESP_OK;
 }
 
+void ConfigurePrimaryTransportConsoleSharing(bool shares_console) {
+#if CONFIG_PXADB_TRANSPORT_USB_CDC
+    s_primary_shares_console.store(shares_console);
+#else
+    (void)shares_console;
+#endif
+}
+
 void Stop() {
     CleanupService(true);
 }
@@ -3606,6 +3734,7 @@ esp_err_t ConfigureTestControl(const TestControlAdapter*) {
 esp_err_t ConfigurePowerControl(const PowerControlAdapter*) {
     return ESP_ERR_NOT_SUPPORTED;
 }
+void ConfigurePrimaryTransportConsoleSharing(bool) {}
 esp_err_t Start() { return ESP_ERR_NOT_SUPPORTED; }
 esp_err_t StartAutostart() { return ESP_ERR_NOT_SUPPORTED; }
 void Stop() {}

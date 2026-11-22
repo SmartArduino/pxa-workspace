@@ -22,6 +22,7 @@ static lv_obj_t *g_reference_objects[PXA_SYSTEM_OVERLAY_MAX_REFERENCE_OBJECTS];
 static uint8_t g_reference_count;
 static bool g_bound;
 static bool g_reference_enabled;
+static bool g_fullscreen_opaque;
 /* The plane below was built while the LVGL shell owned the panel. */
 static bool g_plane_built_for_shell;
 static uint8_t *g_plane_memory;
@@ -171,6 +172,14 @@ void pxa_esp_system_overlay_refresh(void) {
   uint8_t *alpha;
   if (!g_bound)
     return;
+  if (g_fullscreen_opaque) {
+    /* A visible plane without pixels tells the presenter to preserve the
+     * LVGL framebuffer over the entire Surface. All chrome above this cover
+     * is already drawn there, so there is no need for ARGB snapshots. */
+    if (!g_plane.visible || g_plane_memory != NULL)
+      publish_plane(NULL, 0, 0, 0, 0, true);
+    return;
+  }
   /* While the LVGL shell owns the panel it draws the overlay itself and this
    * plane is never composited, so building it on every step of a notification
    * shade drag (a 509 KiB PSRAM calloc, a full-frame ARGB8888 snapshot and a
@@ -349,6 +358,14 @@ void pxa_esp_system_overlay_set_reference_objects(lv_obj_t *const *objects,
 
 bool pxa_esp_system_overlay_reference_enabled(void) {
   return g_reference_enabled;
+}
+
+void pxa_esp_system_overlay_set_fullscreen_opaque(bool visible) {
+  if (g_fullscreen_opaque == visible)
+    return;
+  g_fullscreen_opaque = visible;
+  g_plane_built_for_shell = false;
+  pxa_esp_system_overlay_refresh();
 }
 
 void pxa_esp_system_overlay_add(lv_obj_t *object) {

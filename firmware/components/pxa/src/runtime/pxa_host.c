@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "pxa/pxa_host.h"
+#include "pxa/pxa_debug_install.h"
 #include "pxa/package_icon.h"
 
 #include "esp_log.h"
@@ -135,6 +136,7 @@ bool pxa_host_initialize(void) {
                                                  &system_bar_insets);
         }
         pxa_esp_package_store_set_sync_callback(package_store_synced, NULL);
+        pxa_debug_install_bind();
         notify_catalog_changed();
     }
     return g_host_ready;

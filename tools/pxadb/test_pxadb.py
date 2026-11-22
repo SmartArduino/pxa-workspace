@@ -20,12 +20,13 @@ import pxadb
 class BulkUploadTest(unittest.TestCase):
     def run_recovery(self, failures, *, negotiation_error=None, max_chunk=192,
                      offset_support=True, stream=False, size=20000,
-                     reset_on_abort=False, fast_cap=3840):
+                     reset_on_abort=False, fast_cap=3840, resumable_fast=False, transport="usb-jtag"):
         """Model lost data/ACKs and receiver-confirmed offsets independently."""
         payload = bytes(range(256)) * (size // 256) + bytes(range(size % 256))
         client = fake_client([])
         client.device_info = (f"fs_fast=1;max_fast=3840;fs_bulk_cobs=1;max_bulk=2048;"
-                              f"max_chunk={max_chunk};fs_chunk_crc32=1;fs_offset={int(offset_support)}")
+                              f"max_chunk={max_chunk};fs_chunk_crc32=1;fs_offset={int(offset_support)};"
+                              f"fs_fast_resume={int(resumable_fast)};transport={transport}")
         received = bytearray()
         starts, negotiations, sends, text_sizes = [], [], [], []
         peer_fast = False
@@ -50,12 +51,13 @@ class BulkUploadTest(unittest.TestCase):
                     raise negotiation_error
                 return [pxadb.Frame(sequence, "OK",
                                    f"chunk={min(fast_cap, negotiations[-1])};window=1")]
-            if command == "FSABORT":
+            if command in {"FSABORT", "PING"}:
+                self.assertEqual(command, "PING" if resumable_fast else "FSABORT")
                 self.assertEqual(client.serial.writes[-2], b"\0\0")
                 peer_fast = False
-                if reset_on_abort:
+                if reset_on_abort and command == "FSABORT":
                     received.clear()
-                return [pxadb.Frame(sequence, "OK", "aborted")]
+                return [pxadb.Frame(sequence, "OK", "pong" if resumable_fast else "aborted")]
             self.assertFalse(peer_fast, "text data cannot enter binary mode")
             fields = command.split()
             if fields[0] == "FSDATA2":
@@ -97,6 +99,15 @@ class BulkUploadTest(unittest.TestCase):
         self.assertTrue(all(command == starts[0] for command in starts))
         return negotiations, sends, text_sizes, starts
 
+    def test_uart_stream_starts_with_smaller_binary_frames(self):
+        for transport, stream, expected in (("uart", True, 1920),
+                                             ("uart", False, 3840),
+                                             ("usb-jtag", True, 3840)):
+            with self.subTest(transport=transport, stream=stream):
+                modes, sends, _, _ = self.run_recovery({}, stream=stream, transport=transport)
+                self.assertEqual(modes, [expected])
+                self.assertEqual(sends[0], (0, expected))
+
     def test_fast_recovery_confirms_lost_data_or_ack_before_smaller_binary_retry(self):
         for accepted in (False, True):
             for stream in (False, True):
@@ -123,6 +134,14 @@ class BulkUploadTest(unittest.TestCase):
             stream=True, reset_on_abort=True)
         self.assertEqual(modes, [3840, 1920])
         self.assertEqual(sends[2], (0, 1920))
+        self.assertEqual(text, [])
+
+    def test_resumable_fast_transfer_keeps_accepted_bytes_on_lost_ack(self):
+        modes, sends, text, _ = self.run_recovery(
+            {2: (True, pxadb.PxaDbError("lost ACK"))}, stream=True,
+            reset_on_abort=True, resumable_fast=True)
+        self.assertEqual(modes, [3840, 1920])
+        self.assertEqual(sends[2], (7680, 1920))
         self.assertEqual(text, [])
 
     def test_fast_recovery_respects_smaller_memory_negotiation(self):
@@ -185,6 +204,15 @@ class BulkUploadTest(unittest.TestCase):
         self.assertFalse(client.fast_upload_active)
         client.cancel_fast_upload()
         self.assertEqual(len(client.serial.writes), 2)
+
+    def test_malformed_fast_header_can_be_rejected_with_negotiation_sequence(self):
+        client = fake_client([encoded_frame(1, "OK", "chunk=512;timeout_ms=10000;window=1"),
+                              encoded_frame(99, "ERR", "invalid_file_chunk"),
+                              encoded_frame(1, "ERR", "invalid_file_chunk")])
+        self.assertEqual(client.start_fast_upload(2048), 512)
+        with self.assertRaisesRegex(pxadb.PxaDbRejectedError, "invalid_file_chunk"):
+            client.send_fast_upload(0, b"abc", 2)
+        self.assertEqual([frame.sequence for frame in client.pending_frames], [99])
 
     def test_fast_negotiation_failure_can_cancel_uncertain_peer_state(self):
         client = fake_client([encoded_frame(1, "OK", "chunk=4096;window=1"),
@@ -770,7 +798,7 @@ class PxaDbLogStreamingTest(unittest.TestCase):
         self.assertEqual(client.serial.writes, [b"PXADB1 7 PING\n"])
 
     def test_uart_upload_command_is_paced(self) -> None:
-        for prefix in ("FSDATA 0 ", "FSDATA2 0 cbf43926 "):
+        for prefix in ("FSDATA 0 ", "FSDATA2 0 cbf43926 ", "FSINSTALL "):
             with self.subTest(prefix=prefix):
                 client = fake_client([])
                 client.upload_profile = "uart"
@@ -783,14 +811,16 @@ class PxaDbLogStreamingTest(unittest.TestCase):
                 self.assertEqual(sleep.call_count, len(client.serial.writes) - 1)
 
     def test_native_usb_upload_command_is_not_paced(self) -> None:
-        client = fake_client([])
-        client.upload_profile = "usb"
-        command = "FSDATA 0 " + "a" * 512
-        with mock.patch.object(pxadb.time, "sleep") as sleep:
-            client._write_command(7, command)
-        self.assertEqual(client.serial.writes,
-                         [f"PXADB1 7 {command}\n".encode("ascii")])
-        sleep.assert_not_called()
+        for prefix in ("FSDATA 0 ", "FSINSTALL "):
+            with self.subTest(prefix=prefix):
+                client = fake_client([])
+                client.upload_profile = "usb"
+                command = prefix + "a" * 512
+                with mock.patch.object(pxadb.time, "sleep") as sleep:
+                    client._write_command(7, command)
+                self.assertEqual(client.serial.writes,
+                                 [f"PXADB1 7 {command}\n".encode("ascii")])
+                sleep.assert_not_called()
 
     def test_buffered_uart_keeps_fifo_safe_pacing(self) -> None:
         for info, expected_burst in (

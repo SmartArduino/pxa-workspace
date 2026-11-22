@@ -50,6 +50,14 @@ static_assert(kScanoutBlockBytes % 4 == 0);
 // esp_lcd uses an exclusive x_end; both 0 and 412 meet SPD2010's rule.
 static_assert(WATCHER_DISPLAY_WIDTH % 4 == 0);
 
+void DrawPerformanceOverlay(uint16_t* pixels, uint32_t stride, int32_t x, int32_t y,
+                            uint16_t width, uint16_t height, bool byte_swapped) {
+    // At row zero the circular panel hides everything except its tangent.
+    constexpr int32_t top = 12;
+    pxa_board_performance_draw_rgb565(pixels, WATCHER_DISPLAY_WIDTH,
+        WATCHER_DISPLAY_HEIGHT - top, stride, x, y - top, width, height, byte_swapped);
+}
+
 void PackNativeFrame(void* timing, const void* source, void* destination,
                      size_t offset, size_t bytes) {
     const int64_t start = timing ? esp_timer_get_time() : 0;
@@ -59,8 +67,7 @@ void PackNativeFrame(void* timing, const void* source, void* destination,
     watcher_pxa_surface::PackNativeRgb565Band(source, destination, offset, bytes);
     const int y = offset / (WATCHER_DISPLAY_WIDTH * 2);
     const int rows = bytes / (WATCHER_DISPLAY_WIDTH * 2);
-    pxa_board_performance_draw_rgb565(static_cast<uint16_t*>(destination),
-        WATCHER_DISPLAY_WIDTH, WATCHER_DISPLAY_HEIGHT, WATCHER_DISPLAY_WIDTH,
+    DrawPerformanceOverlay(static_cast<uint16_t*>(destination), WATCHER_DISPLAY_WIDTH,
         0, y, WATCHER_DISPLAY_WIDTH, rows, true);
     if (timing)
         *static_cast<uint64_t*>(timing) += esp_timer_get_time() - start;
@@ -547,9 +554,8 @@ void SensecapWatcherHardware::FlushDisplay(lv_display_t* display,
     if (snapshot != 0) {
         self->SnapshotFlushArea(area, pixels);
     }
-    pxa_board_performance_draw_rgb565(
-        reinterpret_cast<uint16_t*>(pixels), WATCHER_DISPLAY_WIDTH,
-        WATCHER_DISPLAY_HEIGHT, static_cast<uint32_t>(lv_area_get_width(area)),
+    DrawPerformanceOverlay(
+        reinterpret_cast<uint16_t*>(pixels), static_cast<uint32_t>(lv_area_get_width(area)),
         area->x1, area->y1, static_cast<uint16_t>(lv_area_get_width(area)),
         static_cast<uint16_t>(lv_area_get_height(area)), true);
     const FlushRequest request = {
@@ -729,8 +735,7 @@ bool SensecapWatcherHardware::PresentDirectFrame() {
             frame.ui_alpha_plane.visible, frame.system_alpha_plane.visible);
     }
     pxa_esp_surface_release_frame(frame.lease);
-    pxa_board_performance_draw_rgb565(snapshot_, WATCHER_DISPLAY_WIDTH,
-        WATCHER_DISPLAY_HEIGHT, WATCHER_DISPLAY_WIDTH, 0, 0,
+    DrawPerformanceOverlay(snapshot_, WATCHER_DISPLAY_WIDTH, 0, 0,
         WATCHER_DISPLAY_WIDTH, WATCHER_DISPLAY_HEIGHT, true);
     (void)xSemaphoreTake(snapshot_sem_, 0);
     const FlushRequest request = {nullptr, area, reinterpret_cast<uint8_t*>(snapshot_),
@@ -763,8 +768,7 @@ bool SensecapWatcherHardware::CopyDirectSnapshot(uint16_t* pixels) {
         }
         memcpy(pixels, frame.pixels, count * sizeof(uint16_t));
         pxa_esp_surface_release_frame(frame.lease);
-        pxa_board_performance_draw_rgb565(pixels, WATCHER_DISPLAY_WIDTH,
-            WATCHER_DISPLAY_HEIGHT, WATCHER_DISPLAY_WIDTH, 0, 0,
+        DrawPerformanceOverlay(pixels, WATCHER_DISPLAY_WIDTH, 0, 0,
             WATCHER_DISPLAY_WIDTH, WATCHER_DISPLAY_HEIGHT, false);
     } else {
         for (size_t index = 0; index < count; ++index)

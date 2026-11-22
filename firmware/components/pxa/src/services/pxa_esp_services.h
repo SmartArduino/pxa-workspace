@@ -23,6 +23,7 @@
 #include "pxa/scheduler.h"
 #include "pxa/sensor.h"
 #include "pxa/haptics.h"
+#include "pxa/video.h"
 #include "pxa/storage.h"
 #include "pxa/ui.h"
 #include "pxa/window.h"
@@ -92,6 +93,8 @@ typedef struct {
     void *sensor_workspace;
     pxa_haptics_service_t *haptics;
     void *haptics_workspace;
+    pxa_video_service_t *video;
+    void *video_workspace;
 #if PXA_ENABLE_WIFI_LOCATION
     pxa_wl_service_t *wifi_location;
     void *wifi_location_workspace;

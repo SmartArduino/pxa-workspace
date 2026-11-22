@@ -388,6 +388,14 @@ pxa_status_t pxa_esp_storage_plan(const pxa_install_requirements_t *requirements
     if(!requirements || !plan || (!app_epoch && media_epoch))return PXA_STATUS_INVALID_ARGUMENT;
     memset(plan,0,sizeof(*plan));pxa_esp_volumes_lock();
     if(!g_registry)status=PXA_STATUS_UNAVAILABLE;
+    else if(app_epoch) {
+        status=pxa_esp_storage_refresh_volume(app_epoch);
+        if(status==PXA_STATUS_OK && media_epoch && media_epoch!=app_epoch &&
+           (requirements->media_bytes || requirements->media_temporary_bytes))
+            status=pxa_esp_storage_refresh_volume(media_epoch);
+        if(status==PXA_STATUS_OK)
+            status=pxa_install_plan_evaluate(g_registry,requirements,app_epoch,media_epoch,plan);
+    }
     else {
         for(unsigned i=0;i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
             pxa_volume_info_t info;
@@ -397,8 +405,7 @@ pxa_status_t pxa_esp_storage_plan(const pxa_install_requirements_t *requirements
                 !(info.capabilities&PXA_VOLUME_INSTALLABLE))continue;
             (void)pxa_esp_storage_refresh_volume(epoch);
         }
-        status=app_epoch?pxa_install_plan_evaluate(g_registry,requirements,app_epoch,media_epoch,plan):
-            pxa_install_plan_select(g_registry,requirements,0,plan);
+        status=pxa_install_plan_select(g_registry,requirements,0,plan);
     }
     pxa_esp_volumes_unlock();return status;
 }

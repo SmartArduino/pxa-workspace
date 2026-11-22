@@ -38,17 +38,26 @@ int main() {
     unsigned reads = 0;
     auto read = [&](int reg, uint8_t* output, size_t n) {
         ++reads;
-        if (reg == 0x10) { assert(n == 1); *output = 8; }
-        else { assert(reg == 0x14 && n == 35); std::copy(bytes.begin(), bytes.end(), output); }
+        assert(reg == 0x10 && n == 40);
+        std::fill_n(output, n, uint8_t(0));
+        *output = 8;
+        std::copy(bytes.begin(), bytes.end(), output + 4);
         return true;
     };
-    assert(doit_s31::ReadTouch(read, 5, 480, 854, report) && reads == 2);
+    assert(doit_s31::ReadTouch(read, 5, 480, 854, report) && reads == 1);
     // I2C failure preserves the snapshot for the board's bounded grace period.
     assert(!doit_s31::ReadTouch([](int, uint8_t*, size_t) { return false; }, 5, 480, 854, report));
     assert(report[1].pressed && report[4].pressed);
     assert(doit_s31::ReadTouch([](int reg, uint8_t* p, size_t n) {
-        assert(reg == 0x10 && n == 1); *p = 0; return true;
+        assert(reg == 0x10 && n == 40); *p = 0; return true;
     }, 5, 480, 854, report));
+    assert(report[1].pressed && report[4].pressed);
+    assert(!doit_s31::ReadTouch([](int reg, uint8_t* p, size_t n) {
+        assert(reg == 0x10 && n == 40); *p = 0x88; return true;
+    }, 5, 480, 854, report));
+    assert(report[1].pressed && report[4].pressed);
+    for (unsigned i = 0; i < 5; ++i) finger(i, 0, 0, false);
+    assert(doit_s31::ReadTouch(read, 5, 480, 854, report));
     for (const auto& p : report) assert(!p.pressed);
     std::array<uint8_t, 70> ten{};
     for (unsigned i = 0; i < 10; ++i) {
@@ -56,6 +65,14 @@ int main() {
         ten[i*7+2] = 0xc3; ten[i*7+3] = 0x55; // y=853
     }
     assert(doit_s31::DecodeTouch(ten, 480, 854, report));
+    for (const auto& p : report) assert(p.pressed && p.x == 479 && p.y == 853);
+    assert(doit_s31::ReadTouch([&](int reg, uint8_t* output, size_t n) {
+        assert(reg == 0x10 && n == 75);
+        std::fill_n(output, n, uint8_t(0xff));
+        output[0] = 8;
+        std::copy(ten.begin(), ten.end(), output + 4);
+        return true;
+    }, 10, 480, 854, report));
     for (const auto& p : report) assert(p.pressed && p.x == 479 && p.y == 853);
     assert(!doit_s31::ReadTouch(read, 11, 480, 854, report));
     pxadb::PointerSamples<5> samples;

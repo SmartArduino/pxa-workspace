@@ -94,17 +94,23 @@ int main() {
     for(bool wrong_crc:{true,false}) {
         begin(true);wire=frame(wrong_crc?0:1,256,!wrong_crc);
         ConsumeFsBulk(wire.data(),wire.size());
-        assert(!active && !s_bulk.bytes && commits==3);
+        assert(active && !s_bulk.bytes && s_file_upload.remaining==512 && commits==3);
         assert(!strcmp(reply,wrong_crc?"chunk_checksum_mismatch":"offset_mismatch"));
     }
     begin(true);wire=encode({'P','X','A','D','B','1',' ','R','E','B','O','O','T','\n'});
     ConsumeFsBulk(wire.data(),wire.size());
-    assert(!active && !s_bulk.bytes && commits==3);
+    assert(active && !s_bulk.bytes && commits==3);
     begin(true);uint8_t partial[]={8,'a','b'},cancel[]={0,0};
+    wire=frame(0,256);
+    assert(ConsumeFsBulk(wire.data(),wire.size())==wire.size());
     ConsumeFsBulk(partial,sizeof(partial));
     assert(ConsumeFsBulk(cancel,sizeof(cancel))==1);
-    assert(!active && !s_bulk.bytes && commits==3);
-    ResetBulkUpload();
+    assert(active && !s_bulk.bytes && s_file_upload.remaining==256 && commits==4);
+    begin(true);
+    assert(ConsumeFsBulk(cancel,sizeof(cancel))==1);
+    assert(active && !s_bulk.bytes && commits==4 && aborts==0);
+    AbortFileUpload();
+    assert(!active && aborts==1);
 }
 '''
 
@@ -122,7 +128,7 @@ def main():
                         '-fno-omit-frame-pointer', '-I' + str(ROOT / 'firmware/components/pxadb/include'),
                         str(unit), '-o', str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
-    print('PXADB binary session: slow commits, fragmented frames, CRC/offset failures and cancellation passed')
+    print('PXADB binary session: slow commits, fragmented frames, CRC/offset rejection, resume and explicit cancellation passed')
 
 
 if __name__ == '__main__':

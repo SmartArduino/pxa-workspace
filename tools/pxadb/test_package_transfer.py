@@ -1,4 +1,5 @@
 """Volume admission, LAN source lifetime and transport fallback contracts."""
+import base64
 import http.client
 import pathlib
 import socket
@@ -66,9 +67,10 @@ class PackageTransferTest(unittest.TestCase):
              mock.patch.object(pxadb, "manifest_records", return_value=[(1, root)]):
             client.request.return_value = [row(other, "installed=1;volume=99"), row(root, "installed=1;volume=42")]
             self.assertEqual(pxadb.existing_package_volume(client, source, "pxa-test"), "42")
-            for state in ("installed=1;volume=0", "installed=1", "staged=1;volume=42"):
+            for state, expected in (("installed=1;volume=0", "0"), ("installed=1", "0"),
+                                    ("staged=1;volume=42", None)):
                 client.request.return_value = [row(root, state)]
-                self.assertIsNone(pxadb.existing_package_volume(client, source, "pxa-test"))
+                self.assertEqual(pxadb.existing_package_volume(client, source, "pxa-test"), expected)
             client.request.return_value = [row(root, "installed=0;archived=1;volume=42")]
             self.assertEqual(pxadb.existing_package_volume(client, source, "pxa-test"), "42")
             client.request.return_value = [row(root, "installed=1;ambiguous=1;volume=0")]
@@ -220,6 +222,77 @@ class PackageTransferTest(unittest.TestCase):
         with mock.patch.object(pxadb, "device_volumes", return_value=[self.volume(), self.volume(epoch="3")]):
             self.assertEqual(pxadb.select_install_volume(None, "3")["epoch"], "3")
 
+    def test_fresh_install_uses_sd_only_when_internal_cannot_fit(self):
+        client = mock.Mock(device_info="package_location=1;package_stream_volume=1")
+        internal = self.volume(epoch="1", capabilities="67", free="40960")
+        sd = self.volume(epoch="2", free="3000000")
+        with mock.patch.object(pxadb, "device_volumes", return_value=[sd, internal]), \
+             mock.patch.object(pxadb, "stream_container_prefix", return_value=4096), \
+             mock.patch.object(pxadb, "package_publisher_root", return_value=bytes(32)), \
+             mock.patch.object(pxadb, "streamed_install_space", return_value=2000000):
+            source = pathlib.Path("new.pxa")
+            self.assertEqual(pxadb.choose_fresh_install_volume(client, source), "2")
+            internal["free"] = "4000000"
+            self.assertEqual(pxadb.choose_fresh_install_volume(client, source), "1")
+            internal["known"] = sd["known"] = "0"
+            self.assertIsNone(pxadb.choose_fresh_install_volume(client, source))
+
+    def test_streamed_space_counts_shared_directories_and_nonoverlapping_peaks(self):
+        def record(tag, value):
+            return struct.pack("<HH", tag, len(value)) + value
+
+        def file(path):
+            return record(17, record(1, path) + record(2, struct.pack("<Q", 4096)))
+
+        manifest = bytes(12) + file(b"assets/a") + file(b"assets/b") + file(b"assets/nested/c")
+        internal = self.volume(unit="4096", capabilities="195")
+        removable = self.volume(unit="4096", private_bytes="69632")
+        with mock.patch.object(pxadb, "read_package_manifest", return_value=manifest):
+            data_and_dirs = (3 * 2 + 2) * 4096
+            safe_margin = 128 * 1024
+            manifest_and_signature = 3 * 4096
+            self.assertEqual(pxadb.streamed_install_space(None, 8192, internal),
+                             data_and_dirs + manifest_and_signature + safe_margin)
+            self.assertEqual(pxadb.streamed_install_space(None, 32 * 4096, internal),
+                             data_and_dirs + manifest_and_signature + 37 * 4096)
+            self.assertEqual(pxadb.streamed_install_space(None, 8192, removable),
+                             data_and_dirs + safe_margin + 18 * 4096 + 69632)
+
+    def test_direct_install_checks_compatibility_once_and_preserves_strict(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = fixtures.PackageStorageTest.container(pathlib.Path(folder))
+            client = mock.Mock(device_info="package_stream_volume=1")
+            args = pxadb.build_parser().parse_args([
+                "package", "install", str(source), "--yes", "--volume", "internal",
+                "--strict-compatibility"])
+            report = {"status": "unknown", "checks": [
+                {"subject": "runtime", "status": "unknown", "message": "firmware unreported"}]}
+            with mock.patch.object(pxadb, "stream_container_prefix", return_value=4096), \
+                 mock.patch.object(pxadb, "package_compatibility", return_value=report) as compatibility, \
+                 mock.patch.object(pxadb, "check_container_features"), \
+                 mock.patch.object(pxadb, "select_install_volume", return_value=self.volume()) as volume, \
+                 mock.patch.object(pxadb, "fetch_package_stream", return_value=True):
+                with self.assertRaisesRegex(pxadb.PxaDbError, "firmware unreported"):
+                    pxadb.command_package_install(args, connection=client)
+                compatibility.assert_called_once_with(client, source)
+                volume.assert_not_called()
+                client.request.assert_not_called()
+                compatibility.reset_mock()
+                args.strict_compatibility = False
+                self.assertEqual(pxadb.command_package_install(args, connection=client, quiet=True), 0)
+                compatibility.assert_called_once_with(client, source)
+
+    def test_streaming_preview_uses_manifest_name_and_version(self):
+        source = pathlib.Path("arbitrary-filename.pxa")
+        client = mock.Mock(device_info="package_install_meta=1")
+        fields = [(2, b"pxa-puzzle"), (3, b"1.2.3"), (4, " 拼图\n游戏 ".encode())]
+        with mock.patch.object(pxadb, "read_package_manifest", return_value=bytes(12)), \
+             mock.patch.object(pxadb, "manifest_records", return_value=fields):
+            command = pxadb.stream_upload_command(client, source, "somewhere", 123, "sha", None)
+        fields = command.split()
+        self.assertEqual(fields[:5], ["FSINSTALL", pxadb.client_encode_path("somewhere"), "123", "sha", "-"])
+        self.assertEqual([base64.b64decode(field).decode() for field in fields[5:]], ["拼图 游戏", "1.2.3"])
+
     def test_wifi_failure_aborts_receiver_before_fallback(self):
         with tempfile.TemporaryDirectory() as folder:
             source = fixtures.PackageStorageTest.container(pathlib.Path(folder))
@@ -281,7 +354,7 @@ class PackageTransferTest(unittest.TestCase):
                 "package", "install", str(source), "--volume", "sd", "--via", "serial", "--yes", "--port", "/dev/mock"])
             client = mock.MagicMock()
             client.__enter__.return_value = client
-            client.request.side_effect = [[], pxadb.PxaDbRejectedError("commit_failed"), []]
+            client.request.side_effect = [pxadb.PxaDbRejectedError("commit_failed"), []]
             remote = "sdcard/PXA/cache/store/.stream-12345678"
             with mock.patch.object(pxadb, "open_client", return_value=client), \
                     mock.patch.object(pxadb, "package_compatibility",return_value={'status':'compatible','checks':[]}), \

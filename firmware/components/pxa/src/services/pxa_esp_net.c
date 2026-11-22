@@ -34,7 +34,7 @@ static esp_err_t set_store_host_profile(esp_http_client_handle_t client,
 }
 
 #define PXA_ESP_NET_TAG "PxaNet"
-#define PXA_ESP_NET_URL_CAPACITY 513
+#define PXA_ESP_NET_URL_CAPACITY (PXA_NET_MAX_URL_BYTES + 1u)
 #define PXA_ESP_NET_CONTENT_TYPE_CAPACITY 97
 #define PXA_ESP_NET_MAX_HEADERS 8
 #define PXA_ESP_NET_WANTED_HEADER_BYTES 520
@@ -276,6 +276,14 @@ static esp_http_client_method_t esp_method(uint16_t method) {
     }
 }
 
+/* esp_http_client needs room for the request line as well as caller headers.
+ * A fixed 512-byte TX buffer rejects signed media URLs admitted by Net. */
+static int http_tx_buffer_bytes(const pxa_esp_net_slot_t *slot) {
+    size_t bytes = strlen(slot->url) + 256u;
+    for (uint16_t i = 0; i < slot->request_header_count; ++i)
+        bytes += slot->request_headers[i].name.size + slot->request_headers[i].value.size + 4u;
+    return (int)(bytes < 512u ? 512u : bytes);
+}
 #include "pxa_esp_http.inc"
 
 static void net_worker(void *context) {
@@ -384,7 +392,7 @@ static void net_worker(void *context) {
             config.timeout_ms = (int)slot->timeout_ms;
             config.disable_auto_redirect = true;
             config.buffer_size = 512;
-            config.buffer_size_tx = 512;
+            config.buffer_size_tx = http_tx_buffer_bytes(slot);
             config.event_handler = http_event;
             config.user_data = slot;
             config.crt_bundle_attach = esp_crt_bundle_attach;

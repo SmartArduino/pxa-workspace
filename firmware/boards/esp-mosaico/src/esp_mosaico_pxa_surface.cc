@@ -435,7 +435,21 @@ uint64_t ComposeFrameImpl(const pxa_esp_surface_frame_t& frame,
         const int32_t right = std::min<int32_t>(area->x2 + 1, origin_x + drawn_width);
         const int32_t top = std::max<int32_t>(area->y1, origin_y);
         const int32_t bottom = std::min<int32_t>(area->y2 + 1, origin_y + drawn_height);
-        for (int32_t pixel_y = top; pixel_y < bottom && left < right; ++pixel_y) {
+        const bool packed = scale == 1 && left < right && top < bottom &&
+            stride_bytes == size_t(right - left) * sizeof(uint16_t) &&
+            frame.stride_bytes == stride_bytes;
+        if (packed) {
+            auto* destination = pixels + size_t(top - area->y1) * stride_bytes
+                + size_t(left - area->x1) * sizeof(uint16_t);
+            const auto* source = frame.pixels + size_t(top - origin_y) * frame.stride_bytes
+                + size_t(left - origin_x) * sizeof(uint16_t);
+            const size_t count = size_t(right - left) * (bottom - top);
+            if constexpr (Panel)
+                pxa_render_swap_rgb565(destination, source, count);
+            else
+                std::memcpy(destination, source, count * sizeof(uint16_t));
+        }
+        for (int32_t pixel_y = top; !packed && pixel_y < bottom && left < right; ++pixel_y) {
             auto* row = reinterpret_cast<uint16_t*>(
                 pixels + (pixel_y - area->y1) * stride_bytes);
             if (pixel_y > top && (pixel_y - origin_y) % scale != 0) {

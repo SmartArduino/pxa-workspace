@@ -139,10 +139,7 @@ void pxa_esp_ime_attach(pxa_runtime_t *runtime, pxa_wamr_engine_t *engine,
 }
 void pxa_esp_ime_environment(const pxa_ui_environment_t *environment, const pxa_lvgl_ui_theme_t *theme) {
     lv_lock(); ime.ui.environment=*environment; ime.ui.theme=*theme;
-    if (ime.keyboard) {
-        pxa_lvgl_ime_set_theme(ime.keyboard,theme);
-        pxa_lvgl_ime_set_environment(ime.keyboard,environment);
-    }
+    if (ime.keyboard) pxa_lvgl_ime_set_appearance(ime.keyboard,environment,theme);
     lv_unlock();
 }
 void pxa_esp_ime_editor_focus(void *context, void *textarea, bool focused) {

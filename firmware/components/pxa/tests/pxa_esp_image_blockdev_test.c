@@ -20,10 +20,14 @@ static int fail_batch;
 static int writes_before_cut=-1;
 static int io_cut=-1,fail_directory_sync;
 static unsigned sync_calls;
+static unsigned erased_extent_writes;
 static void mutation(void) {if(io_cut==0)_Exit(0);if(io_cut>0)--io_cut;}
 ssize_t __real_write(int fd,const void *data,size_t size);
 int __real_fsync(int fd);
-ssize_t __wrap_write(int fd,const void *data,size_t size) {mutation();return __real_write(fd,data,size);}
+ssize_t __wrap_write(int fd,const void *data,size_t size) {
+    if(size==65536 && ((const uint8_t *)data)[0]==255 && ((const uint8_t *)data)[size-1]==255)++erased_extent_writes;
+    mutation();return __real_write(fd,data,size);
+}
 int __wrap_fsync(int fd) {++sync_calls;mutation();return __real_fsync(fd);}
 void *heap_caps_calloc(size_t n,size_t bytes,unsigned caps) {
     (void)caps;if(fail_batch && n*bytes==65536)return NULL;
@@ -175,8 +179,9 @@ static void test_sparse(void) {
     deny_allocation=1;
     assert(device->ops->write(device,data,8*1024*1024,sizeof(data))!=ESP_OK);
     assert(!device->ops->sync(device) && sparse_size(dir)==65536+64);
-    deny_allocation=0;memset(data,42,sizeof(data));
+    deny_allocation=0;memset(data,42,sizeof(data));unsigned fills=erased_extent_writes;fail_batch=1;
     assert(!device->ops->write(device,data,8*1024*1024,sizeof(data)));
+    assert(erased_extent_writes==fills+1);fail_batch=0;
     assert(!device->ops->sync(device) && sparse_size(dir)==2*65536+64);
     /* Metadata/data alternation must not introduce an implicit disk barrier. */
     assert(!device->ops->read(device,data,sizeof(data),0,sizeof(data)));

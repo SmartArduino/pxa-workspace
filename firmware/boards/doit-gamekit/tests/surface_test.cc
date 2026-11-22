@@ -100,9 +100,30 @@ static void CheckRowComposition() {
     }
 }
 
+static void CheckPackedRowsWithVerticalClipping() {
+    const std::array<uint16_t, 12> source{10, 11, 12, 13, 20, 21, 22, 23, 30, 31, 32, 33};
+    pxa_esp_surface_frame_t frame{};
+    frame.pixels = reinterpret_cast<const uint8_t*>(source.data());
+    frame.stride_bytes = 8;
+    frame.width = 4;
+    frame.height = 3;
+    frame.format = PXA_SURFACE_FORMAT_RGB565;
+    frame.visible = 1;
+    std::array<uint16_t, 14> output;
+    output.fill(0xa55a);
+    assert(pxa::board::ComposeRgb565Rows(frame, output.data() + 1,
+                                         5, 6, 4, 3, 4, 5, 5, 1));
+    const std::array<uint16_t, 14> expected{
+        0xa55a, 20, 21, 22, 23, 30, 31, 32, 33,
+        0xa55a, 0xa55a, 0xa55a, 0xa55a, 0xa55a,
+    };
+    assert(output == expected);
+}
+
 int main() {
     CheckDirectEligibility();
     CheckRowComposition();
+    CheckPackedRowsWithVerticalClipping();
     std::array<uint16_t, 160 * 120> source{};
     source[0] = 0xf800; source[1] = 0x001f;
     pxa_esp_surface_frame_t frame{};

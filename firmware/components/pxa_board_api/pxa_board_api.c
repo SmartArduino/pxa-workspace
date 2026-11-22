@@ -6,6 +6,7 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <stdatomic.h>
+#include <stddef.h>
 
 static const pxa_board_port_t* g_board_port;
 static _Atomic uint8_t g_display_rotation;
@@ -67,6 +68,7 @@ static _Atomic uint8_t g_performance_sampling;
 static uint32_t g_frame_window_started_us;
 static _Atomic uint32_t g_frame_window_count;
 static _Atomic uint32_t g_fps_x10;
+static _Atomic bool g_performance_light_theme;
 
 static void load_performance_settings(void) {
     nvs_handle_t handle;
@@ -201,55 +203,153 @@ uint32_t pxa_board_performance_refresh(void) {
 }
 
 static uint8_t glyph_row(char c, uint8_t row) {
-    static const uint8_t numbers[10][5] = {
+    static const uint8_t digits[10][5] = {
         {7,5,5,5,7},{2,6,2,2,7},{7,1,7,4,7},{7,1,7,1,7},{5,5,7,1,1},
         {7,4,7,1,7},{7,4,7,5,7},{7,1,2,2,2},{7,5,7,5,7},{7,5,7,1,7}};
-    static const uint8_t f[5] = {7,4,6,4,4};
-    static const uint8_t p[5] = {6,5,6,4,4};
-    static const uint8_t s[5] = {7,4,7,1,7};
-    if (c >= '0' && c <= '9') return numbers[c - '0'][row];
-    if (c == '.') return row == 4 ? 2 : 0;
-    return c == 'F' ? f[row] : c == 'P' ? p[row] : c == 'S' ? s[row] : 0;
+    static const uint8_t f[5] = {7,4,6,4,4}, p[5] = {6,5,6,4,4},
+        s[5] = {7,4,7,1,7}, m[5] = {5,7,7,5,5}, r[5] = {6,5,6,5,5},
+        t[5] = {7,2,2,2,2};
+    if (c >= '0' && c <= '9') return digits[c - '0'][row];
+    switch (c) {
+        case '.': return row == 4 ? 2 : 0;
+        case '-': return row == 2 ? 7 : 0;
+        case 'F': return f[row];
+        case 'P': return p[row];
+        case 'S': return s[row];
+        case 'M': return m[row];
+        case 'R': return r[row];
+        case 'T': return t[row];
+        default: return 0;
+    }
 }
+
+void pxa_board_performance_set_light_theme(bool light) {
+    atomic_store_explicit(&g_performance_light_theme, light, memory_order_relaxed);
+}
+
+typedef struct {
+    uint16_t* pixels;
+    int32_t left, top, right, bottom;
+    ptrdiff_t stride;
+    bool rotated, byte_swapped;
+} performance_target_t;
+
+static int32_t minimum(int32_t a, int32_t b) { return a < b ? a : b; }
+static int32_t maximum(int32_t a, int32_t b) { return a > b ? a : b; }
+
+static void performance_fill(const performance_target_t* target, int32_t x,
+                             int32_t y, int32_t width, int32_t height, uint16_t color) {
+    const int32_t left = maximum(x, target->left);
+    const int32_t top = maximum(y, target->top);
+    const int32_t right = minimum(x + width, target->right);
+    const int32_t bottom = minimum(y + height, target->bottom);
+    if (left >= right || top >= bottom) return;
+    if (target->byte_swapped) color = __builtin_bswap16(color);
+    if (target->rotated) {
+        for (int32_t column = left; column < right; ++column) {
+            uint16_t* row = target->pixels + column * target->stride - (bottom - 1);
+            for (int32_t i = 0; i < bottom - top; ++i) row[i] = color;
+        }
+    } else {
+        for (int32_t line = top; line < bottom; ++line) {
+            uint16_t* row = target->pixels + (line - target->top) * target->stride +
+                            left - target->left;
+            for (int32_t i = 0; i < right - left; ++i) row[i] = color;
+        }
+    }
+}
+
+static void performance_text(const performance_target_t* target, int32_t x,
+                             const char* text, uint16_t color) {
+    for (; *text; ++text, x += 7) {
+        if (*text == ' ' || x + 6 <= target->left || x >= target->right) continue;
+        for (uint8_t y = 0; y < 5; ++y) {
+            const uint8_t bits = glyph_row(*text, y);
+            if (bits == 7) {
+                performance_fill(target, x, 3 + 2 * y, 6, 2, color);
+                continue;
+            }
+            for (uint8_t column = 0; column < 3; ++column)
+                if (bits & (4u >> column))
+                    performance_fill(target, x + column * 2, 3 + 2 * y, 2, 2, color);
+        }
+    }
+}
+
+static void format_tenths(char* text, uint32_t value) {
+    if (value > 9999) value = 9999;
+    text[0] = value >= 1000 ? (char)('0' + value / 1000) : ' ';
+    text[1] = value >= 100 ? (char)('0' + value / 100 % 10) : ' ';
+    text[2] = (char)('0' + value / 10 % 10);
+    text[3] = '.';
+    text[4] = (char)('0' + value % 10);
+}
+
+#define HUD_RGB565(rgb) (((rgb) >> 8 & 0xf800) | ((rgb) >> 5 & 0x07e0) | ((rgb) >> 3 & 0x001f))
+static void draw_performance(const performance_target_t* target, uint32_t fps_x10,
+                             const char* details) {
+    static const uint16_t colors[2][3] = {
+        {HUD_RGB565(0x1b2432), HUD_RGB565(0xeef4ff), HUD_RGB565(0xadc8ff)},
+        {HUD_RGB565(0xebf1fc), HUD_RGB565(0x243449), HUD_RGB565(0x355a9f)},
+    };
+    const uint16_t* palette = colors[atomic_load_explicit(&g_performance_light_theme,
+                                                          memory_order_relaxed)];
+    char fps[6] = {0};
+    format_tenths(fps, fps_x10);
+    performance_fill(target, 0, 0, PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH,
+                     PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT, palette[0]);
+    performance_text(target, 8, "FPS", palette[1]);
+    performance_text(target, 31, fps, palette[2]);
+    performance_text(target, 74, details, palette[1]);
+}
+#undef HUD_RGB565
 
 void pxa_board_performance_draw_rgb565(uint16_t* pixels, uint16_t viewport_width,
                                        uint16_t viewport_height, uint32_t stride,
                                        int32_t origin_x, int32_t origin_y,
                                        uint16_t width, uint16_t height,
                                        bool byte_swapped) {
-    char text[8] = {'F','P','S','0','0','.','0','\0'};
     const int32_t left = ((int32_t)viewport_width - PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) / 2;
-    const uint16_t white = byte_swapped ? __builtin_bswap16(0xffff) : 0xffff;
-    const uint16_t black = 0;
-    if (!pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY) ||
-        pixels == NULL) return;
-    // Most scanout bands do not intersect this small overlay. Avoid walking
-    // every glyph and background pixel for each such band. Order the positive
-    // bounds first so even extreme signed origins cannot overflow the sums.
-    if (width == 0 || height == 0 || origin_x >= left + PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH ||
+    const int32_t right = left + PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH;
+    /* Check positive bounds first, before adding a length to either origin. */
+    if (pixels == NULL || width == 0 || height == 0 || origin_x >= right ||
         origin_y >= PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT ||
-        origin_x + (int32_t)width <= left || origin_y + (int32_t)height <= 0)
-        return;
+        origin_x + (int32_t)width <= left || origin_y + (int32_t)height <= 0 ||
+        !pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY)) return;
+    const int32_t clip_left = maximum(0, maximum(origin_x, left));
+    const int32_t clip_top = maximum(0, origin_y);
+    const int32_t clip_right = minimum(viewport_width, minimum(origin_x + width, right));
+    const int32_t clip_bottom = minimum(viewport_height,
+        minimum(origin_y + height, PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT));
+    if (clip_left >= clip_right || clip_top >= clip_bottom) return;
+    const performance_target_t target = {
+        .pixels = pixels + (size_t)(clip_top - origin_y) * stride + (clip_left - origin_x),
+        .left = clip_left - left, .top = clip_top, .right = clip_right - left,
+        .bottom = clip_bottom, .stride = stride, .byte_swapped = byte_swapped,
+    };
     const uint32_t fps_x10 = atomic_load_explicit(&g_fps_x10, memory_order_relaxed);
-    text[3] = (char)('0' + (fps_x10 / 100) % 10);
-    text[4] = (char)('0' + (fps_x10 / 10) % 10);
-    text[6] = (char)('0' + fps_x10 % 10);
-    for (int32_t y = 0; y < PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT && y < viewport_height; ++y)
-        for (int32_t x = left; x < left + PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH; ++x) {
-        if (x >= 0 && x < viewport_width && x >= origin_x && y >= origin_y &&
-            x < origin_x + width && y < origin_y + height)
-            pixels[(size_t)(y - origin_y) * stride + x - origin_x] = black;
-    }
-    for (int32_t i = 0; text[i]; ++i) for (uint8_t y = 0; y < 5; ++y) {
-        const uint8_t bits = glyph_row(text[i], y);
-        for (uint8_t x = 0; x < 3; ++x) if (bits & (1u << (2 - x)))
-            for (int sy = 0; sy < 2; ++sy) for (int sx = 0; sx < 2; ++sx) {
-                const int32_t px = left + 3 + i * 7 + x * 2 + sx;
-                const int32_t py = 3 + y * 2 + sy;
-                if (px >= 0 && px < viewport_width && py < viewport_height &&
-                    px >= origin_x && py >= origin_y &&
-                    px < origin_x + width && py < origin_y + height)
-                    pixels[(size_t)(py - origin_y) * stride + px - origin_x] = white;
-            }
-    }
+    char details[] = " --.-MS";
+    if (fps_x10 != 0) format_tenths(details, (100000u + fps_x10 / 2u) / fps_x10);
+    draw_performance(&target, fps_x10, details);
+}
+
+void pxa_board_performance_draw_panel_rgb565(uint16_t* pixels, uint16_t width,
+                                             uint16_t height, uint32_t fps_x10,
+                                             uint32_t rotate_us, uint32_t transfer_us) {
+    if (pixels == NULL || width < PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH ||
+        height < PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT) return;
+    const size_t left = (width - PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) / 2u;
+    const performance_target_t target = {
+        .pixels = pixels + left * height + height - 1u,
+        .right = PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH,
+        .bottom = PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT,
+        .stride = height, .rotated = true, .byte_swapped = true,
+    };
+    const uint32_t rotation = rotate_us < 99000u ? rotate_us / 1000u : 99u;
+    const uint32_t transfer = transfer_us < 99000u ? transfer_us / 1000u : 99u;
+    char details[] = {'R', rotation >= 10 ? (char)('0' + rotation / 10) : ' ',
+                      (char)('0' + rotation % 10), ' ',
+                      'T', transfer >= 10 ? (char)('0' + transfer / 10) : ' ',
+                      (char)('0' + transfer % 10), '\0'};
+    draw_performance(&target, fps_x10, details);
 }

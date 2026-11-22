@@ -211,6 +211,7 @@ static pxa_game_render_target_profile_t g_game_render_scale_profile = {
 static bool g_host_visible = true;
 static bool g_display_unlocked = true;
 static bool g_presentation_visible = true;
+static bool g_debug_install_hidden = false;
 static bool g_composition_required;
 static bool g_system_overlay_visible;
 static bool g_power_overlay_visible;
@@ -1877,14 +1878,17 @@ static void set_visibility_gate(bool *gate, bool visible) {
     bool changed;
     bool effective;
     taskENTER_CRITICAL(&g_surface_lock);
-    effective = g_host_visible && g_display_unlocked && g_presentation_visible;
+    effective = g_host_visible && g_display_unlocked && g_presentation_visible &&
+                !g_debug_install_hidden;
     *gate = visible;
-    changed = effective != (g_host_visible && g_display_unlocked && g_presentation_visible);
-    if (changed && g_host_visible && g_display_unlocked && g_presentation_visible && g_surface != NULL) {
+    bool now_visible = g_host_visible && g_display_unlocked && g_presentation_visible &&
+                       !g_debug_install_hidden;
+    changed = effective != now_visible;
+    if (changed && now_visible && g_surface != NULL) {
         g_direct_resume_barrier = true;
         g_direct_resume_after_frame_id = latest_frame_id_locked(g_surface);
     }
-    if (!g_host_visible || !g_display_unlocked || !g_presentation_visible) {
+    if (!now_visible) {
         g_next_input_timestamp_us = 0;
         if (g_surface != NULL) {
             g_surface->pending_input_timestamp_us = 0;
@@ -1908,11 +1912,15 @@ void pxa_esp_surface_set_presentation_visible(bool visible) {
     set_visibility_gate(&g_presentation_visible, visible);
 }
 
+void pxa_esp_surface_set_debug_install_visible(bool visible) {
+    set_visibility_gate(&g_debug_install_hidden, visible);
+}
+
 bool pxa_esp_surface_try_resume_direct_scanout(uint64_t frame_id) {
     bool allowed;
     taskENTER_CRITICAL(&g_surface_lock);
     allowed = g_surface != NULL && frame_id != 0 && g_host_visible &&
-              g_display_unlocked && g_presentation_visible &&
+              g_display_unlocked && g_presentation_visible && !g_debug_install_hidden &&
               !g_system_overlay_visible && !g_power_overlay_visible &&
               g_runtime_modal_count == 0 &&
               (!g_direct_resume_barrier ||
@@ -2149,7 +2157,7 @@ static bool render_raster_draw(pxa_esp_surface_t *borrowed_surface,
 
     taskENTER_CRITICAL(&g_surface_lock);
     surface = borrowed_surface != NULL ? borrowed_surface : g_surface;
-    if (g_materialize_active || !g_host_visible || !g_display_unlocked ||
+    if (g_materialize_active || !g_host_visible || !g_display_unlocked || g_debug_install_hidden ||
         !g_presentation_visible || surface == NULL || surface->closing ||
         !surface->layer.visible ||
         (surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) == 0 ||
@@ -2404,7 +2412,7 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
     if (prepare_raster && !current_only) (void)materialize_latest_raster_draw();
     taskENTER_CRITICAL(&g_surface_lock);
     surface = g_surface;
-    if (!g_host_visible || !g_display_unlocked || !g_presentation_visible || surface == NULL ||
+    if (!g_host_visible || !g_display_unlocked || !g_presentation_visible || g_debug_install_hidden || surface == NULL ||
         surface->closing ||
         !surface->layer.visible ||
         g_acquired_surface != NULL ||
@@ -2578,7 +2586,7 @@ bool pxa_esp_surface_acquire_prepared_with_alpha(pxa_esp_surface_frame_t *frame)
 bool pxa_esp_surface_has_visible_surface(void) {
     bool visible;
     taskENTER_CRITICAL(&g_surface_lock);
-    visible = g_host_visible && g_display_unlocked && g_presentation_visible && g_surface != NULL &&
+    visible = g_host_visible && g_display_unlocked && g_presentation_visible && !g_debug_install_hidden && g_surface != NULL &&
               !g_surface->closing && g_surface->layer.visible;
     taskEXIT_CRITICAL(&g_surface_lock);
     return visible;
@@ -2587,7 +2595,7 @@ bool pxa_esp_surface_has_visible_surface(void) {
 bool pxa_esp_surface_has_pending_frame(void) {
     bool pending;
     taskENTER_CRITICAL(&g_surface_lock);
-    pending = g_host_visible && g_display_unlocked && g_presentation_visible && g_surface != NULL &&
+    pending = g_host_visible && g_display_unlocked && g_presentation_visible && !g_debug_install_hidden && g_surface != NULL &&
               !g_surface->closing &&
               g_surface->layer.visible &&
               (g_surface->pending != PXA_ESP_SURFACE_NONE ||
@@ -2613,7 +2621,7 @@ bool pxa_esp_surface_get_present_info(
     info->y = surface->layer.y;
     info->format = surface->format;
     info->visible = surface->layer.visible && g_host_visible &&
-                    g_display_unlocked && g_presentation_visible;
+                    g_display_unlocked && g_presentation_visible && !g_debug_install_hidden;
     taskEXIT_CRITICAL(&g_surface_lock);
     return true;
 }
@@ -2718,6 +2726,7 @@ void pxa_esp_surface_runtime_modal_enter(void) {}
 void pxa_esp_surface_runtime_modal_leave(void) {}
 void pxa_esp_surface_set_host_visible(bool visible) { (void)visible; }
 void pxa_esp_surface_set_presentation_visible(bool visible) { (void)visible; }
+void pxa_esp_surface_set_debug_install_visible(bool visible) { (void)visible; }
 void pxa_esp_surface_set_display_unlocked(bool unlocked) {
     (void)unlocked;
 }

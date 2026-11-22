@@ -7,7 +7,9 @@
 #if CONFIG_PXADB_TRANSPORT_UART || CONFIG_PXADB_UART_SECONDARY
 #include <driver/gpio.h>
 #include <driver/uart.h>
+#include <driver/uart_vfs.h>
 #include <esp_rom_sys.h>
+#include <unistd.h>
 extern "C" unsigned pxadb_uart_rx_buffer_capacity(void);
 #endif
 #if CONFIG_PXADB_TRANSPORT_USB_CDC
@@ -24,6 +26,11 @@ constexpr TickType_t kIoTimeout = pdMS_TO_TICKS(1000);
 constexpr auto kUart = static_cast<uart_port_t>(CONFIG_PXADB_UART_PORT);
 // Keep interrupt latency headroom even at a board's optional high UART rate.
 constexpr int kRxThreshold = UART_HW_FIFO_LEN(kUart) / 4;
+#if CONFIG_LIBC_PICOLIBC && CONFIG_ESP_CONSOLE_UART
+constexpr bool kUseConsoleVfs = kUart == CONFIG_ESP_CONSOLE_UART_NUM;
+#else
+constexpr bool kUseConsoleVfs = false;
+#endif
 esp_err_t StartUart() {
     esp_err_t status;
     if (uart_is_driver_installed(kUart)) {
@@ -47,7 +54,9 @@ esp_err_t StartUart() {
             UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
         if (status != ESP_OK) return status;
     }
-    return uart_set_rx_full_threshold(kUart, kRxThreshold);
+    status = uart_set_rx_full_threshold(kUart, kRxThreshold);
+    if (status == ESP_OK && kUseConsoleVfs) uart_vfs_dev_use_driver(kUart);
+    return status;
 }
 #endif
 }  // namespace
@@ -113,6 +122,9 @@ int TransportWrite(Transport transport, const uint8_t* bytes, size_t size) {
     if (TransportIsUart(transport)) {
 #if CONFIG_PXADB_TRANSPORT_UART || CONFIG_PXADB_UART_SECONDARY
         if (!size) return 0;
+        // Picolibc console output uses the UART VFS lock. Send the whole
+        // protocol line through that same lock to exclude raw console writes.
+        if (kUseConsoleVfs) return static_cast<int>(write(STDOUT_FILENO, bytes, size));
 #if CONFIG_PXADB_UART_TX_BURST_BYTES > 0
         // Drain before writing: a timeout must not mark accepted bytes as
         // unwritten, since WriteAll may retry a write that makes no progress.
@@ -155,7 +167,13 @@ bool TransportTxDone(Transport transport) {
 #endif
 }
 
-size_t TransportWriteChunk(Transport transport) { return TransportIsUart(transport) ? 1024 : 256; }
+size_t TransportWriteChunk(Transport transport) {
+    if (!TransportIsUart(transport)) return 256;
+#if CONFIG_PXADB_TRANSPORT_UART || CONFIG_PXADB_UART_SECONDARY
+    if (kUseConsoleVfs) return SIZE_MAX;
+#endif
+    return 1024;
+}
 const char* TransportName(Transport transport) {
     if (TransportIsUart(transport)) return "uart";
 #if CONFIG_PXADB_TRANSPORT_USB_CDC

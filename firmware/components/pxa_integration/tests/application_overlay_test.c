@@ -75,20 +75,22 @@ int main(void) {
     style_plain(ui.root);
     lv_obj_set_size(ui.root, 480, 480);
     ui.display.width = ui.display.height = 480;
+    ui.display.safe_insets.left = 12;
     ui.system_overlay_objects_changed = overlay_objects;
     pxsys_theme_snapshot_init(&ui.theme, PXSYS_COLOR_SCHEME_DARK);
     pxa_esp_system_overlay_bind();
     /* Use the actual ESP overlay snapshot/provider with the device's 64-byte
      * draw-buffer rules. Every Back progress size must preserve game pixels
      * outside the small alpha plane instead of publishing an opaque fallback. */
-    for (int distance = 4; distance <= 100; ++distance) {
-        navigation_back_indicator_update(&ui, 12, 12, 12 + distance, 240);
+    for (int distance = 1; distance <= 100; ++distance) {
+        navigation_back_indicator_update(&ui, 12, 12 + distance, 240);
         pxa_esp_surface_ui_alpha_plane_t plane;
         assert(provide_plane(NULL, &plane));
         assert(plane.visible && plane.pixels != NULL && plane.alpha != NULL);
         assert(plane.width < 64 && plane.height < 96);
-        assert(plane.x > 0 && plane.y > 0);
-        assert(plane.alpha[0] == 0);
+        assert(plane.x == 0 && plane.y > 0);
+        assert(plane.alpha[0] == 255);
+        if (distance >= 12) assert(plane.alpha[plane.width - 1] == 0);
         assert(!ui.application_presentation_hidden);
     }
     assert(overlay_failures == 0);

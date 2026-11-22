@@ -169,10 +169,15 @@ selection, JPEG photos and a thumbnail album for photos and MJPEG/Opus MKV video
 The board SPI adapter distinguishes a completed/dequeued DMA error from an
 uncompleted transaction. It retires completed errors for LCD accounting, then
 retries the entire frame after draining all DMA. After two underruns it uses
-two reserved 1920-byte internal SRAM slots, retained until each corresponding
+two reserved internal SRAM slots, retained until each corresponding
 transaction is dequeued. The LCD-only chunk cap accounts for IDF rounding the
 bus limit to a DMA descriptor. Other SPI devices retain their original path.
 Successful normal frames continue to use direct PSRAM DMA.
+
+`-DPXA_PAI_LCD_TRANSFER_LINES=8` groups eight physical rows per SPI transaction.
+It uses two 3840-byte fallback slots and can improve full-screen throughput.
+The default groups four rows with two 1920-byte slots. Use the larger setting
+when an additional 3.75 KiB of internal SRAM can be reserved for LCD recovery.
 
 The build-time `PXA_PAI_DISPLAY_DMA_TEST_FAULTS` defaults to 0. Nonzero test
 builds inject that many completed DMA errors after GC2145 opens. Production

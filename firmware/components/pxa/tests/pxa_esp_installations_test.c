@@ -215,9 +215,32 @@ int main(int argc,char **argv) {
     assert(!pxa_esp_installations_install(owner,source2,locator,&approved,4,digest,&plan,NULL,NULL,&result,&home));
     assert(!pxa_esp_storage_release_plan(&plan) && home.record.generation==5 && home.record.data_generation==2);
     assert(!memcmp(home.record.install_id,approved.install_id,16) && !stat(saved_file,&st));
+    assert(pxa_esp_installations_remove(owner,locator,4,0,&home)==PXA_STATUS_BAD_STATE);
+    assert(!stat(saved_file,&st) && st.st_size==4);
+    char retired_root[512],retired_home[768],unrelated[768];
+    path(retired_root,sizeof(retired_root),sd,"PXA/.removed-apps");
+    file=open(retired_root,O_WRONLY|O_CREAT|O_EXCL,0600);assert(file>=0 && !close(file));
+    assert(pxa_esp_installations_remove(owner,locator,5,0,&home)==PXA_STATUS_IO_ERROR);
+    assert(!home.record.generation && !stat(saved_file,&st));
+    assert(!unlink(retired_root));
     assert(!pxa_esp_installations_remove(owner,locator,5,0,&home));
     assert(stat(home.home,&st)<0 && errno==ENOENT);
+    char removed_id[33];
+    for(size_t i=0;i<sizeof(home.record.install_id);++i)
+        snprintf(removed_id + i*2,3,"%02x",home.record.install_id[i]);
+    path(retired_home,sizeof(retired_home),retired_root,removed_id);
+    assert(!stat(retired_home,&st) && S_ISDIR(st.st_mode));
     discovered=0;assert(!pxa_esp_installations_visit(owner,count_home,&discovered,&invalid) && !discovered && !invalid);
+    /* Reclamation has no dependency on the original transaction or its open
+     * volume owner. Ignore unrelated files under the maintenance directory. */
+    path(unrelated,sizeof(unrelated),retired_root,"unrelated");
+    assert(!mkdir(unrelated,0700));
+    assert(!pxa_esp_installations_close(&owner));
+    assert(!pxa_esp_installations_reclaim_removed(selected_epoch));
+    assert(stat(retired_home,&st)<0 && errno==ENOENT);
+    assert(!stat(unrelated,&st));
+    assert(!pxa_esp_installations_reclaim_removed(selected_epoch));
+    assert(!pxa_esp_installations_open(selected_epoch,&owner));
     /* A signed media generation lives on a third volume. Code/private state
      * stays on SD, and no per-app Flash record is needed to join the two. */
     char usb[512],resources[512],with_resources[512];uint64_t usb_epoch;

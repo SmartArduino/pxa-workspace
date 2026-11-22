@@ -76,6 +76,15 @@ int main(void) {
     lv_obj_set_hidden(bar,false);
     pxa_esp_system_overlay_set_reference_objects(objects,1);
     assert(g_plane.visible&&g_plane.pixels);
+    /* The opaque launch cover uses the LVGL framebuffer. Neither opening it
+     * nor refreshing chrome while it is up should allocate a snapshot. */
+    unchanged=total_allocations;
+    pxa_esp_system_overlay_set_fullscreen_opaque(true);
+    assert(provide_plane(NULL,&plane)&&plane.visible&&!plane.pixels&&!plane.alpha);
+    pxa_esp_system_overlay_set_reference_objects(objects,1);
+    assert(total_allocations==unchanged&&allocations==0);
+    pxa_esp_system_overlay_set_fullscreen_opaque(false);
+    assert(g_plane.visible&&g_plane.pixels&&g_plane.alpha);
     pxa_esp_system_overlay_set_reference_objects(NULL,0);
     assert(!g_plane.visible&&allocations==0);
     surface_visible=false;

@@ -188,14 +188,20 @@ void ComposeRgb565Scale1(const pxa_esp_surface_frame_t& frame,
         area->y2 + 1, origin_y + drawn_height);
     if (left >= right || top >= bottom) return;
 
-    for (int32_t y = top; y < bottom; ++y) {
-        const uint8_t* source = frame.pixels +
-            static_cast<size_t>(y - origin_y) * frame.stride_bytes +
-            static_cast<size_t>(left - origin_x) * 2u;
-        uint16_t* destination = reinterpret_cast<uint16_t*>(pixels) +
-            static_cast<size_t>(y - area->y1) * area_width +
-            (left - area->x1);
-        SwapRgb565Pixels(source, destination, right - left);
+    const size_t width = right - left;
+    const size_t height = bottom - top;
+    const auto* source = frame.pixels +
+        size_t(top - origin_y) * frame.stride_bytes + size_t(left - origin_x) * 2;
+    auto* destination = reinterpret_cast<uint16_t*>(pixels) +
+        size_t(top - area->y1) * area_width + (left - area->x1);
+    if (width == size_t(area_width) && frame.stride_bytes == width * 2) {
+        // Run the aligned swap across the band so SIMD tails are handled once.
+        SwapRgb565Pixels(source, destination, width * height);
+        return;
+    }
+    for (size_t row = 0; row < height; ++row) {
+        SwapRgb565Pixels(source + row * frame.stride_bytes,
+                         destination + row * area_width, width);
     }
 }
 

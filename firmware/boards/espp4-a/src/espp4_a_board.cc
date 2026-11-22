@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "pxa_video_codecs.h"
+#include "pxa/pxa_esp_video.h"
 #include "pxa_board.h"
 #include "espp4_a_panel.h"
 #include "espp4_a_audio.h"
@@ -35,6 +37,7 @@
 #include <esp_vfs_fat.h>
 #include <esp_wifi.h>
 #include <pxa/pxa_host.h>
+#include <pxa/pxa_debug_install.h>
 #include <pxa/pxa_host_interaction.h>
 #include <pxa_board_api.h>
 #include <pxa/display_rotation.h>
@@ -104,6 +107,7 @@ public:
     bool SetLevel(pxsys_level_control_t, uint8_t);
     void Dim(bool on, uint8_t value) { light_.SetIdleDim(on, value); ApplyBacklight(); }
     void ScreenOff() {
+        if (pxa_debug_install_active()) return;
         screen_on_ = false; ApplyBacklight();
         pxa_esp_surface_set_display_unlocked(false);
         (void)pxa_host_set_display_interactive(false);
@@ -187,10 +191,12 @@ private:
     uint32_t direct_acquire_misses_ = 0, direct_coverage_misses_ = 0;
     uint32_t composed_frames_ = 0, rotated_frames_ = 0;
     uint8_t compose_masks_ = 0, compose_guest_plane_ = 0, compose_system_plane_ = 0;
+    std::array<uint16_t,PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH*PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT> performance_pixels_{};
     std::atomic<uint32_t> light_state_{UINT32_MAX};
     lv_display_t* display_ = nullptr;
     lv_indev_t* pointers_[espp4_a::kTouchPointers]{};
     bool pressed_ = false, touch_blocked_ = false, button_down_ = false;
+    bool install_input_blocked_ = false;
     uint32_t button_since_ = 0;
     std::atomic<bool> surface_dirty_{true}, wifi_ready_{false};
     TaskHandle_t ui_task_ = nullptr;
@@ -292,6 +298,7 @@ bool Board::Initialize() {
     const gpio_config_t button = {.pin_bit_mask = 1ULL << 35, .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE};
     if (gpio_config(&button) != ESP_OK) return false;
+    if (!pxa_esp_video_set_backend(pxa_video_codecs_backend())) return false;
     audio_ready_ = audio_.Initialize();
     if (!audio_ready_) ESP_LOGW(kTag, "Audio unavailable");
     if (!Espp4AInitializeCamera()) ESP_LOGW(kTag, "Camera worker unavailable");
@@ -459,6 +466,10 @@ bool Board::PresentOpaqueSurface() {
     const uint8_t rotation = rotation_;
     if (ui_render_.direct() || (rotation && !rotation_pixels_) || painted_revision_ != lvgl_revision_)
         return false;
+    // The opaque path cannot blend a visible system or guest overlay. Let
+    // Flush materialize the newest draw list when LVGL must repaint anyway;
+    // preparing it here could rasterize a frame that Flush then replaces.
+    if (pxa_esp_surface_composition_required()) return false;
     CollectCompletions();
     while (pending_count_ == pending_.size()) { WaitScan(); CollectCompletions(); }
     pxa_esp_surface_frame_t frame{};
@@ -493,14 +504,24 @@ bool Board::PresentOpaqueSurface() {
         }
         ++direct_backdrop_frames_;
     }
-    espp4_a::Compose(frame, output, 0, 0, width, height, width, width, height);
-    if (pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY))
+    const bool direct_rotation=rotation && espp4_a::CanRotateSurfaceDirect(frame,width,height);
+    if (!direct_rotation) espp4_a::Compose(frame, output, 0, 0, width, height, width, width, height);
+    if (!direct_rotation && pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY))
         pxa_board_performance_draw_rgb565(output, width, height, width,
             0, 0, width, height, false);
     const int64_t composed = esp_timer_get_time();
     compose_us_ += composed - acquired; ++composed_frames_;
     if (rotation) {
-        rotation_engine_.Rotate(output, frames_[next], kWidth, kHeight, rotation);
+        rotation_engine_.Rotate(direct_rotation ? reinterpret_cast<const uint16_t*>(frame.pixels) : output,
+            frames_[next], kWidth, kHeight, rotation);
+        if (direct_rotation && pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY)) {
+            const int left=(width-PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH)/2;
+            pxa_board_performance_draw_rgb565(performance_pixels_.data(),width,height,
+                PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH,left,0,PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH,
+                PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT,false);
+            espp4_a::OverlayRgb565RectToNative(performance_pixels_.data(),frames_[next],left,0,
+                PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH,PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT,kWidth,kHeight,rotation);
+        }
         rotation_us_ += esp_timer_get_time() - composed; ++rotated_frames_;
     } else ++direct_native_frames_;
     ++direct_frames_;
@@ -797,6 +818,9 @@ bool Board::Wake() {
     return woke;
 }
 void Board::Input() {
+    const bool installing = pxa_debug_install_active();
+    if (installing && !install_input_blocked_) CancelPointers();
+    install_input_blocked_ = installing;
     const uint32_t now = lv_tick_get();
     if (touch_pending_.exchange(0, std::memory_order_relaxed)) touch_schedule_.Request();
     if (touch_ && touch_slots_ && touch_schedule_.Due(now, pressed_, !gpio_get_level(GPIO_NUM_52),
@@ -838,7 +862,10 @@ void Board::Input() {
                 if (takeover_) takeover_(takeover_context_);
                 touch_blocked_ = Wake() || touch_blocked_;
             }
-            if (any) Wake();
+            if (any) {
+                Wake();
+                touch_blocked_ = touch_blocked_ || installing;
+            }
             else touch_blocked_ = false;
             if (!touch_blocked_) for (unsigned id = 0; id < report.size(); ++id) {
                 const auto& p = report[id];
@@ -870,6 +897,7 @@ void Board::Input() {
 }
 void Board::Key(pxadb::TestControlKey key) {
     if (Wake() || !ui_) return;
+    if (pxa_debug_install_active()) return;
     if (key == pxadb::TestControlKey::kHome) (void)pxsys_reference_lvgl_home(ui_);
     else if (key == pxadb::TestControlKey::kBack) (void)pxsys_reference_lvgl_back(ui_);
     else if (audio_ready_) {
@@ -882,6 +910,7 @@ void Board::Loop() {
     uint32_t status_tick = 0, scan_tick = 0;
     for (;;) {
         Lock(0); lv_lock();
+        if (!screen_on_ && pxa_debug_install_active()) Wake();
         CollectCompletions();
         UpdateUiRenderMode();
         const int64_t input_started = esp_timer_get_time();

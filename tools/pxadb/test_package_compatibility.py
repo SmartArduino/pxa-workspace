@@ -123,13 +123,13 @@ class CompatibilityTests(unittest.TestCase):
             source=Path(directory);(source/'manifest.pxm').write_bytes(manifest());(source/'signature.pxs').touch()
             arguments=pxadb.build_parser().parse_args(['package','install',str(source),'--port','/dev/test','--yes'])
             client=Mock(device_info='');client.__enter__=Mock(return_value=client);client.__exit__=Mock(return_value=False)
-            self.host['core']=[2,0]
-            rejected=evaluate(self.package,self.host)
             with patch.object(pxadb,'open_client',return_value=client), \
-                 patch.object(pxadb,'package_compatibility',side_effect=[{'status':'compatible','checks':[]},rejected]), \
+                 patch.object(pxadb,'package_compatibility',return_value={'status':'compatible','checks':[]}) as compatibility, \
+                 patch.object(pxadb,'check_package_storage',side_effect=pxadb.PxaDbError('No package was uploaded')), \
                  patch.object(pxadb,'clear_staged_source') as cleanup:
                 with self.assertRaisesRegex(pxadb.PxaDbError,'No package was uploaded'):
                     pxadb.command_package_install(arguments)
+                compatibility.assert_called_once_with(client,source)
                 cleanup.assert_not_called();client.request.assert_not_called()
 
     def test_strict_staged_identity_requires_a_local_manifest_before_opening_port(self):

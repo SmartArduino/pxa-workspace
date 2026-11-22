@@ -32,11 +32,14 @@ an earlier connection generation are discarded. Log records fan out to each
 subscriber's bounded queue, with independent drop counts. Closing one
 connection does not unsubscribe the other.
 
-Newlib firmware holds the `stdout` and `stderr` stream locks across every
-transport chunk of a reply. Console logs and direct standard-error diagnostics
-therefore remain outside the complete PXADB1 line. The ESP_LOG tag-level mutex
-alone does not serialize `vprintf` output. Board ports must route their normal
-console through the same UART driver instead of writing directly to its FIFO.
+On a transport shared with the console, Newlib firmware holds the `stdout`
+and `stderr` stream locks across every chunk of a reply. Console logs and direct
+standard-error diagnostics therefore remain outside the complete PXADB1 line.
+The ESP_LOG tag-level mutex alone does not serialize `vprintf` output. Board
+ports route their normal console through the same UART driver instead of
+writing directly to its FIFO. Boards with a dedicated primary USB CDC
+interface, such as ESPP4-A, can declare that interface independent of those
+stream locks.
 
 A single control task polls both endpoints to avoid allocating another large
 internal-RAM stack. Partial lines and binary bodies do not block the other
@@ -112,14 +115,19 @@ One `READY remaining` or final `OK` follows each complete verified frame, using
 its sequence. There is no per-frame `CONTINUE`. Only one frame may be in flight.
 The maximum encoded 3840-byte frame plus delimiter is 3881 bytes, below both
 4096-byte receive rings. Final SHA-256 and streamed package signatures remain
-mandatory. On fast-frame failure the candidate is aborted; fallback starts
-again with an independently checked transfer.
+mandatory. Firmware advertising `fs_fast_resume=1` retains the confirmed
+offset after a rejected frame or data timeout. The client exits data mode
+with two zero delimiters, confirms command mode with `PING`, then repeats
+the same `FSPUT` or `FSINSTALL` to query the remaining bytes. A bounded
+binary retry can use smaller frames before falling back to checked text chunks.
 
 Completion, failure, explicit cancellation and ten seconds without bytes
 release the data buffer. A partial invalid/expired frame drains to its zero
 delimiter before any command can execute. At a frame boundary an empty frame
-cancels; the client sends two zeros and `FSABORT` to recover either state,
-including Ctrl-C and an uncertain negotiation ACK. HELLO also resynchronizes.
+exits data mode. The client sends two zeros and `FSABORT` to discard the
+candidate on explicit cancellation. On older firmware the same sequence
+resynchronizes command mode by resetting the transfer. `HELLO` opens a new
+session and discards any uncommitted candidate from that endpoint.
 Progress callbacks may update the UI but must not send text commands during
 this mode; the Python client rejects such calls before writing any bytes.
 No USB PHY handoff, re-enumeration or filesystem unmount is involved. A cable
@@ -322,15 +330,27 @@ pxadb package install app.pxa --volume sd --via auto --yes --port /dev/ttyACM0
 ```
 
 `--volume` 接受 `sd`、`internal` 或 `volumes` 列出的 mount epoch；同类卷存在
-多个候选时必须指定 epoch。要求本地文件采用 PXA 0.2。目标卷同时保存展开
-文件和安装事务，不经过内部 Flash 的 inbox。应用运行时读取普通文件。
+多个候选时必须指定 epoch。要求本地文件采用 PXA 0.2。设备验证流式索引后逐块
+解压，将文件直接写入目标卷的候选目录。接收内存由文件索引缓存、解压块和校验
+工作区决定。完整包通过校验后再提交安装，应用运行时读取已展开的文件。
 `--via serial` 使用当前线缆；`--via usb` 要求已连接原生 USB；`--via wifi`
 强制局域网传包。默认 `auto` 优先原生 USB 二进制模式，USB 转串口设备则
 尝试网络，失败时清理候选后走线缆。未指定 `--volume` 时，新版固件通过
 `package_location=1` 和 `PACKAGES` 的 `volume` 字段提供原安装卷；客户端按完整
-发布者根与 App ID 匹配，直接传到原卷，保留安装身份、存档和权限。旧布局或没有
-位置能力的固件继续使用 inbox。新版固件也会将旧客户端的 `PACKAGE deploy`
+发布者根与 App ID 匹配，直接传到原卷，保留安装身份、存档和权限。新装可流式接收
+的包时，优先使用有足够已知空间的内置卷，内置卷空间不足时选择可用的 SD 卡。
+旧布局或没有位置能力的固件继续使用 inbox。新版固件也会将旧客户端的 `PACKAGE deploy`
 路由到既有卷；跨卷 inbox 目录需要复制并计入目标卷空间预留。
+
+设备在调试安装中显示应用名称、版本、安装包大小、接收百分比、校验、写入和最终结果。
+固件报告 `package_install_ui=1` 时，客户端在传统 inbox 安装前发送
+`PACKAGE receive-progress <total-bytes>`。流式接收由 `FSINSTALL` 自动启动界面。
+固件报告 `package_install_meta=1` 时，这两个命令可在末尾附加 Base64 编码的名称和版本
+（UTF-8，解码后分别最多 128 和 64 字节）。缺失字段使用 `-`，带元数据的无卷
+`FSINSTALL` 用 `-` 占据 epoch 位置。客户端从本地清单读取预览信息，事务仍以设备的
+签名校验和安装结果为准。安装期间保持亮屏，调试输入和重启请求会收到
+`install_in_progress`。设备短暂显示安装结果后自动回到原界面。显式中止或会话超时
+会释放未提交的候选。
 
 `package_legacy_update_volume=1` 表示 `PACKAGE install-volume` 也支持旧布局
 应用的原位更新。客户端遇到 `PACKAGES volume=0` 时，通过 `PACKAGE paths`

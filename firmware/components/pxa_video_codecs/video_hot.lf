@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Keep the small pixel loop and conversion lookup tables in internal RAM.
+[mapping:pxa_video_hot]
+archive: libpxa_video_codecs.a
+entries:
+    video_pixels (noflash)
+    video_pie (noflash)

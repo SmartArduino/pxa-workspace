@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import zlib
 from dataclasses import dataclass
 from typing import Callable, Iterable
@@ -512,8 +513,9 @@ class PxaDbClient:
                                               command.encode("utf-8"))
             return
         payload = f"{PROTOCOL} {sequence} {command}\n".encode("ascii")
-        paced = (command.startswith(("FSDATA ", "FSDATA2 "))
-                 and getattr(self, "upload_profile", "unknown") != "usb")
+        profile = getattr(self, "upload_profile", "unknown")
+        paced = ((command.startswith(("FSDATA ", "FSDATA2 ")) and profile != "usb")
+                 or (command.startswith("FSINSTALL ") and profile == "uart"))
         burst_size = len(payload)
         if paced:
             burst_size = 128
@@ -599,6 +601,12 @@ class PxaDbClient:
                 continue
             if frame.sequence in ping_sequences:
                 continue
+            # A malformed binary header can leave the receiver without a
+            # chunk sequence. In that case it rejects the sole in-flight chunk
+            # using the FSFAST negotiation sequence.
+            if (command == "FSFAST" and frame.kind == "ERR" and frame.payload == "invalid_file_chunk"
+                    and frame.sequence == getattr(self, "fast_negotiation_sequence", None)):
+                raise PxaDbRejectedError(frame.payload)
             if frame.sequence != sequence:
                 self.pending_frames.append(frame)
                 continue
@@ -691,7 +699,9 @@ class PxaDbClient:
     def start_fast_upload(self, requested: int) -> int:
         # Mark before sending: a lost admission ACK may leave the peer in data mode.
         self.fast_upload_active = True
-        answer = info_properties(self.request(f"FSFAST {requested}")[-1].payload)
+        response = self.request(f"FSFAST {requested}")[-1]
+        self.fast_negotiation_sequence = response.sequence
+        answer = info_properties(response.payload)
         try:
             chunk = int(answer["chunk"])
             if not 256 <= chunk <= min(requested, 3840) or answer.get("window") != "1":
@@ -708,6 +718,11 @@ class PxaDbClient:
         # boundary. FSABORT confirms normal command mode and releases storage.
         self._write_bulk_bytes(b"\x00\x00")
         self.request("FSABORT", timeout=timeout)
+
+    def pause_fast_upload(self, timeout: float = 3) -> None:
+        self.fast_upload_active = False
+        self._write_bulk_bytes(b"\x00\x00")
+        self.request("PING", timeout=timeout)
 
     def send_fast_upload(self, offset: int, payload: bytes, timeout: float) -> list[Frame]:
         sequence = self._next_sequence()
@@ -1627,9 +1642,15 @@ class NormalFsClient:
                          and os.environ.get("PXADB_BULK", "1") != "0")
         fast_transfer = (bulk_transfer and properties.get("fs_fast") == "1"
                          and os.environ.get("PXADB_FAST", "1") != "0")
+        resumable_fast = properties.get("fs_fast_resume") == "1"
         try:
             offered_fast = min(3840, int(properties.get("max_fast", "2048")))
-            requested_fast = int(os.environ.get("PXADB_TRANSFER_CHUNK", str(offered_fast)))
+            # Leave room in the UART receive ring while streaming writes to
+            # flash. A lost full-size frame otherwise costs a 10 s timeout.
+            default_fast = offered_fast
+            if stream_install and properties.get("transport") == "uart":
+                default_fast = min(offered_fast, 1920)
+            requested_fast = int(os.environ.get("PXADB_TRANSFER_CHUNK", str(default_fast)))
             if not 256 <= requested_fast <= 3840 or offered_fast < 256:
                 raise ValueError()
             requested_fast = min(offered_fast, requested_fast)
@@ -1671,6 +1692,8 @@ class NormalFsClient:
         # removable-media files without relaxing ordinary data acknowledgements.
         verify_timeout = max(getattr(self.client, "timeout", 0.0),
                              file_verification_timeout(total))
+        upload_command = (stream_upload_command(self.client, source, remote_path, total, digest, stream_volume)
+                          if stream_install else f"FSPUT {client_encode_path(remote_path)} {total} {digest}")
 
         def report_progress(done: int) -> None:
             nonlocal last_progress
@@ -1687,11 +1710,7 @@ class NormalFsClient:
             nonlocal recoveries
             while True:
                 try:
-                    frames = begin_file_upload(self.client,
-                        f"{'FSINSTALL' if stream_install else 'FSPUT'} {client_encode_path(remote_path)} {total} {digest}" +
-                        (f" {stream_volume}" if stream_volume is not None else ""),
-                        timeout=verify_timeout,
-                    )
+                    frames = begin_file_upload(self.client, upload_command, timeout=verify_timeout)
                     return frames[-1]
                 except PxaDbRejectedError:
                     raise
@@ -1753,15 +1772,19 @@ class NormalFsClient:
                     terminal = frames[-1]
                 except PxaDbError as error:
                     reason = str(error)
+                    recoverable = not isinstance(error, PxaDbRejectedError) or reason in {
+                        "invalid_offset", "offset_mismatch", "invalid_file_chunk",
+                        "chunk_checksum_mismatch", "invalid_chunk_checksum", "bulk_timeout", "bulk_no_memory"
+                    }
                     retry_fast = (fast_transfer and offset_transfer and fast_retry_available
                                   and chunk_size > 256 and reason != "bulk_no_memory")
                     if fast_transfer:
-                        self.client.cancel_fast_upload()
+                        if resumable_fast and recoverable:
+                            self.client.pause_fast_upload()
+                        else:
+                            self.client.cancel_fast_upload()
                         fast_transfer = False
-                    if isinstance(error, PxaDbRejectedError) and reason not in {
-                        "invalid_offset", "offset_mismatch", "invalid_file_chunk",
-                        "chunk_checksum_mismatch", "invalid_chunk_checksum", "bulk_timeout", "bulk_no_memory"
-                    }:
+                    if not recoverable:
                         raise
                     # Count failures without meaningful confirmed progress.
                     # An isolated lost UART reply every few MiB must not make
@@ -1811,7 +1834,10 @@ class NormalFsClient:
                             # A missing negotiation ACK can leave the peer in
                             # binary mode. Cancel and reconfirm its offset before
                             # falling back; never send text into an uncertain mode.
-                            self.client.cancel_fast_upload()
+                            if resumable_fast:
+                                self.client.pause_fast_upload()
+                            else:
+                                self.client.cancel_fast_upload()
                             bulk_transfer = False
                             chunk_size = min(128, text_chunk_limit)
                             print(f"binary retry unavailable: {negotiation_error}; "
@@ -1943,6 +1969,29 @@ def begin_file_upload(client: PxaDbClient, command: str, timeout: float) -> list
     return client.request_until(command, {"READY", "OK"}, timeout=max(timeout, 30))
 
 
+def install_label_arguments(client: PxaDbClient, source: pathlib.Path) -> str:
+    if info_properties(client.device_info).get("package_install_meta") != "1":
+        return ""
+
+    def encode(text: bytes, limit: int) -> str:
+        clean = "".join(character if not unicodedata.category(character).startswith("C") else " "
+                        for character in text.decode("utf-8", "replace"))
+        bounded = " ".join(clean.split()).encode("utf-8")[:limit].decode("utf-8", "ignore")
+        return base64.b64encode(bounded.encode("utf-8")).decode("ascii") or "-"
+
+    fields = dict(manifest_records(read_package_manifest(source)[12:]))
+    return f" {encode(fields.get(4) or fields.get(2, b''), 128)} {encode(fields.get(3, b''), 64)}"
+
+
+def stream_upload_command(client: PxaDbClient, source: pathlib.Path,
+                          remote: str, total: int, digest: str, epoch: int | None) -> str:
+    command = f"FSINSTALL {client_encode_path(remote)} {total} {digest}"
+    metadata = install_label_arguments(client, source)
+    if epoch is not None or metadata:
+        command += f" {epoch if epoch is not None else '-'}"
+    return command + metadata
+
+
 def check_container_features(client: PxaDbClient, source: pathlib.Path) -> None:
     if not source.is_file():
         return
@@ -2056,7 +2105,8 @@ def check_package_storage(client: NormalFsClient, source: pathlib.Path) -> dict[
 
 
 def stage_package_files(client: "NormalFsClient", source: pathlib.Path,
-                        identity: str, timeout: float, *, publish: bool = True) -> None:
+                        identity: str, timeout: float, *, publish: bool = True,
+                        compatibility_checked: bool = False) -> None:
     """Receive into an invisible candidate on capable hosts.
 
     Explicit staging publishes a fully verified offline package. Installers can
@@ -2064,10 +2114,16 @@ def stage_package_files(client: "NormalFsClient", source: pathlib.Path,
     the connection also discards a complete but uncommitted upload.
     """
     check_container_features(client.client,source)
-    compatibility_admission(package_compatibility(client.client,source))
+    if not compatibility_checked:
+        compatibility_admission(package_compatibility(client.client, source))
     properties = check_package_storage(client, source)
     receiving = properties.get("package_receive") == "1"
     try:
+        if not publish and info_properties(client.client.device_info).get("package_install_ui") == "1":
+            total = sum(path.stat().st_size for path in iter_package_files(source)) if source.is_dir() else source.stat().st_size
+            if total:
+                client.client.request(f"PACKAGE receive-progress {total}"
+                                      + install_label_arguments(client.client, source))
         _stage_package_files(client, source, identity, timeout, receiving)
         if receiving and publish:
             client.client.request(f"PACKAGE publish {identity}",
@@ -2251,9 +2307,8 @@ def fetch_package_stream(client: PxaDbClient, source: pathlib.Path, remote: str,
         network = info_properties(client.request("NETINFO")[-1].payload)
         with package_http_source(source, network["ipv4"]) as url:
             total = source.stat().st_size
-            frames = begin_file_upload(client,
-                f"FSINSTALL {client_encode_path(remote)} {total} {file_sha256(source)} {epoch}",
-                timeout=max(client.timeout, 30))
+            command = stream_upload_command(client, source, remote, total, file_sha256(source), epoch)
+            frames = begin_file_upload(client, command, timeout=max(client.timeout, 30))
             begun = True
             if frames[-1].kind != "OK":
                 print("transferring package over local Wi-Fi", file=sys.stderr, flush=True)
@@ -2278,14 +2333,18 @@ def device_volumes(client: PxaDbClient) -> list[dict[str, str]]:
     return [info_properties(frame.payload) for frame in client.request("VOLUMES") if frame.kind == "DATA"]
 
 
+def installable_volume(volume: dict[str, str]) -> bool:
+    caps = int(volume.get("capabilities", "0"))
+    return (caps & 67 == 67 and volume.get("state") == "2"
+            and volume.get("ambiguous") == "0" and bool(volume.get("relative")))
+
+
 def select_install_volume(client: PxaDbClient, selector: str) -> dict[str, str]:
     candidates = []
     for volume in device_volumes(client):
-        caps = int(volume.get("capabilities", "0"))
-        if caps & 67 != 67 or volume.get("state") != "2" or volume.get("ambiguous") != "0":
+        if not installable_volume(volume):
             continue
-        if not volume.get("relative"):
-            continue
+        caps = int(volume["capabilities"])
         if (selector == "sd" and caps & 4) or (selector == "internal" and not caps & 4) or selector == volume["epoch"]:
             candidates.append(volume)
     if len(candidates) != 1:
@@ -2293,29 +2352,65 @@ def select_install_volume(client: PxaDbClient, selector: str) -> dict[str, str]:
     return candidates[0]
 
 
-def stage_package_on_volume(client: PxaDbClient, source: pathlib.Path, selector: str,
-                            via: str = "auto") -> tuple[int, str, str]:
-    prefix = stream_container_prefix(source)
-    if not prefix:
-        raise PxaDbError("direct volume installation requires a streamable PXA 0.2 file (PXA_CONTAINER_STREAM=1)")
-    if info_properties(client.device_info).get("package_stream_volume") != "1":
-        raise PxaDbError("direct volume installation requires newer device firmware")
-    check_container_features(client, source)
-    compatibility_admission(package_compatibility(client,source))
-    volume = select_install_volume(client, selector)
-    epoch = int(volume["epoch"])
+def streamed_install_space(source: pathlib.Path, prefix: int, volume: dict[str, str]) -> int:
     unit = max(4096, int(volume.get("unit", "4096")))
-    required = ((prefix + unit - 1) // unit + 18) * unit + 128 * 1024
+    # The signed index is removed before commit. A native private volume
+    # needs no separately allocated private image. Its 128 KiB working
+    # margin already covers the prepared-tree commit reserve.
+    index_bytes = ((prefix + unit - 1) // unit + 1) * unit
+    commit_bytes = 18 * unit
+    margin = 128 * 1024
+    native_private = bool(int(volume["capabilities"]) & 128)
     manifest = read_package_manifest(source)
+    if native_private:
+        required = max(index_bytes + 4 * unit, commit_bytes, margin)
+        # The unpacked manifest and signature coexist with the signed index.
+        required += ((len(manifest) + unit - 1) // unit + 2) * unit
+    else:
+        required = max(index_bytes, commit_bytes) + margin + int(volume.get("private_bytes", "0"))
+    parents = set()
     for tag, value in manifest_records(manifest[12:]):
         if tag == 17:
             for field, data in manifest_records(value):
                 if field == 2 and len(data) == 8:
                     required += ((struct.unpack("<Q", data)[0] + unit - 1) // unit + 1) * unit
                 elif field == 1:
-                    required += data.count(b"/") * unit
-    if not int(volume["capabilities"]) & 128:
-        required += int(volume.get("private_bytes", "0"))
+                    parents.update(data[:index] for index, byte in enumerate(data) if byte == ord("/"))
+    required += len(parents) * unit
+    return required
+
+
+def choose_fresh_install_volume(client: PxaDbClient, source: pathlib.Path) -> str | None:
+    properties = info_properties(client.device_info)
+    if properties.get("package_location") != "1" or properties.get("package_stream_volume") != "1":
+        return None
+    prefix = stream_container_prefix(source)
+    if not prefix or package_publisher_root(source) is None:
+        return None
+    candidates = [volume for volume in device_volumes(client) if installable_volume(volume)]
+    candidates.sort(key=lambda volume: bool(int(volume["capabilities"]) & 4))
+    for volume in candidates:
+        if (int(volume.get("known", "0")) & 2 and
+                int(volume["free"]) >= streamed_install_space(source, prefix, volume)):
+            return volume["epoch"]
+    return None
+
+
+def stage_package_on_volume(client: PxaDbClient, source: pathlib.Path, selector: str,
+                            via: str = "auto", *,
+                            compatibility_checked: bool = False,
+                            progress: Callable[[int, int], None] | None = None) -> tuple[int, str, str]:
+    prefix = stream_container_prefix(source)
+    if not prefix:
+        raise PxaDbError("direct volume installation requires a streamable PXA 0.2 file (PXA_CONTAINER_STREAM=1)")
+    if info_properties(client.device_info).get("package_stream_volume") != "1":
+        raise PxaDbError("direct volume installation requires newer device firmware")
+    check_container_features(client, source)
+    if not compatibility_checked:
+        compatibility_admission(package_compatibility(client, source))
+    volume = select_install_volume(client, selector)
+    epoch = int(volume["epoch"])
+    required = streamed_install_space(source, prefix, volume)
     if int(volume.get("known", "0")) & 2 and int(volume["free"]) < required:
         raise PxaDbError(f"insufficient device storage on selected volume: needs about {required} bytes")
     relative = volume["relative"]
@@ -2323,7 +2418,8 @@ def stage_package_on_volume(client: PxaDbClient, source: pathlib.Path, selector:
     try:
         fetched = fetch_package_stream(client, source, remote, epoch, via)
         if not fetched:
-            NormalFsClient(client).put(source, remote, stream_install=True, stream_volume=epoch)
+            NormalFsClient(client).put(source, remote, progress=progress,
+                                       stream_install=True, stream_volume=epoch)
         native = info_properties(client.device_info).get("transport", "").startswith("usb-")
         return epoch, remote, "wifi" if fetched else "usb" if native else "serial"
     except BaseException:
@@ -2406,7 +2502,7 @@ def package_composite_identity(source: pathlib.Path) -> str:
 
 def existing_package_volume(client: PxaDbClient, source: pathlib.Path,
                             app_id: str) -> str | None:
-    """Keep a signed identity's installed volume before receiving any bytes."""
+    """Return the installed epoch, including '0' for a legacy installation."""
     if info_properties(client.device_info).get("package_location") != "1":
         return None
     root = package_publisher_root(source)
@@ -2427,19 +2523,22 @@ def existing_package_volume(client: PxaDbClient, source: pathlib.Path,
         epoch = state.get("volume", "0")
         if not epoch.isdecimal() or int(epoch) >= 1 << 64:
             raise PxaDbError("invalid installed volume returned by device")
-        return epoch if int(epoch) else None
+        return str(int(epoch))
     return None
 
 
 def command_package_install(arguments: argparse.Namespace,
                             connection: PxaDbClient | None = None, *,
-                            quiet: bool = False) -> int:
+                            quiet: bool = False,
+                            progress: Callable[[int, int], None] | None = None) -> int:
     """Install once, optionally borrowing a caller-owned live connection.
 
     Borrowing keeps UART bridge reset circuits out of multi-step workflows.
     The caller remains responsible for closing the connection.
     """
     def approve_replacement(client: PxaDbClient, identity: str) -> None:
+        if arguments.yes:
+            return
         packages = client.request("PACKAGES")
         installed = any(
             frame.kind == "PKG"
@@ -2447,7 +2546,7 @@ def command_package_install(arguments: argparse.Namespace,
             and "installed=1" in frame.payload.rsplit("\t", 1)[-1].split(";")
             for frame in packages
         )
-        if installed and not arguments.yes:
+        if installed:
             if not sys.stdin.isatty():
                 raise PxaDbError(
                     "replacing an installed package requires --yes; the file may be a downgrade"
@@ -2477,20 +2576,27 @@ def command_package_install(arguments: argparse.Namespace,
         with (contextlib.nullcontext(connection) if connection is not None else
               open_client(resolve_pxadb_port(arguments.port, control_timeout),
                           control_timeout, arguments.logcat)) as client:
-            compatibility_admission(package_compatibility(client,local_package),
-                                    strict=getattr(arguments,'strict_compatibility',False))
+            compatibility_admission(package_compatibility(client, local_package),
+                                    strict=getattr(arguments, "strict_compatibility", False))
             volume = arguments.volume
             if not volume and local_package.is_file():
                 volume = existing_package_volume(client, local_package, identity)
-                if volume:
+                if volume == "0":
+                    volume = None
+                elif volume:
                     print("updating on the existing installation volume", file=sys.stderr, flush=True)
+                else:
+                    volume = choose_fresh_install_volume(client, local_package)
+                    if volume:
+                        print(f"installing directly on volume {volume}", file=sys.stderr, flush=True)
             if volume:
                 approve_replacement(client, identity)
                 received = False
                 try:
                     print(f"receiving and unpacking: {identity}", file=sys.stderr, flush=True)
                     epoch, remote, _ = stage_package_on_volume(
-                        client, local_package, volume, arguments.via)
+                        client, local_package, volume, arguments.via,
+                        compatibility_checked=True, progress=progress)
                     received = True
                     print(f"verifying and installing: {identity}", file=sys.stderr, flush=True)
                     client.request(f"PACKAGE install-volume {epoch} {client_encode_path(remote)}",
@@ -2508,12 +2614,13 @@ def command_package_install(arguments: argparse.Namespace,
                 return 0
             staged = False
             try:
+                approve_replacement(client, identity)
                 print(f"staging: {identity}", file=sys.stderr, flush=True)
                 stage_package_files(NormalFsClient(client), local_package, identity,
-                                    arguments.timeout, publish=False)
+                                    arguments.timeout, publish=False, compatibility_checked=True)
                 staged = True
                 print(f"verifying and installing: {identity}", file=sys.stderr, flush=True)
-                deploy(client, identity, deploy_timeout)
+                client.request(f"PACKAGE deploy {identity}", timeout=deploy_timeout)
             finally:
                 if staged:
                     clear_staged_source(client, identity)

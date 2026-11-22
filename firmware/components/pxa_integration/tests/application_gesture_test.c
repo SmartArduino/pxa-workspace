@@ -202,6 +202,12 @@ static void settle_launcher(lv_indev_t* indev) {
     }
 }
 
+static void record_launcher_order(void* context, const char* order) {
+    unsigned* writes = context;
+    assert(order != NULL && strchr(order, '\n') != NULL);
+    ++*writes;
+}
+
 static void test_launcher_paging(lv_display_t* display) {
     pxsys_reference_lvgl_t ui = {.magic = REFERENCE_MAGIC};
     pxsys_display_profile_init(&ui.display, 296, 240);
@@ -221,8 +227,12 @@ static void test_launcher_paging(lv_display_t* display) {
     ui.launcher_items = items;
     ui.launcher_count = sizeof(items) / sizeof(items[0]);
     ui.launcher_gap = 4;
+    unsigned order_writes = 0;
+    ui.launcher_order_context = &order_writes;
+    ui.launcher_order_save = record_launcher_order;
     for (unsigned i = 0; i < ui.launcher_count; ++i) {
         items[i].ui = &ui;
+        snprintf(items[i].app_id, sizeof(items[i].app_id), "test.app-%u", i);
         make_launcher_tile(&ui, "Page test", &items[i]);
     }
     lv_obj_update_layout(ui.root);
@@ -262,6 +272,36 @@ static void test_launcher_paging(lv_display_t* display) {
     settle_launcher(indev);
     assert(ui.launcher_page == 0);
     assert(lv_obj_get_scroll_x(ui.content) == 0);
+
+    /* Holding the edge turns the page even when the finger stays still.
+     * The empty last-page slots accept a drop, and only release saves it. */
+    pointer_sample(indev, 32, 64, true);
+    lv_tick_inc(600);
+    lv_indev_read(indev);
+    assert(ui.launcher_drag_item == &items[0] && ui.launcher_drag_icon != NULL);
+    pointer_sample(indev, 291, 64, true);
+    advance(460);
+    assert(ui.launcher_page == 1 && lv_obj_get_scroll_x(ui.content) == 296);
+    assert(ui.launcher_drag_item == &items[0] && order_writes == 0);
+    pointer_sample(indev, 224, 168, true);
+    pointer_sample(indev, 224, 168, false);
+    assert(ui.launcher_drag_item == NULL && ui.launcher_edge_timer == NULL);
+    assert(lv_obj_get_index(items[0].tile) == (int32_t)ui.launcher_count - 1);
+    assert(!lv_obj_is_hidden(items[0].icon_marker) && order_writes == 1);
+
+    /* A cancelled drag across the other edge returns to its starting page. */
+    pointer_sample(indev, 32, 64, true);
+    lv_tick_inc(600);
+    lv_indev_read(indev);
+    assert(ui.launcher_drag_item == &items[0]);
+    pointer_sample(indev, 2, 64, true);
+    advance(460);
+    assert(ui.launcher_page == 0);
+    lv_indev_wait_release(indev);
+    pointer_sample(indev, 2, 64, false);
+    assert(ui.launcher_drag_item == NULL && ui.launcher_page == 1);
+    assert(lv_obj_get_index(items[0].tile) == (int32_t)ui.launcher_count - 1);
+    assert(order_writes == 1);
     lv_indev_delete(indev);
     lv_obj_delete(ui.root);
 }
@@ -386,7 +426,7 @@ int main(void) {
     lv_draw_buf_destroy(recent);
 
     /* Cancelling animates the existing snapshot back, then releases ownership. */
-    animate_application(&ui, 256, 0, 0, NULL);
+    animate_application(&ui, 256, 0, 0);
     advance(300);
     assert(ui.application_motion_image == NULL && ui.application_motion_snapshot == NULL);
     assert(restores == 1 && !ui.application_presentation_hidden);
@@ -416,23 +456,65 @@ int main(void) {
     application_scale_reset(&ui);
     fail_capture = false;
 
-    /* The very first visible Back sample must include the arrow, not a blank box. */
-    assert(!navigation_back_indicator_update(&ui, 12, 12, 16, 240));
+    /* Start with a single dark pixel column at the physical edge. */
+    ui.display.safe_insets.left = 12;
+    assert(!navigation_back_indicator_update(&ui, 12, 13, 240));
     lv_obj_t* indicator = ui.navigation_back_indicator;
     assert(indicator != NULL && !lv_obj_is_hidden(indicator));
-    assert(!lv_obj_is_hidden(lv_obj_get_child(indicator, 0)));
-    assert(lv_obj_get_style_x(indicator, 0) >= 12);
-    assert(lv_obj_get_style_radius(indicator, 0) >= 14);
+    assert(lv_obj_get_style_x(indicator, 0) == 0);
+    assert(lv_obj_get_style_width(indicator, 0) == 1);
+    assert(lv_obj_get_style_line_opa(lv_obj_get_child(indicator, 0), 0) == LV_OPA_TRANSP);
+    for (int32_t distance = 2; distance <= 28; ++distance) {
+        assert(!navigation_back_indicator_update(&ui, 12, 12 + distance, 240));
+        assert(lv_obj_get_style_width(indicator, 0) == distance);
+    }
+    assert(lv_obj_get_style_line_opa(lv_obj_get_child(indicator, 0), 0) == LV_OPA_COVER);
     lv_draw_buf_t* first = lv_snapshot_take(indicator, LV_COLOR_FORMAT_ARGB8888);
     lv_draw_buf_t* second = lv_snapshot_take(indicator, LV_COLOR_FORMAT_ARGB8888);
     assert(first != NULL && second != NULL);
     assert(first->header.w == second->header.w && first->header.h == second->header.h);
     assert(memcmp(first->data, second->data, first->header.stride * first->header.h) == 0);
-    assert(((const lv_color32_t*)first->data)[0].alpha == 0);
+    assert(((const lv_color32_t*)first->data)[0].alpha == 255);
+    assert(((const lv_color32_t*)first->data)[first->header.w - 1].alpha == 0);
     lv_draw_buf_destroy(first);
     lv_draw_buf_destroy(second);
     navigation_back_indicator_reset(&ui);
     assert(ui.navigation_back_indicator == NULL);
+
+    /* On a circular screen the fully opened stem reaches every visible row. */
+    ui.display.shape = PXSYS_DISPLAY_SHAPE_CIRCLE;
+    assert(navigation_back_indicator_update(&ui, 64, 106, 105));
+    indicator = ui.navigation_back_indicator;
+    lv_obj_update_layout(indicator);
+    lv_area_t curved;
+    lv_obj_get_coords(indicator, &curved);
+    const int32_t radius = (int32_t)ui.display.width / 2;
+    assert(curved.x1 > 0);
+    for (int32_t y = curved.y1; y <= curved.y2; ++y) {
+        const int32_t edge = pxa_lvgl_back_edge_inset(radius, y);
+        assert(curved.x1 <= edge);
+        assert(curved.x2 - lv_obj_get_style_radius(indicator, 0) >= edge);
+    }
+    navigation_back_indicator_reset(&ui);
+
+    lv_obj_t* back_button = make_settings_header_button(&ui, ui.root,
+        LV_SYMBOL_LEFT, 0xF053, back_clicked);
+    lv_obj_t* action_button = make_page_button(&ui, ui.root, "Confirm",
+        PXA_LVGL_ACTION_PRIMARY, NULL, NULL);
+    lv_obj_t* buttons[] = {back_button, action_button};
+    for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); ++i) {
+        lv_obj_t* child = lv_obj_get_child(buttons[i], 0);
+        for (unsigned pressed = 0; pressed <= 1; ++pressed) {
+            if (pressed) lv_obj_add_state(buttons[i], LV_STATE_PRESSED);
+            lv_obj_update_layout(buttons[i]);
+            lv_area_t bounds, label;
+            lv_obj_get_coords(buttons[i], &bounds);
+            lv_obj_get_coords(child, &label);
+            assert(abs(label.x1 + label.x2 - bounds.x1 - bounds.x2) <= 1);
+            assert(abs(label.y1 + label.y2 - bounds.y1 - bounds.y2) <= 1);
+        }
+        lv_obj_delete(buttons[i]);
+    }
 
     /* Status samples must preserve the launcher and an open shade. Test the
      * real compact layout, including updates deferred until touch release. */
@@ -456,6 +538,14 @@ int main(void) {
     lv_obj_t* shade = ui.notification_shade;
     lv_obj_t* shade_content = ui.notification_content;
     lv_obj_t* clock = ui.notification_time;
+    assert(ui.notification_fixed_viewport);
+    notification_shade_progress_set(&ui, 128);
+    lv_obj_update_layout(shade);
+    lv_area_t viewport;
+    lv_obj_get_coords(ui.notification_viewport, &viewport);
+    assert(viewport.y1 == -120 && viewport.y2 == 119);
+    assert(lv_obj_get_height(ui.notification_viewport) == 240);
+    notification_shade_progress_set(&ui, 256);
     assert(clock != NULL && ui.notification_volume != NULL);
     lv_timer_t* status_timer = lv_timer_create(status_refresh_poll, 50, &ui);
     ui.system_status.minute = 35;
@@ -475,6 +565,8 @@ int main(void) {
     assert(strcmp(lv_label_get_text(ui.notification_date), "2026-10-11") == 0);
     assert(lv_slider_get_value(ui.notification_volume) == 55);
     assert(lv_slider_get_value(ui.notification_brightness) == 85);
+    assert(strcmp(lv_label_get_text(ui.shade_levels[0].readout), "55%") == 0);
+    assert(strcmp(lv_label_get_text(ui.shade_levels[1].readout), "85%") == 0);
     /* A new supported control needs a new shade, but not new launcher icons. */
     ui.system_status.wifi_supported = 1;
     ui.system_status.wifi_enabled = 1;
@@ -483,10 +575,24 @@ int main(void) {
     assert(lv_obj_is_valid(launcher_sentinel));
     assert(!ui.status_rebuild_pending && ui.notification_shade_open);
     assert(strcmp(lv_label_get_text(ui.notification_time), "12:35") == 0);
+    shade = ui.notification_shade;
     close_notification_shade(&ui);
+    ui.system_status.volume_percent = 30;
     ui.status_refresh_pending = 1;
     status_refresh_poll(status_timer);
+    open_notification_shade(&ui);
+    assert(ui.notification_shade == shade && ui.notification_shade_open);
+    assert(lv_slider_get_value(ui.notification_volume) == 30);
+
+    close_notification_shade(&ui);
+    ui.system_status.brightness_supported = 0;
+    ui.status_refresh_pending = ui.status_rebuild_pending = 1;
+    status_refresh_poll(status_timer);
+    assert(ui.status_rebuild_pending);
+    open_notification_shade(&ui);
+    assert(!ui.status_rebuild_pending && ui.notification_brightness == NULL);
     assert(lv_obj_is_valid(launcher_sentinel));
+    close_notification_shade(&ui);
     lv_timer_delete(status_timer);
 
     lv_obj_delete(ui.task_switcher);

@@ -134,16 +134,23 @@ static esp_err_t download_event(esp_http_client_event_t *event) {
 static int cancelled(const pxa_esp_store_job_t *job) {
     return __atomic_load_n(&job->cancelled,__ATOMIC_ACQUIRE);
 }
-static pxa_status_t transport_failure(esp_http_client_handle_t client,esp_err_t error) {
+static bool transient_http(int code) {
+    return code == 0 || code == 408 || code == 502 || code == 503 || code == 504;
+}
+static pxa_status_t transport_failure(esp_http_client_handle_t client,esp_err_t error,bool *retry) {
     int tls_error=0,tls_flags=0;
     if(client)(void)esp_http_client_get_and_clear_last_tls_error(client,&tls_error,&tls_flags);
     ESP_LOGW("PxaStore","HTTPS connection failed: esp=%d tls=%d flags=%d",(int)error,tls_error,tls_flags);
     if(!client || error==ESP_ERR_NO_MEM || tls_error==MBEDTLS_ERR_SSL_ALLOC_FAILED ||
         tls_error==-MBEDTLS_ERR_SSL_ALLOC_FAILED)return PXA_STATUS_RESOURCE_LIMIT;
-    return PXA_STATUS_IO_ERROR;
+    /* TLS verification and allocator failures are not repaired by repeating a
+     * GET. Connection failures without a TLS diagnostic include DNS/socket
+     * failures, for which one new connection can recover. */
+    *retry=tls_error==0 && tls_flags==0;
+    return error==ESP_ERR_TIMEOUT?PXA_STATUS_TIMED_OUT:PXA_STATUS_IO_ERROR;
 }
-static __attribute__((noinline)) pxa_status_t read_metadata(pxa_esp_store_job_t *job,const char *url,
-    uint64_t expected_bytes,uint8_t cached,uint8_t *prefix,size_t *bytes) {
+static __attribute__((noinline)) pxa_status_t read_metadata_once(pxa_esp_store_job_t *job,const char *url,
+    uint64_t expected_bytes,uint8_t cached,uint8_t *prefix,size_t *bytes,bool *retry) {
     FILE *file=NULL;esp_http_client_handle_t client=NULL;pxa_container_header_t header;
     esp_http_client_config_t config={.method=HTTP_METHOD_GET,.timeout_ms=30000,
         .disable_auto_redirect=true,.crt_bundle_attach=esp_crt_bundle_attach,.buffer_size=1024};
@@ -156,7 +163,7 @@ static __attribute__((noinline)) pxa_status_t read_metadata(pxa_esp_store_job_t 
             (int)(suffix-url),url,suffix+9)>=(int)sizeof(metadata_url))return PXA_STATUS_INVALID_ARGUMENT;
         config.url=metadata_url;client=esp_http_client_init(&config);
         esp_err_t opened=client?esp_http_client_open(client,0):ESP_ERR_NO_MEM;
-        if(opened!=ESP_OK) {status=transport_failure(client,opened);goto done;}
+        if(opened!=ESP_OK) {status=transport_failure(client,opened,retry);goto done;}
         int64_t length=esp_http_client_fetch_headers(client);
         if(esp_http_client_get_status_code(client)==404) {
             /* Older stores can serve the same bounded prefix from the
@@ -165,21 +172,25 @@ static __attribute__((noinline)) pxa_status_t read_metadata(pxa_esp_store_job_t 
             /* The metadata URL is no longer needed; reuse its buffer for the
              * bounded fallback range instead of growing this worker frame. */
             (void)snprintf(metadata_url,sizeof(metadata_url),"bytes=0-%u",(unsigned)(METADATA_MAX-1u));
-            if(!client) {status=transport_failure(NULL,ESP_ERR_NO_MEM);goto done;}
+            if(!client) {status=transport_failure(NULL,ESP_ERR_NO_MEM,retry);goto done;}
             if(esp_http_client_set_header(client,"Range",metadata_url)!=ESP_OK)goto done;
             opened=esp_http_client_open(client,0);
-            if(opened!=ESP_OK) {status=transport_failure(client,opened);goto done;}
+            if(opened!=ESP_OK) {status=transport_failure(client,opened,retry);goto done;}
             (void)esp_http_client_fetch_headers(client);
             int code=esp_http_client_get_status_code(client);
-            if(code!=200 && code!=206)goto done;
-        } else if(esp_http_client_get_status_code(client)!=200 || length>(int64_t)METADATA_MAX)goto done;
+            if(code!=200 && code!=206) {*retry=transient_http(code);goto done;}
+        } else {
+            int code=esp_http_client_get_status_code(client);
+            if(code!=200) {*retry=transient_http(code);goto done;}
+            if(length>(int64_t)METADATA_MAX)goto done;
+        }
     }
     if(!file && !client)goto done;
     for(;;) {
         if(cancelled(job)) {status=PXA_STATUS_CANCELLED;goto done;}
         while(have<need) {
             int got=file?(int)fread(prefix+have,1,need-have,file):esp_http_client_read(client,(char *)prefix+have,(int)(need-have));
-            if(got<=0) {status=PXA_STATUS_IO_ERROR;goto done;}
+            if(got<=0) {*retry=client!=NULL;status=PXA_STATUS_IO_ERROR;goto done;}
             have+=(size_t)got;
             if(cancelled(job)) {status=PXA_STATUS_CANCELLED;goto done;}
         }
@@ -197,6 +208,16 @@ static __attribute__((noinline)) pxa_status_t read_metadata(pxa_esp_store_job_t 
     if(client)esp_http_client_cleanup(client);
     return status;
 }
+static pxa_status_t read_metadata(pxa_esp_store_job_t *job,const char *url,
+    uint64_t expected_bytes,uint8_t cached,uint8_t *prefix,size_t *bytes) {
+    bool retry=false;
+    pxa_status_t status=read_metadata_once(job,url,expected_bytes,cached,prefix,bytes,&retry);
+    if(retry && !cancelled(job)) {
+        ESP_LOGW("PxaStore","Retrying interrupted metadata request");
+        status=read_metadata_once(job,url,expected_bytes,cached,prefix,bytes,&retry);
+    }
+    return cancelled(job)?PXA_STATUS_CANCELLED:status;
+}
 static __attribute__((noinline)) pxa_status_t create_cache_directory(uint64_t epoch) {
     char path[384];struct stat st;
     pxa_status_t status=pxa_esp_storage_volume_path(epoch,path,sizeof(path));if(status!=PXA_STATUS_OK)return status;
@@ -211,9 +232,9 @@ static __attribute__((noinline)) pxa_status_t create_cache_directory(uint64_t ep
 }
 /* Close transport and crypto before entering the filesystem coordinator.
  * This separate frame is also retired before the SDK/FAT call depth. */
-static __attribute__((noinline)) pxa_status_t download_file(pxa_esp_store_job_t *job,const char *url,
+static __attribute__((noinline)) pxa_status_t download_file_once(pxa_esp_store_job_t *job,const char *url,
     uint64_t epoch,uint64_t bytes,const uint8_t *expected_digest,uint64_t progress_base,uint8_t streaming,
-    char *path,size_t path_bytes,char *filename,size_t filename_bytes) {
+    char *path,size_t path_bytes,char *filename,size_t filename_bytes,bool *retry) {
     download_sink_t sink={0};esp_http_client_handle_t client=NULL;int descriptor=-1,owned=0;
     uint8_t digest[32];pxa_status_t status=create_cache_directory(epoch);
     path[0]=0;mbedtls_md_init(&sink.sha);
@@ -262,9 +283,15 @@ static __attribute__((noinline)) pxa_status_t download_file(pxa_esp_store_job_t 
         (void)esp_wifi_set_ps(previous);
     status=PXA_STATUS_IO_ERROR;
     if(cancelled(job)) {status=PXA_STATUS_CANCELLED;goto done;}
-    if(!client || fetched!=ESP_OK) {status=transport_failure(client,fetched);goto done;}
-    if(esp_http_client_get_status_code(client)!=200 || sink.failed ||
-        sink.received!=bytes || (sink.hash_enabled && (mbedtls_md_finish(&sink.sha,digest) || memcmp(digest,expected_digest,32))))goto done;
+    if(client) {
+        int code=esp_http_client_get_status_code(client);
+        if(code && code!=200) {*retry=transient_http(code);goto done;}
+    }
+    if(sink.failed)goto done; /* Disk error or rejected container; never retry. */
+    if(!client || fetched!=ESP_OK) {status=transport_failure(client,fetched,retry);goto done;}
+    if(esp_http_client_get_status_code(client)!=200) {*retry=true;goto done;}
+    if(sink.received!=bytes) {*retry=true;goto done;}
+    if(sink.hash_enabled && (mbedtls_md_finish(&sink.sha,digest) || memcmp(digest,expected_digest,32)))goto done;
     if(streaming) {
         status=pxa_host_container_stream_finish(sink.stream);
         if(status!=PXA_STATUS_OK)goto done;
@@ -281,6 +308,22 @@ done:
     if(sink.file)fclose(sink.file);
     if(descriptor>=0)close(descriptor);
     if(status!=PXA_STATUS_OK && owned) {if(!streaming)unlink(path);path[0]=0;}
+    return status;
+}
+static pxa_status_t download_file(pxa_esp_store_job_t *job,const char *url,
+    uint64_t epoch,uint64_t bytes,const uint8_t *expected_digest,uint64_t progress_base,uint8_t streaming,
+    char *path,size_t path_bytes,char *filename,size_t filename_bytes) {
+    bool retry=false;
+    pxa_status_t status=download_file_once(job,url,epoch,bytes,expected_digest,progress_base,streaming,
+        path,path_bytes,filename,filename_bytes,&retry);
+    if(retry && !cancelled(job)) {
+        ESP_LOGW("PxaStore","Retrying interrupted package transfer");
+        job->downloaded_bytes=progress_base;
+        job->reported_percent=(uint8_t)(progress_base*100u/job->total_bytes);
+        job->notify(job,4u);
+        status=download_file_once(job,url,epoch,bytes,expected_digest,progress_base,streaming,
+            path,path_bytes,filename,filename_bytes,&retry);
+    }
     return status;
 }
 void pxa_esp_store_run_job(void *context) {

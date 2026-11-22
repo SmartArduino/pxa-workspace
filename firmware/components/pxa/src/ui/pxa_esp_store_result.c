@@ -130,7 +130,7 @@ static void show_result(void *context) {
     lv_obj_add_event_cb(confirm, result_response, LV_EVENT_CLICKED, NULL);
     label = lv_label_create(confirm);
     lv_label_set_text(label, chinese ? "确认" : "Confirm");
-    lv_obj_center(label);
+    pxa_lvgl_dialog_center_action_label(label);
 
     if (!result->is_uninstall) {
         lv_obj_t *open = lv_button_create(panel);
@@ -142,7 +142,7 @@ static void show_result(void *context) {
                             (void *)(uintptr_t)1);
         label = lv_label_create(open);
         lv_label_set_text(label, chinese ? "打开" : "Open");
-        lv_obj_center(label);
+        pxa_lvgl_dialog_center_action_label(label);
     }
     pxa_esp_system_overlay_add(g_result_dialog);
     free(result);

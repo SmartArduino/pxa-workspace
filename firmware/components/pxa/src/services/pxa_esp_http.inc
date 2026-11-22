@@ -79,6 +79,10 @@ static void stream_notify(pxa_esp_net_state_t *net) {
 static void stream_finish(pxa_esp_net_state_t *net, pxa_esp_net_slot_t *slot,
                           pxa_status_t error) {
     pxa_esp_http_t *h = http_stream(slot);
+    if(error)ESP_LOGW(PXA_ESP_NET_TAG,"HTTP failure memory: dma_free=%u dma_largest=%u internal_free=%u",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL),
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
     if (h->client) {
         esp_http_client_cleanup(h->client);
         h->client = NULL;
@@ -144,7 +148,7 @@ static void stream_step(pxa_esp_net_state_t *net, pxa_esp_net_slot_t *slot) {
         config.timeout_ms = (int)(slot->timeout_ms > 60000u ? 15000u : slot->timeout_ms);
         config.disable_auto_redirect = true;
         config.buffer_size = 512;
-        config.buffer_size_tx = 512;
+        config.buffer_size_tx = http_tx_buffer_bytes(slot);
         config.event_handler = stream_http_event;
         config.user_data = slot;
         config.crt_bundle_attach = esp_crt_bundle_attach;
