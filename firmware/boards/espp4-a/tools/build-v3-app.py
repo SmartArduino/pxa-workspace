@@ -45,7 +45,7 @@ def main():
     # Retain WAMR's RV32 small-code-model recipe, including size-level=3.
     # Its default code model is unsupported by the bundled RV32 LLVM backend.
     flags = [flag for flag in flags if not flag.startswith("--cpu-features=")]
-    flags += ["--cpu-features=+m,+a,+f,+c,+zba,+zbb,+zbs"]
+    flags += ["--cpu-features=+m,+a,+f,+c,+zba,+zbb,+zbs,+zcb,+fast-unaligned-access,+xesppie"]
     recipes["esp32p4"]["flags"] = flags
     path.write_text(json.dumps(recipes, indent=2) + "\n")
     (output / "hardware-requirements.json").write_text(json.dumps({
