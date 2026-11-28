@@ -384,24 +384,35 @@ bool CopySurfacePreview(lv_draw_buf_t* image, int32_t screen_x,
         const int32_t start_y = screen_y > 0 ? screen_y : 0;
         const int32_t end_x = right < display_width ? right : display_width;
         const int32_t end_y = bottom < display_height ? bottom : display_height;
-        for (int32_t y = start_y; y < end_y; ++y) {
+        const auto& plane = frame.ui_alpha_plane;
+        const bool has_alpha = !frame.suppress_guest_alpha && plane.visible &&
+            plane.pixels != nullptr && plane.alpha != nullptr &&
+            start_x < plane.x + plane.width && end_x > plane.x;
+        for (int32_t y = start_y; start_x < end_x && y < end_y; ++y) {
             const auto* row_pixels = reinterpret_cast<const uint16_t*>(
                 pixels + (y / scale) * stride);
             auto* destination = static_cast<uint16_t*>(lv_draw_buf_goto_xy(
                 image, padding + start_x - screen_x,
                 padding + y - screen_y));
+            const bool blend_row = has_alpha && y >= plane.y && y < plane.y + plane.height;
+            if (scale == 1 && !blend_row) {
+                std::memcpy(destination, row_pixels + start_x,
+                            (end_x - start_x) * sizeof(*destination));
+                continue;
+            }
+            const uint16_t* colors = nullptr;
+            const uint8_t* alpha = nullptr;
+            if (blend_row) {
+                colors = reinterpret_cast<const uint16_t*>(
+                    reinterpret_cast<const uint8_t*>(plane.pixels) +
+                    (y - plane.y) * plane.pixel_stride_bytes);
+                alpha = plane.alpha + (y - plane.y) * plane.alpha_stride_bytes;
+            }
             for (int32_t x = start_x; x < end_x; ++x) {
                 uint16_t color = row_pixels[x / scale];
-                const auto& plane = frame.ui_alpha_plane;
-                if (!frame.suppress_guest_alpha && plane.visible && plane.pixels != nullptr &&
-                    plane.alpha != nullptr && x >= plane.x && y >= plane.y &&
-                    x < plane.x + plane.width && y < plane.y + plane.height) {
-                    const auto* colors = reinterpret_cast<const uint16_t*>(
-                        reinterpret_cast<const uint8_t*>(plane.pixels) +
-                        (y - plane.y) * plane.pixel_stride_bytes);
+                if (blend_row && x >= plane.x && x < plane.x + plane.width) {
                     color = pxa_esp_surface_blend_alpha_pixel(color, colors[x - plane.x],
-                        plane.alpha[(y - plane.y) * plane.alpha_stride_bytes + x - plane.x],
-                        plane.opacity);
+                        alpha[x - plane.x], plane.opacity);
                 }
                 destination[x - start_x] = color;
             }
