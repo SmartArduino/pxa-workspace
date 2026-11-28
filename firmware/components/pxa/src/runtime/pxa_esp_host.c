@@ -2395,25 +2395,6 @@ static bool provide_ui_alpha_plane(
 /* The Canvas callback runs on the LVGL task while guest callbacks run on the
  * PXA owner task. Keep edge events in order, but collapse only contiguous
  * movement when the guest cannot keep up with the sampling rate. */
-static int enqueue_pointer_event(const pxa_host_pointer_event_t *event) {
-    int queued;
-    portENTER_CRITICAL(&g_pointer_mailbox_lock);
-    queued = pxa_host_pointer_mailbox_push(
-        &g_host.pointer_mailbox, event);
-    portEXIT_CRITICAL(&g_pointer_mailbox_lock);
-    return queued;
-}
-
-static int pointer_mailbox_has_move(void) {
-    int pending;
-
-    portENTER_CRITICAL(&g_pointer_mailbox_lock);
-    pending = pxa_host_pointer_mailbox_has_move(
-        &g_host.pointer_mailbox);
-    portEXIT_CRITICAL(&g_pointer_mailbox_lock);
-    return pending;
-}
-
 static int pointer_move_is_due(uint64_t now_us) {
     int due;
 
@@ -2452,15 +2433,16 @@ static void queue_ui_pointer(uint32_t surface, uint32_t node,
     timestamp_us = pxa_lvgl_ui_event_timestamp_us(g_host.ui_adapter);
     event.timestamp_us = timestamp_us != 0 ? timestamp_us : host_now_us(NULL);
     if (phase != PXA_HOST_POINTER_MOVE_PHASE) {
-        ESP_LOGI(PXA_ESP_HOST_TAG, "pointer queued id=%u phase=%u x=%d y=%d",
-                 (unsigned)event.id, (unsigned)event.phase, (int)event.x,
-                 (int)event.y);
+        ESP_LOGD(PXA_ESP_HOST_TAG, "pointer queued id=%u phase=%u x=%d y=%d",
+                 (unsigned)event.id, (unsigned)event.phase, (int)event.x, (int)event.y);
     }
-    if (enqueue_pointer_event(&event) &&
+    portENTER_CRITICAL(&g_pointer_mailbox_lock);
+    const int wake = pxa_host_pointer_mailbox_push(&g_host.pointer_mailbox, &event) &&
         (phase != PXA_HOST_POINTER_MOVE_PHASE ||
-         pointer_move_is_due(event.timestamp_us))) {
-        wake_runtime_thread();
-    }
+         pxa_host_pointer_mailbox_move_is_due(&g_host.pointer_mailbox,
+             event.timestamp_us, PXA_ESP_HOST_POINTER_MOVE_MIN_INTERVAL_US));
+    portEXIT_CRITICAL(&g_pointer_mailbox_lock);
+    if (wake) wake_runtime_thread();
 }
 
 static void *allocate_ui_event_text(size_t size) {
@@ -2527,30 +2509,29 @@ static void split_display_insets(const pxa_window_insets_t *combined,
     );
 }
 
-static pxa_status_t host_window_apply(
-    void *context, const pxa_window_configuration_t *configuration) {
+static pxa_status_t apply_guest_window_configuration(
+    const pxa_window_configuration_t *configuration, uint8_t foreground) {
     pxa_host_window_changed_fn callback;
     void *callback_context;
-    (void)context;
     if (configuration == NULL) return PXA_STATUS_INVALID_ARGUMENT;
-    pxa_board_display_state_t state;
-    uint8_t resolved;
-    if (!pxa_board_display_get_state(&state) ||
-        !pxa_display_resolve_rotation(state.native_width, state.native_height, 0,
-            state.rotation, configuration->orientation_preference,
-            state.supported_rotations, &resolved)) return PXA_STATUS_UNSUPPORTED;
-    portENTER_CRITICAL(&g_process_state_lock);
-    const uint8_t foreground = g_host.ui_foreground_requested;
-    portEXIT_CRITICAL(&g_process_state_lock);
-    if (!pxa_board_display_set_orientation(foreground
-            ? configuration->orientation_preference : PXA_ORIENTATION_SYSTEM))
-        return PXA_STATUS_UNSUPPORTED;
+    if (foreground) {
+        if (!pxa_board_display_set_orientation(configuration->orientation_preference))
+            return PXA_STATUS_UNSUPPORTED;
+    } else {
+        pxa_board_display_state_t state;
+        uint8_t resolved;
+        if (!pxa_board_display_get_state(&state) ||
+            !pxa_display_resolve_rotation(state.native_width, state.native_height, 0,
+                state.rotation, configuration->orientation_preference,
+                state.supported_rotations, &resolved)) return PXA_STATUS_UNSUPPORTED;
+    }
     portENTER_CRITICAL(&g_window_changed_lock);
     callback = g_window_changed_callback;
     callback_context = g_window_changed_context;
     portEXIT_CRITICAL(&g_window_changed_lock);
     if (callback != NULL)
         callback(callback_context, g_host.activation.active_identity, configuration);
+    if (!foreground) return PXA_STATUS_OK;
     /* configure() commits its candidate after this callback returns. Publish
      * that candidate now; periodic refreshes below read the committed value. */
     update_window_snapshot(g_host.activation.active_component, configuration);
@@ -2565,6 +2546,15 @@ static pxa_status_t host_window_apply(
     portEXIT_CRITICAL(&g_process_state_lock);
     wake_runtime_thread();
     return PXA_STATUS_OK;
+}
+
+static pxa_status_t host_window_apply(
+    void *context, const pxa_window_configuration_t *configuration) {
+    (void)context;
+    portENTER_CRITICAL(&g_process_state_lock);
+    const uint8_t foreground = g_host.ui_foreground_requested;
+    portEXIT_CRITICAL(&g_process_state_lock);
+    return apply_guest_window_configuration(configuration, foreground);
 }
 
 static pxa_status_t host_window_toast(void *context, const char *text,
@@ -3953,8 +3943,8 @@ static void on_maintenance_timer(void *arg) {
     uint64_t now_us;
     (void)arg;
     now_us = host_now_us(NULL);
-    /* Keep the newest move buffered and wake the guest at display cadence. */
-    if (pointer_mailbox_has_move()) wake_runtime_thread();
+    /* A buffered move is useful only after its cadence limit expires. */
+    if (pointer_move_is_due(now_us)) wake_runtime_thread();
     if (__atomic_load_n(&g_sensor_active, __ATOMIC_ACQUIRE))
         (void)post_maintenance(PXA_ESP_HOST_CMD_SENSOR_MAINTENANCE);
     if (now_us >= g_host.next_maintenance_us) {
@@ -4111,7 +4101,7 @@ static int prepare_pointer(const pxa_esp_host_command_t *command) {
                 (unsigned long long)event->timestamp_us,
                 (unsigned)event->phase, (int)event->x, (int)event->y);
 #endif
-            ESP_LOGI(PXA_ESP_HOST_TAG, "pointer accepted id=%u phase=%u x=%d y=%d",
+            ESP_LOGD(PXA_ESP_HOST_TAG, "pointer accepted id=%u phase=%u x=%d y=%d",
                 (unsigned)event->id, (unsigned)event->phase, (int)event->x, (int)event->y);
         }
     }
@@ -4307,7 +4297,10 @@ static void apply_window_insets(const pxa_window_insets_t *safe_insets,
     if (system_bar_insets != NULL) g_host.system_bar_insets = *system_bar_insets;
     g_host.window_insets_valid = 1;
     portEXIT_CRITICAL(&g_process_state_lock);
-    if (g_host.activation.services.ui == NULL ||
+    /* Keep the Guest's last viewport while the desktop owns the display.
+     * Foreground configuration schedules a refresh after restoring rotation. */
+    if (!g_host.window_orientation_foreground ||
+        g_host.activation.services.ui == NULL ||
         g_host.activation.ui_component == PXA_COMPONENT_INVALID ||
         pxa_ui_get_environment(g_host.activation.services.ui,
                                g_host.activation.ui_component,
@@ -4851,12 +4844,15 @@ static void sync_ui_lifecycle(void) {
     effective = requested && interactive;
     /* Home restores the system direction; resuming the task reapplies its
      * retained preference. Display sleep alone must not change direction. */
-    if (g_host.window_orientation_foreground != requested) {
+    if (!requested && g_host.window_orientation_foreground) {
+        if (pxa_board_display_set_orientation(PXA_ORIENTATION_SYSTEM))
+            g_host.window_orientation_foreground = 0;
+    } else if (requested && !g_host.window_orientation_foreground) {
         pxa_window_configuration_t configuration;
         if (pxa_window_get_configuration(g_host.activation.services.window,
                 component, &configuration) == PXA_STATUS_OK &&
-            host_window_apply(NULL, &configuration) == PXA_STATUS_OK)
-            g_host.window_orientation_foreground = requested;
+            apply_guest_window_configuration(&configuration, 1) == PXA_STATUS_OK)
+            g_host.window_orientation_foreground = 1;
     }
     if (g_host.lifecycle_effective != effective) {
         const pxa_component_t foreground = effective ? component : PXA_COMPONENT_INVALID;
@@ -5065,7 +5061,10 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
         }
         case PXA_ESP_HOST_CMD_NET_MAINTENANCE: drain_net_completions(); break;
         case PXA_ESP_HOST_CMD_WINDOW_MAINTENANCE:
-            update_window_snapshot(component, NULL); update_ui_resource_pressure(); break;
+            if (g_host.window_orientation_foreground)
+                update_window_snapshot(component, NULL);
+            update_ui_resource_pressure();
+            break;
         case PXA_ESP_HOST_CMD_PERMISSION_DECISION:
             complete_runtime_permission_prompt(command.payload.permission_decision.prompt_id,
                 command.payload.permission_decision.granted != 0,command.payload.permission_decision.install_choice); break;
@@ -5294,7 +5293,8 @@ static void run(void) {
             }
             case PXA_ESP_HOST_CMD_WINDOW_MAINTENANCE:
                 if (g_host.activation.active_component != PXA_COMPONENT_INVALID) {
-                    update_window_snapshot(g_host.activation.active_component, NULL);
+                    if (g_host.window_orientation_foreground)
+                        update_window_snapshot(g_host.activation.active_component, NULL);
                     update_ui_resource_pressure();
                     drain_active_events();
                 }

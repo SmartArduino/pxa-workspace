@@ -5,6 +5,7 @@
 #include "pxa_esp_package_trust.h"
 #include "pxa_esp_record_seal.h"
 #include "pxa_esp_publisher_directory.h"
+#include "pxa_esp_transfer_receipt.h"
 #include "pxa_esp_volumes.h"
 #include "esp_vfs_fat.h"
 #include "pxa/openssl/pxa_openssl.h"
@@ -162,6 +163,19 @@ int main(int argc,char **argv) {
     signature_checks=0;
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home) && prepare_calls==1);
     assert(signature_checks==0);
+    assert(!pxa_esp_installations_load_prepared(owner,locator,&result,&home));
+    assert(signature_checks==0 && home.record.generation==1);
+    /* A complete launch must authenticate the mapping again and quarantine
+     * even malformed transfer receipts before reading the install record. */
+    char duplicate[768],receipt[768];
+    assert(snprintf(duplicate,sizeof(duplicate),"%s/apps/%.64s",namespace_root,locator)<(int)sizeof(duplicate));
+    assert(!mkdir(duplicate,0700));
+    assert(pxa_esp_installations_load_prepared(owner,locator,&result,&home)==PXA_STATUS_DENIED);
+    assert(!rmdir(duplicate));
+    path(receipt,sizeof(receipt),home.home,PXA_ESP_TRANSFER_SLOT_0 ".pending");
+    file=open(receipt,O_WRONLY|O_CREAT|O_EXCL,0600);assert(file>=0 && !close(file));
+    assert(pxa_esp_installations_load_prepared(owner,locator,&result,&home)==PXA_STATUS_BUSY);
+    assert(!unlink(receipt));
     assert(!pxa_esp_installations_load_prepared(owner,locator,&result,&home));
     assert(signature_checks==0 && home.record.generation==1);
     /* A torn install transaction still takes the explicit verified recovery

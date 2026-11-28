@@ -70,12 +70,7 @@ static pxa_status_t available(pxa_esp_installations_t *owner) {
 }
 /* Even a damaged receipt quarantines its home. Only the native resumer may
  * authenticate it and decide whether to publish or discard the target. */
-static pxa_status_t visible(pxa_esp_installations_t *owner,const char *locator) {
-    if(!locator || !pxa_fs_scoped_path_is_valid((pxa_bytes_t){(const uint8_t *)locator,strlen(locator)}))
-        return PXA_STATUS_INVALID_ARGUMENT;
-    char path[PXA_POSIX_APP_PATH_BYTES];
-    pxa_status_t mapped=pxa_esp_publisher_path(owner->volume.mount_epoch,"apps",locator,path,sizeof(path));
-    if(mapped!=PXA_STATUS_OK)return mapped;
+static pxa_status_t check_transfer_receipts(const char *path) {
     int directory=open(path,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
     if(directory<0)return errno==ENOENT?PXA_STATUS_OK:PXA_STATUS_DENIED;
     const char *names[]={PXA_ESP_TRANSFER_SLOT_0,PXA_ESP_TRANSFER_SLOT_1,
@@ -88,6 +83,14 @@ static pxa_status_t visible(pxa_esp_installations_t *owner,const char *locator) 
     }
     if(close(directory)!=0 && status==PXA_STATUS_OK)status=PXA_STATUS_IO_ERROR;
     return status;
+}
+static pxa_status_t visible(pxa_esp_installations_t *owner,const char *locator) {
+    if(!locator || !pxa_fs_scoped_path_is_valid((pxa_bytes_t){(const uint8_t *)locator,strlen(locator)}))
+        return PXA_STATUS_INVALID_ARGUMENT;
+    char path[PXA_POSIX_APP_PATH_BYTES];
+    pxa_status_t status = pxa_esp_publisher_path(owner->volume.mount_epoch,
+        "apps",locator,path,sizeof(path));
+    return status == PXA_STATUS_OK ? check_transfer_receipts(path) : status;
 }
 typedef struct {pxa_esp_installations_t *owner;pxa_posix_app_home_visitor_fn visit;void *context;} visible_visit_t;
 static int visit_visible(void *context,const pxa_posix_app_home_t *home) {
@@ -127,17 +130,17 @@ static pxa_status_t map_locator(void *context,const char *locator,uint8_t revers
 typedef struct {
     pxa_esp_installations_t *owner;
     char logical[65],physical[65];
-} catalog_mapping_t;
-static pxa_status_t map_catalog_locator(void *context,const char *locator,uint8_t reverse,char *out,size_t bytes) {
+} publisher_mapping_t;
+static pxa_status_t map_cached_locator(void *context,const char *locator,uint8_t reverse,char *out,size_t bytes) {
     if(!locator || !out || !bytes)return PXA_STATUS_INVALID_ARGUMENT;
-    catalog_mapping_t *mapping=context;
+    publisher_mapping_t *mapping=context;
     const char *slash=strchr(locator,'/');
     const char *from=reverse?mapping->physical:mapping->logical;
     const char *to=reverse?mapping->logical:mapping->physical;
     if(slash && from[0] && (size_t)(slash-locator)==strlen(from) &&
         !memcmp(locator,from,(size_t)(slash-locator))) {
         /* The publisher pair was authenticated by a complete forward lookup
-         * during this enumeration. Still validate every untrusted App ID. */
+         * during this operation. Still validate every untrusted App ID. */
         static const uint8_t zero[32]={0};char checked[PXA_POSIX_APP_LOCATOR_BYTES];
         pxa_status_t status=pxa_esp_installations_locator(zero,slash+1,checked,sizeof(checked));
         if(status!=PXA_STATUS_OK)return status;
@@ -211,9 +214,9 @@ pxa_status_t pxa_esp_installations_visit(pxa_esp_installations_t *owner,
     pxa_status_t status=available(owner);
     /* Cache one verified publisher pair only for this read-only enumeration.
      * Mutations, activation and the next scan always authenticate afresh. */
-    catalog_mapping_t mapping={.owner=owner};
+    publisher_mapping_t mapping={.owner=owner};
     pxa_posix_app_store_config_t config=owner?owner->config:(pxa_posix_app_store_config_t){0};
-    config.locator_context=&mapping;config.map_locator=map_catalog_locator;
+    config.locator_context=&mapping;config.map_locator=map_cached_locator;
     return status==PXA_STATUS_OK?pxa_posix_app_store_visit(&config,visit_visible,&scan,invalid):status;
 }
 pxa_status_t pxa_esp_installations_inspect(pxa_esp_installations_t *owner,const char *source,
@@ -538,13 +541,33 @@ pxa_status_t pxa_esp_installations_install(pxa_esp_installations_t *owner,const 
     owner->plan=NULL;owner->config.approved_manifest_sha256=NULL;
     owner->config.media_ready=NULL;owner->config.media_context=NULL;return status;
 }
+static pxa_status_t prepared_visibility(publisher_mapping_t *mapping,const char *locator) {
+    char physical[PXA_POSIX_APP_LOCATOR_BYTES],path[PXA_POSIX_APP_PATH_BYTES];
+    if(!locator || !pxa_fs_scoped_path_is_valid((pxa_bytes_t){(const uint8_t *)locator,strlen(locator)}))
+        return PXA_STATUS_INVALID_ARGUMENT;
+    pxa_status_t status = map_cached_locator(mapping,locator,0,physical,sizeof(physical));
+    if(status!=PXA_STATUS_OK)return status;
+    int length = snprintf(path,sizeof(path),"%s/apps/%s",mapping->owner->root,physical);
+    if(length<0 || (size_t)length>=sizeof(path))return PXA_STATUS_LIMIT_EXCEEDED;
+    return check_transfer_receipts(path);
+}
+
 static pxa_status_t load_installation(pxa_esp_installations_t *owner,const char *locator,
     pxa_posix_media_ready_fn media,void *context,bool prepared,
     pxa_posix_installer_result_t *result,pxa_posix_app_home_t *home) {
     pxa_status_t status=available(owner);if(status!=PXA_STATUS_OK)return status;
-    status=visible(owner,locator);if(status!=PXA_STATUS_OK)return status;
+    publisher_mapping_t mapping={.owner=owner};
+    status=prepared ? prepared_visibility(&mapping,locator) : visible(owner,locator);
+    if(status!=PXA_STATUS_OK)return status;
     owner->config.media_ready=media?media:load_media;owner->config.media_context=media?context:owner;
-    if(prepared)status=pxa_posix_app_store_load_prepared(&owner->config,locator,result,home);
+    if(prepared) {
+        /* Share one fully checked publisher mapping across the receipt,
+         * path and record reads of this launch. Recovery resolves afresh. */
+        pxa_posix_app_store_config_t config=owner->config;
+        config.locator_context=&mapping;
+        config.map_locator=map_cached_locator;
+        status=pxa_posix_app_store_load_prepared(&config,locator,result,home);
+    }
     if(!prepared || status!=PXA_STATUS_OK)
         status=pxa_posix_app_store_load(&owner->config,locator,result,home);
     if(status==PXA_STATUS_BUSY || status==PXA_STATUS_DENIED) {
