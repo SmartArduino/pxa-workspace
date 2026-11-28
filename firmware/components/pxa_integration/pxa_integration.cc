@@ -815,25 +815,22 @@ void ListInputMethods(void*, pxsys_reference_input_method_emit_fn emit, void* co
     std::free(items);
 }
 
-size_t ListManagedApps(void*,
+size_t ListManagedApps(void* context,
                        pxsys_reference_managed_app_t* apps,
                        size_t capacity, pxsys_reference_app_filter_t filter) {
     const auto list=filter==PXSYS_REFERENCE_APPS_INPUT_METHODS?
         pxa_host_list_input_method_packages:pxa_host_list_packages;
-    const size_t total = filter==PXSYS_REFERENCE_APPS_INPUT_METHODS?
-        list(nullptr,0):pxa_host_package_count();
-    if (apps == nullptr) return total;
+    if (apps == nullptr)
+        return filter==PXSYS_REFERENCE_APPS_INPUT_METHODS ? list(nullptr,0) : pxa_host_package_count();
     if (capacity == 0) return 0;
-    if (capacity > total) capacity = total;
     pxa_host_package_info_t* packages =
         static_cast<pxa_host_package_info_t*>(std::calloc(
             capacity, sizeof(pxa_host_package_info_t)));
     if (packages == nullptr) return 0;
     const size_t listed = list(packages, capacity);
     pxsys_locale_snapshot_t locale={};locale.struct_size=sizeof(locale);
-    const char* locale_tag="en-US";
-    if(g_system && pxsys_locale_service_get(pxsys_standard_system_locale(g_system),&locale)==PXSYS_STATUS_OK)
-        locale_tag=locale.tag;
+    const bool localized = g_system &&
+        pxsys_locale_service_get(pxsys_standard_system_locale(g_system), &locale) == PXSYS_STATUS_OK;
     for (size_t index = 0; index < listed; ++index) {
         const pxa_host_package_info_t* info = &packages[index];
         pxsys_reference_managed_app_t* app = &apps[index];
@@ -849,17 +846,17 @@ size_t ListManagedApps(void*,
         app->resources_movable = info->resources_movable ? 1 : 0;
         app->legacy_storage = info->legacy_storage ? 1 : 0;
         app->archived = info->archived ? 1 : 0;
-        bool named = false;
-        if (info->has_publisher_root) {
-            pxa_host_package_metadata_t metadata = {};
-            if (pxa_host_resolve_package_metadata(
-                    info->publisher_root, info->app_id, locale_tag, &metadata) &&
-                metadata.name[0] != '\0') {
-                CopyText(app->name, sizeof(app->name), metadata.name);
-                named = true;
+        if (localized && info->has_publisher_root) {
+            pxsys_app_descriptor_t descriptor = {};
+            descriptor.identity.app_id = pxsys_string_from_cstr(info->app_id);
+            std::memcpy(descriptor.identity.publisher_root, info->publisher_root, PXSYS_PUBLISHER_ROOT_BYTES);
+            pxsys_app_metadata_t metadata = {};
+            if (ResolveAppMetadata(context, &descriptor, &locale, &metadata) &&
+                metadata.display_name.size != 0) {
+                CopyText(app->name, sizeof(app->name), metadata.display_name.data);
             }
         }
-        if (!named) {
+        if (app->name[0] == '\0') {
             CopyText(app->name, sizeof(app->name),
                      info->name[0] != '\0' ? info->name : info->app_id);
         }
@@ -1401,6 +1398,7 @@ bool CreateSystem(const pxa_board_port_t* board,
                               PXSYS_REFERENCE_UI_APP_MANAGER |
                               PXSYS_REFERENCE_UI_FILE_MANAGER;
         ui_config.device_info = FillDeviceInfo;
+        ui_config.app_manager_context = g_bridge;
         ui_config.app_list = ListManagedApps;
         ui_config.input_method_list = ListInputMethods;
         ui_config.input_method_preferences = [](void*,pxsys_reference_input_method_preferences_t* value,bool save) {

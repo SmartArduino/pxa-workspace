@@ -2612,7 +2612,7 @@ pxa_status_t pxa_esp_package_store_install_file_on_volume(const char *source,uin
          * before any executable slot is renamed. */
         status=idle_volume_home(epoch,locator);if(status!=PXA_STATUS_OK)goto done;
         if(!bind_store_result_buffers(&result)) {status=PXA_STATUS_RESOURCE_LIMIT;goto done;}
-        status=pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home);if(status!=PXA_STATUS_OK)goto done;
+        status=pxa_esp_installations_load(owner,locator,NULL,NULL,false,&result,&home);if(status!=PXA_STATUS_OK)goto done;
         approved=home.record;expected=approved.generation;approved.flags&=~PXA_INSTALL_RECORD_ARCHIVED;
         /* Reload the exact candidate after recovery reused result buffers. */
         status=read_source_into_store(source,&result,1);if(status!=PXA_STATUS_OK)goto done;
@@ -2681,7 +2681,7 @@ pxa_status_t pxa_esp_package_store_open_storage(const char *identity,pxa_esp_app
     release_lock(g_store->metadata_lock);
     status=retry_volume_cleanup();if(status!=PXA_STATUS_OK)goto done;
     status=pxa_esp_installations_open(epoch,&owner);if(status!=PXA_STATUS_OK)goto done;
-    status=pxa_esp_installations_load(owner,locator,NULL,NULL,verification,&home);if(status!=PXA_STATUS_OK)goto done;
+    status=pxa_esp_installations_load(owner,locator,NULL,NULL,true,verification,&home);if(status!=PXA_STATUS_OK)goto done;
     if(memcmp(home.record.install_id,install_id,16) || home.record.generation<generation ||
         memcmp(home.record.manifest_sha256,manifest_hash,32)) {
         status=PXA_STATUS_BAD_STATE;goto done;

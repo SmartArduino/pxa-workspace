@@ -538,11 +538,14 @@ pxa_status_t pxa_esp_installations_install(pxa_esp_installations_t *owner,const 
     owner->config.media_ready=NULL;owner->config.media_context=NULL;return status;
 }
 pxa_status_t pxa_esp_installations_load(pxa_esp_installations_t *owner,const char *locator,
-    pxa_posix_media_ready_fn media,void *context,pxa_posix_installer_result_t *result,pxa_posix_app_home_t *home) {
+    pxa_posix_media_ready_fn media,void *context,bool prepared,
+    pxa_posix_installer_result_t *result,pxa_posix_app_home_t *home) {
     pxa_status_t status=available(owner);if(status!=PXA_STATUS_OK)return status;
     status=visible(owner,locator);if(status!=PXA_STATUS_OK)return status;
     owner->config.media_ready=media?media:load_media;owner->config.media_context=media?context:owner;
-    status=pxa_posix_app_store_load(&owner->config,locator,result,home);
+    if(prepared)status=pxa_posix_app_store_load_prepared(&owner->config,locator,result,home);
+    if(!prepared || status!=PXA_STATUS_OK)
+        status=pxa_posix_app_store_load(&owner->config,locator,result,home);
     if(status==PXA_STATUS_BUSY || status==PXA_STATUS_DENIED) {
         /* Only an interrupted/invalid installation enters recovery. Keep its
          * full code/resource verification separate from ordinary launches. */
