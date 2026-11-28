@@ -119,6 +119,8 @@ struct pxsys_esp_pxa_bridge {
     pxsys_pxa_runtime_t* pxa_runtime;
     void* catalog_synced_context;
     void (*catalog_synced)(void* context);
+    void (*task_foregrounded)(const pxsys_app_identity_t* app, pxsys_instance_ref_t instance);
+    void (*task_destroyed)(pxsys_instance_ref_t instance);
     esp_pxa_instance_t* instances;
     tracked_app_t* tracked;
     tracked_app_t* next;
@@ -1352,6 +1354,11 @@ static pxsys_status_t backend_foreground(void* context, void* backend_instance) 
     }
     resume_window_session(bridge, instance);
     pxa_esp_surface_set_host_visible(true);
+    if (bridge->task_foregrounded != NULL) {
+        pxsys_app_identity_t app = {.app_id = pxsys_string_from_cstr(instance->app_id)};
+        memcpy(app.publisher_root, instance->publisher_root, sizeof(app.publisher_root));
+        bridge->task_foregrounded(&app, instance->reference);
+    }
     ESP_LOGI(PXSYS_ESP_PXA_TAG, "Application foregrounded: %s",
              instance->identity_key);
     return PXSYS_STATUS_OK;
@@ -1473,6 +1480,8 @@ static void backend_destroy(void* context, void* backend_instance) {
     if (instance->start_stop_timer != NULL) lv_timer_delete(instance->start_stop_timer);
     remove_component_subscriptions(bridge, instance);
     remove_app_endpoints(bridge, instance);
+    if (bridge->task_destroyed != NULL)
+        bridge->task_destroyed(instance->reference);
     bridge->allocator.release(bridge->allocator.context,
                               instance->launch_event);
     for (cursor = &bridge->instances; *cursor != NULL;
@@ -1546,12 +1555,14 @@ static void perform_launch_request(void* context) {
                 pxsys_standard_system_apps(request->bridge->system),
                 &request->target) == NULL)
             (void)pxsys_esp_pxa_bridge_sync(request->bridge);
-        intent.struct_size = sizeof(intent);
-        intent.action = pxsys_string_from_cstr("system.intent.main");
-        intent.target = &request->target;
-        status = pxsys_task_manager_start(
-            pxsys_standard_system_tasks(request->bridge->system), &intent,
-            &instance);
+        pxsys_task_manager_t* tasks = pxsys_standard_system_tasks(request->bridge->system);
+        status = pxsys_task_manager_resume_app(tasks, &request->target);
+        if (status == PXSYS_STATUS_NOT_FOUND) {
+            intent.struct_size = sizeof(intent);
+            intent.action = pxsys_string_from_cstr("system.intent.main");
+            intent.target = &request->target;
+            status = pxsys_task_manager_start(tasks, &intent, &instance);
+        }
     }
 done:
     if (status != PXSYS_STATUS_OK && status != PXSYS_STATUS_PENDING) {
@@ -1612,7 +1623,7 @@ pxsys_status_t pxsys_esp_pxa_bridge_create(const pxsys_esp_pxa_bridge_config_t* 
     if (output == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
     *output = NULL;
-    if (config == NULL || config->struct_size < sizeof(*config) || config->system == NULL ||
+    if (config == NULL || config->struct_size < offsetof(pxsys_esp_pxa_bridge_config_t, task_foregrounded) || config->system == NULL ||
         config->max_packages == 0 || config->max_subscriptions == 0 ||
         config->max_exported_services == 0 || config->max_pending_calls == 0 ||
         config->max_packages > SIZE_MAX / sizeof(tracked_app_t) ||
@@ -1635,6 +1646,10 @@ pxsys_status_t pxsys_esp_pxa_bridge_create(const pxsys_esp_pxa_bridge_config_t* 
     bridge->system = config->system;
     bridge->catalog_synced_context = config->catalog_synced_context;
     bridge->catalog_synced = config->catalog_synced;
+    if (config->struct_size >= offsetof(pxsys_esp_pxa_bridge_config_t, task_destroyed))
+        bridge->task_foregrounded = config->task_foregrounded;
+    if (config->struct_size >= sizeof(*config))
+        bridge->task_destroyed = config->task_destroyed;
     bridge->capacity = config->max_packages;
     bridge->subscription_capacity = config->max_subscriptions;
     bridge->endpoint_capacity = config->max_exported_services;

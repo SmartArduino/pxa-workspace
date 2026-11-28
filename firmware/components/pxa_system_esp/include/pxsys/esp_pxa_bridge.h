@@ -19,6 +19,8 @@ typedef struct {
     pxsys_allocator_t allocator;
     void* catalog_synced_context;
     void (*catalog_synced)(void* context);
+    void (*task_foregrounded)(const pxsys_app_identity_t* app, pxsys_instance_ref_t instance);
+    void (*task_destroyed)(pxsys_instance_ref_t instance);
 } pxsys_esp_pxa_bridge_config_t;
 
 typedef struct pxsys_esp_pxa_bridge pxsys_esp_pxa_bridge_t;

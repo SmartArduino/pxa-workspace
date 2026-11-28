@@ -45,7 +45,8 @@ typedef struct esp_pxa_instance {
 typedef struct {int valid;uint32_t generation;void*system;size_t tracked_count;tracked_t tracked[1];esp_pxa_instance_t*instances,*window_instance;}pxsys_esp_pxa_bridge_t;
 static pxsys_esp_pxa_bridge_t*g_bridge;
 typedef int pxsys_app_registry_t;
-static int owner,registered,can_register=1,queue_fails,starts,syncs;
+typedef int pxsys_task_manager_t;
+static int owner,registered,can_register=1,queue_fails,starts,resumes,syncs;
 static int host_active,timer_fails;static uint32_t tick;
 static int host_stop_accepts,host_stop_requests,stopped_reports,surface_hides;
 static void(*pending)(void*);static void*pending_context;
@@ -53,7 +54,7 @@ static uint8_t last_root[32];static char last_id[65];
 static pxsys_string_t pxsys_string_from_cstr(const char*s){return(pxsys_string_t){s,strlen(s)};}
 static int bridge_valid(const pxsys_esp_pxa_bridge_t*b){return b&&b->valid;}
 static pxsys_app_registry_t*pxsys_standard_system_apps(void*s){assert(owner);return s;}
-static void*pxsys_standard_system_tasks(void*s){assert(owner);return s;}
+static pxsys_task_manager_t*pxsys_standard_system_tasks(void*s){assert(owner);return s;}
 static void*pxsys_standard_system_role_host(void*s){assert(owner);return s;}
 static pxsys_status_t pxsys_task_manager_report_stopped(void*s,pxsys_instance_ref_t ref,pxsys_stop_reason_t reason){
  assert(owner&&s&&ref==5&&reason==4);++stopped_reports;return PXSYS_STATUS_OK;
@@ -63,6 +64,11 @@ static pxsys_status_t pxsys_role_host_report_stopped(void*s,pxsys_instance_ref_t
 }
 static void*pxsys_app_registry_find(pxsys_app_registry_t*a,const pxsys_app_identity_t*t){(void)t;assert(owner);return registered?a:NULL;}
 static pxsys_status_t pxsys_esp_pxa_bridge_sync(pxsys_esp_pxa_bridge_t*b){assert(owner&&b);++syncs;registered=can_register;return registered?0:-1;}
+static pxsys_status_t pxsys_task_manager_resume_app(pxsys_task_manager_t*s,const pxsys_app_identity_t*id){
+ assert(owner&&s&&id);
+ if(!host_active)return PXSYS_STATUS_NOT_FOUND;
+ ++resumes;return PXSYS_STATUS_OK;
+}
 static pxsys_status_t pxsys_task_manager_start(void*s,const pxsys_intent_t*i,pxsys_instance_ref_t*out){
  assert(owner&&s&&i->struct_size==sizeof(*i)&&out);++starts;
  assert(!strcmp(i->action.data,"system.intent.main"));
@@ -119,16 +125,16 @@ int main(void){
  drain();assert(starts==3&&pending); /* Still waiting: never deliver to a retired Host instance. */
  bridge.instances=NULL;drain();assert(starts==4&&!pending); /* STOPPED processed, one new start. */
  bridge.instances=&old;host_active=1;
- assert(launch_requested(&bridge,root,id));drain();assert(starts==5&&!pending);
+ assert(launch_requested(&bridge,root,id));drain();assert(starts==4&&resumes==1&&!pending);
  host_active=0;tick=UINT32_MAX-10;
- assert(launch_requested(&bridge,root,id));drain();drain();assert(starts==5&&pending);
- tick+=3000;drain();assert(starts==5&&!pending);
- timer_fails=1;assert(launch_requested(&bridge,root,id));drain();assert(starts==5&&!pending);timer_fails=0;
- assert(launch_requested(&bridge,root,id));drain();++bridge.generation;drain();assert(starts==5&&!pending);
+ assert(launch_requested(&bridge,root,id));drain();drain();assert(starts==4&&pending);
+ tick+=3000;drain();assert(starts==4&&!pending);
+ timer_fails=1;assert(launch_requested(&bridge,root,id));drain();assert(starts==4&&!pending);timer_fails=0;
+ assert(launch_requested(&bridge,root,id));drain();++bridge.generation;drain();assert(starts==4&&!pending);
  old.publisher_root[0]^=1;
- assert(launch_requested(&bridge,root,id));drain();assert(starts==6&&!pending);
+ assert(launch_requested(&bridge,root,id));drain();assert(starts==5&&!pending);
  pxsys_esp_pxa_bridge_t*retired=malloc(sizeof(*retired));assert(retired);*retired=bridge;g_bridge=retired;
- assert(launch_requested(retired,root,id));g_bridge=NULL;free(retired);drain();assert(starts==6&&!pending);
+ assert(launch_requested(retired,root,id));g_bridge=NULL;free(retired);drain();assert(starts==5&&!pending);
  g_bridge=&bridge;
  owner=1;
  uint8_t intent_byte=1;

@@ -1788,6 +1788,14 @@ void SendInfo(unsigned long sequence) {
         snprintf(payload + used, sizeof(payload) - used, ";presentation_fps_x10=%u",
                  static_cast<unsigned>(s_test_control.presentation_fps_x10(s_test_control.context)));
     }
+#if CONFIG_PXA_ENABLED
+    bool guest_maintenance, guest_watchdog;
+    pxa_host_guest_timers(&guest_maintenance, &guest_watchdog);
+    const size_t timer_offset = strlen(payload);
+    snprintf(payload + timer_offset, sizeof(payload) - timer_offset,
+             ";guest_maintenance=%u;guest_watchdog=%u",
+             unsigned(guest_maintenance), unsigned(guest_watchdog));
+#endif
 #endif
     // Bind measurements and panic addresses to the exact running ELF without
     // resetting the device or reading its application partition over UART.

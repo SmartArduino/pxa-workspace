@@ -1343,6 +1343,12 @@ bool CreateSystem(const pxa_board_port_t* board,
     bridge_config.system = g_system;
     bridge_config.allocator = allocator;
     bridge_config.catalog_synced = RefreshLauncherApps;
+    bridge_config.task_foregrounded = [](const pxsys_app_identity_t* app, pxsys_instance_ref_t instance) {
+        pxsys_reference_lvgl_task_foregrounded(g_reference_ui, app, instance);
+    };
+    bridge_config.task_destroyed = [](pxsys_instance_ref_t instance) {
+        pxsys_reference_lvgl_task_destroyed(g_reference_ui, instance);
+    };
     status = pxsys_esp_pxa_bridge_create(&bridge_config, &g_bridge);
     if (status != PXSYS_STATUS_OK) {
         ESP_LOGE(kTag, "PXA bridge failed: %s", pxsys_status_name(status));

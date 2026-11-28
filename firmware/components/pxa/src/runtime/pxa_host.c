@@ -323,6 +323,11 @@ bool pxa_host_request_launch(const char *identity_key) {
     return pxa_esp_host_launch(canonical);
 }
 
+void pxa_host_guest_timers(bool *maintenance, bool *watchdog) {
+    if (g_host_ready) pxa_esp_host_guest_timers(maintenance, watchdog);
+    else *maintenance = *watchdog = false;
+}
+
 bool pxa_host_request_stop(const char *identity_key) {
     uint8_t publisher_root[PXA_HOST_PUBLISHER_ROOT_BYTES];
     char canonical[PXA_HOST_PACKAGE_ID_MAX];

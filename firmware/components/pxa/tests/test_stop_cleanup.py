@@ -40,7 +40,7 @@ struct Activation {
 };
 struct Host {
     Activation activation;
-    void *engine, *ui_adapter, *engine_workspace, *runtime_workspace, *retired_storage;
+    void *engine, *ui_adapter, *engine_workspace, *runtime_workspace, *retired_storage, *maintenance_timer;
     unsigned graceful_stop_active, ui_foreground_requested, lifecycle_effective;
     unsigned lifecycle_delivered, ime_only_runtime, window_orientation_foreground;
     char deferred_launch_identity[130];
@@ -87,6 +87,8 @@ static void xTaskNotifyGive(void *) { assert(!live); ++worker_notifications; }
 #define pxa_host_clock_slots_cancel_all(...) retire(CLOCKS)
 static void public_state_snapshot(pxa_esp_host_public_state_t *state) { *state=published; }
 static void unpublish_active_state() { published={}; }
+static int esp_timer_stop(void *) { assert(live&ENGINE); return 0; }
+static void stop_guest_watchdog() { assert(live&ENGINE); }
 static void pxa_wamr_engine_deinit(void *value) { assert(value==token(ENGINE)); retire(ENGINE); }
 static void pxa_runtime_deinit(void *value) { assert(value==token(RUNTIME)); retire(RUNTIME); }
 static void pxa_esp_audio_deinitialize() { retire(AUDIO); }

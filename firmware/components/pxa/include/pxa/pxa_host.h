@@ -308,6 +308,8 @@ bool pxa_host_ready(void);
 pxa_status_t pxa_host_inspect_ui(char *output, size_t capacity, size_t *size);
 bool pxa_host_resource_memory_snapshot(
     pxa_host_resource_memory_snapshot_t *snapshot);
+/* Sample the Guest maintenance and watchdog timers without waking the runtime. */
+void pxa_host_guest_timers(bool *maintenance, bool *watchdog);
 bool pxa_host_is_active(const char *identity_key);
 bool pxa_host_captures_volume_keys(void);
 bool pxa_host_post_key(pxa_host_key_t key);

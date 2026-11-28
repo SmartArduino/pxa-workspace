@@ -28,6 +28,7 @@ bool pxa_esp_host_request_install_package_file(const char *source_path);
 /* Facade notification after a native runtime-owned catalog mutation. */
 void pxa_host_notify_catalog_changed(void);
 bool pxa_esp_host_start_runtime(void);
+void pxa_esp_host_guest_timers(bool *maintenance, bool *watchdog);
 void pxa_esp_host_sync_builtins(void);
 bool pxa_esp_host_refresh_inbox(void);
 bool pxa_esp_host_stage_package_file(const char *source_path);

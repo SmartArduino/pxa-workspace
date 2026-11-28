@@ -277,6 +277,8 @@ typedef struct {
     uint64_t next_maintenance_us;
     uint64_t next_lifecycle_us;
     uint8_t maintenance_pending; /* queued maintenance + scheduler, same byte */
+    uint8_t watchdog_enabled; /* guarded by g_wamr_watchdog_lock */
+    uint8_t watchdog_in_flight; /* guarded by g_wamr_watchdog_lock */
     uint8_t ui_foreground_requested; /* guarded by g_process_state_lock */
     uint8_t display_interactive;     /* guarded by g_process_state_lock */
     uint8_t shutdown_complete;       /* guarded by g_process_state_lock */
@@ -3090,6 +3092,37 @@ static void native_move_decide(bool approved,uint8_t encoded_choice) {
 
 static pxa_status_t host_cooperate(void *context, pxa_component_t component,
                                    uint64_t deadline_us);
+
+static void stop_guest_watchdog(void) {
+    portENTER_CRITICAL(&g_wamr_watchdog_lock);
+    g_host.watchdog_enabled = 0;
+    uint8_t running = g_host.watchdog_in_flight;
+    portEXIT_CRITICAL(&g_wamr_watchdog_lock);
+    (void)esp_timer_stop(g_host.watchdog_timer);
+    /* A disarmed ESP timer may still have a callback borrowing the engine. */
+    while (running) {
+        vTaskDelay(1);
+        portENTER_CRITICAL(&g_wamr_watchdog_lock);
+        running = g_host.watchdog_in_flight;
+        portEXIT_CRITICAL(&g_wamr_watchdog_lock);
+    }
+}
+
+static pxa_status_t start_guest_timers(void) {
+    if (esp_timer_start_periodic(g_host.maintenance_timer,
+                                 PXA_ESP_HOST_CLOCK_PERIOD_US) != ESP_OK)
+        return PXA_STATUS_UNAVAILABLE;
+    portENTER_CRITICAL(&g_wamr_watchdog_lock);
+    g_host.watchdog_enabled = 1;
+    portEXIT_CRITICAL(&g_wamr_watchdog_lock);
+    if (esp_timer_start_periodic(g_host.watchdog_timer,
+                                 PXA_ESP_HOST_WATCHDOG_PERIOD_US) == ESP_OK)
+        return PXA_STATUS_OK;
+    stop_guest_watchdog();
+    (void)esp_timer_stop(g_host.maintenance_timer);
+    return PXA_STATUS_UNAVAILABLE;
+}
+
 static pxa_status_t reset_runtime(uint16_t max_components) {
     pxa_runtime_limits_t limits;
     pxa_service_ops_t operations;
@@ -3162,6 +3195,8 @@ static pxa_status_t initialize_engine(uint16_t max_components) {
         return PXA_STATUS_INVALID_ARGUMENT;
     }
     if (g_host.engine != NULL) {
+        (void)esp_timer_stop(g_host.maintenance_timer);
+        stop_guest_watchdog();
         pxa_wamr_engine_set_runtime(g_host.engine, NULL);
         pxa_wamr_engine_deinit(g_host.engine);
         g_host.engine = NULL;
@@ -3203,7 +3238,7 @@ static pxa_status_t initialize_engine(uint16_t max_components) {
         return status;
     }
     pxa_wamr_engine_set_runtime(g_host.engine, g_host.activation.runtime);
-    return PXA_STATUS_OK;
+    return start_guest_timers();
 }
 
 /* --- sensor/audio providers --------------------------------------------- */
@@ -3272,6 +3307,7 @@ static void stop_active(pxa_stop_reason_t reason) {
     pxa_esp_host_public_state_t public_state;
     char stopped_identity[PXA_ESP_HOST_MAX_APP_ID];
     const uint64_t stopped_instance=g_host.activation.active_instance_id;
+    if (g_host.engine != NULL) (void)esp_timer_stop(g_host.maintenance_timer);
     pxa_esp_ime_suspend();
     pxa_esp_ime_stop();
     g_host.graceful_stop_active = 0;
@@ -3362,6 +3398,8 @@ static void stop_active(pxa_stop_reason_t reason) {
     host_log_wamr_usage();
     host_log_activation_memory_usage();
     if (g_host.engine != NULL) {
+        stop_guest_watchdog();
+        dismiss_unresponsive_prompt();
         pxa_wamr_engine_set_runtime(g_host.engine, NULL);
         pxa_wamr_engine_deinit(g_host.engine);
         g_host.engine = NULL;
@@ -3962,13 +4000,11 @@ static void on_clock_timer(void *arg) {
 
 /* --- watchdog: ask before terminating overdue guest calls ---------------- */
 
-static void on_watchdog_timer(void *arg) {
+static void check_guest_watchdog(pxa_wamr_engine_t *engine) {
     pxa_esp_ui_unresponsive_prompt_t prompt;
     pxa_esp_host_public_state_t public_state;
     uint32_t prompt_id;
     int prompt_pending;
-    (void)arg;
-    if (g_host.engine == NULL) return;
     if (pxa_esp_ime_poll_deadline(host_now_us(NULL))) {
         ESP_LOGW(PXA_ESP_HOST_TAG,"Input method callback timed out; isolating provider");
         return;
@@ -3979,13 +4015,13 @@ static void on_watchdog_timer(void *arg) {
     prompt_pending = g_host.unresponsive_prompt_id != 0;
     portEXIT_CRITICAL(&g_wamr_watchdog_lock);
     if (prompt_pending) {
-        if (!pxa_wamr_engine_expired_call_pending(g_host.engine)) {
+        if (!pxa_wamr_engine_expired_call_pending(engine)) {
             dismiss_unresponsive_prompt();
             ESP_LOGI(PXA_ESP_HOST_TAG, "Guest recovered; dismissing unresponsive prompt");
         }
         return;
     }
-    if (!pxa_wamr_engine_take_expired_deadline(g_host.engine,
+    if (!pxa_wamr_engine_take_expired_deadline(engine,
                                                host_now_us(NULL))) {
         return;
     }
@@ -4018,7 +4054,7 @@ static void on_watchdog_timer(void *arg) {
             g_host.unresponsive_prompt_id = 0;
         portEXIT_CRITICAL(&g_wamr_watchdog_lock);
         pxa_esp_surface_runtime_modal_leave();
-        (void)pxa_wamr_engine_terminate_active_call(g_host.engine);
+        (void)pxa_wamr_engine_terminate_active_call(engine);
         ESP_LOGE(PXA_ESP_HOST_TAG,
                  "Guest callback exceeded %u ms; prompt unavailable, terminating it",
                  (unsigned)CONFIG_PXA_CALL_TIMEOUT_MS);
@@ -4027,6 +4063,19 @@ static void on_watchdog_timer(void *arg) {
     ESP_LOGW(PXA_ESP_HOST_TAG,
              "Guest callback exceeded %u ms; awaiting user decision",
              (unsigned)CONFIG_PXA_CALL_TIMEOUT_MS);
+}
+
+static void on_watchdog_timer(void *arg) {
+    (void)arg;
+    portENTER_CRITICAL(&g_wamr_watchdog_lock);
+    pxa_wamr_engine_t *engine = g_host.watchdog_enabled ? g_host.engine : NULL;
+    if (engine != NULL) g_host.watchdog_in_flight = 1;
+    portEXIT_CRITICAL(&g_wamr_watchdog_lock);
+    if (engine == NULL) return;
+    check_guest_watchdog(engine);
+    portENTER_CRITICAL(&g_wamr_watchdog_lock);
+    g_host.watchdog_in_flight = 0;
+    portEXIT_CRITICAL(&g_wamr_watchdog_lock);
 }
 
 /* --- command loop -------------------------------------------------------- */
@@ -4809,19 +4858,16 @@ static void sync_ui_lifecycle(void) {
             host_window_apply(NULL, &configuration) == PXA_STATUS_OK)
             g_host.window_orientation_foreground = requested;
     }
-    pxa_video_service_set_foreground(g_host.activation.services.video,
-        effective ? component : PXA_COMPONENT_INVALID);
-    pxa_haptics_service_set_foreground(g_host.activation.services.haptics,
-        effective ? component : PXA_COMPONENT_INVALID);
+    if (g_host.lifecycle_effective != effective) {
+        const pxa_component_t foreground = effective ? component : PXA_COMPONENT_INVALID;
+        pxa_video_service_set_foreground(g_host.activation.services.video, foreground);
+        pxa_haptics_service_set_foreground(g_host.activation.services.haptics, foreground);
 #if PXA_ENABLE_PERIPHERALS
-    pxa_peripherals_service_set_foreground(g_host.activation.services.peripherals,
-        effective ? component : PXA_COMPONENT_INVALID);
+        pxa_peripherals_service_set_foreground(g_host.activation.services.peripherals, foreground);
 #endif
 #if PXA_ENABLE_VOICE_TRIGGER
-    pxa_vt_service_set_foreground(g_host.activation.services.voice_trigger,
-        effective ? component : PXA_COMPONENT_INVALID);
+        pxa_vt_service_set_foreground(g_host.activation.services.voice_trigger, foreground);
 #endif
-    if (g_host.lifecycle_effective != effective) {
         portENTER_CRITICAL(&g_clock_slots_lock);
         pxa_host_clock_slots_pause_component(&g_host.clock_slots, component,
                                               !effective, host_now_us(NULL));
@@ -5402,26 +5448,7 @@ static int start_runtime_services(void) {
     g_host.runtime_starting = 1;
     portEXIT_CRITICAL(&g_process_state_lock);
 
-    if (esp_timer_start_periodic(g_host.maintenance_timer,
-                                 PXA_ESP_HOST_CLOCK_PERIOD_US) != ESP_OK) {
-        ESP_LOGE(PXA_ESP_HOST_TAG, "Clock timer start failed");
-        portENTER_CRITICAL(&g_process_state_lock);
-        g_host.runtime_starting = 0;
-        portEXIT_CRITICAL(&g_process_state_lock);
-        return 0;
-    }
-    if (esp_timer_start_periodic(g_host.watchdog_timer,
-                                 PXA_ESP_HOST_WATCHDOG_PERIOD_US) != ESP_OK) {
-        ESP_LOGE(PXA_ESP_HOST_TAG, "Watchdog timer start failed");
-        (void)esp_timer_stop(g_host.maintenance_timer);
-        portENTER_CRITICAL(&g_process_state_lock);
-        g_host.runtime_starting = 0;
-        portEXIT_CRITICAL(&g_process_state_lock);
-        return 0;
-    }
     if (!start_runtime_thread()) {
-        (void)esp_timer_stop(g_host.watchdog_timer);
-        (void)esp_timer_stop(g_host.maintenance_timer);
         portENTER_CRITICAL(&g_process_state_lock);
         g_host.runtime_starting = 0;
         portEXIT_CRITICAL(&g_process_state_lock);
@@ -5785,7 +5812,7 @@ bool pxa_esp_host_initialize(void) {
              (unsigned)sizeof(pxa_esp_host_command_t),
              (unsigned)PXA_HOST_POINTER_MAILBOX_CAPACITY,
              (unsigned)sizeof(g_host.pointer_mailbox));
-    /* Timers are created now and started with the deferred runtime thread. */
+    /* Guest timers stay disarmed until an app or native IME uses the engine. */
     memset(&timer_args, 0, sizeof(timer_args));
     timer_args.callback = on_maintenance_timer;
     timer_args.arg = NULL;
@@ -5826,6 +5853,12 @@ failed:
 bool pxa_esp_host_start_runtime(void) {
     return start_runtime_services() != 0;
 }
+
+void pxa_esp_host_guest_timers(bool *maintenance, bool *watchdog) {
+    *maintenance = esp_timer_is_active(g_host.maintenance_timer);
+    *watchdog = esp_timer_is_active(g_host.watchdog_timer);
+}
+
 bool pxa_esp_host_request_install_package_file(const char *source) {
     if(!g_host.initialized || !source || !source[0] || strlen(source)>=sizeof(((pxa_esp_file_install_t *)0)->source))return false;
     pxa_esp_host_public_state_t state;public_state_snapshot(&state);if(state.package_active)return false;
