@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <memory>
 #include <new>
+#include <vector>
 
 #define DEMO_LOG(...) do { std::printf(__VA_ARGS__); std::puts(""); } while (false)
 
@@ -73,20 +74,23 @@ void save_binary(const char* directory, const char* name, const void* data, std:
 int run_demo(const char* captures) {
     auto workspace = std::make_unique<Workspace>();
     constexpr int samples = 3;
-    auto palette = raster_demo::make_palette();
-    std::array<raster_demo::Texture, raster_demo::texture_count> textures;
+    const auto& textures = raster_demo::textures;
     pxa_raster_resources_t resources{};
     resources.capabilities = PXA_RASTER_CAP_KNOWN_MASK;
-    resources.palette = palette.data();
+    resources.palette = raster_demo::palette;
     resources.palette_light_levels = raster_demo::light_levels;
     for (unsigned i = 0; i < textures.size(); ++i) {
-        textures[i] = raster_demo::make_texture(i);
-        resources.textures[i] = {reinterpret_cast<const std::uint8_t*>(textures[i].data()),
-            raster_demo::texture_size, raster_demo::texture_size};
+        const auto& texture = textures[i];
+        resources.textures[i] = {texture.indices, texture.width, texture.height};
     }
     if (captures) {
-        save_binary(captures, "palette.rgb565", palette.data(), sizeof(palette));
-        save_binary(captures, "textures.index8", textures.data(), sizeof(textures));
+        std::vector<std::byte> indices;
+        for (const auto& texture : textures) {
+            const auto pixels = texture.pixels();
+            indices.insert(indices.end(), pixels.begin(), pixels.end());
+        }
+        save_binary(captures, "palette.rgb565", raster_demo::palette, sizeof(raster_demo::palette));
+        save_binary(captures, "textures.index8", indices.data(), indices.size());
     }
     const pxa_raster_target_t target{
         .pixels = workspace->color.data(), .depth_pixels = workspace->depth.data(),
@@ -100,9 +104,9 @@ int run_demo(const char* captures) {
     DEMO_LOG("begin %ux%u frames=%d samples=%d", width, height, raster_demo::scene_frames, samples);
     for (int index = 0; index < raster_demo::scene_frames; ++index) {
         auto frame = renderer.frame(workspace->commands);
-        const auto stats = raster_demo::draw_scene(frame, *projector, index);
+        const auto stats = raster_demo::draw_scene(frame, *projector, index, width, height);
         require(frame.submit().has_value(), "serialize", index);
-        require(stats.source_faces == 778 && stats.projected_faces >= 100 &&
+        require(stats.source_faces >= 800 && stats.projected_faces >= 100 &&
                 stats.blended_faces >= 1 && stats.cutout_faces > stats.blended_faces,
                 "scene coverage", index);
         pxa_raster_draw_list_view_t view{};
@@ -110,6 +114,7 @@ int run_demo(const char* captures) {
                 &resources, &view) == PXA_STATUS_OK && view.uses_depth && view.uses_palette,
                 "validate", index);
         pxa_raster_telemetry_t whole{}, bands{};
+        workspace->color.fill(0);
         pxa_raster_execute_draw_list(packet.data(), &view, &target, &resources, &whole);
         workspace->whole_color = workspace->color;
         workspace->whole_depth = workspace->depth;
@@ -118,6 +123,7 @@ int run_demo(const char* captures) {
             rows(packet.data(), &view, &target, &resources, 0, split, stats);
             rows(packet.data(), &view, &target, &resources, split, height, stats);
         };
+        workspace->color.fill(UINT16_MAX);
         render(pxa_raster_execute_draw_list_rows, &bands);
         require(workspace->whole_color == workspace->color && workspace->whole_depth == workspace->depth &&
                 whole.covered_pixels == bands.covered_pixels, "split raster", index);

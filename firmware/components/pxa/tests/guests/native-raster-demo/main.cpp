@@ -19,7 +19,8 @@ public:
     void on_frame(pxa::Context& context, pxa::game::FrameTick) {
         if (!renderer_ || failed_) return;
         auto frame = renderer_->frame(commands_);
-        const auto stats = raster_demo::draw_scene(frame, *projector_, frame_number_);
+        const auto stats = raster_demo::draw_scene(frame, *projector_, frame_number_,
+                                                   width_, height_);
         const auto result = frame.submit();
         if (!result) {
             if (result.error() != pxa::Error::would_block) on_error(context, result.error());
@@ -65,14 +66,16 @@ private:
         auto projector = raster_demo::Projector::create(width_, height_, 1.1f, .25f, 44.f);
         if (!projector) co_return std::unexpected(projector.error());
 
-        pxa::game::Upload upload(*renderer, upload_);
-        const auto palette = raster_demo::make_palette();
-        if (auto result = upload.palette(palette, raster_demo::light_levels); !result)
+        // Uploads are synchronous. The draw buffer is free until the first tick.
+        static_assert(pxa::game::limits::draw_list_bytes >=
+                      pxa::game::Upload::header_bytes + raster_demo::max_texture_bytes);
+        pxa::game::Upload upload(*renderer, commands_.bytes());
+        if (auto result = upload.palette(raster_demo::palette, raster_demo::light_levels); !result)
             co_return std::unexpected(result.error());
         for (std::uint8_t material = 0; material < raster_demo::texture_count; ++material) {
-            const auto texture = raster_demo::make_texture(material);
-            if (auto result = upload.texture({material}, raster_demo::texture_size,
-                                             raster_demo::texture_size, texture); !result)
+            const auto& texture = raster_demo::textures[material];
+            if (auto result = upload.texture({material}, texture.width,
+                                             texture.height, texture.pixels()); !result)
                 co_return std::unexpected(result.error());
         }
         renderer_.emplace(std::move(*renderer));
@@ -85,7 +88,6 @@ private:
     std::optional<pxa::game::Renderer> renderer_;
     std::optional<raster_demo::Projector> projector_;
     pxa::game::DrawBuffer<pxa::game::limits::draw_list_bytes> commands_;
-    std::array<std::byte, pxa::game::Upload::header_bytes + sizeof(raster_demo::Palette)> upload_{};
     std::uint16_t width_ = 0, height_ = 0;
     int frame_number_ = 0;
     bool failed_ = false;

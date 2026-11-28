@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "materials.hpp"
+
 #include <pxa/game3d.hpp>
+#include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdint>
 #include <numbers>
 
 namespace raster_demo {
@@ -13,77 +15,11 @@ using pxa::game3d::FixedMeshVertex;
 using pxa::game3d::Projector;
 using pxa::game3d::Vec3;
 
-constexpr int texture_size = 32;
-constexpr int texture_count = 5;
-constexpr int light_levels = 4;
 constexpr int frames_per_shot = 60;
 constexpr int shot_count = 3;
 constexpr int scene_frames = shot_count * frames_per_shot;
 constexpr float turn = 2.0f * std::numbers::pi_v<float>;
-using Texture = std::array<std::byte, texture_size * texture_size>;
-using Palette = std::array<std::uint16_t, 256 * light_levels>;
-
-inline Texture make_texture(int material) {
-    Texture data;
-    for (int y = 0; y < texture_size; ++y) {
-        for (int x = 0; x < texture_size; ++x) {
-            const int grain = (x * 73 ^ y * 29 ^ (x * y * 17)) & 7;
-            int color = 0;
-            switch (material) {
-            case 0:  // Slate tiles
-                color = x < 2 || y < 2 ? 1 : 3 + grain / 2;
-                break;
-            case 1:  // Amber metal panels
-                color = x < 2 || y < 2 ? 17 : (x > 25 || y > 25 ? 24 : 19 + grain / 2);
-                break;
-            case 2:  // Illuminated rings and signage
-                color = y < 4 || y > 27 ? 37 : (x % 16 < 2 ? 38 : 33 + grain / 2);
-                break;
-            case 3:  // Cutout metal grille
-                if (x % 8 < 2 || y % 8 < 2 || x == y)
-                    color = 49 + grain / 2;
-                break;
-            case 4: {  // Transparent ring and glowing core
-                const int dx = 2 * x - 31;
-                const int dy = 2 * y - 31;
-                const int radius = dx * dx + dy * dy;
-                if (radius < 121 || (radius > 400 && radius < 840))
-                    color = radius < 80 ? 69 : 65 + (x + y) % 4;
-                break;
-            }
-            default:
-                break;
-            }
-            data[y * texture_size + x] = std::byte(color);
-        }
-    }
-    return data;
-}
-
-inline Palette make_palette() {
-    Palette palette{};
-    constexpr std::uint32_t colors[texture_count][8] = {
-        {0x233243, 0x586276, 0x526575, 0x596b7b, 0x5d7181, 0x617989, 0x637985, 0x6f8590},
-        {0x3b313b, 0x824a44, 0xa8604b, 0xaa684e, 0xaf704f, 0xb37559, 0xd18d60, 0xffb56a},
-        {0x164658, 0x215771, 0x255b79, 0x29647f, 0x2f7488, 0x4befd7, 0x80ffe9, 0x51b2c0},
-        {0x407388, 0x5390a1, 0x62aaad, 0x78aeb3, 0xa1e1d0, 0x3f8590, 0x4daeb5, 0x4db3bb},
-        {0x6be9ff, 0x8ce9ff, 0xacdfff, 0xf3a8ff, 0xf0ccff, 0xfffaff, 0xffeecc, 0xf0ffff},
-    };
-    for (int light = 0; light < light_levels; ++light) {
-        const unsigned level = 4 + light;
-        for (int material = 0; material < texture_count; ++material) {
-            for (int i = 0; i < 8; ++i) {
-                const auto rgb = colors[material][i];
-                const unsigned r = (rgb >> 16) * level / 7;
-                const unsigned g = ((rgb >> 8) & 255) * level / 7;
-                const unsigned b = (rgb & 255) * level / 7;
-                palette[256 * light + 16 * material + 1 + i] =
-                    ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-            }
-        }
-    }
-    return palette;
-}
+constexpr Vec3 rotor_center{0, 2.65f, 1.25f};
 
 inline Vec3 minus(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
 inline float dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
@@ -109,20 +45,36 @@ inline Camera camera_at(int frame) {
     const float t = (frame % frames_per_shot) / float(frames_per_shot);
     Vec3 eye, aim;
     if (shot == 0) {
-        const float angle = (t - .5f) * 1.5f;
-        eye = {9.4f * std::sin(angle), 4.2f + t * 1.1f, -9.4f * std::cos(angle)};
-        aim = {0, 2.1f, 1.8f};
+        const float angle = (t - .5f) * 1.32f;
+        eye = {8.0f * std::sin(angle), 3.55f + t * .75f, 1.4f - 8.0f * std::cos(angle)};
+        aim = {0, 2.08f, 1.6f};
     } else if (shot == 1) {
-        eye = {-3.8f + 6.7f * t, 1.65f + .15f * std::sin(t * turn), -7.2f + 7.0f * t};
-        aim = {2.6f * std::sin(t * turn + .5f), 2.4f, 5.5f};
+        eye = {-2.75f + 4.7f * t, 1.6f + .24f * std::sin(t * turn), -7.3f + 5.5f * t};
+        aim = {-.65f + .7f * std::sin(t * turn), 2.35f, 1.85f};
     } else {
-        const float angle = .36f + t * 1.85f;
-        eye = {9.0f * std::cos(angle), 7.1f + t * 2.5f, 3.1f + 6.2f * std::sin(angle)};
-        aim = {-1.2f + t * 2.4f, 1.0f, 1.0f};
+        const float angle = .65f + t * 1.5f;
+        eye = {8.9f * std::cos(angle), 6.1f + t * 3.0f, 1.1f + 7.6f * std::sin(angle)};
+        aim = {-.45f + t * .8f, .9f, 1.4f};
     }
     const Vec3 forward = unit(minus(aim, eye));
     const Vec3 right = unit(cross({0, 1, 0}, forward));
     return {eye, right, cross(forward, right), forward};
+}
+
+inline void draw_backdrop(pxa::game::Frame& target, const Camera& camera,
+                          std::uint16_t width, std::uint16_t height) {
+    const auto panel_width = static_cast<std::uint16_t>((3 * width + 3) / 4);
+    const auto panel_height = static_cast<std::uint16_t>(height + height / 3);
+    const int horizontal_margin = 2 * panel_width - width;
+    const auto x = static_cast<std::int16_t>(-horizontal_margin *
+        (.5f + .46f * camera.forward.x));
+    const auto y = static_cast<std::int16_t>(-static_cast<int>(height) *
+        (.16f - .16f * camera.forward.y));
+    const pxa::game::Sprite left{x, y, panel_width, panel_height, 0, 0, 256, 128};
+    const pxa::game::Sprite right{static_cast<std::int16_t>(x + panel_width), y,
+                                  panel_width, panel_height, 0, 0, 256, 128};
+    target.sprites({twilight_left}, {&left, 1}, {.transparent_index0 = false});
+    target.sprites({twilight_right}, {&right, 1}, {.transparent_index0 = false});
 }
 
 struct FrameStats {
@@ -132,28 +84,42 @@ struct FrameStats {
     unsigned blended_faces = 0;
 };
 
-inline FrameStats draw_scene(pxa::game::Frame& target, const Projector& projector, int frame) {
+struct Uv {
+    struct Point { int u, v; };
+    std::array<Point, 4> corners;
+
+    constexpr Uv(int left = 0, int top = 0, int right = 256, int bottom = 256)
+        : corners{{{left,top}, {right,top}, {right,bottom}, {left,bottom}}} {}
+    constexpr Uv(Point a, Point b, Point c, Point d) : corners{{a, b, c, d}} {}
+};
+
+inline FrameStats draw_scene(pxa::game::Frame& target, const Projector& projector, int frame,
+                             std::uint16_t width, std::uint16_t height) {
     const Camera camera = camera_at(frame);
     const float time = frame * turn / scene_frames;
     FrameStats stats;
-    target.clear({0x192d});
-    auto draw = [&](const std::array<Vec3, 4>& points, std::uint8_t material, std::uint8_t light) {
+    // Both panels cover the full target. The rasterizer still clears depth
+    // before the first command, so a separate RGB clear would be redundant.
+    draw_backdrop(target, camera, width, height);
+    auto draw = [&](const std::array<Vec3, 4>& points, Material material,
+                    std::uint8_t light, Uv uv = {}) {
         ++stats.source_faces;
-        constexpr int uv = texture_size * 16;
-        std::array<FixedMeshVertex, 4> face{{
-            {camera.to_view(points[0]), 0, 0, light},
-            {camera.to_view(points[1]), uv, 0, light},
-            {camera.to_view(points[2]), uv, uv, light},
-            {camera.to_view(points[3]), 0, uv, light},
-        }};
+        const auto& tex = textures[material];
+        std::array<FixedMeshVertex, 4> face;
+        for (std::size_t i = 0; i < face.size(); ++i) {
+            const auto [u, v] = uv.corners[i];
+            face[i] = {camera.to_view(points[i]),
+                       static_cast<std::int16_t>(u * tex.width / 16),
+                       static_cast<std::int16_t>(v * tex.height / 16), light};
+        }
         std::array<pxa::game::Vertex, Projector::max_polygon_vertices> wire;
         const auto count = projector.project_polygon_fixed(face, wire);
         if (!count || *count < 3) return;
-        const bool cutout = material >= 3;
-        const bool blend = material == 4;
+        const bool cutout = material == grille || material == glow;
+        const bool blend = material == glow;
         const auto before = target.bytes_used();
         target.textured_depth_polygon({material}, std::span(wire).first(*count),
-            {.transparent_index0 = cutout, .blend_75 = blend});
+            {.affine_uv = material == moonstone, .transparent_index0 = cutout, .blend_75 = blend});
         if (target.bytes_used() != before) {
             ++stats.projected_faces;
             stats.cutout_faces += cutout;
@@ -161,91 +127,180 @@ inline FrameStats draw_scene(pxa::game::Frame& target, const Projector& projecto
         }
     };
 
-    // Central rotor. Each of the 240 faces samples its own repeated texture.
-    constexpr int rings = 24, subdivisions = 10;
+    auto slab_top = [&](float x, float z, float y, float radius, Material material,
+                        std::uint8_t light, Uv uv = {}) {
+        draw({Vec3{x-radius,y,z-radius}, {x+radius,y,z-radius},
+                   {x+radius,y,z+radius}, {x-radius,y,z+radius}}, material, light, uv);
+    };
+
+    // The lantern-like armillary rotor uses a continuous UV strip around each
+    // sector. Directional shading follows the surface as it rotates.
+    constexpr int rings = 28, subdivisions = 10;
+    struct SineCosine { float sine, cosine; };
+    std::array<SineCosine, subdivisions> tube;
+    for (int j = 0; j < subdivisions; ++j) {
+        const float b = j * turn / subdivisions;
+        tube[j] = {std::sin(b), std::cos(b)};
+    }
     std::array<Vec3, rings * subdivisions> rotor;
-    const float sine = std::sin(time), cosine = std::cos(time);
-    for (int ring = 0; ring < rings; ++ring) {
-        const float angle = ring * turn / rings;
+    std::array<SineCosine, rings> circle;
+    const float yaw = time + .22f;
+    const float sine = std::sin(yaw), cosine = std::cos(yaw);
+    for (int i = 0; i < rings; ++i) {
+        const float angle = i * turn / rings;
         const float sa = std::sin(angle), ca = std::cos(angle);
-        for (int slice = 0; slice < subdivisions; ++slice) {
-            const float b = slice * turn / subdivisions;
-            const float radius = 1.50f + .42f * std::cos(b);
-            const float x = radius * ca;
-            const float z = .42f * std::sin(b);
-            rotor[ring * subdivisions + slice] = {
-                cosine * x + sine * z, 2.78f + radius * sa, 1.8f + cosine * z - sine * x,
-            };
+        circle[i] = {sa, ca};
+        for (int j = 0; j < subdivisions; ++j) {
+            const float radius = 1.64f + .32f * tube[j].cosine;
+            const float x = radius * ca, z = .32f * tube[j].sine;
+            rotor[i * subdivisions + j] = {rotor_center.x + cosine * x + sine * z,
+                rotor_center.y + radius * sa, rotor_center.z + cosine * z - sine * x};
         }
     }
     for (int i = 0; i < rings; ++i) {
+        const int a = i * subdivisions, b = ((i + 1) % rings) * subdivisions;
         for (int j = 0; j < subdivisions; ++j) {
-            const int a = i * subdivisions, b = ((i + 1) % rings) * subdivisions;
             const int next = (j + 1) % subdivisions;
+            const float nx = circle[i].cosine * tube[j].cosine;
+            const float nz = tube[j].sine;
+            const Vec3 normal{cosine * nx + sine * nz, circle[i].sine * tube[j].cosine,
+                              cosine * nz - sine * nx};
+            const float shading = dot(normal, {-.32f, .72f, -.58f});
+            const auto light = static_cast<std::uint8_t>(std::clamp(4 + int(shading * 4), 1, 7));
+            const int sector = i % 4;
             draw({rotor[a+j], rotor[b+j], rotor[b+next], rotor[a+next]},
-                 i % 4 == 0 ? 1 : 2, 1 + std::min(j / 3, 2));
+                 i / 4 % 2 ? brass : enamel, light,
+                 {sector * 64, j * 256 / subdivisions, (sector+1) * 64,
+                  (j+1) * 256 / subdivisions});
         }
     }
 
-    // Six courses on each of ten towers. Near faces occlude courses behind them.
-    for (int tower = 0; tower < 10; ++tower) {
-        const float x = (tower % 2 ? 1.f : -1.f) * (3.9f + .25f * (tower / 2 % 2));
-        const float z = -4.5f + 2.55f * (tower / 2);
-        const float rise = .48f + .075f * (tower % 3);
-        constexpr float half = .65f;
-        for (int course = 0; course < 6; ++course) {
-            const float lo = course * rise, hi = lo + rise;
-            const Vec3 lower[] = {{x-half,lo,z-half}, {x+half,lo,z-half},
-                                  {x+half,lo,z+half}, {x-half,lo,z+half}};
-            const Vec3 upper[] = {{x-half,hi,z-half}, {x+half,hi,z-half},
-                                  {x+half,hi,z+half}, {x-half,hi,z+half}};
-            for (int side = 0; side < 4; ++side) {
-                const int next = (side + 1) & 3;
-                draw({upper[side],upper[next],lower[next],lower[side]},
-                     course == 3 ? 2 : 1, 3 - (side % 3));
+    constexpr std::array<Vec3, 8> octagon{{
+        {.38f,0,-.92f}, {.92f,0,-.38f}, {.92f,0,.38f}, {.38f,0,.92f},
+        {-.38f,0,.92f}, {-.92f,0,.38f}, {-.92f,0,-.38f}, {-.38f,0,-.92f},
+    }};
+    struct Band { float y, radius; Material finish; };
+    constexpr std::array<std::uint8_t, 8> side_light{{6, 5, 4, 3, 3, 4, 5, 6}};
+    constexpr std::array<Uv::Point, 8> crown_uv{{
+        {177, 9}, {247, 79}, {247, 177}, {177, 247},
+        {79, 247}, {9, 177}, {9, 79}, {79, 9},
+    }};
+    auto pylon = [&](float x, float z, std::span<const Band> bands, Material crown) {
+        auto point = [&](unsigned corner, const Band& band) -> Vec3 {
+            return {x + octagon[corner].x * band.radius, band.y,
+                    z + octagon[corner].z * band.radius};
+        };
+        for (std::size_t tier = 1; tier < bands.size(); ++tier) {
+            const auto& low = bands[tier-1];
+            const auto& high = bands[tier];
+            for (unsigned face = 0; face < octagon.size(); ++face) {
+                const unsigned next = (face + 1) % octagon.size();
+                draw({point(face, high), point(next, high),
+                      point(next, low), point(face, low)},
+                     low.finish, side_light[face]);
             }
-            if (course == 5)
-                draw({upper[0], upper[1], upper[2], upper[3]}, 1, 3);
         }
-    }
+        const auto& top = bands.back();
+        for (const auto& [a, b, c, d] : {std::array{0u,1u,2u,3u}, {0u,3u,4u,7u}, {4u,5u,6u,7u}})
+            draw({point(a, top), point(b, top), point(c, top), point(d, top)},
+                 crown, 6, {crown_uv[a], crown_uv[b], crown_uv[c], crown_uv[d]});
+    };
 
+    // Four paired pillars define a gallery without blocking the center aisle.
+    for (int i = 0; i < 8; ++i) {
+        const float z = -4.3f + (i / 2) * 3.25f;
+        const float x = i % 2 ? 3.65f + .32f * (i / 2 % 2) : -3.65f - .32f * (i / 2 % 2);
+        const float top = 2.5f + .32f * (i / 2 % 3);
+        const std::array<Band, 5> shape{{
+            {0, .82f, slate}, {.35f, .64f, brass}, {top-.32f, .49f, enamel},
+            {top-.15f, .67f, brass}, {top, .59f, brass},
+        }};
+        pylon(x, z, shape, brass);
+    }
+    const std::array<Band, 4> altar{{
+        {.02f, .93f, slate}, {.20f, .84f, brass},
+        {.39f, .68f, enamel}, {.53f, .77f, brass},
+    }};
+    pylon(0, rotor_center.z, altar, moonstone);
+
+    constexpr float step = 1.25f;
+    constexpr float x_min = -7 * step, x_max = 7 * step;
+    constexpr float z_min = -7 * step, z_max = 9 * step;
+    constexpr float chart_height = .12f, chart_radius = 2 * step;
     for (int z = -7; z < 9; ++z) {
-        for (int x = -8; x < 8; ++x) {
-            constexpr float step = 1.26f;
-            const float x0 = x * step, z0 = z * step;
-            draw({Vec3{x0,0,z0}, {x0+step,0,z0}, {x0+step,0,z0+step}, {x0,0,z0+step}},
-                 (x == -2 || x == 1) && z % 3 == 0 ? 2 : 0, 2 + ((x + z) & 1));
+        for (int x = -7; x < 7; ++x) {
+            const float tile_x = (x + .5f) * step;
+            const float tile_z = (z + .5f) * step;
+            // Share the floor grid to keep the star chart continuous in the
+            // shallow camera pass while keeping each affine patch small.
+            if (x >= -2 && x < 2 && z >= -1 && z < 3) {
+                const int u = (x + 2) * 63, v = (z + 1) * 63;
+                slab_top(tile_x, tile_z, chart_height, step / 2, moonstone, 6,
+                         {u, v, u + 63, v + 63});
+                continue;
+            }
+            const bool aisle = x == -2 || x == 1;
+            const bool marker = aisle && z % 3 == 0;
+            const auto light = static_cast<std::uint8_t>((x + z) % 2 == 0 ? 5 : 4);
+            slab_top(tile_x, tile_z, 0, step / 2, marker ? enamel : slate, light);
         }
     }
 
-    for (int i = 0; i < 12; ++i) {
-        const float z = (i / 2) * 2.0f - 4.0f;
-        const float x = i % 2 ? 2.7f : -2.7f;
-        draw({Vec3{x,1.8f,z-.55f}, {x,1.8f,z+.55f}, {x,.2f,z+.55f}, {x,.2f,z-.55f}},
-             3, 3);
+    // Dark terrace fascia and a brass edge give the platform visible thickness.
+    auto rail_face = [&](float x0, float z0, float x1, float z1, float lo, float hi,
+                         Material finish, std::uint8_t light, Uv uv = {}) {
+        draw({Vec3{x0,hi,z0}, {x1,hi,z1}, {x1,lo,z1}, {x0,lo,z0}}, finish, light, uv);
+    };
+    for (int i = 0; i < 16; i += 2) {
+        const float lo = z_min + i * step, hi = lo + 2 * step;
+        for (float edge : {x_min, x_max})
+            rail_face(edge,lo,edge,hi,-.65f,0,slate,3,{0,0,512,256});
+    }
+    for (int i = 0; i < 14; i += 2) {
+        const float lo = x_min + i * step, hi = lo + 2 * step;
+        rail_face(lo,z_min,hi,z_min,-.65f,0,slate,3,{0,0,512,256});
+        rail_face(lo,z_max,hi,z_max,-.65f,0,slate,3,{0,0,512,256});
+    }
+    const float chart_near = rotor_center.z - chart_radius;
+    const float chart_far = rotor_center.z + chart_radius;
+    for (float edge : {chart_near, chart_far})
+        rail_face(-chart_radius,edge,chart_radius,edge,0,chart_height,brass,5,{0,64,512,96});
+    for (float edge : {-chart_radius, chart_radius})
+        rail_face(edge,chart_near,edge,chart_far,0,chart_height,brass,5,{0,64,512,96});
+    for (int i = 0; i < 6; ++i) {
+        const float z = -4.6f + i * 2.0f;
+        for (float edge : {-3.15f, 3.15f}) {
+            rail_face(edge,z-.78f,edge,z+.78f,.12f,.94f,grille,6);
+            rail_face(edge,z-.78f,edge,z+.78f,.94f,1.02f,brass,7);
+        }
+    }
+    for (int i = 0; i < 10; ++i) {
+        const float x = (i - 5) * 1.3f;
+        rail_face(x,8.5f,x+1.3f,8.5f,.12f,.93f,grille,6);
     }
 
-    // Sort only the effect batch back-to-front. The opaque depth stays intact.
-    struct Glow { Vec3 center; float depth, radius; };
-    std::array<Glow, 20> glows;
-    for (unsigned i = 0; i < glows.size(); ++i) {
-        const float a = i * turn / glows.size() + time * 2;
-        const float r = i < 8 ? 2.2f : 2.8f;
-        const Vec3 center{std::cos(a) * r, 1.35f + .85f * std::sin(a * 3 + time),
-                          1.8f + std::sin(a) * r};
-        glows[i] = {center, camera.to_view(center).z, i < 8 ? .47f : .25f};
+    // Outdoor light motes obey the same opaque depth as the gallery. Sort
+    // this small translucent batch so near effects blend over distant ones.
+    struct Mote { Vec3 center; float depth, radius; };
+    std::array<Mote, 21> motes;
+    motes[0] = {rotor_center, camera.to_view(rotor_center).z, .83f + .12f * std::sin(time * 2)};
+    for (unsigned i = 1; i < motes.size(); ++i) {
+        const float angle = i * turn / (motes.size() - 1) + time * 2;
+        const float radius = i < 12 ? 1.16f : 2.40f;
+        const Vec3 center{std::cos(angle) * radius,
+            2.45f + .86f * std::sin(angle * 2 + time), rotor_center.z + std::sin(angle) * radius};
+        motes[i] = {center, camera.to_view(center).z, i % 3 ? .15f : .26f};
     }
-    std::sort(glows.begin(), glows.end(), [](const Glow& a, const Glow& b) {
+    std::sort(motes.begin(), motes.end(), [](const Mote& a, const Mote& b) {
         return a.depth > b.depth;
     });
-    for (const auto& glow : glows) {
+    for (const auto& mote : motes) {
         auto corner = [&](float x, float y) -> Vec3 {
-            const auto c = glow.center;
-            const auto a = camera.right, b = camera.up;
+            const auto c = mote.center, a = camera.right, b = camera.up;
             return {c.x + a.x*x + b.x*y, c.y + a.y*x + b.y*y, c.z + a.z*x + b.z*y};
         };
-        const float r = glow.radius;
-        draw({corner(-r,r),corner(r,r),corner(r,-r),corner(-r,-r)}, 4, 3);
+        const float r = mote.radius;
+        draw({corner(-r,r),corner(r,r),corner(r,-r),corner(-r,-r)}, glow, 7);
     }
     return stats;
 }

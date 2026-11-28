@@ -1,10 +1,10 @@
 {
   "format": "pxa-package-source-0.2",
   "id": "native-raster-demo",
-  "version": "0.1.0",
-  "release_sequence": 1,
-  "name": "PXA 3D 光栅压测",
-  "description": "带贴图的立体场景、镂空与半透明特效，以及固定的环绕、贴地穿行和俯视镜头",
+  "version": "0.2.0",
+  "release_sequence": 2,
+  "name": "月岭天文台 · PXA 3D 压测",
+  "description": "蓝调雪峰上的铜制浑天仪、月石星盘和镂空廊道，按照固定环绕、穿行和俯视镜头进行原生像素光栅压测",
   "min_sdk": [2, 1],
   "build": {
     "system": "cmake",
