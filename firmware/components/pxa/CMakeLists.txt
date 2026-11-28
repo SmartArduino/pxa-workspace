@@ -199,7 +199,8 @@ if(PXA_TARGET STREQUAL "esp32s3" OR PXA_TARGET STREQUAL "esp32s31" OR PXA_TARGET
     list(APPEND PXA_REQUIRES wamr)
 endif()
 set(PXA_RASTER_SPAN_IRAM_DEFAULT OFF)
-if(PXA_BOARD STREQUAL "esp32s31-korvo-1" OR PXA_BOARD STREQUAL "doit-gamekit")
+if(PXA_BOARD STREQUAL "esp32s31-korvo-1" OR PXA_BOARD STREQUAL "doit-gamekit"
+   OR PXA_BOARD STREQUAL "esp-mosaico")
     # Keep the depth-texture pixel loop in internal instruction memory on
     # these S31 game boards. Other boards retain their mapped-code policy.
     set(PXA_RASTER_SPAN_IRAM_DEFAULT ON)
