@@ -39,9 +39,12 @@ typedef struct esp_pxa_instance {
     uint64_t host_instance_id;
     uint8_t* launch_event;
     size_t launch_event_size;
+    lv_timer_t* start_stop_timer;
     pxa_window_configuration_t window_configuration;
     uint8_t window_configured;
     uint8_t started;
+    uint8_t start_cancelled;
+    pxsys_stop_reason_t start_stop_reason;
 } esp_pxa_instance_t;
 
 typedef struct {
@@ -624,6 +627,31 @@ static void retry_runtime_event(lv_timer_t* timer) {
     process_runtime_event(lv_timer_get_user_data(timer));
 }
 
+static void report_instance_stopped(pxsys_esp_pxa_bridge_t* bridge,
+                                     pxsys_instance_ref_t reference,
+                                     pxsys_stop_reason_t reason) {
+    pxsys_status_t status = pxsys_task_manager_report_stopped(
+        pxsys_standard_system_tasks(bridge->system), reference, reason);
+    if (status == PXSYS_STATUS_NOT_FOUND)
+        (void)pxsys_role_host_report_stopped(
+            pxsys_standard_system_role_host(bridge->system), reference, reason);
+}
+
+static void stop_cancelled_start(lv_timer_t* timer) {
+    esp_pxa_instance_t* instance = lv_timer_get_user_data(timer);
+    if (!pxa_host_runtime_is_instance_active(instance->identity_key, instance->host_instance_id)) {
+        report_instance_stopped(g_bridge, instance->reference, instance->start_stop_reason);
+        return;
+    }
+    if (!pxa_host_runtime_stop_with_reason(instance->identity_key, instance->host_instance_id,
+                                          (uint8_t)instance->start_stop_reason)) {
+        lv_timer_resume(timer);
+        return;
+    }
+    instance->start_stop_timer = NULL;
+    lv_timer_delete(timer);
+}
+
 static void process_runtime_event(void* context) {
     runtime_event_t* event = (runtime_event_t*)context;
     pxsys_esp_pxa_bridge_t* bridge = g_bridge;
@@ -643,6 +671,12 @@ static void process_runtime_event(void* context) {
         if (event->event == PXA_HOST_RUNTIME_STARTED) {
             instance->started = 1;
             instance->host_instance_id = event->host_instance_id;
+            if (instance->start_cancelled) {
+                if (instance->start_stop_timer != NULL)
+                    stop_cancelled_start(instance->start_stop_timer);
+                free(event);
+                return;
+            }
             uint8_t* launch_event = instance->launch_event;
             size_t launch_event_size = instance->launch_event_size;
             pxsys_locale_snapshot_t locale = {0};
@@ -697,6 +731,11 @@ static void process_runtime_event(void* context) {
                      event->identity, (int)launch_status, (int)status);
             bridge->allocator.release(bridge->allocator.context, launch_event);
         } else if (event->event == PXA_HOST_RUNTIME_START_FAILED) {
+            if (instance->start_cancelled) {
+                report_instance_stopped(bridge, instance->reference, instance->start_stop_reason);
+                free(event);
+                return;
+            }
             pxsys_status_t status = pxsys_task_manager_complete_start(
                 pxsys_standard_system_tasks(bridge->system), instance->reference,
                 PXSYS_STATUS_INTERNAL);
@@ -706,14 +745,7 @@ static void process_runtime_event(void* context) {
                     instance->reference, PXSYS_STATUS_INTERNAL);
             }
         } else if (event->event == PXA_HOST_RUNTIME_STOPPED) {
-            pxsys_status_t status = pxsys_task_manager_report_stopped(
-                pxsys_standard_system_tasks(bridge->system), instance->reference,
-                event->stop_reason);
-            if (status == PXSYS_STATUS_NOT_FOUND) {
-                (void)pxsys_role_host_report_stopped(
-                    pxsys_standard_system_role_host(bridge->system),
-                    instance->reference, event->stop_reason);
-            }
+            report_instance_stopped(bridge, instance->reference, event->stop_reason);
         }
     }
     free(event);
@@ -1394,6 +1426,17 @@ static pxsys_status_t backend_request_stop(void* context, void* backend_instance
     pxsys_esp_pxa_bridge_t* bridge = (pxsys_esp_pxa_bridge_t*)context;
     if (instance == NULL)
         return PXSYS_STATUS_INVALID_ARGUMENT;
+    /* The launch command may still be in flight and has no Host ID to stop.
+     * Keep ownership until START_FAILED or until STARTED supplies that ID. */
+    if (instance->host_instance_id == 0 && instance->launch_event != NULL) {
+        instance->start_stop_timer = lv_timer_create(stop_cancelled_start, 20, instance);
+        if (instance->start_stop_timer == NULL) return PXSYS_STATUS_NO_MEMORY;
+        lv_timer_pause(instance->start_stop_timer);
+        instance->start_cancelled = 1;
+        instance->start_stop_reason = reason;
+        if (bridge->window_instance == instance) reset_window(bridge);
+        return PXSYS_STATUS_PENDING;
+    }
     /* The Host may have evicted this instance while a stop was queued. */
     if (!pxa_host_runtime_is_instance_active(
             instance->identity_key, instance->host_instance_id)) {
@@ -1403,14 +1446,18 @@ static pxsys_status_t backend_request_stop(void* context, void* backend_instance
         }
         return PXSYS_STATUS_OK;
     }
-    if (bridge->window_instance == instance)
+    if (!pxa_host_runtime_stop_with_reason(instance->identity_key, instance->host_instance_id,
+                                          (uint8_t)reason))
+        return PXSYS_STATUS_UNAVAILABLE;
+    if (instance->launch_event != NULL) {
+        instance->start_cancelled = 1;
+        instance->start_stop_reason = reason;
+    }
+    if (bridge->window_instance == instance) {
         pxa_esp_surface_set_host_visible(false);
-    if (bridge->window_instance == instance) reset_window(bridge);
-    return pxa_host_runtime_stop_with_reason(
-               instance->identity_key, instance->host_instance_id,
-               (uint8_t)reason)
-               ? PXSYS_STATUS_PENDING
-               : PXSYS_STATUS_UNAVAILABLE;
+        reset_window(bridge);
+    }
+    return PXSYS_STATUS_PENDING;
 }
 
 static void backend_destroy(void* context, void* backend_instance) {
@@ -1423,6 +1470,7 @@ static void backend_destroy(void* context, void* backend_instance) {
         pxa_esp_surface_set_host_visible(false);
         reset_window(bridge);
     }
+    if (instance->start_stop_timer != NULL) lv_timer_delete(instance->start_stop_timer);
     remove_component_subscriptions(bridge, instance);
     remove_app_endpoints(bridge, instance);
     bridge->allocator.release(bridge->allocator.context,

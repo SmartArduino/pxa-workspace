@@ -191,6 +191,9 @@ static void test_launcher_pointer(lv_display_t* display, unsigned dpi) {
     page_close_dialogs(&ui);
     lv_indev_delete(indev);
     lv_obj_delete(ui.root);
+    ui.launcher_items = NULL;
+    ui.launcher_count = 0;
+    release_launcher_icons(&ui);
     assert(pxsys_standard_system_destroy(ui.system) == PXSYS_STATUS_OK);
 }
 
@@ -210,6 +213,9 @@ static void record_launcher_order(void* context, const char* order) {
 
 static void test_launcher_paging(lv_display_t* display) {
     pxsys_reference_lvgl_t ui = {.magic = REFERENCE_MAGIC};
+    char order[1024];
+    ui.launcher_order = order;
+    ui.launcher_order_capacity = sizeof(order);
     pxsys_display_profile_init(&ui.display, 296, 240);
     pxsys_theme_snapshot_init(&ui.theme, PXSYS_COLOR_SCHEME_DARK);
     ui.root = lv_obj_create(lv_layer_top());
@@ -236,7 +242,7 @@ static void test_launcher_paging(lv_display_t* display) {
         make_launcher_tile(&ui, "Page test", &items[i]);
     }
     lv_obj_update_layout(ui.root);
-    launcher_position_tiles(&ui);
+    launcher_position_tiles(&ui, 296, 200);
     lv_obj_t* end = lv_obj_create(ui.content);
     style_plain(end);
     lv_obj_set_pos(end, 591, 0);
@@ -304,6 +310,9 @@ static void test_launcher_paging(lv_display_t* display) {
     assert(order_writes == 1);
     lv_indev_delete(indev);
     lv_obj_delete(ui.root);
+    ui.launcher_items = NULL;
+    ui.launcher_count = 0;
+    release_launcher_icons(&ui);
 }
 static void test_hidden_navigation_escape(lv_display_t* display) {
     pxsys_standard_system_config_t system_config;

@@ -1356,6 +1356,7 @@ bool CreateSystem(const pxa_board_port_t* board,
     if constexpr (kUseReferenceUi) {
         pxsys_reference_lvgl_config_t ui_config;
         pxsys_reference_lvgl_config_init(&ui_config);
+        ui_config.max_launcher_apps = profile->max_apps;
         ui_config.system = g_system;
         ui_config.parent = CreateReferenceUiViewport(
             display, system_config.initial_display.width,
