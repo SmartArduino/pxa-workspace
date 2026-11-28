@@ -172,6 +172,12 @@ static void run(void *arg) {
             CHECK(pxa_render_diff_rgb565(src, dst, n, &first, &last));
             CHECK(first == n / 3 && last == n - 1);
         }
+        for (unsigned pixel = 0; pixel < n; ++pixel) {
+            memcpy(dst, src, n * 2);
+            dst[pixel] ^= 0x400;
+            CHECK(pxa_render_diff_rgb565(src, dst, n, &first, &last));
+            CHECK(first == pixel && last == pixel);
+        }
     }
     for (unsigned off = 0; off < 16; ++off) {
         for (unsigned n = 0; n < 130; ++n) {

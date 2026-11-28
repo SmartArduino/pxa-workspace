@@ -1,0 +1,20 @@
+{
+  "format": "pxa-package-source-0.2",
+  "id": "native-raster-demo",
+  "version": "0.1.0",
+  "release_sequence": 1,
+  "name": "PXA 3D 光栅压测",
+  "description": "带贴图的立体场景、镂空与半透明特效，以及固定的环绕、贴地穿行和俯视镜头",
+  "min_sdk": [2, 1],
+  "build": {
+    "system": "cmake",
+    "linear_memory": {"maximum_bytes": 524288, "pinned": false}
+  },
+  "components": [{
+    "id": "main",
+    "kind": "ui",
+    "cmake_target": "pxa_main",
+    "services": ["clock", "game-render", "log", "window"],
+    "wasi": {"version": "preview1", "libc": "wasi-libc", "features": ["monotonic-clock", "wall-clock"]}
+  }]
+}

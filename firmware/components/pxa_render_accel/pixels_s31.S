@@ -123,3 +123,20 @@ pxa_s31_equal_blocks:
     ret
     .size pxa_s31_equal_blocks, .-pxa_s31_equal_blocks
 
+    /* The pointers start at the last aligned block in the range. */
+    .align 4
+    .global pxa_s31_equal_blocks_reverse
+    .type pxa_s31_equal_blocks_reverse, @function
+pxa_s31_equal_blocks_reverse:
+    li a3, 0
+1:  esp.vld.128.ip q0, a0, -16
+    esp.vld.128.ip q1, a1, -16
+    esp.xorq q2, q0, q1
+    esp.max.u32.a q2, a4
+    bnez a4, 2f
+    addi a3, a3, 1
+    bltu a3, a2, 1b
+2:  mv a0, a3
+    ret
+    .size pxa_s31_equal_blocks_reverse, .-pxa_s31_equal_blocks_reverse
+

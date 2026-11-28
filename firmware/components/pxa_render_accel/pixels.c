@@ -15,6 +15,7 @@ void pxa_s31_swap16(void *dst, const void *src, uint32_t blocks);
 void pxa_s31_expand16(void *dst, const void *src, uint32_t blocks,
                       unsigned scale, bool swap);
 uint32_t pxa_s31_equal_blocks(const void *a, const void *b, uint32_t blocks);
+uint32_t pxa_s31_equal_blocks_reverse(const void *a, const void *b, uint32_t blocks);
 static bool simd_core(void) {
     /* An unpinned task could migrate after the core check. Keep its scalar
      * path rather than letting the PIE trap silently change task affinity. */
@@ -163,7 +164,8 @@ bool pxa_render_diff_rgb565(const void *a, const void *b, uint32_t count,
     const uint8_t *x = (const uint8_t *)a, *y = (const uint8_t *)b;
     uint32_t left = 0;
 #if defined(CONFIG_PXA_RENDER_ACCEL) && CONFIG_PXA_RENDER_ACCEL
-    if (count >= 16 && simd_core() && !(((uintptr_t)x | (uintptr_t)y) & 15u))
+    const bool vector = count >= 16 && !(((uintptr_t)x | (uintptr_t)y) & 15u) && simd_core();
+    if (vector)
         left = pxa_s31_equal_blocks(x, y, count / 8) * 8;
 #endif
     while (left < count && equal_pixel(x, y, left)) ++left;
@@ -171,6 +173,20 @@ bool pxa_render_diff_rgb565(const void *a, const void *b, uint32_t count,
     uint32_t right = count - 1;
     /* The interior cannot enlarge the bounds. Large animated regions usually
      * need only the first and last changed pixel of each row. */
+#if defined(CONFIG_PXA_RENDER_ACCEL) && CONFIG_PXA_RENDER_ACCEL
+    if (vector && count - left >= 17 && equal_pixel(x, y, right)) {
+        /* Peel only the unaligned tail. Keep the first changed pixel
+         * outside the vector range so a completely equal suffix is safe. */
+        while (((right + 1) & 7u) && equal_pixel(x, y, right))
+            --right;
+        const uint32_t blocks = (right - left) / 8;
+        if (!((right + 1) & 7u) && blocks != 0) {
+            const size_t offset = (size_t)(right - 7) * sizeof(uint16_t);
+            right -= pxa_s31_equal_blocks_reverse(x + offset, y + offset,
+                                                   blocks) * 8;
+        }
+    }
+#endif
     while (right > left && equal_pixel(x, y, right)) --right;
     *first = left; *last = right;
     return true;
