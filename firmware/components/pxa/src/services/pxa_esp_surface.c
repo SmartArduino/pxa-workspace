@@ -225,6 +225,8 @@ typedef struct {
 static pxa_esp_surface_perf_buffer_t *g_perf;
 static pxa_esp_surface_frame_ready_fn g_notify;
 static void *g_notify_context;
+static pxa_esp_surface_frame_ready_fn g_raster_notify;
+static void *g_raster_notify_context;
 static pxa_esp_surface_frame_ready_fn g_release_notify;
 static void *g_release_notify_context;
 static pxa_esp_surface_ui_alpha_provider_fn g_ui_alpha_provider;
@@ -352,9 +354,9 @@ void pxa_esp_surface_perf_clear(void) {
 #include "pxa_raster_handoff.h"
 typedef struct {
     const uint8_t *bytes;
-    pxa_raster_draw_list_view_t list;
-    pxa_raster_target_t target;
-    pxa_raster_resources_t resources;
+    const pxa_raster_draw_list_view_t *list;
+    const pxa_raster_target_t *target;
+    const pxa_raster_resources_t *resources;
     pxa_raster_telemetry_t telemetry;
     uint16_t row_begin;
     uint16_t row_end;
@@ -385,16 +387,18 @@ static uint16_t g_raster_split_height;
 
 static void execute_worker_job(void) {
     const uint64_t started_us = (uint64_t)esp_timer_get_time();
-    memset(&g_raster_worker_job.telemetry, 0,
-           sizeof(g_raster_worker_job.telemetry));
     if (g_raster_worker_job.compute_batch) {
         pxa_raster_compute_execute_range(g_raster_worker_job.compute_batch,
             g_raster_worker_job.byte_begin, g_raster_worker_job.byte_end);
-    } else pxa_raster_execute_draw_list_rows(
-        g_raster_worker_job.bytes, &g_raster_worker_job.list,
-        &g_raster_worker_job.target, &g_raster_worker_job.resources,
-        g_raster_worker_job.row_begin, g_raster_worker_job.row_end,
-        &g_raster_worker_job.telemetry);
+    } else {
+        memset(&g_raster_worker_job.telemetry, 0,
+               sizeof(g_raster_worker_job.telemetry));
+        pxa_raster_execute_draw_list_rows(
+            g_raster_worker_job.bytes, g_raster_worker_job.list,
+            g_raster_worker_job.target, g_raster_worker_job.resources,
+            g_raster_worker_job.row_begin, g_raster_worker_job.row_end,
+            &g_raster_worker_job.telemetry);
+    }
     g_raster_worker_job.elapsed_us = latency_us(
         started_us, (uint64_t)esp_timer_get_time());
 }
@@ -627,8 +631,15 @@ static void notify_frame_ready(void) {
     pxa_esp_surface_frame_ready_fn callback;
     void *context;
     taskENTER_CRITICAL(&g_surface_lock);
-    callback = g_presentation_visible ? g_notify : NULL;
-    context = g_notify_context;
+    if (g_raster_notify != NULL && g_surface != NULL && !g_surface->closing &&
+        g_surface->raster_draw_pending != PXA_ESP_SURFACE_NONE) {
+        callback = g_raster_notify;
+        context = g_raster_notify_context;
+    } else {
+        callback = g_notify;
+        context = g_notify_context;
+    }
+    if (!g_presentation_visible) callback = NULL;
     taskEXIT_CRITICAL(&g_surface_lock);
     if (callback != NULL) callback(context);
 }
@@ -1941,7 +1952,6 @@ pxa_status_t pxa_esp_game_render_execute_compute(void *context,
                                      ~(uintptr_t)63u) - base);
         if (split && split < batch->target_bytes &&
             pxa_raster_compute_partition_safe(batch, split, 64)) {
-            memset(&g_raster_worker_job, 0, sizeof(g_raster_worker_job));
             g_raster_worker_job.compute_batch = batch;
             g_raster_worker_job.byte_begin = split;
             g_raster_worker_job.byte_end = batch->target_bytes;
@@ -1955,7 +1965,6 @@ pxa_status_t pxa_esp_game_render_execute_compute(void *context,
                 else ++tile_stolen;
             }
 #endif
-            g_raster_worker_job.compute_batch = NULL;
         } else {
 #if PXA_PRIORITY_TILE_TRACE
             if (trace_tile) ++tile_unaligned;
@@ -2019,6 +2028,14 @@ void pxa_esp_surface_set_frame_ready_callback(
     taskENTER_CRITICAL(&g_surface_lock);
     g_notify = callback;
     g_notify_context = context;
+    taskEXIT_CRITICAL(&g_surface_lock);
+}
+
+void pxa_esp_surface_set_raster_ready_callback(
+    pxa_esp_surface_frame_ready_fn callback, void *context) {
+    taskENTER_CRITICAL(&g_surface_lock);
+    g_raster_notify = callback;
+    g_raster_notify_context = context;
     taskEXIT_CRITICAL(&g_surface_lock);
 }
 
@@ -2371,11 +2388,13 @@ static void execute_raster_draw_list(
     if (worker != NULL && target->height >= 2) {
         const uint16_t split = current_raster_split(target->height);
         *split_row = split;
-        memset(&g_raster_worker_job, 0, sizeof(g_raster_worker_job));
+        /* The handoff publishes these immutable inputs. finish_worker_job()
+         * fences the reader before the caller's stack or frame lease expires. */
+        g_raster_worker_job.compute_batch = NULL;
         g_raster_worker_job.bytes = bytes;
-        g_raster_worker_job.list = *list;
-        g_raster_worker_job.target = *target;
-        g_raster_worker_job.resources = *resources;
+        g_raster_worker_job.list = list;
+        g_raster_worker_job.target = target;
+        g_raster_worker_job.resources = resources;
         g_raster_worker_job.row_begin = split;
         g_raster_worker_job.row_end = target->height;
         start_worker_job(worker);
@@ -3048,6 +3067,11 @@ void pxa_esp_game_render_get_scale_profile(
         *profile = (pxa_game_render_target_profile_t){0};
 }
 void pxa_esp_surface_set_frame_ready_callback(
+    pxa_esp_surface_frame_ready_fn callback, void *context) {
+    (void)callback;
+    (void)context;
+}
+void pxa_esp_surface_set_raster_ready_callback(
     pxa_esp_surface_frame_ready_fn callback, void *context) {
     (void)callback;
     (void)context;

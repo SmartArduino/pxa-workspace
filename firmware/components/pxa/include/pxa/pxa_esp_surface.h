@@ -215,6 +215,9 @@ void pxa_esp_game_render_get_scale_profile(
     pxa_game_render_target_profile_t *profile);
 void pxa_esp_surface_set_frame_ready_callback(
     pxa_esp_surface_frame_ready_fn callback, void *context);
+/* Optional route for boards with a separate queued-raster task. */
+void pxa_esp_surface_set_raster_ready_callback(
+    pxa_esp_surface_frame_ready_fn callback, void *context);
 void pxa_esp_surface_set_release_ready_callback(
     pxa_esp_surface_frame_ready_fn callback, void *context);
 void pxa_esp_surface_set_ui_alpha_provider(

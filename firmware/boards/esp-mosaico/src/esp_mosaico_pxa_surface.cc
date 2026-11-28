@@ -84,6 +84,10 @@ void InvalidateSurface() {
 }
 
 void FrameReady(void*) {
+    if (g_presenter != nullptr) xTaskNotifyGive(g_presenter);
+}
+
+void RasterReady(void*) {
     if (g_raster != nullptr) xTaskNotifyGive(g_raster);
 }
 
@@ -93,10 +97,8 @@ void Raster(void*) {
         const int64_t started = esp_timer_get_time();
         if (pxa_esp_surface_prepare_latest_raster())
             g_raster_us.store(esp_timer_get_time() - started, std::memory_order_relaxed);
-        // Ordinary Surface frames need no rasterization. Coalesce both kinds
-        // into the same presenter notification, retaining only newest pixels.
-        if (g_presenter != nullptr)
-            xTaskNotifyGive(g_presenter);
+        // A queued draw may have been blocked by a pending pixel buffer.
+        FrameReady(nullptr);
     }
 }
 
@@ -125,7 +127,7 @@ void Presenter(void*) {
         lv_unlock();
         esp_lv_adapter_unlock();
         // Releasing the lease frees a buffer for double-buffered applications.
-        if (presented && pxa_esp_surface_has_pending_raster_draw()) FrameReady(nullptr);
+        if (presented && pxa_esp_surface_has_pending_raster_draw()) RasterReady(nullptr);
     }
 }
 
@@ -238,6 +240,7 @@ bool Install(lv_display_t* display, DirectPresenter presenter, void* context) {
             PXA_GAME_RENDER_SCALE_MASK_4X,
         PXA_GAME_RENDER_SCALE_1X);
     pxa_esp_surface_set_frame_ready_callback(FrameReady, nullptr);
+    pxa_esp_surface_set_raster_ready_callback(RasterReady, nullptr);
     FrameReady(nullptr);
     return true;
 }

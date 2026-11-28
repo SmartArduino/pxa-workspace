@@ -29,6 +29,7 @@ static bool fail_readback;
 static size_t last_aligned_allocation_size;
 static unsigned last_malloc_caps;
 static unsigned notifications;
+static unsigned raster_notifications;
 static unsigned release_notifications;
 static int64_t test_now_us;
 
@@ -105,6 +106,11 @@ size_t heap_caps_get_allocated_size(void *memory) {
 static void ready(void *context) {
     assert(context == &notifications && lock_depth == 0);
     ++notifications;
+}
+
+static void raster_ready(void *context) {
+    assert(context == &raster_notifications && lock_depth == 0);
+    ++raster_notifications;
 }
 
 static void release_ready(void *context) {
@@ -263,6 +269,7 @@ static void test_replace_while_rendering(pxa_game_render_backend_t *backend) {
 /* Mimic an asynchronous PPA holding a frame while the raster worker prepares
  * the next one. Two buffers back-pressure safely; three overlap all stages. */
 static void test_prepared_pipeline(pxa_game_render_backend_t *backend) {
+    pxa_esp_surface_set_raster_ready_callback(raster_ready, &raster_notifications);
     for (unsigned count = 2; count <= 3; ++count) {
         pxa_game_render_desc_t desc = {4, 4, count, 0, PXA_GAME_RENDER_SCRATCH_NONE, 4096};
         uint64_t surface;
@@ -282,7 +289,10 @@ static void test_prepared_pipeline(pxa_game_render_backend_t *backend) {
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2, PXA_RASTER_CLEAR_BYTES);
         pxa_write_u64(draw + 20, 1);
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x1111);
+        const unsigned before_submit = notifications;
+        const unsigned before_raster = raster_notifications;
         assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+        assert(notifications == before_submit && raster_notifications == before_raster + 1);
         assert(pxa_esp_surface_has_pending_raster_draw());
         assert(!pxa_esp_surface_acquire_prepared(&first, true));
         assert(pxa_esp_surface_prepare_latest_raster());
@@ -313,11 +323,12 @@ static void test_prepared_pipeline(pxa_game_render_backend_t *backend) {
         pxa_write_u64(draw + 20, 4);
         assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
         const unsigned before_hidden = notifications;
+        const unsigned before_hidden_raster = raster_notifications;
         pxa_esp_surface_set_presentation_visible(false);
         pxa_write_u64(draw + 20, 5);
         assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
         // Hidden game submissions must not schedule redraws over Recents.
-        assert(notifications == before_hidden);
+        assert(notifications == before_hidden && raster_notifications == before_hidden_raster);
         assert(!pxa_esp_surface_has_visible_surface());
         assert(!pxa_esp_surface_has_pending_frame());
         assert(!pxa_esp_surface_prepare_latest_raster());
@@ -350,6 +361,7 @@ static void test_prepared_pipeline(pxa_game_render_backend_t *backend) {
         close_surface(NULL, surface);
         assert(!g_materialize_active && allocations == 0);
     }
+    pxa_esp_surface_set_raster_ready_callback(NULL, NULL);
 }
 
 /* Commands are consumed before submit returns, including on close/rebind.
@@ -383,7 +395,12 @@ static void test_borrowed_submit(pxa_game_render_backend_t *backend) {
     pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2, PXA_RASTER_CLEAR_BYTES);
     pxa_write_u64(draw + 20, 1);
     pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x1111);
+    pxa_esp_surface_set_raster_ready_callback(raster_ready, &raster_notifications);
+    const unsigned before_submit = notifications;
+    const unsigned before_raster = raster_notifications;
     assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
+    assert(notifications == before_submit + 1 && raster_notifications == before_raster);
+    pxa_esp_surface_set_raster_ready_callback(NULL, NULL);
     assert(!pxa_esp_surface_has_pending_raster_draw());
     assert(backend->submit(NULL, surface, draw, sizeof(draw)) == PXA_STATUS_BAD_STATE);
     assert(pxa_esp_surface_acquire_prepared(&first, true));

@@ -113,7 +113,8 @@ void pxa_raster_execute_draw_list_rows(const uint8_t *bytes,
     const pxa_raster_draw_list_view_t *list, const pxa_raster_target_t *target,
     const pxa_raster_resources_t *resources, uint16_t begin, uint16_t end,
     pxa_raster_telemetry_t *telemetry) {
-    (void)list; (void)resources; (void)telemetry;
+    assert(list->command_count == bytes[0] &&
+           resources->capabilities == bytes[0] && telemetry != NULL);
     if (current_task) {
         assert(calling_core == expected_core);
         atomic_fetch_add(&executions[calling_core], 1);
@@ -145,15 +146,20 @@ int main(void) {
         uint8_t buffer[1024] = {0};
         uint16_t pixels[32 * 32] = {0};
         pxa_raster_compute_t batch = {.records = &input, .target = buffer};
-        memset(&g_raster_worker_job, 0, sizeof(g_raster_worker_job));
+        const pxa_raster_draw_list_view_t list = {.command_count = input};
+        const pxa_raster_target_t target = {.pixels = pixels, .width = 32};
+        const pxa_raster_resources_t resources = {.capabilities = input};
+        pxa_raster_telemetry_t telemetry = {0};
         if (generation & 2u) {
             g_raster_worker_job.compute_batch = &batch;
             g_raster_worker_job.byte_begin = 512;
             g_raster_worker_job.byte_end = 1024;
         } else {
+            g_raster_worker_job.compute_batch = NULL;
             g_raster_worker_job.bytes = &input;
-            g_raster_worker_job.target.pixels = pixels;
-            g_raster_worker_job.target.width = 32;
+            g_raster_worker_job.list = &list;
+            g_raster_worker_job.target = &target;
+            g_raster_worker_job.resources = &resources;
             g_raster_worker_job.row_begin = 16;
             g_raster_worker_job.row_end = 32;
         }
@@ -167,9 +173,8 @@ int main(void) {
         if (generation & 2u)
             pxa_raster_compute_execute_range(&batch, 0, 512);
         else
-            pxa_raster_execute_draw_list_rows(&input, &g_raster_worker_job.list,
-                &g_raster_worker_job.target, &g_raster_worker_job.resources,
-                0, 16, &g_raster_worker_job.telemetry);
+            pxa_raster_execute_draw_list_rows(&input, &list, &target,
+                &resources, 0, 16, &telemetry);
         if (finish_worker_job(worker)) ++joined;
         else ++stolen;
         atomic_store(&worker->task->enabled, 1);

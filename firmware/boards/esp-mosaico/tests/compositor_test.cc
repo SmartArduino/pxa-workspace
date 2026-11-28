@@ -1390,6 +1390,8 @@ extern "C" void pxa_esp_surface_release_frame(uint64_t lease) {
 extern "C" bool pxa_esp_game_render_set_scale_profile(uint8_t, uint8_t) { return true; }
 extern "C" void pxa_esp_surface_set_frame_ready_callback(
     pxa_esp_surface_frame_ready_fn, void*) {}
+extern "C" void pxa_esp_surface_set_raster_ready_callback(
+    pxa_esp_surface_frame_ready_fn, void*) {}
 extern "C" void pxa_esp_surface_set_fill_bands_callback(
     pxa_esp_surface_fill_bands_fn, void*) {}
 
