@@ -60,6 +60,70 @@ static void flush(lv_display_t* display, const lv_area_t* area, uint8_t* pixels)
     (void)pixels;
     lv_display_flush_ready(display);
 }
+
+static uint16_t overlay_pixel(int32_t x, int32_t y) {
+    assert(g_plane.visible && g_plane.pixels != NULL && g_plane.alpha != NULL);
+    assert(x >= g_plane.x && x < g_plane.x + g_plane.width);
+    assert(y >= g_plane.y && y < g_plane.y + g_plane.height);
+    const size_t index = (size_t)(y - g_plane.y) * g_plane.width + x - g_plane.x;
+    assert(g_plane.alpha[index] != 0);
+    return g_plane.pixels[index];
+}
+
+static void check_shade_levels(pxsys_reference_lvgl_t* ui, lv_display_t* display) {
+    ui->notification_shade = lv_obj_create(ui->root);
+    style_plain(ui->notification_shade);
+    lv_obj_set_size(ui->notification_shade, 480, 480);
+    ui->notification_viewport = lv_obj_create(ui->notification_shade);
+    style_plain(ui->notification_viewport);
+    lv_obj_set_size(ui->notification_viewport, 460, 200);
+    ui->notification_volume = make_control_slider(ui, ui->notification_viewport,
+        10, 20, 420, 40, "Volume", 25, PXSYS_LEVEL_CONTROL_VOLUME, &ui->shade_levels[0]);
+    ui->notification_brightness = make_control_slider(ui, ui->notification_viewport,
+        10, 90, 420, 40, "Brightness", 25, PXSYS_LEVEL_CONTROL_BRIGHTNESS, &ui->shade_levels[1]);
+    ui->notification_shade_open = 1;
+    ui->notification_progress = 256;
+    ui->notification_refresh_hook = lv_display_add_event_cb(
+        display, notification_refresh_event, LV_EVENT_REFR_START, ui) != NULL;
+    assert(ui->notification_refresh_hook);
+    update_system_overlay(ui);
+    const uint16_t initial_volume = overlay_pixel(265, 49);
+    const uint16_t initial_brightness = overlay_pixel(265, 119);
+    const uint64_t initial_revision = g_plane.revision;
+
+    /* Two touch samples arrive before LCD refresh. Publish the latest fill
+     * and percentage to the game compositor in one plane update. */
+    lv_slider_set_value(ui->notification_volume, 45, LV_ANIM_OFF);
+    lv_obj_send_event(ui->notification_volume, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_slider_set_value(ui->notification_volume, 80, LV_ANIM_OFF);
+    lv_obj_send_event(ui->notification_volume, LV_EVENT_VALUE_CHANGED, NULL);
+    assert(strcmp(lv_label_get_text(ui->shade_levels[0].readout), "80%") == 0);
+    assert(g_plane.revision == initial_revision);
+    lv_refr_now(display);
+    assert(g_plane.revision == initial_revision + 1);
+    assert(overlay_pixel(265, 49) != initial_volume);
+    assert(overlay_pixel(265, 119) == initial_brightness);
+
+    ui->system_status.volume_percent = 80;
+    ui->system_status.brightness_percent = 80;
+    notification_refresh_values(ui);
+    assert(strcmp(lv_label_get_text(ui->shade_levels[1].readout), "80%") == 0);
+    lv_refr_now(display);
+    assert(g_plane.revision == initial_revision + 2);
+    assert(overlay_pixel(265, 119) != initial_brightness);
+
+    /* Closing while a repaint is pending must drop both the plane and the
+     * pending refresh. The next frame must not bring the drawer back. */
+    lv_slider_set_value(ui->notification_volume, 70, LV_ANIM_OFF);
+    lv_obj_send_event(ui->notification_volume, LV_EVENT_VALUE_CHANGED, NULL);
+    close_notification_shade(ui);
+    const uint64_t closed_revision = g_plane.revision;
+    lv_refr_now(display);
+    assert(!g_plane.visible && g_plane.revision == closed_revision);
+    assert(overlay_allocations == 0);
+    lv_display_remove_event_cb_with_user_data(display, notification_refresh_event, ui);
+}
+
 int main(void) {
     assert(LV_DRAW_BUF_ALIGN == 64);
     lv_init();
@@ -122,8 +186,10 @@ int main(void) {
     ui.transient_revealed = 0;
     update_system_overlay(&ui);
     assert(!g_plane.visible && overlay_allocations == 0);
+    check_shade_levels(&ui, display);
+    assert(overlay_failures == 0);
     lv_obj_delete(ui.root);
     lv_deinit();
-    puts("Game Back/status overlays preserve alpha with 64-byte alignment and release their planes");
+    puts("Game Back/status overlays preserve alpha and coalesce shade slider updates");
     return 0;
 }
