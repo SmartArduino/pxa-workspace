@@ -162,12 +162,14 @@ int main(int argc,char **argv) {
     signature_checks=0;
     assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home) && prepare_calls==1);
     assert(signature_checks==0);
+    assert(!pxa_esp_installations_load_prepared(owner,locator,&result,&home));
+    assert(signature_checks==0 && home.record.generation==1);
     /* A torn install transaction still takes the explicit verified recovery
      * path; subsequent launches return to metadata-only loading. */
     char pending_install[768];path(pending_install,sizeof(pending_install),home.home,"install.pending.pxi");
     file=open(pending_install,O_WRONLY|O_CREAT|O_EXCL,0600);assert(file>=0);
     assert(write(file,"PXI",3)==3 && !close(file));
-    assert(!pxa_esp_installations_load(owner,locator,NULL,NULL,&result,&home));
+    assert(!pxa_esp_installations_load_prepared(owner,locator,&result,&home));
     assert(signature_checks>0 && prepare_calls==1);
     assert(access(pending_install,F_OK)<0 && errno==ENOENT);
     signature_checks=0;

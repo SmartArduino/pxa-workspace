@@ -15,6 +15,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -537,7 +538,7 @@ pxa_status_t pxa_esp_installations_install(pxa_esp_installations_t *owner,const 
     owner->plan=NULL;owner->config.approved_manifest_sha256=NULL;
     owner->config.media_ready=NULL;owner->config.media_context=NULL;return status;
 }
-pxa_status_t pxa_esp_installations_load(pxa_esp_installations_t *owner,const char *locator,
+static pxa_status_t load_installation(pxa_esp_installations_t *owner,const char *locator,
     pxa_posix_media_ready_fn media,void *context,bool prepared,
     pxa_posix_installer_result_t *result,pxa_posix_app_home_t *home) {
     pxa_status_t status=available(owner);if(status!=PXA_STATUS_OK)return status;
@@ -554,6 +555,18 @@ pxa_status_t pxa_esp_installations_load(pxa_esp_installations_t *owner,const cha
     }
     owner->config.media_ready=NULL;owner->config.media_context=NULL;return status;
 }
+
+pxa_status_t pxa_esp_installations_load(pxa_esp_installations_t *owner,const char *locator,
+    pxa_posix_media_ready_fn media,void *context,
+    pxa_posix_installer_result_t *result,pxa_posix_app_home_t *home) {
+    return load_installation(owner,locator,media,context,false,result,home);
+}
+
+pxa_status_t pxa_esp_installations_load_prepared(pxa_esp_installations_t *owner,const char *locator,
+    pxa_posix_installer_result_t *result,pxa_posix_app_home_t *home) {
+    return load_installation(owner,locator,NULL,NULL,true,result,home);
+}
+
 pxa_status_t pxa_esp_installations_storage(pxa_esp_installations_t *owner,
     const pxa_posix_app_home_t *home,pxa_esp_app_storage_t **storage) {
     if(!home || !(home->record.flags&PXA_INSTALL_RECORD_ENABLED) || (home->record.flags&PXA_INSTALL_RECORD_ARCHIVED))

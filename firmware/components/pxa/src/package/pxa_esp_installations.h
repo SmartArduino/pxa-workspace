@@ -59,10 +59,12 @@ pxa_status_t pxa_esp_installations_install(pxa_esp_installations_t *,const char 
     const char *locator,const pxa_install_record_t *approved,uint64_t expected_generation,
     const uint8_t approved_manifest_sha256[32],const pxa_install_plan_t *,
     pxa_posix_media_ready_fn,void *,pxa_posix_installer_result_t *,pxa_posix_app_home_t *);
-/* Normal activation checks local record authentication, identity and mounts.
- * A prepared manifest can be reused when it matches the committed digest. */
+/* Normal activation checks local record authentication, identity and mounts. */
 pxa_status_t pxa_esp_installations_load(pxa_esp_installations_t *,const char *locator,
-    pxa_posix_media_ready_fn,void *,bool prepared,pxa_posix_installer_result_t *,pxa_posix_app_home_t *);
+    pxa_posix_media_ready_fn,void *,pxa_posix_installer_result_t *,pxa_posix_app_home_t *);
+/* Reuse a parsed manifest when it matches the committed record. */
+pxa_status_t pxa_esp_installations_load_prepared(pxa_esp_installations_t *,const char *locator,
+    pxa_posix_installer_result_t *,pxa_posix_app_home_t *);
 pxa_status_t pxa_esp_installations_lookup(pxa_esp_installations_t *,const char *locator,pxa_posix_app_home_t *);
 /* Maintenance provider borrows this operation's private session. Only use a
  * home returned by lookup/load on this owner. Close the owner after use. */
