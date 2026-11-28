@@ -94,8 +94,29 @@ int main() {
         assert(!espp4_a::FillOpaqueBackdrop(frame,output.data()+1,dw,dh,0));
         frame.system_alpha_plane.visible=0;frame.ui_alpha_plane.visible=1;
         assert(!espp4_a::IsOpaqueSurface(frame));
+        assert(!espp4_a::CanComposeOnBackdrop(frame));
+        const uint16_t comment = 0xffff;
+        const uint8_t opacity = 255;
+        frame.ui_alpha_plane = {&comment, &opacity, 2, 1, 80, 307, 1, 1, 255, 1, 0};
+        assert(espp4_a::CanComposeOnBackdrop(frame));
+        assert(espp4_a::KeepsOpaqueBackdrop(frame,dw,dh));
+        frame.ui_alpha_plane.y = 306;
+        assert(!espp4_a::KeepsOpaqueBackdrop(frame,dw,dh));
+        frame.suppress_guest_alpha = 1;
+        assert(espp4_a::KeepsOpaqueBackdrop(frame,dw,dh));
+        frame.suppress_guest_alpha = 0;
+        frame.ui_alpha_plane.y = 307;
+        assert(espp4_a::FillOpaqueBackdrop(frame,output.data()+1,dw,dh,0));
+        espp4_a::Compose(frame,output.data()+1,0,0,dw,dh,dw,dw,dh);
+        assert(output[1+307*dw+80]==comment);
+        assert(output[1+307*dw+81]==source[1]);
+        assert(output[1]==0);
+        assert(espp4_a::UniformBackdrop(frame,output.data()+1,dw,dh,color) && color==0);
+        output[2]=0xffff;
+        assert(!espp4_a::UniformBackdrop(frame,output.data()+1,dw,dh,color));
         frame.ui_alpha_plane.visible=0;frame.opaque_ui_region_count=1;
         assert(!espp4_a::IsOpaqueSurface(frame));
+        assert(!espp4_a::CanComposeOnBackdrop(frame));
     }
     // Odd source widths/strides alternate 32-bit alignment. Compare the full
     // panel against nearest-neighbor math, including unaligned fallback and

@@ -11,6 +11,7 @@ namespace {
 struct Command { uint8_t command, count, bytes[14]; };
 constexpr Command kInitialization[] = {
     {0x3a, 1, {0x05}},
+    {0xb0, 2, {0x00, 0xf8}}, // RAMCTRL, little-endian RGB565 in native portrait scan order.
     {0xb2, 5, {0x0c, 0x0c, 0x00, 0x33, 0x33}},
     {0xb7, 1, {0x35}}, {0xbb, 1, {0x28}}, {0xc0, 1, {0x2c}},
     {0xc2, 1, {0x01}}, {0xc3, 1, {0x0b}}, {0xc4, 1, {0x20}},
@@ -60,6 +61,14 @@ bool DoitGamekit2Panel::Initialize(esp_lcd_panel_io_handle_t io) {
 #endif
     if (esp_lcd_panel_io_tx_param(io_, inversion, nullptr, 0) != ESP_OK ||
         esp_lcd_panel_io_tx_param(io_, 0x13, nullptr, 0) != ESP_OK) return false;
+    // All submissions cover this native window. ST7789V RAMWR resets the
+    // column and page counters to its start at the beginning of each frame.
+    constexpr int x = CONFIG_PXA_DOIT2_LCD_X_GAP, y = CONFIG_PXA_DOIT2_LCD_Y_GAP;
+    constexpr int right = x + kNativeWidth - 1, bottom = y + kNativeHeight - 1;
+    const uint8_t columns[] = {uint8_t(x >> 8), uint8_t(x), uint8_t(right >> 8), uint8_t(right)};
+    const uint8_t rows[] = {uint8_t(y >> 8), uint8_t(y), uint8_t(bottom >> 8), uint8_t(bottom)};
+    if (esp_lcd_panel_io_tx_param(io_, 0x2a, columns, sizeof(columns)) != ESP_OK ||
+        esp_lcd_panel_io_tx_param(io_, 0x2b, rows, sizeof(rows)) != ESP_OK) return false;
     vTaskDelay(pdMS_TO_TICKS(10));
     ESP_LOGI("gamekit1_panel", "ST7789V TN reference init: COLMOD=0x05 MADCTL=0x%02x, inversion=%s",
              madctl, inversion == 0x20 ? "off" : "on");
@@ -74,12 +83,5 @@ esp_err_t DoitGamekit2Panel::DisplayOn() {
 
 esp_err_t DoitGamekit2Panel::Draw(const uint16_t* native) {
     using namespace doit_gamekit_2;
-    constexpr int x = CONFIG_PXA_DOIT2_LCD_X_GAP, y = CONFIG_PXA_DOIT2_LCD_Y_GAP;
-    constexpr int right = x + kNativeWidth - 1, bottom = y + kNativeHeight - 1;
-    const uint8_t columns[] = {uint8_t(x >> 8), uint8_t(x), uint8_t(right >> 8), uint8_t(right)};
-    const uint8_t rows[] = {uint8_t(y >> 8), uint8_t(y), uint8_t(bottom >> 8), uint8_t(bottom)};
-    auto error = esp_lcd_panel_io_tx_param(io_, 0x2a, columns, sizeof(columns));
-    if (error == ESP_OK) error = esp_lcd_panel_io_tx_param(io_, 0x2b, rows, sizeof(rows));
-    return error == ESP_OK ? esp_lcd_panel_io_tx_color(io_, 0x2c, native,
-                                     kNativeWidth * kNativeHeight * sizeof(uint16_t)) : error;
+    return esp_lcd_panel_io_tx_color(io_, 0x2c, native, kNativeWidth * kNativeHeight * sizeof(uint16_t));
 }

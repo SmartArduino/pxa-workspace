@@ -2,6 +2,7 @@
 #include <pxa/pxa_audio_capture_input.h>
 #include <pxa/pxa_audio_capture.h>
 #include <esp_opus_enc.h>
+#include <esp_timer.h>
 #include "pxa_codec_memory.h"
 #include "pxa_esp_resource_memory.h"
 #include <atomic>
@@ -22,6 +23,31 @@ static std::deque<std::vector<uint8_t>> packets;
 static size_t item_size;
 static std::vector<void*> allocations;
 static unsigned fail_allocation=0;
+static std::atomic<bool> hold_allocation{false}, allocation_entered{false};
+static std::atomic<bool> hold_receive{false}, receive_entered{false};
+static std::atomic<unsigned> active_allocations{0};
+static std::mutex lifecycle_mutex;
+static esp_timer_create_args_t timer;
+static std::atomic<bool> timer_pending{false}, suspend_worker{false};
+static bool fail_task=false, fail_queue=false;
+struct Suspended {};
+int esp_timer_create(const esp_timer_create_args_t* args, esp_timer_handle_t* handle) {
+    timer=*args; *handle=&timer; return ESP_OK;
+}
+int esp_timer_start_once(esp_timer_handle_t, uint64_t us) {
+    assert(us>0); timer_pending=true; return ESP_OK;
+}
+static void FireTimer() {
+    if(timer_pending.exchange(false)) timer.callback(timer.arg);
+}
+SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t*) { return &lifecycle_mutex; }
+int xSemaphoreTake(SemaphoreHandle_t,uint32_t timeout) {
+    if(!timeout) return lifecycle_mutex.try_lock();
+    lifecycle_mutex.lock(); return pdTRUE;
+}
+void xSemaphoreGive(SemaphoreHandle_t) { lifecycle_mutex.unlock(); }
+void vSemaphoreDelete(SemaphoreHandle_t) {}
+
 static std::atomic<int> reads_left{0}, input_opens{0}, input_closes{0}, encoded{0};
 static std::atomic<bool> enabled{false}, process_failure{false}, block_read{false}, reading{false};
 static std::atomic<int16_t> marker{10};
@@ -36,13 +62,14 @@ template<typename F> static void Wait(F condition) {
 extern "C" pxa_status_t pxa_esp_resource_memory_initialize(void) { return PXA_STATUS_OK; }
 extern "C" const pxa_memory_allocator_t* pxa_esp_device_resource_allocator(unsigned,unsigned) { return nullptr; }
 extern "C" void* pxa_memory_allocate(const pxa_memory_allocator_t*,size_t size) {
+    if(hold_allocation) { allocation_entered=true; Wait([]{return !hold_allocation;}); }
     if(fail_allocation && !--fail_allocation) return nullptr;
-    void* p=std::calloc(1,size); allocations.push_back(p); return p;
+    void* p=std::calloc(1,size); allocations.push_back(p); ++active_allocations; return p;
 }
 extern "C" void pxa_memory_release(void* p) {
     if(!p)return;
     for(auto& value:allocations) if(value==p) { value=nullptr; break; }
-    std::free(p);
+    --active_allocations; std::free(p);
 }
 PxaCodecMemoryScope::PxaCodecMemoryScope(const pxa_memory_allocator_t*):previous_(nullptr) {}
 PxaCodecMemoryScope::~PxaCodecMemoryScope()=default;
@@ -50,7 +77,7 @@ extern "C" void pxa_esp_audio_set_capture_source(void* ctx,uint16_t frame,pxa_st
     int32_t(*read)(void*,uint8_t*,size_t),void(*close)(void*)) {
     assert(frame==20); source=ctx; source_open=open; source_read=read; source_close=close;
 }
-QueueHandle_t xQueueCreateStatic(unsigned count,size_t bytes,uint8_t*,StaticQueue_t*) { assert(count==64); item_size=bytes; return &packets; }
+QueueHandle_t xQueueCreateStatic(unsigned count,size_t bytes,uint8_t*,StaticQueue_t*) { assert(count==64); item_size=bytes; return fail_queue ? nullptr : &packets; }
 void vQueueDelete(QueueHandle_t) { packets.clear(); }
 int xQueueSend(QueueHandle_t,const void* data,uint32_t timeout) {
     assert(!timeout); std::lock_guard<std::mutex> lock(queue_mutex);
@@ -58,14 +85,26 @@ int xQueueSend(QueueHandle_t,const void* data,uint32_t timeout) {
     const auto* p=static_cast<const uint8_t*>(data); packets.emplace_back(p,p+item_size); return pdTRUE;
 }
 int xQueueReceive(QueueHandle_t,void* data,uint32_t timeout) {
+    if(hold_receive) { receive_entered=true; Wait([]{return !hold_receive;}); }
     assert(!timeout); std::lock_guard<std::mutex> lock(queue_mutex);
     if(packets.empty()) return 0;
     std::memcpy(data,packets.front().data(),item_size); packets.pop_front(); return pdTRUE;
 }
 TaskHandle_t xTaskCreateStatic(void(*fn)(void*),const char*,uint32_t,void* ctx,unsigned,StackType_t*,StaticTask_t*) {
-    worker=std::thread([=]{fn(ctx);}); return &worker;
+    if(fail_task) return nullptr;
+    assert(!worker.joinable()); suspend_worker=false; task_deleted=false;
+    worker=std::thread([=]{
+        try { fn(ctx); } catch(const Suspended&) {}
+    }); return &worker;
 }
-void vTaskDelete(TaskHandle_t) { task_deleted=true; }
+void vTaskSuspend(TaskHandle_t handle) {
+    assert(handle==&worker);
+    {std::lock_guard<std::mutex> hold(notification_mutex); suspend_worker=true;}
+    notification.notify_all();
+    worker.join();
+}
+TaskHandle_t xTaskGetCurrentTaskHandleForCore(int) { return nullptr; }
+void vTaskDelete(TaskHandle_t handle) { assert(handle==&worker && !worker.joinable()); task_deleted=true; }
 void xTaskNotifyGive(TaskHandle_t) {
     assert(!task_deleted);
     if(hold_notification) { notification_entered=true; Wait([]{return !hold_notification;}); }
@@ -75,8 +114,9 @@ void xTaskNotifyGive(TaskHandle_t) {
 }
 uint32_t ulTaskNotifyTake(int,TickType_t timeout) {
     std::unique_lock<std::mutex> lock(notification_mutex);
-    if(timeout==portMAX_DELAY) notification.wait(lock,[]{return notifications;});
+    if(timeout==portMAX_DELAY) notification.wait(lock,[]{return notifications || suspend_worker;});
     else notification.wait_for(lock,std::chrono::milliseconds(timeout),[]{return notifications;});
+    if(suspend_worker) throw Suspended{};
     const auto result=notifications; notifications=0; return result;
 }
 void vTaskDelay(TickType_t) { std::this_thread::yield(); }
@@ -104,12 +144,50 @@ int main(int argc,char** argv) {
     PxaAudioCaptureInput input;
     if(argc>1) {
         fail_allocation=std::strtoul(argv[1],nullptr,10);
-        assert(!input.Initialize(Control,Read,nullptr) && !source);
-        for(const auto value:allocations) assert(!value);
+        if(fail_allocation==1) {
+            assert(!input.Initialize(Control,Read,nullptr) && !source && !active_allocations);
+        } else if(fail_allocation==6) {
+            fail_allocation=0; assert(input.Initialize(Control,Read,nullptr));
+            uint8_t data[PXA_AUDIO_CAPTURE_MAX_PACKET];
+            hold_allocation=true;
+            std::thread open([]{assert(source_open(source)==PXA_STATUS_UNAVAILABLE);});
+            Wait([]{return allocation_entered.load();});
+            assert(source_read(source,data,sizeof(data))==PXA_STATUS_WOULD_BLOCK);
+            std::thread stop([&]{input.StopForShutdown();});
+            Wait([&]{return source_read(source,data,sizeof(data))==PXA_STATUS_UNAVAILABLE;});
+            hold_allocation=false; open.join(); stop.join(); FireTimer();
+            assert(active_allocations==1 && !worker.joinable());
+            for(const auto value:allocations) std::free(value);
+        } else {
+            // Caller storage, queue creation and task creation fail independently.
+            const auto stage=fail_allocation;
+            if(stage>=4) fail_allocation=0;
+            assert(input.Initialize(Control,Read,nullptr) && active_allocations==1);
+            fail_queue=stage==4; fail_task=stage==5;
+            assert(source_open(source)==PXA_STATUS_RESOURCE_LIMIT && active_allocations==1);
+            fail_queue=fail_task=false;
+            assert(source_open(source)==PXA_STATUS_OK && active_allocations==3);
+            input.StopForShutdown(); assert(active_allocations==1);
+            for(const auto value:allocations) std::free(value);
+        }
         return 0;
     }
-    assert(input.Initialize(Control,Read,nullptr));
+    assert(input.Initialize(Control,Read,nullptr) && active_allocations==1 && !worker.joinable());
+    hold_allocation=true;
+    std::thread opening([]{assert(source_open(source)==PXA_STATUS_CANCELLED);});
+    Wait([]{return allocation_entered.load();});
+    source_close(source); hold_allocation=false; opening.join();
+    Wait([&]{FireTimer(); return active_allocations==1;});
     assert(source_open(source)==PXA_STATUS_OK && source_open(source)==PXA_STATUS_BUSY);
+    assert(active_allocations==3);
+    hold_receive=true;
+    std::thread reader([]{uint8_t data[PXA_AUDIO_CAPTURE_MAX_PACKET]; source_read(source,data,sizeof(data));});
+    Wait([]{return receive_entered.load();});
+    source_close(source); FireTimer(); assert(active_allocations==3);
+    hold_receive=false; reader.join();
+    Wait([&]{FireTimer(); return active_allocations==1;});
+    assert(task_deleted && !worker.joinable());
+    assert(source_open(source)==PXA_STATUS_OK && active_allocations==3);
     uint8_t data[PXA_AUDIO_CAPTURE_MAX_PACKET];
     assert(source_read(source,data,sizeof(data))==PXA_STATUS_WOULD_BLOCK);
     reads_left=2;
@@ -137,9 +215,9 @@ int main(int argc,char** argv) {
     block_read=false; Wait([]{return !enabled;});
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     assert(!task_deleted && !stopped && !second_stopped);
-    hold_notification=false; stop.join(); second.join(); worker.join();
+    hold_notification=false; stop.join(); second.join(); FireTimer(); assert(active_allocations==1);
     assert(stopped && second_stopped && task_deleted && !enabled && input_opens==input_closes);
     assert(source_open(source)==PXA_STATUS_UNAVAILABLE); source_close(source); input.StopForShutdown();
     for(const auto value:allocations) std::free(value);
-    puts("Capture worker: bounded queue, partial PCM, generation changes, fault recovery and concurrent shutdown and task deletion race passed");
+    puts("Capture worker: lazy allocation, idle reclaim, concurrent close/read/reopen, partial PCM, generation, fault and shutdown races passed");
 }

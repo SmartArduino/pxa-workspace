@@ -1,16 +1,16 @@
 #include "pxa/pxa_audio_capture_input.h"
 #include "pxa/pxa_audio_capture.h"
-#include "pxa/pxa_worker_notifications.h"
 #include "pxa_codec_memory.h"
 #include "pxa_esp_resource_memory.h"
 
-#include <atomic>
 #include <cstring>
 #include <new>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <esp_opus_enc.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include <freertos/task.h>
 
 namespace {
@@ -33,37 +33,114 @@ struct PxaAudioCaptureInput::State {
     Read read;
     void* context;
     TaskHandle_t task = nullptr;
-    PxaWorkerNotifications notifications;
     StaticTask_t task_storage = {};
     StackType_t* stack = nullptr;
     QueueHandle_t queue = nullptr;
     StaticQueue_t queue_storage = {};
     uint8_t* queue_bytes = nullptr;
+    // Only creation and reclamation use this mutex. ADC, encoder, and queue
+    // operations run outside it. The spinlock protects publication and borrows.
+    StaticSemaphore_t lifecycle_storage = {};
+    SemaphoreHandle_t lifecycle = nullptr;
+    esp_timer_handle_t reap_timer = nullptr;
     portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
     uint32_t generation = 0, requested = 0, fault_generation = 0;
-    bool shutdown = false;
-    std::atomic<bool> busy{false};
+    unsigned borrowers = 0;
+    bool shutdown = false, parked = false;
+
+    // Caller holds lock. Reclamation waits for users of the task or queue.
+    TaskHandle_t BorrowTask() {
+        if (task) ++borrowers;
+        return task;
+    }
+
+    void ReleaseBorrow() {
+        portENTER_CRITICAL(&lock);
+        --borrowers;
+        portEXIT_CRITICAL(&lock);
+    }
+
+    void Notify(TaskHandle_t handle) {
+        if (handle) {
+            xTaskNotifyGive(handle);
+            ReleaseBorrow();
+        }
+    }
+
+    bool Start() {
+        const auto* audio = pxa_esp_device_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO);
+        stack = static_cast<StackType_t*>(pxa_memory_allocate(audio, kStackBytes));
+        if (stack) queue_bytes = static_cast<uint8_t*>(pxa_memory_allocate(audio, kPacketCount * sizeof(Packet)));
+        if (queue_bytes) queue = xQueueCreateStatic(kPacketCount, sizeof(Packet), queue_bytes, &queue_storage);
+        TaskHandle_t created = nullptr;
+        if (queue)
+            created = xTaskCreateStatic(Task, "pxa_capture", kStackBytes, this, 5, stack, &task_storage);
+        if (!created) {
+            ReleaseStorage();
+            return false;
+        }
+        portENTER_CRITICAL(&lock);
+        task = created;
+        portEXIT_CRITICAL(&lock);
+        return true;
+    }
+
+    void ReleaseStorage() {
+        if (queue) vQueueDelete(queue);
+        queue = nullptr;
+        pxa_memory_release(queue_bytes); queue_bytes = nullptr;
+        pxa_memory_release(stack); stack = nullptr;
+    }
+
+    bool Reap() {
+        if (xSemaphoreTake(lifecycle, 0) != pdTRUE) return false;
+        portENTER_CRITICAL(&lock);
+        const bool wanted = requested != 0;
+        TaskHandle_t retired = nullptr;
+        if (!wanted && task && parked && !borrowers) {
+            retired = task;
+            task = nullptr;
+            parked = false;
+        }
+        const bool done = wanted || !task;
+        portEXIT_CRITICAL(&lock);
+        if (retired) {
+            // IDF only deletes a static task synchronously when it is off
+            // every core. A suspended task can still be the remote current TCB.
+            vTaskSuspend(retired);
+            for (int core = 0; core < configNUMBER_OF_CORES; ++core)
+                while (xTaskGetCurrentTaskHandleForCore(core) == retired) taskYIELD();
+            vTaskDelete(retired);
+            ReleaseStorage();
+        }
+        xSemaphoreGive(lifecycle);
+        return done;
+    }
+
+    // One shared esp_timer service handles idle capture cleanup. No additional
+    // FreeRTOS task or Opus stack is needed to reclaim the parked worker.
+    void ScheduleReap() { (void)esp_timer_start_once(reap_timer, 20000); }
+    static void OnReap(void* context) {
+        auto* state = static_cast<State*>(context);
+        if (!state->Reap()) state->ScheduleReap();
+    }
 };
 
 bool PxaAudioCaptureInput::Initialize(Control control, Read read, void* context) {
     if (state_ || !control || !read || pxa_esp_resource_memory_initialize() != PXA_STATUS_OK)
         return false;
     const auto* metadata = pxa_esp_device_resource_allocator(PXA_MEMORY_INTERNAL, PXA_MEMORY_METADATA);
-    const auto* audio = pxa_esp_device_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO);
     void* memory = pxa_memory_allocate(metadata, sizeof(State));
     if (!memory) return false;
     auto* state = new (memory) State;
     state->control = control; state->read = read; state->context = context;
-    state->stack = static_cast<StackType_t*>(pxa_memory_allocate(audio, kStackBytes));
-    state->queue_bytes = static_cast<uint8_t*>(pxa_memory_allocate(audio, kPacketCount * sizeof(Packet)));
-    if (state->stack && state->queue_bytes)
-        state->queue = xQueueCreateStatic(kPacketCount, sizeof(Packet), state->queue_bytes, &state->queue_storage);
-    if (state->queue)
-        state->task = xTaskCreateStatic(Task, "pxa_capture", kStackBytes, state, 5,
-                                        state->stack, &state->task_storage);
-    if (!state->task) {
-        if (state->queue) vQueueDelete(state->queue);
-        pxa_memory_release(state->queue_bytes); pxa_memory_release(state->stack);
+    state->lifecycle = xSemaphoreCreateMutexStatic(&state->lifecycle_storage);
+    esp_timer_create_args_t timer = {};
+    timer.callback = State::OnReap;
+    timer.arg = state;
+    timer.name = "pxa_cap_idle";
+    if (!state->lifecycle || esp_timer_create(&timer, &state->reap_timer) != ESP_OK) {
+        if (state->lifecycle) vSemaphoreDelete(state->lifecycle);
         state->~State(); pxa_memory_release(state);
         return false;
     }
@@ -74,18 +151,33 @@ bool PxaAudioCaptureInput::Initialize(Control control, Read read, void* context)
 
 pxa_status_t PxaAudioCaptureInput::Open(void* context) {
     auto* state = static_cast<State*>(context);
+    xSemaphoreTake(state->lifecycle, portMAX_DELAY);
     portENTER_CRITICAL(&state->lock);
     if (state->shutdown || state->requested) {
         const auto status = state->shutdown ? PXA_STATUS_UNAVAILABLE : PXA_STATUS_BUSY;
         portEXIT_CRITICAL(&state->lock);
+        xSemaphoreGive(state->lifecycle);
         return status;
     }
     if (++state->generation == 0) ++state->generation;
-    state->requested = state->generation;
+    const uint32_t generation = state->generation;
+    state->requested = generation;
     state->fault_generation = 0;
     portEXIT_CRITICAL(&state->lock);
-    (void)state->notifications.Notify(state->task);
-    return PXA_STATUS_OK;
+
+    const bool ready = state->task || state->Start();
+    portENTER_CRITICAL(&state->lock);
+    const bool current = state->requested == generation;
+    if (!ready && current) state->requested = 0;
+    pxa_status_t status = ready ? PXA_STATUS_OK : PXA_STATUS_RESOURCE_LIMIT;
+    if (!current) status = PXA_STATUS_CANCELLED;
+    if (state->shutdown) status = PXA_STATUS_UNAVAILABLE;
+    TaskHandle_t task = state->BorrowTask();
+    portEXIT_CRITICAL(&state->lock);
+    xSemaphoreGive(state->lifecycle);
+    state->Notify(task);
+    if (task && !current) state->ScheduleReap();
+    return status;
 }
 
 int32_t PxaAudioCaptureInput::ReadPacket(void* context, uint8_t* output, size_t capacity) {
@@ -94,46 +186,53 @@ int32_t PxaAudioCaptureInput::ReadPacket(void* context, uint8_t* output, size_t 
     portENTER_CRITICAL(&state->lock);
     const uint32_t generation = state->requested;
     const bool failed = generation && state->fault_generation == generation;
+    QueueHandle_t queue = generation && !failed && state->task ? state->queue : nullptr;
+    if (queue) ++state->borrowers;
     portEXIT_CRITICAL(&state->lock);
     if (!generation) return PXA_STATUS_UNAVAILABLE;
     if (failed) return PXA_STATUS_IO_ERROR;
+    if (!queue) return PXA_STATUS_WOULD_BLOCK;
     Packet packet;
+    int32_t result = PXA_STATUS_WOULD_BLOCK;
     for (unsigned i = 0; i < kPacketCount; ++i) {
-        if (xQueueReceive(state->queue, &packet, 0) != pdTRUE) break;
+        if (xQueueReceive(queue, &packet, 0) != pdTRUE) break;
         if (packet.generation != generation) continue;
         std::memcpy(output, packet.data, packet.size);
-        return packet.size;
+        result = packet.size;
+        break;
     }
-    return PXA_STATUS_WOULD_BLOCK;
+    state->ReleaseBorrow();
+    return result;
 }
 
 void PxaAudioCaptureInput::Close(void* context) {
     auto* state = static_cast<State*>(context);
     portENTER_CRITICAL(&state->lock);
     state->requested = 0;
-    const bool shutdown = state->shutdown;
+    TaskHandle_t task = state->shutdown ? nullptr : state->BorrowTask();
     portEXIT_CRITICAL(&state->lock);
-    if (!shutdown) (void)state->notifications.Notify(state->task);
+    state->Notify(task);
+    if (task) state->ScheduleReap();
 }
 
 void PxaAudioCaptureInput::StopForShutdown() {
     auto* state = state_;
     if (!state) return;
     portENTER_CRITICAL(&state->lock);
-    const bool first = !state->shutdown;
+    TaskHandle_t task = state->shutdown ? nullptr : state->BorrowTask();
     state->shutdown = true;
     state->requested = 0;
     portEXIT_CRITICAL(&state->lock);
-    if (first) (void)state->notifications.Notify(state->task);
-    // Concurrent shutdown callers all wait for ADC/encoder closure. Only the
-    // first needs to wake the worker; its gate also protects task deletion.
-    // A PCM read has a bounded hardware timeout. A generation change already
-    // blocks delivery; wait for worker-side ADC/encoder closure before power-off.
-    while (state->busy.load(std::memory_order_acquire)) vTaskDelay(1);
+    state->Notify(task);
+    // All shutdown callers wait for the ADC, encoder, callbacks and the final
+    // release of the recording stack and ring. Registered source stays closed.
+    while (!state->Reap()) vTaskDelay(1);
 }
 
 void PxaAudioCaptureInput::Task(void* context) {
     auto* state = static_cast<State*>(context);
+    // Start() publishes the task and queue before the first wakeup.
+    (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     PxaCodecMemoryScope memory(pxa_esp_device_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO));
     void* encoder = nullptr;
     uint32_t active = 0;
@@ -146,7 +245,7 @@ void PxaAudioCaptureInput::Task(void* context) {
         const bool shutdown = state->shutdown;
         const bool fault = requested && requested == state->fault_generation;
         // Serialized with shutdown, including the interval before ADC open.
-        if (requested && !shutdown && !fault) state->busy.store(true, std::memory_order_release);
+        if (requested && !shutdown && !fault) state->parked = false;
         portEXIT_CRITICAL(&state->lock);
         if (!requested || shutdown || fault || requested != active) {
             if (encoder) {
@@ -157,8 +256,9 @@ void PxaAudioCaptureInput::Task(void* context) {
             if (input_open) { (void)state->control(state->context, false); input_open = false; }
             active = 0; filled = 0;
             if (!requested || shutdown || fault) {
-                if (shutdown) break;
-                state->busy.store(false, std::memory_order_release);
+                portENTER_CRITICAL(&state->lock);
+                state->parked = true;
+                portEXIT_CRITICAL(&state->lock);
                 (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
                 continue;
             }
@@ -204,8 +304,4 @@ void PxaAudioCaptureInput::Task(void* context) {
             (void)xQueueSendToBack(state->queue, &packet, 0);
         }
     }
-    state->notifications.Stop();
-    state->busy.store(false, std::memory_order_release);
-    // Board-lifetime storage remains valid; no callback can reopen after shutdown.
-    vTaskDelete(nullptr);
 }

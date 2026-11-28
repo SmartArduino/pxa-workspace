@@ -138,7 +138,7 @@ bool EspMosaicoAudio::Initialize(i2c_master_bus_handle_t bus) {
     vTaskDelay(pdMS_TO_TICKS(24));
     if (!Check(output_.Initialize([](void* context, const int16_t* pcm, size_t samples) {
             return static_cast<EspMosaicoAudio*>(context)->Write(pcm, samples);
-        }, this, true) ? ESP_OK : ESP_FAIL, "host_output")) return false;
+        }, this, true, mosaico_board::kAudioSampleRate, true) ? ESP_OK : ESP_FAIL, "host_output")) return false;
     if (!Check(gpio_set_level(static_cast<gpio_num_t>(mosaico_board::kAudioAmplifierEnable), 1), "pa_enable") ||
         !Check(esp_codec_dev_set_out_mute(speaker_, false), "unmute")) {
         (void)gpio_set_level(static_cast<gpio_num_t>(mosaico_board::kAudioAmplifierEnable), 0);

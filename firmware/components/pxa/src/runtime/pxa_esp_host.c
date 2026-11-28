@@ -622,10 +622,10 @@ static pthread_mutex_t g_clock_timer_lock = PTHREAD_MUTEX_INITIALIZER;
 static void rearm_clock_timer(void);
 static portMUX_TYPE g_public_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE g_process_state_lock = portMUX_INITIALIZER_UNLOCKED;
-static portMUX_TYPE g_net_completion_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE g_wamr_watchdog_lock = portMUX_INITIALIZER_UNLOCKED;
-static uint8_t g_net_completion_ready;
+static uint32_t g_net_completion_ready;
 static uint32_t g_assets_completion_ready;
+static uint32_t g_surface_release_ready;
 
 static void enter_wamr_watchdog_critical(void *context) {
     portENTER_CRITICAL((portMUX_TYPE *)context);
@@ -900,9 +900,33 @@ static void wake_runtime_thread(void) {
     if (task != NULL) xTaskNotifyGive(task);
 }
 
+/* Each service publishes work before marking its flag. One pending wake
+ * covers the burst. A producer that races the owner's exchange rearms it. */
+static void mark_completion_ready(uint32_t *flag) {
+    if (!__atomic_exchange_n(flag, 1u, __ATOMIC_RELEASE))
+        wake_runtime_thread();
+}
+
+static bool take_completion_ready(uint32_t *flag) {
+    return __atomic_load_n(flag, __ATOMIC_RELAXED) &&
+           __atomic_exchange_n(flag, 0u, __ATOMIC_ACQUIRE);
+}
+
 static void on_surface_release_ready(void *context) {
     (void)context;
-    wake_runtime_thread();
+    mark_completion_ready(&g_surface_release_ready);
+}
+
+static int32_t flush_ready_surface_releases(void) {
+    /* Both the cooperative and callback paths run on the runtime owner.
+     * A full Guest mailbox leaves its buffer queued. Retry on the next
+     * owner turn even when the display has not released another buffer. */
+    static bool retry;
+    if (!take_completion_ready(&g_surface_release_ready) && !retry) return 0;
+    int32_t released = g_host.activation.services.surface ?
+        pxa_surface_service_flush_releases(g_host.activation.services.surface) : 0;
+    retry = released < 0;
+    return released;
 }
 
 static int post_command(const pxa_esp_host_command_t *command) {
@@ -2196,23 +2220,15 @@ static void maintain_jobs(void) {
 }
 
 static void refresh_input_capture_state(void) {
-    uint8_t captures = 0, controller = 0;
-    if (g_host.activation.services.ui != NULL &&
-        g_host.activation.ui_component != PXA_COMPONENT_INVALID &&
-        g_host.activation.active_component != PXA_COMPONENT_INVALID) {
-        captures = pxa_ui_accepts_event(
-            g_host.activation.services.ui, g_host.activation.ui_component,
-            PXA_UI_PRIMARY_SURFACE, 1u, PXA_UI_EVENT_KEY)
-                       ? 1u
-                       : 0u;
-        controller = pxa_ui_accepts_event(
-            g_host.activation.services.ui, g_host.activation.ui_component,
-            PXA_UI_PRIMARY_SURFACE, 1u, PXA_UI_EVENT_CONTROLLER_STATE) ? 1u : 0u;
-    }
+    uint64_t events = 0;
+    if (g_host.activation.ui_component != PXA_COMPONENT_INVALID &&
+        g_host.activation.active_component != PXA_COMPONENT_INVALID)
+        events = pxa_ui_subscribed_events(g_host.activation.services.ui,
+            g_host.activation.ui_component, PXA_UI_PRIMARY_SURFACE, 1u);
     portENTER_CRITICAL(&g_public_state_lock);
     if (g_host.public_state.main_active) {
-        g_host.public_state.volume_key_capture_active = captures;
-        g_host.public_state.controller_input_active = controller;
+        g_host.public_state.volume_key_capture_active = (events & PXA_UI_EVENT_MASK_KEY) != 0;
+        g_host.public_state.controller_input_active = (events & PXA_UI_EVENT_MASK_CONTROLLER_STATE) != 0;
     }
     portEXIT_CRITICAL(&g_public_state_lock);
 }
@@ -2226,6 +2242,7 @@ static int drain_active_events(void) {
         int delivered = 0;
         if (g_host.activation.services.assets) pxa_assets_service_poll(g_host.activation.services.assets);
         if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
+        pxa_video_service_dispatch(g_host.activation.services.video);
         if (g_host.activation.services.storage) pxa_storage_service_poll(g_host.activation.services.storage);
         if (g_host.activation.services.fs) pxa_fs_service_poll(g_host.activation.services.fs);
         poll_sensors();
@@ -2264,8 +2281,7 @@ static int drain_active_events(void) {
      * native I/O wake. No Guest timer or image-specific worker is required. */
     if (g_host.activation.services.assets &&
         pxa_assets_service_poll(g_host.activation.services.assets)) {
-        __atomic_store_n(&g_assets_completion_ready, 1u, __ATOMIC_RELEASE);
-        wake_runtime_thread();
+        mark_completion_ready(&g_assets_completion_ready);
     }
     pxa_esp_ime_drain();
     /* A subscription may have opened in the final Guest callback. */
@@ -2276,33 +2292,14 @@ static int drain_active_events(void) {
 
 static void on_assets_completion_ready(void *context) {
     (void)context;
-    __atomic_store_n(&g_assets_completion_ready, 1u, __ATOMIC_RELEASE);
-    wake_runtime_thread();
-}
-
-static void mark_net_completion_ready(void) {
-    int wake;
-    portENTER_CRITICAL(&g_net_completion_lock);
-    wake = !g_net_completion_ready;
-    g_net_completion_ready = 1;
-    portEXIT_CRITICAL(&g_net_completion_lock);
-    if (wake) wake_runtime_thread();
+    mark_completion_ready(&g_assets_completion_ready);
 }
 
 static void on_net_completion_ready(void *context) {
     (void)context;
     /* The owner loop drains this flag before its command queue. A second
      * maintenance command per body chunk only repeats that work. */
-    mark_net_completion_ready();
-}
-
-static int take_net_completion_ready(void) {
-    int ready;
-    portENTER_CRITICAL(&g_net_completion_lock);
-    ready = g_net_completion_ready != 0;
-    g_net_completion_ready = 0;
-    portEXIT_CRITICAL(&g_net_completion_lock);
-    return ready;
+    mark_completion_ready(&g_net_completion_ready);
 }
 
 static void drain_net_completions(void) {
@@ -3746,8 +3743,8 @@ static int start_verified(const char *identity) {
                                           : services_result.stage,
             status);
     }
-    if(g_host.activation.app_storage)
-        (void)pxa_esp_package_store_refresh_permission_summary_with_storage(identity,g_host.activation.app_storage);
+    pxa_esp_package_store_publish_loaded_policy(identity, g_host.activation.app_storage,
+        manifest, g_host.activation.services.permission);
     if (g_host.activation.services.ui != NULL) {
         pxa_ui_theme_snapshot_t theme = {0};
         static const uint16_t sizes[PXA_UI_THEME_FONT_COUNT] = {
@@ -4951,13 +4948,13 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
     g_host.cooperative_active = 1;
     sync_ui_lifecycle();
     (void)apply_pending_display_state();
-    if (g_host.activation.services.surface)
-        (void)pxa_surface_service_flush_releases(g_host.activation.services.surface);
+    (void)flush_ready_surface_releases();
     if (g_host.activation.services.assets) {
-        (void)__atomic_exchange_n(&g_assets_completion_ready, 0u, __ATOMIC_ACQ_REL);
+        (void)take_completion_ready(&g_assets_completion_ready);
         (void)pxa_assets_service_poll(g_host.activation.services.assets);
     }
     if (g_host.activation.services.audio) pxa_audio_service_poll(g_host.activation.services.audio);
+    pxa_video_service_dispatch(g_host.activation.services.video);
     if (g_host.activation.services.storage) pxa_storage_service_poll(g_host.activation.services.storage);
     if (g_host.activation.services.fs) pxa_fs_service_poll(g_host.activation.services.fs);
     poll_sensors();
@@ -4966,7 +4963,7 @@ static pxa_status_t host_cooperate(void *context, pxa_component_t component,
         (void)pxa_vt_service_poll(g_host.activation.services.voice_trigger, host_now_us(NULL));
 #endif
     pxa_esp_fs_roots_poll(g_host.activation.services.fs_roots);
-    if (take_net_completion_ready()) drain_net_completions();
+    if (take_completion_ready(&g_net_completion_ready)) drain_net_completions();
     (void)dispatch_pending_pointer();
     for (unsigned count = 0; count < 8; ++count) {
         pxa_stop_reason_t reason;
@@ -5083,23 +5080,19 @@ static void run(void) {
         pxa_esp_ime_drain();
         if (pxa_esp_ime_loading()) handled=1;
         if(apply_pending_display_state())handled=1;
-        if (g_host.activation.services.surface != NULL) {
-            int32_t released = pxa_surface_service_flush_releases(
-                g_host.activation.services.surface);
-            if (released > 0) {
-                drain_active_events();
-                handled = 1;
-            }
+        if (flush_ready_surface_releases() > 0) {
+            drain_active_events();
+            handled = 1;
         }
         /* A pointer move can run guest code and build a full Canvas frame.
          * Handle only one here so a continuous drag cannot starve ticks or
          * system BACK requests waiting in the regular command queue. */
         if (dispatch_pending_pointer()) handled = 1;
-        if (__atomic_exchange_n(&g_assets_completion_ready, 0u, __ATOMIC_ACQ_REL)) {
+        if (take_completion_ready(&g_assets_completion_ready)) {
             if (g_host.activation.runtime) (void)drain_active_events();
             handled = 1;
         }
-        if (take_net_completion_ready()) {
+        if (take_completion_ready(&g_net_completion_ready)) {
             drain_net_completions();
             handled = 1;
         }
@@ -5696,6 +5689,9 @@ bool pxa_esp_host_initialize(void) {
     ui_config.release = esp_ui_free;
     ui_config.execute = esp_lvgl_execute;
     ui_config.execute_canvas = esp_lvgl_execute_canvas;
+#ifdef PXA_NATIVE_ALPHA_CANVAS_REFRESH
+    ui_config.alpha_canvas_compositor_refresh = true;
+#endif
     ui_config.primary_environment.surface = PXA_UI_PRIMARY_SURFACE;
     ui_config.primary_environment.density_q16 = UINT32_C(1) << 16;
     ui_config.primary_environment.font_scale_q16 = UINT32_C(1) << 16;

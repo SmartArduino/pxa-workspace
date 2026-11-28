@@ -27,8 +27,7 @@
 | USB_POWER，USB 接入为低，拔出为高 | 51 |
 
 显示为 320×240 RGB565、125 DPI、无安全边距、默认无底部导航栏。LCD 使用
-ST7789V TN 初始化和 80 MHz SPI，以 240×320 原生扫描顺序送屏，软件旋转与
-字节转换合并；双输出缓冲直接从 PSRAM DMA 送屏。触摸为 FT6336U，地址
+ST7789V TN 初始化和 80 MHz SPI，面板按小端 RGB565 接收，保持 240×320 原生扫描顺序。直出视频可用 PPA 一次完成 YUV420 转色、缩放及旋转。普通 RGB565 画面沿用 PPA 旋转，PPA 不可用时使用分块软件旋转。SPI 从两块轮换使用的 PSRAM 输出缓冲区读取。触摸为 FT6336U，地址
 `0x38`，原始 240×320 坐标映射为 `(y, 239-x)`。配置
 `CONFIG_PXA_DOIT2_LCD_FLIP_180` 可同步翻转显示与触摸。
 
@@ -115,6 +114,11 @@ python -m esptool --chip esp32s31 --port /dev/ttyACM0 --baud 2000000 --no-stub \
 `firmware/dependencies.lock.doit-gamekit-2`。CH343P 使用 UART0，PXADB 和运行期
 控制台为 2000000 波特率，ROM 早期控制台为 115200。应用开发可用
 `tools/dev.sh device --board doit-gamekit-2 store --port /dev/ttyACM0`。
+
+需要 Billy 等应用的 H.264 播放时，在构建命令中传入
+`-DPXA_ESP_OPENH264_DIR=/path/to/esp_openh264`。带解码器的构建默认使用 `MAX_SPEED` 解码档位和 `BALANCED` 内存配置。
+TLS 握手使用 PSRAM。视频配置使用 8 个 Wi-Fi 静态接收缓冲、8 帧 Block Ack 窗口和 34,560 字节 TCP 接收窗口。解码、Wi-Fi 和显示 DMA 共用片内 SRAM，播放配置将音频输出栈和 LCD 提交栈优先放入 PSRAM。已有 `sdkconfig` 可参考
+[`sdkconfig.esp_openh264.defaults`](sdkconfig.esp_openh264.defaults) 更新解码器内存配置。
 
 默认同时启用原生 USB Serial/JTAG 与 UART0 PXADB，后者通过板载 CH343P
 连接，速率为 2000000。原生 USB 需要对应数据口接线；板载 USB 串口不会因此

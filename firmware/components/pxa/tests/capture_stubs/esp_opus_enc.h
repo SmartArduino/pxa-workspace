@@ -16,3 +16,7 @@ int esp_opus_enc_open(esp_opus_enc_config_t*, size_t, void**);
 int esp_opus_enc_get_frame_size(void*, int*, int*);
 int esp_opus_enc_process(void*, esp_audio_enc_in_frame_t*, esp_audio_enc_out_frame_t*);
 void esp_opus_enc_close(void*);
+constexpr int configNUMBER_OF_CORES = 2;
+void vTaskSuspend(TaskHandle_t);
+TaskHandle_t xTaskGetCurrentTaskHandleForCore(int);
+#define taskYIELD() vTaskDelay(1)

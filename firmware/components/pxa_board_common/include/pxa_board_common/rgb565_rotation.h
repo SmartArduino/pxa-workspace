@@ -8,8 +8,16 @@ namespace pxa::board {
 // (height-1-y,x). The panel itself keeps MV/MX/MY clear in both orientations.
 enum class LandscapeRotation { Deg270, Deg90 };
 
+enum class Rgb565WireOrder { BigEndian, LittleEndian };
+template<Rgb565WireOrder Order>
+inline uint16_t WireRgb565(uint16_t value) {
+    if constexpr (Order == Rgb565WireOrder::BigEndian) return __builtin_bswap16(value);
+    return value;
+}
+
 // Composite a logical RGB565 diagnostic patch into the physical output only.
 // The retained logical frame stays clean when the overlay is later disabled.
+template<Rgb565WireOrder Order = Rgb565WireOrder::BigEndian>
 inline void RotateRgb565Patch(const uint16_t* patch, size_t stride, uint16_t* native,
                              int width, int height, int x, int y, int patch_width,
                              int patch_height, LandscapeRotation rotation) {
@@ -19,12 +27,13 @@ inline void RotateRgb565Patch(const uint16_t* patch, size_t stride, uint16_t* na
             if (lx < 0 || ly < 0 || lx >= width || ly >= height) continue;
             const int index = rotation == LandscapeRotation::Deg270
                 ? lx * height + height - 1 - ly : (width - 1 - lx) * height + ly;
-            native[index] = __builtin_bswap16(patch[row * stride + column]);
+            native[index] = WireRgb565<Order>(patch[row * stride + column]);
         }
 }
 
 // Copy a complete logical RGB565 frame into native portrait scan order and
 // ST7789 wire byte order. Tiling keeps both PSRAM reads and writes local.
+template<Rgb565WireOrder Order = Rgb565WireOrder::BigEndian>
 inline void RotateRgb565(const uint16_t* source, size_t source_stride,
                         uint16_t* native, int width, int height,
                         LandscapeRotation rotation) {
@@ -36,7 +45,7 @@ inline void RotateRgb565(const uint16_t* source, size_t source_stride,
             const int x1 = std::min(x0 + block, width);
             for (int y = y0; y < y1; ++y)
                 for (int x = x0; x < x1; ++x)
-                    tile[y - y0][x - x0] = __builtin_bswap16(source[y * source_stride + x]);
+                    tile[y - y0][x - x0] = WireRgb565<Order>(source[y * source_stride + x]);
             for (int x = x0; x < x1; ++x) {
                 if (rotation == LandscapeRotation::Deg270) {
                     auto* row = native + x * height + height - y1;
@@ -54,20 +63,21 @@ inline void RotateRgb565(const uint16_t* source, size_t source_stride,
 
 // Diagnostics read the completed physical output, rather than the LVGL source,
 // and return it to callers in logical orientation and native CPU byte order.
+template<Rgb565WireOrder Order = Rgb565WireOrder::BigEndian>
 inline void CaptureRotatedRgb565(const uint16_t* native, uint16_t* logical,
                                 int width, int height, LandscapeRotation rotation) {
     for (int y = 0; y < height; ++y)
         for (int x = 0; x < width; ++x) {
             const int index = rotation == LandscapeRotation::Deg270
                 ? x * height + height - 1 - y : (width - 1 - x) * height + y;
-            logical[y * width + x] = __builtin_bswap16(native[index]);
+            logical[y * width + x] = WireRgb565<Order>(native[index]);
         }
 }
 
 namespace detail {
 // FixedScale is zero for the generic path. The common 2x and 4x paths can
 // duplicate each pixel with fixed stores instead of a loop per pixel.
-template<int FixedScale>
+template<int FixedScale, Rgb565WireOrder Order>
 inline void RotateScaledRgb565Impl(const uint16_t* source, size_t source_stride,
                                   uint16_t* native, int width, int height, int dynamic_scale,
                                   LandscapeRotation rotation) {
@@ -85,7 +95,7 @@ inline void RotateScaledRgb565Impl(const uint16_t* source, size_t source_stride,
             const int x1 = std::min(x0 + block, width);
             for (int y = y0; y < y1; ++y)
                 for (int x = x0; x < x1; ++x)
-                    tile[y - y0][x - x0] = __builtin_bswap16(source[y * source_stride + x]);
+                    tile[y - y0][x - x0] = WireRgb565<Order>(source[y * source_stride + x]);
             for (int x = x0; x < x1; ++x) {
                 for (int dx = 0; dx < scale; ++dx) {
                     const int column = x * scale + dx;
@@ -111,16 +121,17 @@ inline void RotateScaledRgb565Impl(const uint16_t* source, size_t source_stride,
 }
 
 // Integer scaling and rotation share one copy; no intermediate 320x240 frame.
+template<Rgb565WireOrder Order = Rgb565WireOrder::BigEndian>
 inline void RotateScaledRgb565(const uint16_t* source, size_t source_stride,
                               uint16_t* native, int width, int height, int scale,
                               LandscapeRotation rotation) {
     if (scale == 1)
-        RotateRgb565(source, source_stride, native, width, height, rotation);
+        RotateRgb565<Order>(source, source_stride, native, width, height, rotation);
     else if (scale == 2)
-        detail::RotateScaledRgb565Impl<2>(source, source_stride, native, width, height, 2, rotation);
+        detail::RotateScaledRgb565Impl<2, Order>(source, source_stride, native, width, height, 2, rotation);
     else if (scale == 4)
-        detail::RotateScaledRgb565Impl<4>(source, source_stride, native, width, height, 4, rotation);
+        detail::RotateScaledRgb565Impl<4, Order>(source, source_stride, native, width, height, 4, rotation);
     else
-        detail::RotateScaledRgb565Impl<0>(source, source_stride, native, width, height, scale, rotation);
+        detail::RotateScaledRgb565Impl<0, Order>(source, source_stride, native, width, height, scale, rotation);
 }
 }

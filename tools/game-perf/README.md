@@ -30,7 +30,7 @@ LLVM dependencies:
 ```sh
 task_out="$PWD/local/artifacts/game-perf/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$task_out"
-git -C deps/pxa-system/wamr worktree add --detach "$task_out/wamr" 6a54186abc1c10c37c28e443107107c97af8f25f
+git -C deps/pxa-system/wamr worktree add --detach "$task_out/wamr" "$(python3 deps/pxa-system/tools/wamr/metadata.py commit)"
 git -C "$task_out/wamr" apply --check "$PWD/tools/game-perf/wamr-base-alignment.patch"
 git -C "$task_out/wamr" apply "$PWD/tools/game-perf/wamr-base-alignment.patch"
 cmake -S "$task_out/wamr/wamr-compiler" -B "$task_out/wamrc" -G Ninja \
@@ -50,14 +50,13 @@ variant, and also `--require-checked-word-access` for the checked fast path.
 Reports include compiler and Wasm hashes.
 These checks do not establish a device FPS improvement.
 
-`wamr-fixed-memory.patch` is an additional opt-in patch on top of base alignment.
-It caches runtime memory metadata across calls only for a private wasm32 memory
+The pinned PXA compiler now caches runtime memory metadata across calls only for a private wasm32 memory
 with explicit, nonzero, equal initial and maximum page counts. Imported, shared,
 memory64 and growable memories retain the existing behavior. It does not replace
 runtime bounds with the declared size: host-managed heap insertion may enlarge
 the actual allocation, including the fixed one-page special case.
 
-Build this profile reproducibly without editing the SDK's WAMR checkout:
+Build the optional base-alignment profile reproducibly without editing the SDK's WAMR checkout:
 
 ```sh
 task_out="$PWD/local/artifacts/game-perf/$(date +%Y%m%d-%H%M%S)"

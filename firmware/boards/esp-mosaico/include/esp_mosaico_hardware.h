@@ -1,10 +1,13 @@
 #pragma once
 
+#include <pxa/pxa_esp_surface.h>
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 
 #include <driver/i2c_master.h>
+#include <driver/ppa.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_touch.h>
@@ -55,7 +58,7 @@ private:
     void ShowBootFrame();
     void WakePanel();
     bool InitializeTe();
-    void WaitForTe(lv_area_t* area);
+    void WaitForTe(lv_area_t* area, bool packed = false);
     static void OnTe(void* context);
     bool InitializeTouch();
     bool InitializeButton();
@@ -72,10 +75,15 @@ private:
     bool WaitForTransfer(TickType_t timeout);
     void WaitForFlush();
     void WaitForUiSnapshot();
+    void CopyUiTile(const lv_area_t& area, const uint8_t* pixels, uint32_t stride);
+    void FinishUiTiles();
     bool QueuePresent(const lv_area_t& area, uint64_t timestamp,
                       uint64_t frame_id = 0, uint32_t raster_ready_tick_us = 0);
     static void FlushTask(void* context);
     bool PresentDirectFrame();
+    bool PresentRetainedRegion();
+    bool retained_region_valid_ = false;
+    lv_area_t retained_region_{};
     bool TransferArea(const lv_area_t& area, const uint8_t* pixels,
                        uint32_t stride_bytes, bool last, uint64_t input_timestamp,
                        const char* source, uint64_t frame_id);
@@ -129,6 +137,7 @@ private:
     lv_display_t* display_ = nullptr;
     std::atomic<uint8_t> display_rotation_{0};
     uint16_t* rotation_pixels_ = nullptr;
+    ppa_client_handle_t rotation_ppa_ = nullptr;
     pxsys_standard_system_t* system_ = nullptr;
     pxsys_reference_lvgl_t* reference_ui_ = nullptr;
     SemaphoreHandle_t transfer_done_ = nullptr;
@@ -149,7 +158,7 @@ private:
     int64_t scan_deadline_us_ = 0; // Serialized by panel_mutex_.
     SemaphoreHandle_t present_available_ = nullptr;
     SemaphoreHandle_t panel_mutex_ = nullptr;
-    enum class FlushKind : uint8_t { Frame, UiSnapshot };
+    enum class FlushKind : uint8_t { Frame, UiSnapshot, Composited, Rotated };
     struct FlushRequest {
         lv_area_t area;
         uint64_t timestamp;
@@ -165,9 +174,19 @@ private:
     static_assert(sizeof(FlushRequest) == 40);
     enum class UiFrameState : uint8_t { Current, Copying, RestoreRequired };
     bool PrepareDirectFrame(FlushRequest* request);
+    bool SubmitPrepared(const FlushRequest& request);
+    void RestoreLogicalScanout();
+    bool rotated_snapshot_ = false;
+    bool rotation_full_ = false;
+    bool rotation_limited_ = false;
     bool flush_direct_checked_ = false;
+    bool flush_surface_visible_ = false;
     bool flush_direct_ready_ = false;
     FlushRequest flush_direct_request_ = {};
+    bool tile_owns_scanout_ = false;
+    pxa_esp_surface_frame_t tile_frame_ = {};
+    lv_area_t tile_surface_area_ = {};
+    int32_t tile_next_row_ = -1;
     QueueHandle_t flush_queue_ = nullptr;
     TaskHandle_t flush_task_ = nullptr;
     std::atomic<bool> redraw_pending_{false};

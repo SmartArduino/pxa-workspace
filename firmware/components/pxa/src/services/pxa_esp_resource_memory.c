@@ -18,6 +18,9 @@
 #ifndef CONFIG_PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES
 #define CONFIG_PXA_RESOURCE_TEMPORARY_EXTERNAL_BYTES (512u * 1024u)
 #endif
+#ifndef CONFIG_PXA_RESOURCE_PSRAM_HEADROOM_BYTES
+#define CONFIG_PXA_RESOURCE_PSRAM_HEADROOM_BYTES 0
+#endif
 #ifndef CONFIG_PXA_RESOURCE_PSRAM_AUTO
 #define CONFIG_PXA_RESOURCE_PSRAM_AUTO 0
 #endif
@@ -42,7 +45,7 @@ static void *raw_allocate(void *context, size_t bytes) {
     if (cls == PXA_MEMORY_EXTERNAL) {
         size_t available = pxa_esp_resource_psram_available(
             heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
-            heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+            heap_caps_get_free_size(MALLOC_CAP_SPIRAM), CONFIG_PXA_RESOURCE_PSRAM_HEADROOM_BYTES);
         if (bytes > available || bytes > heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM))
             return NULL;
     }
@@ -138,7 +141,7 @@ pxa_status_t pxa_esp_resource_image_memory(void *context, size_t *available, siz
     (void)context;
     if (!available || !largest) return PXA_STATUS_INVALID_ARGUMENT;
     *available = pxa_esp_resource_psram_available(heap_caps_get_total_size(MALLOC_CAP_SPIRAM),
-        heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        heap_caps_get_free_size(MALLOC_CAP_SPIRAM), CONFIG_PXA_RESOURCE_PSRAM_HEADROOM_BYTES);
     *largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
     return PXA_STATUS_OK;
 }

@@ -67,27 +67,28 @@ pxa_status_t pxa_esp_font_source_release(pxa_esp_font_source_t **source) {
 #include FT_FREETYPE_H
 #include FT_SYSTEM_H
 #include <errno.h>
-#define FONT_CACHE_PAGE_BYTES 4096u
+#define FONT_CACHE_PAGE_BYTES 2048u
+#define FONT_CACHE_PAGES 4u
 typedef struct {
     uint64_t epoch;
     uint32_t size,position;
     int fd;
     uint8_t *cache;
-    uint32_t cache_start[2];
-    uint16_t cache_size[2];
-    uint8_t recent;
+    uint32_t cache_start[FONT_CACHE_PAGES];
+    uint16_t cache_size[FONT_CACHE_PAGES];
+    uint8_t next_slot;
 } font_stream_t;
 /* The source owner pins live font objects, while each open stream owns an
  * independent pin until FT_Done_Face closes it. No whole-font RAM copy. */
 static unsigned long stream_read_direct(font_stream_t *file,unsigned long offset,
     unsigned char *buffer,unsigned long count) {
-    if(offset!=file->position) {
-        if(lseek(file->fd,(off_t)offset,SEEK_SET)!=(off_t)offset)return 0;
-        file->position=(uint32_t)offset;
-    }
     unsigned long done=0;
     while(done<count) {
         if(ready(file->epoch)!=PXA_STATUS_OK)break;
+        if(file->position!=offset+done) {
+            if(lseek(file->fd,(off_t)(offset+done),SEEK_SET)!=(off_t)(offset+done))break;
+            file->position=(uint32_t)(offset+done);
+        }
         size_t bytes=count-done;if(bytes>4096)bytes=4096;
         ssize_t n=read(file->fd,buffer+done,bytes);
         if(n<0 && errno==EINTR)continue;
@@ -99,20 +100,21 @@ static unsigned long stream_read_direct(font_stream_t *file,unsigned long offset
 static unsigned long stream_read(FT_Stream stream,unsigned long offset,
     unsigned char *buffer,unsigned long count) {
     font_stream_t *file=stream->descriptor.pointer;
-    if(!file || ready(file->epoch)!=PXA_STATUS_OK || offset>file->size)
-        return count?0:1;
-    if(!count)return 0;
+    if(!file || offset>file->size)return count?0:1;
+    if(!count)return ready(file->epoch)==PXA_STATUS_OK ? 0 : 1;
     if(count>file->size-offset)count=file->size-offset;
-    if(!file->cache)return stream_read_direct(file,offset,buffer,count);
+    /* Large table reads go straight to FreeType and keep the small glyph pages warm. */
+    if(!file->cache || count>=FONT_CACHE_PAGES*FONT_CACHE_PAGE_BYTES)
+        return stream_read_direct(file,offset,buffer,count);
     unsigned long done=0;
-    while(done<count && ready(file->epoch)==PXA_STATUS_OK) {
+    while(done<count) {
         const uint32_t at=(uint32_t)(offset+done);
         unsigned slot;
-        for(slot=0;slot<2;++slot)
+        for(slot=0;slot<FONT_CACHE_PAGES;++slot)
             if(at>=file->cache_start[slot] &&
                at-file->cache_start[slot]<file->cache_size[slot])break;
-        if(slot==2) {
-            slot=1u-file->recent;
+        if(slot==FONT_CACHE_PAGES) {
+            slot=file->next_slot;
             const uint32_t start=at&~(FONT_CACHE_PAGE_BYTES-1u);
             unsigned long bytes=file->size-start;
             if(bytes>FONT_CACHE_PAGE_BYTES)bytes=FONT_CACHE_PAGE_BYTES;
@@ -122,8 +124,8 @@ static unsigned long stream_read(FT_Stream stream,unsigned long offset,
             if(loaded<=at-start)break;
             file->cache_start[slot]=start;
             file->cache_size[slot]=(uint16_t)loaded;
-        }
-        file->recent=(uint8_t)slot;
+            file->next_slot=(uint8_t)((slot+1u)%FONT_CACHE_PAGES);
+        } else if(ready(file->epoch)!=PXA_STATUS_OK)break;
         const size_t begin=at-file->cache_start[slot];
         size_t bytes=file->cache_size[slot]-begin;
         if(bytes>count-done)bytes=count-done;
@@ -167,9 +169,8 @@ FT_Error __wrap_FT_Stream_Open(FT_Stream stream,const char *name) {
     font_stream_t *file=font_allocate(sizeof(*file));
     if(!file) {(void)close(fd);(void)pxa_esp_volumes_release(epoch);return FT_Err_Out_Of_Memory;}
     *file=(font_stream_t){.epoch=epoch,.size=(uint32_t)metadata.st_size,.fd=fd};
-    /* Optional two-page cache: keep table and glyph reads local without
-     * copying a whole font. Epoch checks also apply to cache hits. */
-    file->cache=font_allocate(2u*FONT_CACHE_PAGE_BYTES);
+    /* Cmap, metrics, glyph offsets and outlines can live on four distinct pages. */
+    file->cache=font_allocate(FONT_CACHE_PAGES*FONT_CACHE_PAGE_BYTES);
     stream->descriptor.pointer=file;stream->pathname.pointer=(char *)name;
     stream->size=file->size;stream->pos=0;stream->base=NULL;
     stream->read=stream_read;stream->close=stream_close;

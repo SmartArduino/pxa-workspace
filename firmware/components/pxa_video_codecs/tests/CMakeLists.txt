@@ -45,7 +45,8 @@ target_include_directories(random_access_test PRIVATE "${root}/src" "${root}/../
 target_compile_options(random_access_test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 add_test(NAME idr_jump_without_reset COMMAND random_access_test "${CMAKE_CURRENT_LIST_DIR}/fixtures/high-640x360.h264")
 
-add_executable(rgb565_test rgb565_test.cpp)
+add_executable(rgb565_test rgb565_test.cpp "${root}/src/video_pixels.cpp")
+target_compile_definitions(rgb565_test PRIVATE PXA_GAMEKIT_BOX420_360=1)
 target_include_directories(rgb565_test PRIVATE "${root}/src")
 target_compile_options(rgb565_test PRIVATE -O2 -UNDEBUG -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer)
 target_link_options(rgb565_test PRIVATE -fsanitize=address,undefined)

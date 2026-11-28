@@ -4,6 +4,7 @@
 #include <limits>
 #include <esp_log.h>
 #include <pxa/display_rotation.h>
+#include <pxa_board_common/ppa_rgb565.h>
 
 namespace espp4_a {
 RotationEngine::~RotationEngine() {
@@ -31,25 +32,13 @@ bool RotationEngine::Rotate(const uint16_t* source, uint16_t* output,
         }
     }
     if (!disabled_) {
-        ppa_srm_oper_config_t operation{};
-        operation.in.buffer = source;
-        operation.in.pic_w = operation.in.block_w = pxa_display_logical_width(width, height, rotation);
-        operation.in.pic_h = operation.in.block_h = pxa_display_logical_height(width, height, rotation);
-        operation.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
-        operation.out.buffer = output;
-        operation.out.buffer_size = bytes;
-        operation.out.pic_w = width;
-        operation.out.pic_h = height;
-        operation.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
         // PXA uses clockwise quarter turns, PPA uses counter-clockwise angles.
         constexpr ppa_srm_rotation_angle_t angles[] = {
             PPA_SRM_ROTATION_ANGLE_0, PPA_SRM_ROTATION_ANGLE_270,
             PPA_SRM_ROTATION_ANGLE_180, PPA_SRM_ROTATION_ANGLE_90};
-        operation.rotation_angle = angles[rotation];
-        operation.scale_x = operation.scale_y = 1.0f;
-        operation.alpha_update_mode = PPA_ALPHA_NO_CHANGE;
-        operation.mode = PPA_TRANS_MODE_BLOCKING;
-        const auto status = ppa_do_scale_rotate_mirror(client_, &operation);
+        const auto logical_width = pxa_display_logical_width(width, height, rotation);
+        const auto status = pxa::board::RotatePpaRgb565(client_, source, logical_width, logical_width,
+            pxa_display_logical_height(width, height, rotation), output, angles[rotation], false);
         if (status == ESP_OK) { ++stats_.hardware; return true; }
         disabled_ = true;
         ESP_LOGW("espp4_rotation", "PPA rotation rejected (%s); using software rotation", esp_err_to_name(status));

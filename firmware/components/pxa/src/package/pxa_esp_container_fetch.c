@@ -1,6 +1,6 @@
 #include "pxa/pxa_container_stream.h"
 #include "esp_http_client.h"
-#include "esp_wifi.h"
+#include "pxa_esp_wifi_transfer.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include <inttypes.h>
@@ -47,15 +47,12 @@ pxa_status_t pxa_host_container_stream_fetch_with_progress(pxa_host_container_st
     /* Bulk transfer is a short foreground operation. Restore the previous
      * power policy on failure as well as success; Ethernet/uninitialized Wi-Fi
      * simply skips this optional optimization. */
-    wifi_ps_type_t previous=WIFI_PS_NONE,current;
-    int restore=esp_wifi_get_ps(&previous)==ESP_OK && previous!=WIFI_PS_NONE &&
-        esp_wifi_set_ps(WIFI_PS_NONE)==ESP_OK;
+    const bool wifi_lease = pxa_esp_wifi_transfer_acquire();
     int64_t start=esp_timer_get_time();
     esp_err_t fetched=esp_http_client_perform(client);
     int code=esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);
-    if(restore && esp_wifi_get_ps(&current)==ESP_OK && current==WIFI_PS_NONE)
-        (void)esp_wifi_set_ps(previous);
+    if (wifi_lease) pxa_esp_wifi_transfer_release();
     ESP_LOGI("PxaTransfer","HTTP bytes=%" PRIu64 " elapsed_ms=%" PRIu64 " feed_ms=%" PRIu64,
         sink.bytes,(uint64_t)(esp_timer_get_time()-start)/1000,sink.feed_us/1000);
     if(sink.status!=PXA_STATUS_OK)return sink.status;

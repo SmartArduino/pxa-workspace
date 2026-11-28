@@ -17,6 +17,9 @@
 #include "pxa/audio_mixer.h"
 #include "pxa_esp_resource_memory.h"
 #include "freertos/task.h"
+#if PXA_HAS_ENCODED_AUDIO
+#include "pxa_esp_encoded_audio.h"
+#endif
 
 #define PXA_ESP_AUDIO_TAG "PxaAudio"
 #define PXA_ESP_AUDIO_SAMPLE_RATE 16000
@@ -49,7 +52,8 @@ typedef struct {
 } pxa_esp_audio_asset_sink_t;
 
 typedef struct {
-    pxa_audio_mixer_t *mixer;
+    pxa_audio_mixer_voice_t *voices[PXA_ESP_AUDIO_VOICE_COUNT];
+    bool initialized, deinitializing;
     SemaphoreHandle_t mutex;
     StaticSemaphore_t mutex_storage;
     TaskHandle_t task; /* Legacy push adapter only; board output uses pull. */
@@ -69,6 +73,10 @@ typedef struct {
     void *sound_track_context;
     const pxa_package_manifest_t *package_manifest;
     char package_root[PXA_ESP_AUDIO_ASSET_PATH_MAX];
+#if PXA_HAS_ENCODED_AUDIO
+    uint8_t encoded_wait_slot; /* Mixer lock protects the one-based index and clock. */
+    uint64_t encoded_wake_sample;
+#endif
     uint64_t next_provider_session;
     uint64_t submitted_frames;
     uint64_t rendered_frames;
@@ -144,78 +152,89 @@ static int asset_path_is_audio(const uint8_t *path, size_t size) {
            memcmp(path + size - 4u, ".ogg", 4u) == 0;
 }
 
+static bool initialize_locked(void);
+
 static pxa_status_t audio_open_format(void *context, const pxa_audio_format_t *format,
-    pxa_audio_pcm_info_t *info, uint64_t *provider_session) {
+    pxa_audio_pcm_info_t *info, uint64_t *provider_session, bool buffered) {
     pxa_esp_audio_state_t *audio = (pxa_esp_audio_state_t *)context;
     pxa_esp_audio_sink_t sink;
-    uint16_t index;
-    if (audio != &g_audio || format == NULL || provider_session == NULL ||
-        (!sink_snapshot(audio, &sink) && !audio->device_wake) ||
-        (info && !audio->device_wake)) {
-        return PXA_STATUS_UNSUPPORTED;
-    }
-    if (!pxa_esp_audio_initialize()) return PXA_STATUS_RESOURCE_LIMIT;
+    if (audio != &g_audio || !format || !provider_session) return PXA_STATUS_UNSUPPORTED;
     audio_lock(audio);
-    const uint32_t output_rate = audio->device_wake ? audio->output_rate : PXA_ESP_AUDIO_SAMPLE_RATE;
-    for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index) {
-        pxa_esp_audio_slot_t *slot = &audio->slots[index];
-        if (!slot->active && !slot->closing) {
-            uint64_t session = ++audio->next_provider_session;
-            if (session == 0) session = ++audio->next_provider_session;
-            memset(slot, 0, sizeof(*slot));
-            pxa_audio_mixer_reset(&audio->mixer->voices[index]);
-            pxa_status_t configured = pxa_audio_mixer_configure(&audio->mixer->voices[index],
-                format->sample_rate, format->channels, output_rate);
-            if (configured != PXA_STATUS_OK) {
-                audio_unlock(audio); return configured;
-            }
-            if (audio->device_wake) audio->mixer->voices[index].state.flags = 0;
-            slot->active = 1;
-            slot->provider_session = session;
-            *provider_session = session;
-            if (info) *info = (pxa_audio_pcm_info_t){output_rate,
-                4u * (format->sample_rate * 20u / 1000u), 1};
-            audio_unlock(audio);
-            return PXA_STATUS_OK;
-        }
+    if ((!sink_snapshot(audio, &sink) && !audio->device_wake) || (info && !audio->device_wake)) {
+        audio_unlock(audio); return PXA_STATUS_UNSUPPORTED;
     }
-    ++audio->voice_exhaustions;
+    if (!initialize_locked()) { audio_unlock(audio); return PXA_STATUS_RESOURCE_LIMIT; }
+    unsigned index = 0;
+    while (index < PXA_ESP_AUDIO_VOICE_COUNT && audio->slots[index].provider_session) ++index;
+    if (index == PXA_ESP_AUDIO_VOICE_COUNT) {
+        ++audio->voice_exhaustions;
+        audio_unlock(audio); return PXA_STATUS_RESOURCE_LIMIT;
+    }
+    const bool pull = audio->device_wake != NULL;
+    const uint32_t output_rate = pull ? audio->output_rate : PXA_ESP_AUDIO_SAMPLE_RATE;
+    uint64_t session = ++audio->next_provider_session;
+    if (!session) session = ++audio->next_provider_session;
+    pxa_esp_audio_slot_t *slot = &audio->slots[index];
+    /* Reserve this generation. A reset can cancel it before publication. */
+    slot->provider_session = session;
     audio_unlock(audio);
-    return PXA_STATUS_RESOURCE_LIMIT;
+
+    pxa_audio_mixer_voice_t *voice = pxa_memory_allocate(
+        pxa_esp_device_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO), sizeof(*voice));
+    pxa_status_t status = PXA_STATUS_RESOURCE_LIMIT;
+    if (voice) {
+        pxa_audio_mixer_reset(voice);
+        status = pxa_audio_mixer_configure(voice, format->sample_rate, format->channels, output_rate);
+        if (!status && buffered) status = pxa_audio_mixer_buffered(voice);
+        if (pull) voice->state.flags = 0;
+    }
+    audio_lock(audio);
+    if (slot->provider_session != session) {
+        status = PXA_STATUS_UNAVAILABLE;
+    } else if (status || !audio->initialized) {
+        slot->provider_session = 0;
+        if (!status) status = PXA_STATUS_UNAVAILABLE;
+    } else {
+        audio->voices[index] = voice;
+        slot->active = 1;
+        *provider_session = session;
+        if (info) *info = (pxa_audio_pcm_info_t){output_rate,
+            voice->queue_limit * (format->sample_rate / 50u), 1};
+    }
+    audio_unlock(audio);
+    if (status) pxa_memory_release(voice);
+    return status;
 }
 
 static pxa_status_t audio_open(void *context, uint16_t usage,
     pxa_audio_format_t *format, uint64_t *session) {
     if (!format || usage != PXA_AUDIO_USAGE_MEDIA) return PXA_STATUS_UNSUPPORTED;
     *format = (pxa_audio_format_t){PXA_ESP_AUDIO_SAMPLE_RATE, 1, PXA_ESP_AUDIO_FRAME_MS};
-    return audio_open_format(context, format, NULL, session);
+    return audio_open_format(context, format, NULL, session, false);
 }
-static pxa_status_t audio_open_pcm(void *context, const pxa_audio_format_t *format,
-    pxa_audio_pcm_info_t *info, uint64_t *session) {
+static pxa_status_t open_pcm(void *context, const pxa_audio_format_t *format,
+    pxa_audio_pcm_info_t *info, uint64_t *session, bool buffered) {
     if (!format || !info || format->frame_ms != 20 || format->sample_rate < 8000 ||
         format->sample_rate > 48000 || (format->channels != 1 && format->channels != 2))
         return PXA_STATUS_INVALID_ARGUMENT;
-    return audio_open_format(context, format, info, session);
+    return audio_open_format(context, format, info, session, buffered);
+}
+static pxa_status_t audio_open_pcm(void *context, const pxa_audio_format_t *format,
+    pxa_audio_pcm_info_t *info, uint64_t *session) {
+    return open_pcm(context, format, info, session, false);
 }
 static pxa_status_t audio_open_pcm_buffered(void *context, const pxa_audio_format_t *format,
     pxa_audio_pcm_info_t *info, uint64_t *session) {
     if (PXA_AUDIO_MIXER_PACKETS < 24) return PXA_STATUS_UNSUPPORTED;
-    pxa_status_t status = audio_open_pcm(context, format, info, session);
-    if (status) return status;
-    audio_lock(&g_audio);
-    for (unsigned i = 0; i < PXA_ESP_AUDIO_VOICE_COUNT; ++i) {
-        if (g_audio.slots[i].active && g_audio.slots[i].provider_session == *session) {
-            status = pxa_audio_mixer_buffered(&g_audio.mixer->voices[i]);
-            info->queue_frames = g_audio.mixer->voices[i].queue_limit * (format->sample_rate / 50u);
-            break;
-        }
-    }
-    audio_unlock(&g_audio);
-    return status;
+    return open_pcm(context, format, info, session, true);
 }
-static void audio_wake(pxa_esp_audio_state_t *audio) {
-    if (audio->device_wake) audio->device_wake(audio->device_context);
-    else if (audio->task) xTaskNotifyGive(audio->task);
+static void audio_unlock_and_wake(pxa_esp_audio_state_t *audio, bool wake) {
+    void (*device_wake)(void *) = wake ? audio->device_wake : NULL;
+    void *context = audio->device_context;
+    /* The legacy output task can be deleted as soon as we unlock. */
+    if (wake && !device_wake && audio->task) xTaskNotifyGive(audio->task);
+    audio_unlock(audio);
+    if (device_wake) device_wake(context);
 }
 static pxa_status_t audio_commit(void *context, uint64_t session,
                                   const pxa_audio_graph_t *graph) {
@@ -224,10 +243,10 @@ static pxa_status_t audio_commit(void *context, uint64_t session,
     audio_lock(audio);
     int index = slot_index_locked(audio, session);
     pxa_status_t status = index < 0 ? PXA_STATUS_NOT_FOUND :
-        pxa_audio_mixer_commit(&audio->mixer->voices[index], graph);
+        pxa_audio_mixer_commit(audio->voices[index], graph);
     if (status == PXA_STATUS_OK) {
         audio->slots[index].graph_committed = 1;
-        audio->slots[index].linear_gain = audio->mixer->voices[index].gain;
+        audio->slots[index].linear_gain = audio->voices[index]->gain;
     }
     audio_unlock(audio);
     return status;
@@ -236,24 +255,69 @@ static pxa_status_t audio_commit(void *context, uint64_t session,
 static void update_queue_peak(pxa_esp_audio_state_t *audio) {
     uint32_t count = 0;
     for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i)
-        count += audio->mixer->voices[i].count;
+        if (audio->voices[i]) count += audio->voices[i]->count;
     if (count > audio->peak_queued_frames) audio->peak_queued_frames = count;
 }
 
-static pxa_status_t audio_submit(void *context, uint64_t session,
-                                  const uint8_t *pcm, size_t size) {
+static pxa_status_t submit_pcm(void *context, uint64_t session, const uint8_t *pcm,
+                               size_t size, bool encoded) {
     pxa_esp_audio_state_t *audio = context;
     if (audio != &g_audio) return PXA_STATUS_INVALID_ARGUMENT;
     audio_lock(audio);
     int index = slot_index_locked(audio, session);
     pxa_status_t status = index < 0 ? PXA_STATUS_NOT_FOUND :
-        pxa_audio_mixer_write(&audio->mixer->voices[index], pcm, size);
+        pxa_audio_mixer_write(audio->voices[index], pcm, size);
     if (status == PXA_STATUS_OK) { ++audio->submitted_frames; update_queue_peak(audio); }
     if (status == PXA_STATUS_WOULD_BLOCK) ++audio->queue_full_frames;
-    audio_unlock(audio);
-    if (status == PXA_STATUS_OK) audio_wake(audio);
+#if PXA_HAS_ENCODED_AUDIO
+    if (encoded && index >= 0) {
+        if (status == PXA_STATUS_WOULD_BLOCK) {
+            const pxa_audio_mixer_voice_t *voice = audio->voices[index];
+            /* With a deep queue, release two 20ms packets before waking AAC. */
+            uint32_t frames = voice->source_rate / 50;
+            if (voice->state.queued_samples >= 4 * frames) frames *= 2;
+            if (frames > voice->state.queued_samples) frames = voice->state.queued_samples;
+            audio->encoded_wait_slot = (uint8_t)(index + 1);
+            audio->encoded_wake_sample = voice->state.accepted_samples + frames;
+        } else {
+            audio->encoded_wait_slot = 0;
+        }
+    }
+#else
+    (void)encoded;
+#endif
+    audio_unlock_and_wake(audio, status == PXA_STATUS_OK);
     return status;
 }
+
+static pxa_status_t audio_submit(void *context, uint64_t session, const uint8_t *pcm, size_t size) {
+    return submit_pcm(context, session, pcm, size, false);
+}
+#if PXA_HAS_ENCODED_AUDIO
+static pxa_status_t submit_encoded_pcm(void *context, uint64_t session, const uint8_t *pcm, size_t size) {
+    return submit_pcm(context, session, pcm, size, true);
+}
+static bool encoded_can_resume_locked(pxa_esp_audio_state_t *audio) {
+    if (!audio->encoded_wait_slot) return false;
+    const pxa_audio_mixer_voice_t *voice = audio->voices[audio->encoded_wait_slot - 1];
+    if (voice->count && voice->state.accepted_samples < audio->encoded_wake_sample) return false;
+    audio->encoded_wait_slot = 0;
+    return true;
+}
+static int32_t audio_encoded_io(void *context, uint64_t session,
+    const pxa_audio_format_t *format, uint32_t operation, uint8_t *data, size_t size) {
+    if (operation == PXA_AUDIO_IO_CONFIGURE_ENCODED) {
+        pxa_esp_audio_state_t *audio = context;
+        audio_lock(audio);
+        int index = slot_index_locked(audio, session);
+        int ready = index >= 0 && audio->slots[index].graph_committed &&
+            !audio->voices[index]->state.queued_samples;
+        audio_unlock(audio);
+        if (!ready) return PXA_STATUS_BAD_STATE;
+    }
+    return pxa_esp_encoded_audio_io(context, session, format, operation, data, size, submit_encoded_pcm);
+}
+#endif
 
 static pxa_status_t audio_play_tone(void *context, uint64_t session,
                                      const pxa_audio_tone_t *tone) {
@@ -262,19 +326,19 @@ static pxa_status_t audio_play_tone(void *context, uint64_t session,
     audio_lock(audio);
     int index = slot_index_locked(audio, session);
     pxa_status_t status = index < 0 ? PXA_STATUS_NOT_FOUND :
-        pxa_audio_mixer_tone(&audio->mixer->voices[index], tone);
+        pxa_audio_mixer_tone(audio->voices[index], tone);
     if (status == PXA_STATUS_OK) {
         ++audio->submitted_frames;
         ++audio->tone_commands;
 #if PXA_AUDIO_LATENCY_TRACE
-        unsigned packet = audio->mixer->voices[index].read;
-        while (audio->mixer->voices[index].packets[packet].next != PXA_AUDIO_MIXER_PACKETS)
-            packet = audio->mixer->voices[index].packets[packet].next;
+        unsigned packet = audio->voices[index]->read;
+        while (audio->voices[index]->packets[packet].next != PXA_AUDIO_MIXER_PACKETS)
+            packet = audio->voices[index]->packets[packet].next;
         esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: tone us=%lld session=%llu packet=%u duration=%u delay=%u queued=%u\n",
                  (long long)esp_timer_get_time(), (unsigned long long)session,
                  packet,
                  tone->duration_ms, tone->delay_ms,
-                 (unsigned)audio->mixer->voices[index].state.queued_samples);
+                 (unsigned)audio->voices[index]->state.queued_samples);
 #endif
         update_queue_peak(audio);
     }
@@ -287,8 +351,7 @@ static pxa_status_t audio_play_tone(void *context, uint64_t session,
         ++audio->queue_full_frames;
         ++audio->tone_dropped_commands;
     }
-    audio_unlock(audio);
-    if (status == PXA_STATUS_OK) audio_wake(audio);
+    audio_unlock_and_wake(audio, status == PXA_STATUS_OK);
     return status;
 }
 
@@ -304,18 +367,18 @@ static pxa_status_t audio_play_effect(void *context, uint64_t session,
      * has a unique track even if another group has identical layers. */
     uint8_t occupied = 0;
     if (index >= 0) for (unsigned slot = 0; slot < PXA_AUDIO_MIXER_PACKETS; ++slot) {
-        const pxa_audio_mixer_packet_t *p = &audio->mixer->voices[index].packets[slot];
+        const pxa_audio_mixer_packet_t *p = &audio->voices[index]->packets[slot];
         if (p->position < p->length) occupied |= 1u << slot;
     }
 #endif
     pxa_status_t status = index < 0 ? PXA_STATUS_NOT_FOUND :
-        pxa_audio_mixer_effect(&audio->mixer->voices[index], tones, count, track);
+        pxa_audio_mixer_effect(audio->voices[index], tones, count, track);
     if (status == PXA_STATUS_OK) {
         ++audio->submitted_frames;
         audio->tone_commands += count;
         update_queue_peak(audio);
 #if PXA_AUDIO_LATENCY_TRACE
-        const pxa_audio_mixer_voice_t *v = &audio->mixer->voices[index];
+        const pxa_audio_mixer_voice_t *v = audio->voices[index];
         for (unsigned slot = 0; slot < PXA_AUDIO_MIXER_PACKETS; ++slot) {
             const pxa_audio_mixer_packet_t *p = &v->packets[slot];
             if (p->kind == PXA_AUDIO_PACKET_EFFECT && p->position == 0 &&
@@ -337,8 +400,7 @@ static pxa_status_t audio_play_effect(void *context, uint64_t session,
         ++audio->queue_full_frames;
         audio->tone_dropped_commands += count;
     }
-    audio_unlock(audio);
-    if (status == PXA_STATUS_OK) audio_wake(audio);
+    audio_unlock_and_wake(audio, status == PXA_STATUS_OK);
     return status;
 }
 static pxa_status_t audio_stop_effect(void *context, uint64_t session, uint8_t track) {
@@ -347,7 +409,7 @@ static pxa_status_t audio_stop_effect(void *context, uint64_t session, uint8_t t
     audio_lock(audio);
     int index = slot_index_locked(audio, session);
     pxa_status_t status = index < 0 ? PXA_STATUS_NOT_FOUND :
-        pxa_audio_mixer_stop_effect(&audio->mixer->voices[index], track);
+        pxa_audio_mixer_stop_effect(audio->voices[index], track);
     audio_unlock(audio);
     return status;
 }
@@ -602,7 +664,7 @@ static pxa_status_t audio_query(void *context, uint64_t provider_session,
     audio_lock(audio);
     slot_index = slot_index_locked(audio, provider_session);
     if (slot_index >= 0) {
-        *state = audio->mixer->voices[slot_index].state;
+        *state = audio->voices[slot_index]->state;
     }
     audio_unlock(audio);
     return slot_index >= 0 ? PXA_STATUS_OK : PXA_STATUS_NOT_FOUND;
@@ -611,10 +673,16 @@ static pxa_status_t audio_query(void *context, uint64_t provider_session,
 static pxa_status_t audio_flush(void *context, uint64_t session) {
     pxa_esp_audio_state_t *audio = context;
     if (audio != &g_audio) return PXA_STATUS_INVALID_ARGUMENT;
+#if PXA_HAS_ENCODED_AUDIO
+    pxa_esp_encoded_audio_detach(session);
+#endif
     audio_lock(audio);
     int index = slot_index_locked(audio, session);
     if (index >= 0) {
-        pxa_audio_mixer_flush(&audio->mixer->voices[index]);
+#if PXA_HAS_ENCODED_AUDIO
+        if (audio->encoded_wait_slot==index+1) audio->encoded_wait_slot=0;
+#endif
+        pxa_audio_mixer_flush(audio->voices[index]);
         audio->slots[index].asset_active = 0;
         audio->slots[index].asset_guest_paused = 0;
     }
@@ -631,17 +699,26 @@ static pxa_status_t audio_flush(void *context, uint64_t session) {
 static void audio_close(void *context, uint64_t provider_session) {
     pxa_esp_audio_state_t *audio = (pxa_esp_audio_state_t *)context;
     int slot_index;
+    pxa_audio_mixer_voice_t *retired = NULL;
     uint8_t asset_active = 0;
     if (audio != &g_audio) return;
+#if PXA_HAS_ENCODED_AUDIO
+    pxa_esp_encoded_audio_detach(provider_session);
+#endif
     audio_lock(audio);
     slot_index = slot_index_locked(audio, provider_session);
     if (slot_index >= 0) {
         asset_active = audio->slots[slot_index].asset_active;
-        pxa_audio_mixer_reset(&audio->mixer->voices[slot_index]);
+#if PXA_HAS_ENCODED_AUDIO
+        if (audio->encoded_wait_slot==slot_index+1) audio->encoded_wait_slot=0;
+#endif
+        retired = audio->voices[slot_index];
+        audio->voices[slot_index] = NULL;
         audio->slots[slot_index].active = 0;
         audio->slots[slot_index].closing = 1;
     }
     audio_unlock(audio);
+    pxa_memory_release(retired);
     if (slot_index >= 0 && asset_active) {
         pxa_esp_audio_asset_sink_t asset_sink;
         if (asset_sink_snapshot(audio, &asset_sink)) {
@@ -667,9 +744,12 @@ static void audio_close(void *context, uint64_t provider_session) {
 static void audio_output_tick(pxa_esp_audio_state_t *audio) {
     pxa_esp_audio_sink_t sink;
     int16_t output[PXA_AUDIO_MIXER_FRAME];
+#if PXA_HAS_ENCODED_AUDIO
+    bool wake_encoded = false;
+#endif
     if (!sink_snapshot(audio, &sink)) return;
     audio_lock(audio);
-    if (!audio->suspended && audio->mixer != NULL) {
+    if (!audio->suspended && audio->initialized) {
         /* The physical sink is a nonblocking bounded queue. Serialize with
          * suspension so no old frame can be submitted after its flush. */
         struct {
@@ -683,7 +763,8 @@ static void audio_output_tick(pxa_esp_audio_state_t *audio) {
             uint32_t startup_waited;
         } checkpoint[PXA_AUDIO_MIXER_VOICES];
         for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i) {
-            pxa_audio_mixer_voice_t *v = &audio->mixer->voices[i];
+            pxa_audio_mixer_voice_t *v = audio->voices[i];
+            if (!v) continue;
             checkpoint[i].state = v->state;
             checkpoint[i].read = v->read; checkpoint[i].count = v->count;
             checkpoint[i].started = v->started; checkpoint[i].startup_waited = v->startup_waited;
@@ -698,18 +779,20 @@ static void audio_output_tick(pxa_esp_audio_state_t *audio) {
         }
         int had_tone = 0;
         for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i) {
-            pxa_audio_mixer_voice_t *v = &audio->mixer->voices[i];
+            pxa_audio_mixer_voice_t *v = audio->voices[i];
+            if (!v) continue;
             for (unsigned j = 0; j < PXA_AUDIO_MIXER_PACKETS; ++j)
                 had_tone |= v->packets[j].position < v->packets[j].length && v->packets[j].kind;
         }
-        size_t count = pxa_audio_mixer_render(audio->mixer, output,
+        size_t count = pxa_audio_mixer_render_voices(audio->voices, output,
                                              PXA_AUDIO_MIXER_FRAME);
 #if PXA_AUDIO_LATENCY_TRACE
         /* One timestamp per starting FIFO packet, before sink submission.
          * The position check also detects a packet starting inside a frame. */
         for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i) {
+            if (!audio->voices[i]) continue;
             for (unsigned j = 0; j < PXA_AUDIO_MIXER_PACKETS; ++j) {
-                const pxa_audio_mixer_packet_t *p = &audio->mixer->voices[i].packets[j];
+                const pxa_audio_mixer_packet_t *p = &audio->voices[i]->packets[j];
                 if (p->kind == PXA_AUDIO_PACKET_TONE && checkpoint[i].position[j] == 0 && p->position != 0)
                     esp_log_write(ESP_LOG_INFO, "AudioTrace", "AudioTrace: render us=%lld voice=%u packet=%u duration=%u delay=%u\n",
                         (long long)esp_timer_get_time(), i, j,
@@ -725,7 +808,8 @@ static void audio_output_tick(pxa_esp_audio_state_t *audio) {
             ++audio->sink_rejected_frames;
             /* Backpressure preserves the exact sample and filter phase. */
             for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i) {
-                pxa_audio_mixer_voice_t *v = &audio->mixer->voices[i];
+                pxa_audio_mixer_voice_t *v = audio->voices[i];
+                if (!v) continue;
                 v->state = checkpoint[i].state;
                 v->read = checkpoint[i].read; v->count = checkpoint[i].count;
                 v->started = checkpoint[i].started; v->startup_waited = checkpoint[i].startup_waited;
@@ -741,9 +825,15 @@ static void audio_output_tick(pxa_esp_audio_state_t *audio) {
         } else if (count != 0) {
             ++audio->rendered_frames;
             audio->tone_frames += had_tone;
+#if PXA_HAS_ENCODED_AUDIO
+            wake_encoded = encoded_can_resume_locked(audio);
+#endif
         }
     }
     audio_unlock(audio);
+#if PXA_HAS_ENCODED_AUDIO
+    if (wake_encoded) pxa_esp_encoded_audio_writable();
+#endif
 }
 
 static void audio_output_task(void *argument) {
@@ -752,9 +842,10 @@ static void audio_output_task(void *argument) {
     for (;;) {
         int active = 0;
         audio_lock(audio);
-        if (!audio->suspended && audio->mixer) {
+        if (!audio->suspended && audio->initialized) {
             for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i) {
-                const pxa_audio_mixer_voice_t *v = &audio->mixer->voices[i];
+                const pxa_audio_mixer_voice_t *v = audio->voices[i];
+                if (!v) continue;
                 active |= v->count != 0;
                 for (unsigned j = 0; j < v->eq_count; ++j)
                     active |= v->eq[j].z1 != 0 || v->eq[j].z2 != 0;
@@ -776,7 +867,7 @@ static void audio_output_task(void *argument) {
 int pxa_esp_audio_set_pull_device(uint32_t rate, void (*wake)(void *), void *context) {
     if (rate < 16000 || rate > 48000 || !wake) return 0;
     audio_lock(&g_audio);
-    if (g_audio.mixer || g_audio.task) { audio_unlock(&g_audio); return 0; }
+    if (g_audio.initialized || g_audio.deinitializing) { audio_unlock(&g_audio); return 0; }
     g_audio.output_rate = rate; g_audio.device_wake = wake; g_audio.device_context = context;
     audio_unlock(&g_audio);
     return 1;
@@ -785,76 +876,95 @@ size_t pxa_esp_audio_render(int16_t *output, size_t capacity) {
     if (!output || !capacity || capacity > PXA_AUDIO_MIXER_FRAME) return 0;
     audio_lock(&g_audio);
     size_t rendered = 0;
-    if (!g_audio.suspended && g_audio.mixer) {
+    if (!g_audio.suspended && g_audio.initialized) {
         int tone = 0;
-        for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i)
+        for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i) {
+            const pxa_audio_mixer_voice_t *voice = g_audio.voices[i];
+            if (!voice || !voice->count || !voice->has_synthesis) continue;
             for (unsigned j = 0; j < PXA_AUDIO_MIXER_PACKETS; ++j) {
-                const pxa_audio_mixer_packet_t *p = &g_audio.mixer->voices[i].packets[j];
+                const pxa_audio_mixer_packet_t *p = &voice->packets[j];
                 tone |= p->position < p->length && p->kind != PXA_AUDIO_PACKET_PCM;
             }
-        rendered = pxa_audio_mixer_render(g_audio.mixer, output, capacity);
+        }
+        rendered = pxa_audio_mixer_render_voices(g_audio.voices, output, capacity);
         if (rendered) { ++g_audio.rendered_frames; g_audio.tone_frames += tone; }
     } else memset(output, 0, capacity * sizeof(*output));
+#if PXA_HAS_ENCODED_AUDIO
+    const bool wake_encoded = rendered && encoded_can_resume_locked(&g_audio);
+#endif
     audio_unlock(&g_audio);
+#if PXA_HAS_ENCODED_AUDIO
+    if (wake_encoded) pxa_esp_encoded_audio_writable();
+#endif
     return rendered;
 }
+static bool initialize_locked(void) {
+    if (g_audio.deinitializing) return false;
+    if (g_audio.initialized) return true;
+    if (pxa_esp_resource_memory_initialize() != PXA_STATUS_OK) return false;
+    if (!g_audio.device_wake && xTaskCreateWithCaps(audio_output_task, "pxa_audio",
+            PXA_ESP_AUDIO_TASK_STACK_SIZE, &g_audio, PXA_ESP_AUDIO_TASK_PRIORITY, &g_audio.task,
+            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) return false;
+    g_audio.initialized = true;
+    return true;
+}
+
 int pxa_esp_audio_initialize(void) {
     audio_lock(&g_audio);
-    if (g_audio.mixer != NULL) { audio_unlock(&g_audio); return 1; }
-    if (pxa_esp_resource_memory_initialize() != PXA_STATUS_OK) {
-        audio_unlock(&g_audio); return 0;
-    }
-    g_audio.mixer = pxa_memory_allocate(pxa_esp_device_resource_allocator(
-        PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO), sizeof(*g_audio.mixer));
-    if (g_audio.mixer == NULL) { audio_unlock(&g_audio); return 0; }
-    memset(g_audio.mixer, 0, sizeof(*g_audio.mixer));
-    if (!g_audio.device_wake && xTaskCreateWithCaps(audio_output_task, "pxa_audio",
-            PXA_ESP_AUDIO_TASK_STACK_SIZE, &g_audio,
-            PXA_ESP_AUDIO_TASK_PRIORITY, &g_audio.task,
-            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
-        pxa_memory_release(g_audio.mixer); g_audio.mixer = NULL;
-        audio_unlock(&g_audio); return 0;
-    }
+    bool ready = initialize_locked();
     audio_unlock(&g_audio);
-    return 1;
+    return ready;
 }
 
 void pxa_esp_audio_deinitialize(void) {
     audio_lock(&g_audio);
+    if (g_audio.deinitializing) { audio_unlock(&g_audio); return; }
+    g_audio.deinitializing = true;
+    g_audio.initialized = false;
     if (g_audio.task != NULL) {
-        vTaskDelete(g_audio.task);
+        vTaskDeleteWithCaps(g_audio.task);
         g_audio.task = NULL;
     }
     audio_unlock(&g_audio);
     pxa_esp_audio_reset_sessions();
     audio_lock(&g_audio);
-    pxa_audio_mixer_t *retired = g_audio.mixer;
-    g_audio.mixer = NULL;
+    g_audio.deinitializing = false;
     audio_unlock(&g_audio);
-    pxa_memory_release(retired);
 }
 
 #include "pxa_esp_capture.inc"
 
 void pxa_esp_audio_reset_sessions(void) {
-    if (capture.active) capture_close(NULL,capture.active);
+#if PXA_HAS_ENCODED_AUDIO
+    pxa_esp_encoded_audio_detach(0);
+#endif
+    capture_reset_sessions();
     pxa_esp_audio_sink_t sink;
+    pxa_audio_mixer_voice_t *retired[PXA_ESP_AUDIO_VOICE_COUNT];
     uint16_t active_mask = 0;
     uint16_t asset_mask = 0;
     uint16_t index;
     audio_lock(&g_audio);
     for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index) {
-        if (g_audio.slots[index].active || g_audio.slots[index].closing) {
+        pxa_esp_audio_slot_t *slot = &g_audio.slots[index];
+        if (slot->active) {
             active_mask |= (uint16_t)(UINT16_C(1) << index);
+            if (slot->asset_active) asset_mask |= (uint16_t)(UINT16_C(1) << index);
+            slot->active = 0;
+            slot->closing = 1;
+        } else if (!slot->closing) {
+            slot->provider_session = 0; /* Cancel an open still preparing its storage. */
         }
-        if (g_audio.slots[index].asset_active)
-            asset_mask |= (uint16_t)(UINT16_C(1) << index);
+        retired[index] = g_audio.voices[index];
+        g_audio.voices[index] = NULL;
     }
-    memset(g_audio.slots, 0, sizeof(g_audio.slots));
-    if (g_audio.mixer) memset(g_audio.mixer, 0, sizeof(*g_audio.mixer));
+#if PXA_HAS_ENCODED_AUDIO
+    g_audio.encoded_wait_slot=0;
+#endif
     g_audio.package_manifest = NULL;
     g_audio.package_root[0] = '\0';
     audio_unlock(&g_audio);
+    for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index) pxa_memory_release(retired[index]);
     {
         pxa_esp_audio_asset_sink_t asset_sink;
         if (asset_sink_snapshot(&g_audio, &asset_sink)) {
@@ -867,17 +977,20 @@ void pxa_esp_audio_reset_sessions(void) {
             }
         }
     }
-    if (!sink_snapshot(&g_audio, &sink) || sink.flush == NULL) return;
-    for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index) {
-        if ((active_mask & (uint16_t)(UINT16_C(1) << index)) != 0) {
-            sink.flush(sink.context, (uint8_t)index);
-        }
+    if (sink_snapshot(&g_audio, &sink) && sink.flush) {
+        for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index)
+            if (active_mask & (UINT16_C(1) << index)) sink.flush(sink.context, (uint8_t)index);
     }
+    /* Board callbacks identify voices by slot. Keep slots reserved until
+     * their stop/flush has returned so it cannot affect a newly opened voice. */
+    audio_lock(&g_audio);
+    for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index)
+        if (active_mask & (UINT16_C(1) << index)) memset(&g_audio.slots[index], 0, sizeof(g_audio.slots[index]));
+    audio_unlock(&g_audio);
 }
 
 void pxa_esp_audio_set_suspended(bool suspended) {
-    capture.suspended = suspended;
-    if (suspended && capture.active) capture_close(NULL,capture.active);
+    capture_set_suspended(suspended);
     pxa_esp_audio_sink_t pcm_sink;
     pxa_esp_audio_asset_sink_t asset_sink;
     uint16_t pcm_mask = 0;
@@ -905,7 +1018,10 @@ void pxa_esp_audio_set_suspended(bool suspended) {
                     0);
         }
     }
-    if (!suspended) audio_wake(&g_audio);
+    if (!suspended) {
+        audio_lock(&g_audio);
+        audio_unlock_and_wake(&g_audio, true);
+    }
     if (suspended && sink_snapshot(&g_audio, &pcm_sink) &&
         pcm_sink.flush != NULL) {
         for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index) {
@@ -927,6 +1043,9 @@ void pxa_esp_audio_backend(pxa_audio_backend_t *output) {
     output->open = audio_open;
     output->open_pcm = audio_open_pcm;
     output->open_pcm_buffered = audio_open_pcm_buffered;
+#if PXA_HAS_ENCODED_AUDIO
+    output->encoded_io = audio_encoded_io;
+#endif
     output->commit = audio_commit;
     output->submit = audio_submit;
     output->query = audio_query;
@@ -950,12 +1069,9 @@ void pxa_esp_audio_snapshot(pxa_esp_audio_snapshot_t *output) {
     uint16_t index;
     if (output == NULL) return;
     memset(output, 0, sizeof(*output));
-    if (g_audio.mixer != NULL) {
-        output->queue_capacity = PXA_AUDIO_MIXER_VOICES * PXA_AUDIO_MIXER_PACKETS;
-        output->queue_storage_bytes = sizeof(*g_audio.mixer);
-    }
-    if (g_audio.task != NULL) output->task_stack_bytes = PXA_ESP_AUDIO_TASK_STACK_SIZE;
     audio_lock(&g_audio);
+    if (g_audio.initialized) output->queue_capacity = PXA_AUDIO_MIXER_VOICES * PXA_AUDIO_MIXER_PACKETS;
+    if (g_audio.task != NULL) output->task_stack_bytes = PXA_ESP_AUDIO_TASK_STACK_SIZE;
     output->submitted_frames = g_audio.submitted_frames;
     output->rendered_frames = g_audio.rendered_frames;
     output->queue_full_frames = g_audio.queue_full_frames;
@@ -971,7 +1087,10 @@ void pxa_esp_audio_snapshot(pxa_esp_audio_snapshot_t *output) {
     output->peak_queued_frames = g_audio.peak_queued_frames;
     for (index = 0; index < PXA_ESP_AUDIO_VOICE_COUNT; ++index) {
         if (g_audio.slots[index].active) output->active_sessions++;
-        if (g_audio.mixer) output->queued_frames += g_audio.mixer->voices[index].count;
+        if (g_audio.voices[index]) {
+            output->queued_frames += g_audio.voices[index]->count;
+            output->queue_storage_bytes += sizeof(*g_audio.voices[index]);
+        }
     }
     audio_unlock(&g_audio);
 }

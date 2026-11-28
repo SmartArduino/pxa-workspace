@@ -12,10 +12,83 @@
 #include <lvgl.h>
 #include <src/draw/sw/blend/lv_draw_sw_blend_private.h>
 #include <driver/ppa.h>
+#include <esp_async_color_convert.h>
 #include <esp_memory_utils.h>
 #include <esp_timer.h>
 #include <esp_log.h>
 #include <freertos/semphr.h>
+#endif
+
+#ifdef ESP_PLATFORM
+static async_color_convert_handle_t frame_copy;
+#endif
+
+void espp4_a_init_frame_copy() {
+#ifdef ESP_PLATFORM
+    // The Host and the display task can each have a transfer in flight.
+    async_color_convert_config_t config{};
+    config.backlog = 2;
+    config.dma_burst_size = 128;
+    if (esp_async_color_convert_install_dma2d(&config, &frame_copy) != ESP_OK)
+        ESP_LOGW("espp4_pixels", "DMA2D frame copy unavailable");
+#endif
+}
+
+void espp4_a_copy_frame(void* output, const void* input, size_t bytes) {
+#ifdef ESP_PLATFORM
+    constexpr size_t line = CONFIG_CACHE_L2_CACHE_LINE_SIZE;
+    constexpr size_t row_bytes = 1024;
+    constexpr size_t max_rows = 0x3fff; // DMA2D descriptor dimensions are 14-bit.
+    static_assert(row_bytes % line == 0);
+    if (frame_copy && bytes >= 32 * 1024 && bytes <= max_rows * row_bytes &&
+        !((uintptr_t(output) | uintptr_t(input)) & 1u) &&
+        esp_ptr_external_ram(input) && esp_ptr_external_ram(output)) {
+        // Only invalidate whole, exclusively written destination cache lines.
+        // Guest linear memory and the letterboxed LCD rectangle can both
+        // start partway into a line. Keep adjacent pixels owned by the CPU.
+        const size_t head = -uintptr_t(output) & (line - 1);
+        const size_t rows = (bytes - head) / row_bytes;
+        const size_t end = head + rows * row_bytes;
+        auto* out = static_cast<uint8_t*>(output);
+        const auto* in = static_cast<const uint8_t*>(input);
+        async_color_convert_request_t request{};
+        request.src_buffer = in + head;
+        request.dst_buffer = out + head;
+        request.src_stride = request.dst_stride = request.copy_width = row_bytes / 2;
+        request.src_height = request.dst_height = request.copy_height = rows;
+        request.src_color_format = request.dst_color_format = ESP_COLOR_FOURCC_RGB16;
+        if (esp_color_convert_blocking(frame_copy, &request, -1) == ESP_OK) {
+            std::memcpy(out, in, head);
+            std::memcpy(out + end, in + end, bytes - end);
+            return;
+        }
+    }
+#endif
+    std::memcpy(output, input, bytes);
+}
+
+#ifdef ESP_PLATFORM
+bool espp4_a_copy_video_rows(uint8_t* out, uint32_t stride, const uint8_t* in,
+                             uint32_t width, uint32_t height) {
+    const uint32_t row_bytes = width * 2;
+    // Tight frames use the existing contiguous copy. Protect the first and
+    // last cache lines of a Guest subrange by copying its end rows on the CPU.
+    if (!frame_copy || row_bytes >= stride || row_bytes < CONFIG_CACHE_L2_CACHE_LINE_SIZE ||
+        height < 4 || height > 0x3fff || stride / 2 > 0x3fff ||
+        size_t(row_bytes) * height < 32 * 1024 || ((uintptr_t(out) | uintptr_t(in) | stride) & 1) ||
+        !esp_ptr_external_ram(in) || !esp_ptr_external_ram(out)) return false;
+    async_color_convert_request_t request{};
+    request.src_buffer = in + row_bytes;
+    request.dst_buffer = out + stride;
+    request.src_stride = request.copy_width = width;
+    request.dst_stride = stride / 2;
+    request.src_height = request.dst_height = request.copy_height = height - 2;
+    request.src_color_format = request.dst_color_format = ESP_COLOR_FOURCC_RGB16;
+    if (esp_color_convert_blocking(frame_copy, &request, -1) != ESP_OK) return false;
+    std::memcpy(out, in, row_bytes);
+    std::memcpy(out + size_t(height - 1) * stride, in + size_t(height - 1) * row_bytes, row_bytes);
+    return true;
+}
 #endif
 
 #if defined(ESP_PLATFORM) && PXA_ESPP4_PIXEL_ACCEL && !CONFIG_ESP32P4_SELECTS_REV_LESS_V3

@@ -3,12 +3,21 @@
 #include "esp_mosaico_hardware.h"
 #include "pxa_board_api.h"
 #include <esp_lv_adapter.h>
+#if PXA_USE_ESP_OPENH264
+#include "pxa/pxa_esp_video.h"
+#include "pxa_video_codecs.h"
+#endif
 
 namespace {
 
 EspMosaicoHardware g_hardware;
 
-bool Initialize(void*) { return g_hardware.Initialize(); }
+bool Initialize(void*) {
+#if PXA_USE_ESP_OPENH264
+    if (!pxa_esp_video_set_backend(pxa_video_codecs_backend())) return false;
+#endif
+    return g_hardware.Initialize();
+}
 lv_display_t* Display(void*) { return g_hardware.display(); }
 void DisplayProfile(void*, pxsys_display_profile_t* output) {
     if (output == nullptr) return;

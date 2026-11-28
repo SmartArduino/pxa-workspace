@@ -8,20 +8,24 @@ import re
 
 ROOT=Path(__file__).resolve().parents[1]
 
-def audit(map_path, idf_root, firmware_root, compiler, policy):
+def audit(map_path, idf_root, firmware_root, compiler, policy, esp_openh264_root=None):
     build=map_path.resolve().parent
     toolchain=compiler.resolve().parent.parent
     roots={'idf':idf_root.resolve(),'firmware':firmware_root.resolve(),'toolchain':toolchain}
+    if esp_openh264_root is not None:
+        roots['esp_openh264'] = esp_openh264_root.resolve()
     failures=[];selected=[]
     for raw in sorted(set(re.findall(r'^LOAD (.+\.a)$',map_path.read_text(),re.M))):
         path=Path(raw)
         if not path.is_absolute():path=build/path
         path=path.resolve()
-        if path.is_relative_to(build):continue # Compiled sources are checked separately.
+        if path.is_relative_to(build) and not (
+            esp_openh264_root is not None and path.is_relative_to(roots['esp_openh264'])
+        ):continue # Compiled sources are checked separately.
         matched=False
         for rule in policy:
-            root=roots[rule['root']]
-            if not path.is_relative_to(root):continue
+            root=roots.get(rule['root'])
+            if root is None or not path.is_relative_to(root):continue
             relative=path.relative_to(root).as_posix()
             if not re.fullmatch(rule['archive_pattern'],relative):continue
             license_path=root/rule['license']
@@ -40,9 +44,11 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('map','idf-root','firmware-root','compiler'):parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--report',type=Path)
+    parser.add_argument('--esp-openh264-root',type=Path)
     args=parser.parse_args()
     policy=json.loads((ROOT/'tools/system-binary-licenses.json').read_text())
-    selected,failures=audit(args.map,args.idf_root,args.firmware_root,args.compiler,policy)
+    selected,failures=audit(args.map,args.idf_root,args.firmware_root,args.compiler,policy,
+                            args.esp_openh264_root)
     if args.report:
         args.report.parent.mkdir(parents=True,exist_ok=True)
         args.report.write_text(json.dumps({'archives':selected,'failures':failures},indent=2)+'\n')

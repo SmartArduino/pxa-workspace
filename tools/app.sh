@@ -145,6 +145,13 @@ if [[ -n "$board_target" && ${#targets[@]} -gt 1 &&
   targets=("$board_target" "${reordered[@]}")
 fi
 primary_target="${targets[0]}"
+memory_targets=("${targets[@]}")
+if [[ "$target_spec" =~ ^[[:space:]]*wasm[[:space:]]*$ ]]; then
+  memory_targets=(wasm)
+elif [[ "$requested_wasm" -eq 1 && "$aot_only" -eq 0 ]]; then
+  memory_targets+=(wasm)
+fi
+export PXA_PACKAGE_MEMORY_TARGETS="$(IFS=,; echo "${memory_targets[*]}")"
 
 if [[ "$requested_wasm" -eq 1 && ${#targets[@]} -gt 1 ]]; then
   echo "Building architectures: wasm, ${targets[*]}" >&2

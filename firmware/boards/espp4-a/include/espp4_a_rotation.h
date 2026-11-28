@@ -15,6 +15,7 @@ public:
     RotationEngine& operator=(const RotationEngine&) = delete;
     bool Rotate(const uint16_t* source, uint16_t* output,
                 uint32_t native_width, uint32_t native_height, uint8_t rotation);
+    bool HardwareActive() const { return client_ && !disabled_; }
     void Disable() { disabled_ = true; }
     Stats TakeStats() { const auto result = stats_; stats_ = {}; return result; }
 private:

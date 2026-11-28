@@ -9,8 +9,8 @@ static inline void pxa_esp_resource_psram_limits(size_t total, int automatic,
     *temporary = automatic ? total / 4u : configured_temporary;
     if (*temporary > *limit) *temporary = *limit;
 }
-static inline size_t pxa_esp_resource_psram_available(size_t total, size_t free_bytes) {
-    size_t reserve = total / 8u;
+static inline size_t pxa_esp_resource_psram_available(size_t total, size_t free_bytes, size_t headroom) {
+    size_t reserve = headroom ? headroom : total / 8u;
     if (reserve < 256u * 1024u) reserve = 256u * 1024u;
     return free_bytes > reserve ? free_bytes - reserve : 0;
 }

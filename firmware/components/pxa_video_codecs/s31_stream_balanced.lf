@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: Apache-2.0
+# Input section ordinals are checked against this BALANCED archive's hash.
+# Cold CAVLC paths and unused deblock/packing code stay accessible in flash.
+[mapping:pxa_gamekit_stream_asm]
+archive: libesp_openh264.a
+entries:
+    cabac_decoder (noflash)
+    cabac_pie (noflash)
+    mc_pie (noflash)
+
+[sections:pxa_s31_hot_parse_mb_syn_cavlc]
+entries:
+    .iram1.0
+    .iram1.1
+    .iram1.2
+    .iram1.3
+
+[scheme:pxa_s31_parse_mb_syn_cavlc]
+entries:
+    iram -> flash_text
+    pxa_s31_hot_parse_mb_syn_cavlc -> iram0_text
+
+[mapping:pxa_s31_parse_mb_syn_cavlc]
+archive: libesp_openh264.a
+entries:
+    parse_mb_syn_cavlc (pxa_s31_parse_mb_syn_cavlc)
+
+[sections:pxa_s31_hot_decode_slice]
+entries:
+    .iram1.1
+    .iram1.2
+    .iram1.3
+    .iram1.4
+    .iram1.5
+    .iram1.6
+    .iram1.7
+    .iram1.8
+    .iram1.9
+    .iram1.10
+    .iram1.12
+    .iram1.14
+    .iram1.15
+
+[scheme:pxa_s31_decode_slice]
+entries:
+    iram -> flash_text
+    pxa_s31_hot_decode_slice -> iram0_text
+
+[mapping:pxa_s31_decode_slice]
+archive: libesp_openh264.a
+entries:
+    decode_slice (pxa_s31_decode_slice)
+
+[sections:pxa_s31_hot_rec_mb]
+entries:
+    .iram1.0
+    .iram1.1
+    .iram1.2
+    .iram1.3
+    .iram1.4
+    .iram1.5
+    .iram1.6
+    .iram1.9
+    .iram1.10
+    .iram1.11
+    .iram1.12
+
+[scheme:pxa_s31_rec_mb]
+entries:
+    iram -> flash_text
+    pxa_s31_hot_rec_mb -> iram0_text
+
+[mapping:pxa_s31_rec_mb]
+archive: libesp_openh264.a
+entries:
+    rec_mb (pxa_s31_rec_mb)
+
+[sections:pxa_s31_hot_mc_pie_wrap]
+entries:
+    .iram1.2
+    .iram1.7
+    .iram1.13
+    .iram1.15
+    .iram1.16
+    .iram1.19
+    .iram1.23
+    .iram1.27
+    .iram1.29
+    .iram1.30
+    .iram1.31
+    .iram1.32
+    .iram1.33
+    .iram1.34
+    .iram1.38
+    .iram1.39
+    .iram1.40
+
+[scheme:pxa_s31_mc_pie_wrap]
+entries:
+    iram -> flash_text
+    pxa_s31_hot_mc_pie_wrap -> iram0_text
+
+[mapping:pxa_s31_mc_pie_wrap]
+archive: libesp_openh264.a
+entries:
+    mc_pie_wrap (pxa_s31_mc_pie_wrap)

@@ -1,6 +1,7 @@
 #include "pxa_test_platform.h"
 #include <string.h>
 #define ESP_PLATFORM 1
+#define PXA_HAS_ENCODED_AUDIO 1
 #include "../src/services/pxa_esp_audio.c"
 
 static unsigned depth, locked, played, stopped, paused, resumed;
@@ -9,6 +10,19 @@ static uint64_t music_session;
 static unsigned music_plays, music_closes;
 static bool music_initially_paused;
 static pxa_audio_playback_event_t music_event;
+static unsigned encoded_wakes;
+void pxa_esp_encoded_audio_writable(void) {
+    assert(!locked);
+    ++encoded_wakes;
+}
+void pxa_esp_encoded_audio_detach(uint64_t session) { (void)session; }
+int32_t pxa_esp_encoded_audio_io(void *context, uint64_t session,
+    const pxa_audio_format_t *format, uint32_t op, uint8_t *data,
+    size_t bytes, pxa_audio_submit_fn submit_callback) {
+    (void)context; (void)session; (void)format; (void)op;
+    (void)data; (void)bytes; (void)submit_callback;
+    return PXA_STATUS_UNSUPPORTED;
+}
 static int reject, fail_alloc, fail_task;
 static int16_t rendered[PXA_AUDIO_MIXER_FRAME];
 void test_log(const char *tag, const char *format, ...) { (void)tag; (void)format; }
@@ -29,8 +43,8 @@ int xTaskCreateWithCaps(void (*fn)(void *), const char *name, unsigned stack,
     if (fail_task) return 0;
     *task = context; return pdPASS;
 }
-void vTaskDelete(TaskHandle_t task) { assert(task == &g_audio); }
-void xTaskNotifyGive(TaskHandle_t task) { (void)task; }
+void vTaskDeleteWithCaps(TaskHandle_t task) { assert(task == &g_audio); }
+void xTaskNotifyGive(TaskHandle_t task) { assert(task && locked); }
 uint32_t ulTaskNotifyTake(int clear, TickType_t wait) { (void)clear; (void)wait; return 0; }
 TickType_t xTaskGetTickCount(void) { return 0; }
 void vTaskDelayUntil(TickType_t *a, TickType_t b) { (void)a; (void)b; }
@@ -119,6 +133,25 @@ static void music_close(void *ctx, uint64_t session) {
     assert(ctx == &music_event && !locked && !depth);
     if (session==music_session) { ++music_closes; music_event.instance=0; }
 }
+static pxa_audio_mixer_t mixer_snapshot(void) {
+    pxa_audio_mixer_t result = {0};
+    for (unsigned i = 0; i < PXA_AUDIO_MIXER_VOICES; ++i)
+        if (g_audio.voices[i]) result.voices[i] = *g_audio.voices[i];
+    return result;
+}
+static void assert_mixer_matches(const pxa_audio_mixer_t *expected) {
+    pxa_audio_mixer_t actual = mixer_snapshot();
+    assert(!memcmp(expected, &actual, sizeof(actual)));
+}
+static void assert_voice_storage(unsigned voices) {
+    pxa_esp_audio_snapshot_t stats;
+    pxa_esp_audio_snapshot(&stats);
+    assert(stats.active_sessions == voices);
+    assert(stats.queue_storage_bytes == voices * sizeof(pxa_audio_mixer_voice_t));
+    pxa_memory_stats_t budget;
+    assert(!pxa_memory_budget_stats(&audio_budget, audio_allocator.owner, &budget));
+    assert(budget.charged[PXA_MEMORY_EXTERNAL] == voices * pxa_memory_allocation_bytes(sizeof(pxa_audio_mixer_voice_t)));
+}
 int main(void) {
     pxa_audio_backend_t b;
     pxa_audio_format_t f;
@@ -129,14 +162,24 @@ int main(void) {
     for (unsigned i = 0; i < 320; ++i) { pcm[2*i] = 0xe8; pcm[2*i+1] = 3; }
     pxa_esp_audio_backend(&b);
     pxa_esp_audio_set_sink(submit, flush, NULL);
+    fail_task = 1;
+    assert(b.open(b.context, 1, &f, &a) == PXA_STATUS_RESOURCE_LIMIT);
+    assert(!g_audio.initialized); fail_task = 0;
+    assert(pxa_esp_audio_initialize());
+    assert_voice_storage(0);
     fail_alloc = 1;
     assert(b.open(b.context, 1, &f, &a) == PXA_STATUS_RESOURCE_LIMIT);
-    fail_alloc = 0; fail_task = 1;
-    assert(b.open(b.context, 1, &f, &a) == PXA_STATUS_RESOURCE_LIMIT);
-    assert(!g_audio.mixer); fail_task = 0;
+    assert_voice_storage(0);
+    fail_alloc = 0;
     assert(b.open(b.context, 1, &f, &a) == PXA_STATUS_OK);
+    assert_voice_storage(1);
+    fail_alloc = 1;
+    assert(b.open(b.context, 1, &f, &c) == PXA_STATUS_RESOURCE_LIMIT);
+    assert_voice_storage(1);
+    fail_alloc = 0;
     assert(b.open(b.context, 1, &f, &c) == PXA_STATUS_OK && a != c);
     assert(b.open(b.context, 1, &f, &d) == PXA_STATUS_OK);
+    assert_voice_storage(3);
     assert(b.open(b.context, 1, &f, &exhausted) == PXA_STATUS_RESOURCE_LIMIT);
     assert(b.submit(b.context, a, pcm, sizeof(pcm)) == PXA_STATUS_BAD_STATE);
     assert(b.commit(b.context, a, &g) == PXA_STATUS_OK);
@@ -169,12 +212,26 @@ int main(void) {
     for (unsigned i = 0; i < 49; ++i) audio_output_tick(&g_audio);
     assert(b.query(b.context, c, &state) == PXA_STATUS_OK && state.queued_samples == 0);
     assert(state.accepted_samples == 16640);
+    for (unsigned pass = 0; pass < 2; ++pass) {
+        for (unsigned packet = 0; packet < 4; ++packet)
+            assert(submit_encoded_pcm(&g_audio, c, pcm, sizeof(pcm)) == PXA_STATUS_OK);
+        assert(submit_encoded_pcm(&g_audio, c, pcm, sizeof(pcm)) == PXA_STATUS_WOULD_BLOCK);
+        reject = 1;
+        audio_output_tick(&g_audio);
+        assert(encoded_wakes == pass); /* A rejected physical write rolls back the mixer. */
+        reject = 0;
+        while (g_audio.voices[1]->count) {
+            if (pass) pxa_esp_audio_render(rendered, PXA_AUDIO_MIXER_FRAME);
+            else audio_output_tick(&g_audio);
+        }
+        assert(encoded_wakes == pass + 1 && !g_audio.encoded_wait_slot);
+    }
     /* Rejected physical output must preserve all parallel layer samples. */
     pxa_audio_tone_t layers[2] = {tone, tone};
     layers[0].waveform = PXA_AUDIO_TONE_NOISE;
     layers[1].delay_ms = 10;
     assert(b.play_effect(b.context, c, layers, 2, 0) == PXA_STATUS_OK);
-    pxa_audio_mixer_t checkpoint = *g_audio.mixer;
+    pxa_audio_mixer_t checkpoint = mixer_snapshot();
     int16_t expected[PXA_AUDIO_MIXER_FRAME];
     pxa_audio_mixer_render(&checkpoint, expected, PXA_AUDIO_MIXER_FRAME);
     reject = 1; audio_output_tick(&g_audio);
@@ -261,7 +318,7 @@ int main(void) {
     f = (pxa_audio_format_t){11025, 2, 20};
     /* Legacy sinks do not publish OPEN_PCM; configure the shared renderer
      * through its internal opener to exercise the existing rollback path. */
-    assert(!audio_open_format(b.context, &f, NULL, &a));
+    assert(!audio_open_format(b.context, &f, NULL, &a, false));
     g.gain_db_q8 = -6 * 256;
     assert(!b.commit(b.context, a, &g));
     for (unsigned packet = 0; packet < 4; ++packet) {
@@ -269,27 +326,27 @@ int main(void) {
             pcm[i] = (uint8_t)(i * 13753u + packet * 37219u);
         assert(!b.submit(b.context, a, pcm, sizeof(pcm)));
     }
-    while (g_audio.mixer->voices[0].count) {
-        pxa_audio_mixer_t before = *g_audio.mixer, after = before;
+    while (g_audio.voices[0]->count) {
+        pxa_audio_mixer_t before = mixer_snapshot(), after = before;
         assert(pxa_audio_mixer_render(&after, expected, PXA_AUDIO_MIXER_FRAME));
         reject = 1;
         for (unsigned retry = 0; retry < 2; ++retry) {
             audio_output_tick(&g_audio);
-            assert(!memcmp(&before, g_audio.mixer, sizeof(before)));
+            assert_mixer_matches(&before);
         }
         reject = 0;
         audio_output_tick(&g_audio);
         assert(!memcmp(expected, rendered, sizeof(expected)));
-        assert(!memcmp(&after, g_audio.mixer, sizeof(after)));
+        assert_mixer_matches(&after);
     }
     b.close(b.context, a);
     pxa_esp_audio_deinitialize();
-    assert(!g_audio.mixer && !g_audio.task && !locked);
+    assert(!g_audio.initialized && !g_audio.task && !locked);
     assert(pxa_esp_audio_set_pull_device(48000, device_wake, &device_wakes));
     f = (pxa_audio_format_t){22050, 2, 20};
     assert(!b.open_pcm(b.context, &f, &info, &a));
     assert(info.sink_rate == 48000 && info.sink_channels == 1 && info.queue_frames == 1764);
-    assert(g_audio.mixer && !g_audio.task); /* No extra internal task stack. */
+    assert(g_audio.initialized && !g_audio.task); /* No extra internal task stack. */
     assert(!pxa_esp_audio_set_pull_device(16000, device_wake, &device_wakes));
     assert(!b.commit(b.context, a, &g));
     assert(!b.submit(b.context, a, pcm, sizeof(pcm)) && device_wakes == 1);
@@ -300,7 +357,7 @@ int main(void) {
     for (unsigned i = 0; i < 320; ++i) assert(!rendered[i]);
     pxa_esp_audio_set_suspended(false);
     size_t count = 0;
-    while ((count += pxa_esp_audio_render(rendered, 320)), g_audio.mixer->voices[0].count) {}
+    while ((count += pxa_esp_audio_render(rendered, 320)), g_audio.voices[0]->count) {}
     assert(count == 160u*48000u/22050u);
     assert(!b.query(b.context, a, &state) && state.accepted_samples == 160 && !state.queued_samples);
     b.close(b.context, a);
@@ -328,7 +385,7 @@ int main(void) {
         assert(!b.commit(b.context, retired_session, &native_gain));
         assert(!b.submit(b.context, retired_session, native_pcm, sizeof(native_pcm)));
         pxa_esp_audio_deinitialize();
-        assert(!g_audio.mixer && !g_audio.task && !locked);
+        assert(!g_audio.initialized && !g_audio.task && !locked);
         pxa_memory_stats_t retired_stats;
         assert(!pxa_memory_budget_stats(&audio_budget, audio_allocator.owner, &retired_stats));
         assert(!retired_stats.charged[PXA_MEMORY_EXTERNAL]);
@@ -351,7 +408,7 @@ int main(void) {
     if(PXA_AUDIO_MIXER_PACKETS>=24) {
         assert(pxa_esp_audio_set_pull_device(16000,device_wake,&device_wakes));
         assert(!b.open_pcm_buffered(b.context,&speech_format,&info,&a));
-        assert(info.queue_frames==7680 && g_audio.mixer->voices[0].buffered);
+        assert(info.queue_frames==7680 && g_audio.voices[0]->buffered);
         assert(!b.commit(b.context,a,&native_gain));
         int16_t sentence[320]; for(unsigned i=0;i<320;++i) sentence[i]=10000;
         assert(!b.submit(b.context,a,(uint8_t *)sentence,sizeof(sentence)));

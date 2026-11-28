@@ -159,6 +159,139 @@ class BinarySocketTransport:
         self.socket.close()
 
 
+_LAN_SRP_USER = b"PXADB LAN v2"
+# RFC 5054 Appendix A, the 3072-bit group used by ESP-IDF's SRP server.
+_LAN_SRP_PRIME = bytes.fromhex(
+    "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020B"
+    "BEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE135"
+    "6D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BF"
+    "B5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA4836"
+    "1C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077"
+    "096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C18"
+    "0E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA"
+    "956AE515D2261898FA051015728E5A8AAAC42DAD33170D04507A33A85521ABDF1"
+    "CBA64ECFB850458DBEF0A8AEA71575D060C7DB3970F85A6E1E4C7ABF5AE8CDB09"
+    "33D71E8C94E04A25619DCEE3D2261AD2EE6BF12FFA06D98A0864D87602733EC8"
+    "6A64521F2B18177B200CBBE117577A615D6C770988C0BAD946E208E24FA074E5"
+    "AB3143DB5BFCE0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF"
+)
+
+
+def lan_read_pairing(sock: socket.socket, size: int, deadline: float) -> bytes:
+    data = bytearray()
+    while len(data) < size:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Wi-Fi pairing timed out")
+        sock.settimeout(remaining)
+        part = sock.recv(size - len(data))
+        if not part:
+            raise OSError("Wi-Fi pairing was rejected")
+        data.extend(part)
+    return bytes(data)
+
+
+def lan_pairing_key(sock: socket.socket, pairing: str) -> bytes:
+    def digest(*parts: bytes) -> bytes:
+        return hashlib.sha512(b"".join(parts)).digest()
+
+    width = len(_LAN_SRP_PRIME)
+    modulus = int.from_bytes(_LAN_SRP_PRIME)
+    generator = 5
+    padded_generator = generator.to_bytes(width)
+    multiplier = int.from_bytes(digest(_LAN_SRP_PRIME, padded_generator))
+    private = secrets.randbits(256) or 1
+    public = pow(generator, private, modulus).to_bytes(width)
+    deadline = time.monotonic() + 8
+    sock.sendall(b"PXA6" + public)
+    hello = lan_read_pairing(sock, 16 + width, deadline)
+    salt, peer_public = hello[:16], hello[16:]
+    peer_value = int.from_bytes(peer_public)
+    scramble = int.from_bytes(digest(public, peer_public))
+    if not 0 < peer_value < modulus or not scramble:
+        raise OSError("Invalid Wi-Fi pairing server key")
+    password = int.from_bytes(digest(salt, digest(_LAN_SRP_USER, b":", pairing.encode("ascii"))))
+    base = (peer_value - multiplier * pow(generator, password, modulus)) % modulus
+    if not base:
+        raise OSError("Invalid Wi-Fi pairing shared key")
+    shared = pow(base, private + scramble * password, modulus)
+    key = digest(shared.to_bytes(width).lstrip(b"\0"))
+    group = bytes(a ^ b for a, b in zip(digest(_LAN_SRP_PRIME), digest(padded_generator)))
+    # ESP-IDF uses minimal public-key encodings in the authentication proofs.
+    client_public = public.lstrip(b"\0")
+    proof = digest(group, digest(_LAN_SRP_USER), salt, client_public, peer_public.lstrip(b"\0"), key)
+    sock.sendall(proof)
+    if not secrets.compare_digest(lan_read_pairing(sock, 64, deadline), digest(client_public, proof, key)):
+        raise OSError("Invalid Wi-Fi pairing server proof")
+    return hashlib.sha256(key).digest()
+
+
+class LanSocketPort:
+    """Firmware PXADB over mutually authenticated TLS on Wi-Fi."""
+
+    def __init__(self, target: str, timeout: float) -> None:
+        import ssl
+
+        if not getattr(ssl, "HAS_PSK", False):
+            raise PxaDbError("Wi-Fi PXADB requires Python 3.13+ with TLS-PSK support")
+        endpoint, separator, token_path = target.partition("|")
+        host, colon, port = endpoint.rpartition(":")
+        if not colon or not host or (separator and not token_path):
+            raise PxaDbError("Wi-Fi PXADB requires HOST:PORT")
+        if not separator:
+            if not sys.stdin.isatty():
+                raise PxaDbError("Wi-Fi PXADB requires --token FILE when no terminal is available")
+            from getpass import getpass
+        try:
+            address = (str(ipaddress.IPv4Address(host)), int(port))
+            if not 1 <= address[1] <= 65535:
+                raise ValueError
+            pairing = (pathlib.Path(token_path).read_text(encoding="ascii") if separator else
+                       getpass("Wi-Fi PXADB pairing code: ")).strip()
+            short_code = re.fullmatch(r"[0-9]{6}", pairing) is not None
+            if not short_code and not re.fullmatch(r"[0-9a-fA-F]{32}", pairing):
+                raise ValueError
+        except (OSError, EOFError, ValueError):
+            raise PxaDbError("Invalid Wi-Fi PXADB address or code; enter six digits or a legacy 32-character code") from None
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        # With a short code, authenticate a fresh key via SRP before TLS.
+        # Older firmware displays the random TLS key itself.
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_2
+        context.set_ciphers("PSK-AES128-GCM-SHA256")
+        try:
+            with socket.create_connection(address, timeout=max(8.0 if short_code else 3.0, timeout)) as raw:
+                key = lan_pairing_key(raw, pairing) if short_code else bytes.fromhex(pairing)
+                context.set_psk_client_callback(lambda _hint: ("pxadb", key))
+                self.socket = context.wrap_socket(raw)
+        except OSError:
+            raise PxaDbError("Unable to pair with Wi-Fi PXADB; check the address and current pairing code") from None
+        self.socket.settimeout(0.2)
+
+    @property
+    def in_waiting(self) -> int:
+        import select
+
+        return self.socket.pending() or int(bool(select.select([self.socket], [], [], 0)[0]))
+
+    def read(self, size: int) -> bytes:
+        try:
+            data = self.socket.recv(max(size, 4096))
+        except socket.timeout:
+            return b""
+        if not data:
+            raise PxaDbError("Wi-Fi PXADB peer disconnected")
+        return data
+
+    def write(self, data: bytes) -> int:
+        self.socket.sendall(data)
+        return len(data)
+
+    def close(self) -> None:
+        self.socket.close()
+
+
 class SerialLineReader:
     """Chunked line reader for pyserial ports.
 
@@ -171,7 +304,7 @@ class SerialLineReader:
     ``serial.Serial`` without changing the client's call sites.
     """
 
-    def __init__(self, serial_port: "serial.Serial", idle_timeout: float = 0.2) -> None:
+    def __init__(self, serial_port: "serial.Serial | LanSocketPort", idle_timeout: float = 0.2) -> None:
         self.serial_port = serial_port
         self.idle_timeout = idle_timeout
         self.buffer = bytearray()
@@ -352,6 +485,15 @@ class PxaDbClient:
         self._usb_awake_fd: int | None = None
         self.binary_transport: BinarySocketTransport | None = None
         self.tcp_token = ""
+        if port.startswith("lan:"):
+            self.serial = SerialLineReader(LanSocketPort(port[len("lan:"):], timeout))
+            self.upload_profile = "lan"
+            self.timeout = timeout
+            self.sequence = 0
+            self.pending_frames = []
+            self.log_subscribed = False
+            self.device_info = ""
+            return
         if port.startswith(("unix:", "tcp:")):
             self.binary_transport = BinarySocketTransport(port)
             if port.startswith("tcp:") and "|" in port:
@@ -2296,7 +2438,8 @@ def fetch_package_stream(client: PxaDbClient, source: pathlib.Path, remote: str,
     native_usb = properties.get("transport") in {"usb-cdc", "usb-jtag"}
     if via == "usb" and not native_usb:
         raise PxaDbError("selected device uses a USB-to-UART bridge; native USB transfer is unavailable")
-    if via in {"serial", "usb"} or (via == "auto" and native_usb and properties.get("fs_fast") == "1"):
+    if via in {"serial", "usb"} or (via == "auto" and
+            (properties.get("transport") == "lan" or (native_usb and properties.get("fs_fast") == "1"))):
         return False
     if info_properties(client.device_info).get("stream_fetch") != "1":
         if via == "wifi":
@@ -3065,8 +3208,10 @@ def add_connection_arguments(parser: argparse.ArgumentParser,
     )
     parser.add_argument("--connect", metavar="HOST:PORT",
                         help="connect to an authenticated PXADB2 TCP service")
+    parser.add_argument("--connect-lan", metavar="HOST:PORT",
+                        help="connect to Wi-Fi PXADB and prompt for its pairing code unless --token is provided")
     parser.add_argument("--token", metavar="FILE",
-                        help="read the PXADB2 TCP authentication token from FILE")
+                        help="read the TCP authentication token or Wi-Fi pairing code from FILE")
     parser.add_argument("--serial-profile", choices=("default", "mz79"),
                         help="explicit product control-line policy; mz79 keeps DTR set and RTS clear")
     parser.add_argument("--timeout", type=float, default=2.0, help="request timeout in seconds")
@@ -3356,8 +3501,13 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(arguments, "serial_profile", None):
         os.environ["PXADB_SERIAL_PROFILE"] = arguments.serial_profile
     connect = getattr(arguments, "connect", None)
+    connect_lan = getattr(arguments, "connect_lan", None)
     token_file = getattr(arguments, "token", None)
-    if connect:
+    if connect_lan:
+        if connect:
+            parser.error("--connect-lan cannot be used with --connect")
+        arguments.port = f"lan:{connect_lan}|{token_file}" if token_file else f"lan:{connect_lan}"
+    elif connect:
         if not token_file:
             parser.error("--connect requires --token FILE")
         try:
@@ -3368,7 +3518,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("PXADB2 token is invalid")
         arguments.port = f"tcp:{connect}|{token}"
     elif token_file:
-        parser.error("--token is only valid with --connect")
+        parser.error("--token is only valid with --connect or --connect-lan")
     try:
         return arguments.handler(arguments)
     except (PxaDbError, OSError, serial.SerialException if serial is not None else RuntimeError) as error:

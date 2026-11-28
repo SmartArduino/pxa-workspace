@@ -14,7 +14,7 @@ inline bool CanPresentDirectly(const pxa_esp_surface_frame_t& frame,
     const auto visible = [](const pxa_esp_surface_ui_alpha_plane_t& plane) {
         return plane.visible && plane.opacity && plane.pixels && plane.alpha;
     };
-    if (composition_required || pointer_visible || !frame.visible || !frame.pixels ||
+    if (composition_required || pointer_visible || !frame.visible || (!frame.pixels && !frame.native_draw) ||
         frame.format != PXA_SURFACE_FORMAT_RGB565 ||
         !(frame.flags & PXA_SURFACE_FLAG_PREFER_DIRECT_SCANOUT) ||
         frame.x || frame.y || frame.opaque_ui_region_count ||

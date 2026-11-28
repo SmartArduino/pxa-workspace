@@ -20,6 +20,19 @@ std::vector<uint8_t> sps(unsigned level,unsigned width=640,unsigned height=360,u
     return w.bytes;
 }
 int main(){
+    const uint8_t packet[]{0,0,1,0x65,0,0,3,1,0,0,0,0,1,0x06,1,0};
+    for (size_t end=0; end<=sizeof(packet); ++end) {
+        for (size_t from=0; from<=end; ++from) {
+            size_t expected=from;
+            while (expected+3<=end) {
+                const auto *s=packet+expected;
+                if (!s[0] && !s[1] && (s[2]==1 || (!s[2] && expected+4<=end && s[3]==1))) break;
+                ++expected;
+            }
+            if (expected+3>end) expected=end;
+            assert(pxa_video::start_code(packet,end,from)==expected);
+        }
+    }
     auto check=[](auto data){return pxa_video::check_sps(data.data(),data.size(),640,360);};
     assert(check(sps(40))==PXA_STATUS_OK);
     assert(check(sps(51))==PXA_STATUS_OK);

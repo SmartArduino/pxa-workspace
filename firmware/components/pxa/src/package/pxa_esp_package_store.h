@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "pxa/package.h"
+#include "pxa/permission.h"
 #include "pxa/posix/pxa_posix_ime.h"
 
 #ifdef __cplusplus
@@ -145,6 +146,7 @@ pxa_status_t pxa_esp_package_store_open_storage(const char *,struct pxa_esp_app_
     pxa_posix_installer_result_t *verification);
 bool pxa_esp_package_store_publish_transfer(const char *app_id);
 void pxa_esp_package_store_discard_transfers(void);
+bool pxa_esp_package_store_transfer_cleanup_pending(void);
 typedef void (*pxa_esp_transfer_progress_fn)(void *,uint8_t phase);
 pxa_status_t pxa_esp_package_store_move_volume_with_progress(const char *,uint64_t,uint8_t,
     pxa_esp_transfer_progress_fn,void *);
@@ -232,6 +234,9 @@ bool pxa_esp_package_store_refresh_permission_summary(const char *identity);
 /* Runtime owner may borrow its live session to update the display cache;
  * avoids mounting a second private filesystem for the same installation. */
 bool pxa_esp_package_store_refresh_permission_summary_with_storage(const char *,struct pxa_esp_app_storage *);
+void pxa_esp_package_store_publish_loaded_policy(const char *identity,
+    const struct pxa_esp_app_storage *storage, const pxa_package_manifest_t *manifest,
+    const pxa_permission_service_t *policy);
 
 /* Single runtime owner. begin leases the transaction mutex until step finishes
  * or close cancels it, so source files cannot change between verification and

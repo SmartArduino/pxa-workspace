@@ -23,6 +23,7 @@ struct ppa_srm_oper_config_t {
     struct { void* buffer; uint32_t buffer_size, pic_w, pic_h; ppa_srm_color_mode_t srm_cm; } out;
     ppa_srm_rotation_angle_t rotation_angle;
     float scale_x, scale_y;
+    bool byte_swap;
     ppa_alpha_update_mode_t alpha_update_mode;
     ppa_trans_mode_t mode;
 };

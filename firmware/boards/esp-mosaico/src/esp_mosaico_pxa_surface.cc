@@ -10,6 +10,7 @@
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/idf_additions.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_surface_transform.h>
 #include <pxa_render_accel.h>
@@ -39,9 +40,9 @@ void InitializeAcceleration() {
              g_ppa_srm != nullptr);
 }
 
-bool ResolvePresentArea(lv_area_t* area) {
-    pxa_esp_surface_present_info_t info;
-    if (!pxa_esp_surface_get_present_info(&info) || !info.visible) return false;
+template <typename Surface>
+bool ResolveSurfaceArea(const Surface& info, lv_area_t* area) {
+    if (!info.visible || !info.width || !info.height) return false;
     uint8_t scale = pxa_surface_fit_scale(info.width, info.height,
         mosaico_board::kWidth, mosaico_board::kHeight);
     if (scale == 0) scale = 1;
@@ -57,6 +58,11 @@ bool ResolvePresentArea(lv_area_t* area) {
         std::min<int32_t>(mosaico_board::kWidth, x + width) - 1,
         std::min<int32_t>(mosaico_board::kHeight, y + height) - 1};
     return mosaico_board::ValidDisplayArea(*area);
+}
+
+bool ResolvePresentArea(lv_area_t* area) {
+    pxa_esp_surface_present_info_t info;
+    return pxa_esp_surface_get_present_info(&info) && ResolveSurfaceArea(info, area);
 }
 
 void InvalidateSurface() {
@@ -209,14 +215,19 @@ bool Install(lv_display_t* display, DirectPresenter presenter, void* context) {
     g_direct_context = context;
     // Presenter blocks in PPA/DMA while Raster uses both CPUs for the next
     // frame. Only presentation and LVGL composition own the UI lock.
-    if (xTaskCreatePinnedToCore(Raster, "mosaico_raster", 4096, nullptr, 4,
-                    &g_raster, 1) != pdPASS) {
+#if CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+    constexpr auto stack_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+#else
+    constexpr auto stack_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+#endif
+    if (xTaskCreatePinnedToCoreWithCaps(Raster, "mosaico_raster", 4096, nullptr, 4,
+                    &g_raster, 1, stack_caps) != pdPASS) {
         g_display = nullptr;
         return false;
     }
-    if (xTaskCreatePinnedToCore(Presenter, "mosaico_pxa", 4096, nullptr, 5,
-                    &g_presenter, 1) != pdPASS) {
-        vTaskDelete(g_raster);
+    if (xTaskCreatePinnedToCoreWithCaps(Presenter, "mosaico_pxa", 4096, nullptr, 5,
+                    &g_presenter, 1, stack_caps) != pdPASS) {
+        vTaskDeleteWithCaps(g_raster);
         g_raster = nullptr;
         g_display = nullptr;
         return false;
@@ -258,6 +269,14 @@ static bool OpaqueOutsideSurface(const pxa_esp_surface_ui_alpha_plane_t& plane,
                    !opaque(y, surface.x2 + 1, mosaico_board::kWidth)) return false;
     }
     return true;
+}
+
+bool VisibleVideoArea(const pxa_esp_surface_frame_t& frame, lv_area_t* area) {
+    return frame.pixels && frame.format == PXA_SURFACE_FORMAT_RGB565 &&
+        frame.stride_bytes >= frame.width * sizeof(uint16_t) &&
+        !frame.opaque_ui_region_count && !frame.system_alpha_plane.visible &&
+        (!frame.ui_alpha_plane.visible || frame.suppress_guest_alpha) &&
+        ResolveSurfaceArea(frame, area);
 }
 
 bool DirectFrameEligible(const pxa_esp_surface_frame_t& frame) {

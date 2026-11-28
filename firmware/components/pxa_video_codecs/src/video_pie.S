@@ -3,7 +3,7 @@
  * Vector registers are caller-saved. CFG and SAR changes are restored.
  */
 #include "sdkconfig.h"
-#if CONFIG_IDF_TARGET_ESP32P4 && !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
+#if CONFIG_IDF_TARGET_ESP32S31 || (CONFIG_IDF_TARGET_ESP32P4 && !CONFIG_ESP32P4_SELECTS_REV_LESS_V3)
     .text
     .align 4
     .global pxa_video_pie_pack_row
@@ -22,6 +22,29 @@ pxa_video_pie_pack_row:
     bnez a3, 1b
     ret
     .size pxa_video_pie_pack_row, .-pxa_video_pie_pack_row
+
+    .align 4
+    .global pxa_video_pie_half444_row
+    .type pxa_video_pie_half444_row, @function
+/* Y(2x), U(x), V(x) -> RGB-converter YUV444 triplets, 16 pixels per block. */
+pxa_video_pie_half444_row:
+1:  esp.vld.128.ip q0, a0, 16
+    esp.vld.128.ip q1, a0, 16
+    esp.vunzip.8 q0, q1
+    esp.vld.128.ip q1, a1, 16
+    esp.vld.128.ip q2, a2, 16
+    esp.vzipt.8 q0, q1, q2
+    esp.vst.128.ip q0, a3, 16
+    esp.vst.128.ip q1, a3, 16
+    esp.vst.128.ip q2, a3, 16
+    addi a4, a4, -1
+    bnez a4, 1b
+    ret
+    .size pxa_video_pie_half444_row, .-pxa_video_pie_half444_row
+#endif
+
+#if CONFIG_IDF_TARGET_ESP32P4 && !CONFIG_ESP32P4_SELECTS_REV_LESS_V3
+    .text
 
     .align 4
     .global pxa_video_pie_average16
@@ -222,4 +245,62 @@ pxa_video_pie_chroma8:
     .rept 8
     .short 255
     .endr
+#endif
+
+#if CONFIG_IDF_TARGET_ESP32S31 && PXA_GAMEKIT_BOX420_360
+    .text
+/* Rounded unsigned byte average (a|b) - (((a^b)&0xfe)>>1). The mask
+ * prevents adjacent byte lanes from spilling across a 32-bit word shift. */
+    .macro video_byte_avg dest,left,right
+    esp.xorq q4,\left,\right
+    esp.andq q4,q4,q7
+    esp.vsr.u32 q4,q4
+    esp.orq \dest,\left,\right
+    esp.vsub.u8 \dest,\dest,q4
+    .endm
+    .macro video_box16 dest,row0,row1
+    esp.vld.128.ip q0,\row0,16
+    esp.vld.128.ip q1,\row0,16
+    esp.vld.128.ip q2,\row1,16
+    esp.vld.128.ip q3,\row1,16
+    esp.vunzip.8 q0,q1
+    esp.vunzip.8 q2,q3
+    video_byte_avg q0,q0,q1
+    video_byte_avg q2,q2,q3
+    video_byte_avg \dest,q0,q2
+    .endm
+    .align 4
+/* a0/a1: two luma rows; a2/a3: two chroma rows; a4: packed destination;
+ * a5: positive count of 64-column blocks, each producing 48 packed bytes. */
+    .global pxa_video_pie_box420_row
+    .type pxa_video_pie_box420_row,@function
+pxa_video_pie_box420_row:
+    esp.movx.r.cfg t4
+    mv t3,t4
+    andi t3,t3,-241
+    ori t3,t3,3
+    esp.movx.w.cfg t3
+    esp.movx.r.sar t5
+    li t3,1
+    esp.movx.w.sar t3
+    la t3,.Lbox420_mask
+    esp.vld.128.ip q7,t3,16
+1:  video_box16 q5,a0,a1
+    video_box16 q6,a0,a1
+    esp.vunzip.8 q5,q6
+    video_box16 q0,a2,a3
+    esp.vzipt.8 q0,q5,q6
+    esp.vst.128.ip q0,a4,16
+    esp.vst.128.ip q5,a4,16
+    esp.vst.128.ip q6,a4,16
+    addi a5,a5,-1
+    bnez a5,1b
+    esp.movx.w.sar t5
+    esp.movx.w.cfg t4
+    ret
+    .size pxa_video_pie_box420_row,.-pxa_video_pie_box420_row
+    .section .rodata,"a"
+    .align 4
+.Lbox420_mask:
+    .word 0xfefefefe,0xfefefefe,0xfefefefe,0xfefefefe
 #endif

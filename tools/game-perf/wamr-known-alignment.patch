@@ -1,19 +1,19 @@
 diff --git a/core/iwasm/compilation/aot_emit_memory.c b/core/iwasm/compilation/aot_emit_memory.c
-index 420096c..b98c985 100644
+index fb28a22f..ce855819 100644
 --- a/core/iwasm/compilation/aot_emit_memory.c
 +++ b/core/iwasm/compilation/aot_emit_memory.c
-@@ -732,6 +732,9 @@ aot_check_memory_overflow(AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+@@ -766,6 +766,9 @@ aot_check_memory_overflow(AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
      /* offset1 = offset + addr; */
      BUILD_OP(Add, offset_const, addr, offset1, "offset1");
  
 +    if (alignp != NULL)
 +        *alignp = aot_known_memory_alignment(offset1, comp_ctx->module);
 +
-     /* 1.1 offset + addr can overflow when it's memory64
-      * 2.1 Or when it's on 32-bit platform */
      if (is_memory64 || !is_target_64bit) {
+         /* Check whether integer overflow occurs in offset + addr */
+         LLVMBasicBlockRef check_integer_overflow_end;
 diff --git a/core/iwasm/compilation/aot_llvm.h b/core/iwasm/compilation/aot_llvm.h
-index 5bd75a3..42583ab 100644
+index 74978b35..cbe505e0 100644
 --- a/core/iwasm/compilation/aot_llvm.h
 +++ b/core/iwasm/compilation/aot_llvm.h
 @@ -53,6 +53,9 @@
@@ -27,7 +27,7 @@ index 5bd75a3..42583ab 100644
  #define LLVMBuildLoad2(builder, type, value, name) \
      LLVMBuildLoad(builder, value, name)
 diff --git a/core/iwasm/compilation/aot_llvm_extra.cpp b/core/iwasm/compilation/aot_llvm_extra.cpp
-index 3a3dc29..1f6c0b7 100644
+index cfa677d7..c27030e6 100644
 --- a/core/iwasm/compilation/aot_llvm_extra.cpp
 +++ b/core/iwasm/compilation/aot_llvm_extra.cpp
 @@ -55,6 +55,8 @@
@@ -39,7 +39,7 @@ index 3a3dc29..1f6c0b7 100644
  #if LLVM_VERSION_MAJOR >= 12
  #include <llvm/Analysis/AliasAnalysis.h>
  #endif
-@@ -438,3 +440,16 @@ aot_compress_aot_func_names(AOTCompContext *comp_ctx, uint32 *p_size)
+@@ -437,3 +439,16 @@ aot_compress_aot_func_names(AOTCompContext *comp_ctx, uint32 *p_size)
      *p_size = compressed_str_len;
      return compressed_str;
  }

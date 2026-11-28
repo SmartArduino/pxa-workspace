@@ -37,6 +37,7 @@ FIXTURE = r'''
 #define CONFIG_PXA_ENABLED 0
 #define CONFIG_PXADB_TEST_CONTROL 1
 #define CONFIG_PXADB_UART_SECONDARY 1
+#define CONFIG_PXADB_LAN 1
 #define ESP_LOGW(...) ((void)0)
 #define ESP_LOGI(...) ((void)0)
 #define ESP_LOGE(...) ((void)0)
@@ -52,6 +53,7 @@ constexpr unsigned kSessionIdleTimeoutMs=30000,kIoTimeout=1000,configTICK_RATE_H
 const char* kProtocol="PXADB1";
 const char* kFsUploadTemporary="TEMP_ROOT/orphan.partial";
 using QueueHandle_t=void*;
+struct StaticQueue_t {};
 using vprintf_like_t=int(*)(const char*,va_list);
 using TickType_t=unsigned;
 constexpr int pdTRUE=1;
@@ -94,9 +96,14 @@ int xQueueReceive(void* p,LogRecord* record,unsigned) {
     *record=q.rows.front();q.rows.pop_front();return pdTRUE;
 }
 void xQueueReset(void* p) {auto& q=*static_cast<Queue*>(p);std::lock_guard guard(q.lock);q.rows.clear();}
-std::deque<uint8_t> incoming[2];
-std::string outgoing[2];
+std::deque<uint8_t> incoming[kSessionCount];
+std::string outgoing[kSessionCount];
+bool lan_disconnected=false;
 int TransportRead(Transport transport,uint8_t* bytes,size_t capacity,uint32_t) {
+    if(transport==Transport::kLan && lan_disconnected) {
+        lan_disconnected=false;
+        return -2;
+    }
     auto& q=incoming[unsigned(transport)];size_t count=0;
     while(count<capacity&&!q.empty()){bytes[count++]=q.front();q.pop_front();}
     return int(count);
@@ -187,8 +194,8 @@ void emit(const char* format,...) {va_list args;va_start(args,format);PxaLogVpri
 
 int main() {
     using namespace pxadb;
-    ControlParser parsers[2];Queue queues[2];
-    for(unsigned i=0;i<2;++i){s_sessions[i].enabled=true;s_sessions[i].parser=&parsers[i];s_sessions[i].transport=Transport(i);s_sessions[i].log_queue=&queues[i];}
+    ControlParser parsers[kSessionCount];Queue queues[kSessionCount];
+    for(unsigned i=0;i<kSessionCount;++i){s_sessions[i].enabled=true;s_sessions[i].parser=&parsers[i];s_sessions[i].transport=Transport(i);s_sessions[i].log_queue=&queues[i];}
     // Without HELLO there is no active idle timer to release an upload lease.
     request(1,10,"FSPUT normal 4");assert(has(1,10,"ERR")&&!starts&&s_mutation_owner==kNoSession);
     // Fragments/overlong input on USB cannot consume a UART command or vice versa.
@@ -257,6 +264,16 @@ int main() {
     assert(!s_sessions[1].active&&s_sessions[0].active&&s_sessions[0].upload.file==original&&s_mutation_owner==0);
     now_us+=uint64_t(kSessionIdleTimeoutMs)*1000+1;PollControlSession(s_sessions[0]);
     assert(!s_sessions[0].active&&!s_sessions[0].upload.file&&s_mutation_owner==kNoSession);
+    request(0,91,"HELLO");request(2,92,"HELLO");request(0,93,"FSPUT normal 4");
+    feed(2,"PXADB1 94 PI");
+    lan_disconnected=true;PollControlSession(s_sessions[2]);
+    assert(!s_sessions[2].active&&s_sessions[2].parser->command_length==0);
+    assert(s_sessions[0].active&&s_sessions[0].upload.file&&s_mutation_owner==0);
+    request(0,95,"FSABORT");request(2,96,"HELLO");request(2,97,"FSPUT normal 4");
+    assert(s_sessions[2].upload.file&&s_mutation_owner==2);
+    lan_disconnected=true;PollControlSession(s_sessions[2]);
+    assert(!s_sessions[2].active&&!s_sessions[2].upload.file&&s_mutation_owner==kNoSession);
+    assert(s_sessions[0].active);
     assert(!reboots);
     puts("PXADB dual sessions: real parser/dispatcher, fragmented/bulk input, transfer fencing, independent unlock/logs, delayed ACK routing and reconnect generations passed");
 }
@@ -267,15 +284,15 @@ def main():
     production = (ROOT / 'firmware/components/pxadb/src_pxa_service.cc').read_text()
     source = FIXTURE.replace('// TYPES', '\n'.join(function(production, 'struct ' + name) + ';'
         for name in ('BulkUpload', 'LogRecord', 'LogScratch', 'FileUpload', 'ControlParser')))
-    start = production.index('#if CONFIG_PXADB_UART_SECONDARY\nconstexpr size_t kSessionCount')
+    start = production.index('#if CONFIG_PXADB_UART_SECONDARY\nconstexpr size_t kLocalSessionCount')
     end = production.index('std::atomic<bool> s_running', start)
     source = source.replace('// SESSION', production[start:end])
     groups = {
         '// FRAMING': ('bool WriteAll(', 'bool SendFrameTo(', 'bool SendFrame('),
-        '// TRANSFERS': ('bool FileUploadActive(', 'void AbortFileUpload(', 'void TryDiscardPackageTransfers(',
+        '// TRANSFERS': ('bool FileUploadActive(', 'void AbortFileUpload(', 'bool PackageCleanupPending(', 'void TryDiscardPackageTransfers(',
             'bool PackageTransfersReady(', 'void AbortTransfers(', 'bool IsMutatingCommand(',
             'bool AdmitMutation(', 'void ReleaseMutationIfIdle(', 'void HandleFsUnlock(', 'void HandleFsLock('),
-        '// LOGS': ('void RememberLog(', 'LogScratch* AcquireLogScratch(', 'void ReleaseLogScratch(',
+        '// LOGS': ('size_t LogHistoryIndex(', 'void RememberLog(', 'LogScratch* AcquireLogScratch(', 'void ReleaseLogScratch(',
             'bool AnyLogSubscribed(', 'void EnableLogCapture(', 'void DisableLogCapture(',
             'int PxaLogVprintf(const char* format, va_list arguments) {'),
         '// INPUT': ('bool InputSessionActive(', 'void SendInputAck(', 'bool QueueInput(', 'void QueueSessionCancel('),

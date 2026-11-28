@@ -16,8 +16,10 @@ add_subdirectory("${workspace}/firmware/managed_components/lvgl__lvgl" lvgl EXCL
 target_include_directories(lvgl PUBLIC "${workspace}/deps/pxa-system/simulator/desktop")
 target_link_libraries(lvgl PUBLIC SDL2::SDL2 Freetype::Freetype PNG::PNG)
 
-add_executable(mosaico_test "${CMAKE_CURRENT_LIST_DIR}/../lvgl_partial_test.cc")
-target_include_directories(mosaico_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../include")
+add_executable(mosaico_test "${CMAKE_CURRENT_LIST_DIR}/../lvgl_partial_test.cc"
+    "${workspace}/firmware/components/pxa_render_accel/pixels.c")
+target_include_directories(mosaico_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../include"
+    "${workspace}/firmware/components/pxa_render_accel/include")
 target_compile_features(mosaico_test PRIVATE cxx_std_17)
 target_compile_options(mosaico_test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
 target_link_libraries(mosaico_test PRIVATE lvgl m)

@@ -1,0 +1,3 @@
+# Keep internal RAM available for board services and fetch decoder code from PSRAM.
+CONFIG_ESP_OPENH264_PROFILE_MINIMAL=y
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y

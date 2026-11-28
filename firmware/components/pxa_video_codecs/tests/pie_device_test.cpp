@@ -13,7 +13,7 @@ extern "C" void pxa_video_pie_average16(uint8_t*,int32_t,const uint8_t*,int32_t,
 extern "C" void pxa_video_pie_halfpel(const uint8_t*,int32_t,uint8_t*,int32_t,int32_t,int32_t,int32_t);
 extern "C" void pxa_video_pie_chroma8(const uint8_t*,int32_t,uint8_t*,int32_t,const uint8_t*,int32_t);
 extern "C" bool pxa_video_pack_ppa420(const uint8_t*,const uint8_t*,const uint8_t*,
-    unsigned,unsigned,unsigned,unsigned,uint8_t*);
+    unsigned,unsigned,unsigned,unsigned,uint8_t*,unsigned);
 namespace {
 __attribute__((naked)) uint32_t read_cfg() {asm volatile("esp.movx.r.cfg a0\nret");}
 __attribute__((naked)) uint32_t read_sar() {asm volatile("esp.movx.r.sar a0\nret");}
@@ -90,17 +90,25 @@ bool pxa_video_pie_device_test() {
         for(unsigned i=0;i<ys*h;++i)y[i]=uint8_t(i*57+i/643);
         for(unsigned i=0;i<cs*h/2;++i){u[i]=uint8_t(i*31+i/337);v[i]=uint8_t(i*71+i/113);}
         std::memset(cpu,0xa5,bytes+128);std::memset(pie,0xa5,bytes+128);
-        pxa_video::pack_ppa420(y,u,v,w,h,ys,cs,cpu);
-        pxa_video_pack_ppa420(y,u,v,w,h,ys,cs,pie);
+        pxa_video::pack_ppa420(y,u,v,w,h,ys,cs,cpu,w);
+        pxa_video_pack_ppa420(y,u,v,w,h,ys,cs,pie,w);
         ok=std::memcmp(cpu,pie,bytes+128)==0;
         if(!ok)for(unsigned i=0;i<bytes+128;++i)if(cpu[i]!=pie[i]){
             std::printf("PIE PACK FAIL i=%u got=%u expected=%u\n",i,pie[i],cpu[i]);break;
         }
+        // Cropped macroblock rows must agree in the visible tail and leave padding intact.
+        for (unsigned visible : {w - 2, w - 12, w - 30}) {
+            std::memset(cpu, 0xa5, bytes + 128);
+            std::memset(pie, 0xa5, bytes + 128);
+            ok = ok && pxa_video::pack_ppa420(y,u,v,visible,h,ys,cs,cpu,w) &&
+                 pxa_video_pack_ppa420(y,u,v,visible,h,ys,cs,pie,w) &&
+                 std::memcmp(cpu,pie,bytes + 128) == 0;
+        }
         int64_t times[2]{};
         for(unsigned n=0;n<16;++n)for(unsigned j=0;j<2;++j){unsigned mode=(n+j)&1;
             int64_t start=esp_timer_get_time();
-            if(mode)pxa_video_pack_ppa420(y,u,v,w,h,ys,cs,pie);
-            else pxa_video::pack_ppa420(y,u,v,w,h,ys,cs,cpu);
+            if(mode)pxa_video_pack_ppa420(y,u,v,w,h,ys,cs,pie,w);
+            else pxa_video::pack_ppa420(y,u,v,w,h,ys,cs,cpu,w);
             times[mode]+=esp_timer_get_time()-start;
         }
         std::printf("PIE PACK BENCH core=%d cpu_us=%lld pie_us=%lld exact=%d\n",xPortGetCoreID(),

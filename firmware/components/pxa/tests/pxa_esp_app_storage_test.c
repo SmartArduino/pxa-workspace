@@ -138,6 +138,13 @@ static void check_changed_mount_path(bool native) {
     const pxa_install_record_t record=home.record;
     const unsigned old_formats=formats;
     assert(!pxa_esp_app_storage_create(&home,epoch,native?0:131072,NULL,&storage));
+    assert(pxa_esp_app_storage_matches_installation(storage,epoch,record.install_id,record.generation));
+    assert(!pxa_esp_app_storage_matches_installation(storage,epoch+1,record.install_id,record.generation));
+    assert(!pxa_esp_app_storage_matches_installation(storage,epoch,record.install_id,record.generation+1));
+    uint8_t different_install[16];
+    memcpy(different_install,record.install_id,sizeof(different_install));
+    different_install[0]^=1;
+    assert(!pxa_esp_app_storage_matches_installation(storage,epoch,different_install,record.generation));
     assert(!pxa_esp_app_storage_root(storage,&root));
     assert(snprintf(saved,sizeof(saved),"%s/Save.sav",root)<(int)sizeof(saved));
     if(native) {

@@ -55,6 +55,9 @@ build_and_run() {
 }
 
 build_and_run resource_policy "$tests_dir/resource_policy_test.c"
+cc "${cc_flags[@]}" "${adapter_includes[@]}" "$tests_dir/pxa_esp_video_abi_test.c" \
+  "$component_dir/src/services/pxa_esp_video.c" -o "$build_dir/video_abi"
+for size_index in {0..6}; do "$build_dir/video_abi" "$size_index"; done
 build_and_run ui_event_text \
   "${adapter_includes[@]}" "$tests_dir/pxa_host_ui_event_text_test.c"
 build_and_run maintenance \
@@ -65,11 +68,15 @@ build_and_run window_metrics \
   "${adapter_includes[@]}" "$tests_dir/pxa_host_window_metrics_test.c"
 build_and_run container_fetch \
   "${adapter_includes[@]}" "$tests_dir/pxa_esp_container_fetch_test.c" \
-  "$component_dir/src/package/pxa_esp_container_fetch.c"
+  "$component_dir/src/package/pxa_esp_container_fetch.c" \
+  "$component_dir/src/services/pxa_esp_wifi_transfer.c" -pthread
 
 for target in ESP32S3 ESP32S31 ESP32P4 UNKNOWN; do
-  build_and_run "net_backend_$target" "-DCONFIG_IDF_TARGET_$target=1" \
+  reuse_flags=()
+  if [[ $target == ESP32P4 ]]; then reuse_flags=(-DPXA_ESP_HTTP_REUSE=1); fi
+  build_and_run "net_backend_$target" "${reuse_flags[@]}" "-DCONFIG_IDF_TARGET_$target=1" -DCONFIG_SPIRAM=1 \
     "${adapter_includes[@]}" "$tests_dir/pxa_esp_net_backend_test.c" \
+    "$component_dir/src/services/pxa_esp_wifi_transfer.c" -pthread \
     "$pxa_system_dir/libpxa/src/services/net/http_stream.c" \
     "$pxa_system_dir/libpxa/src/services/net/socket_stream.c" \
     "$pxa_system_dir/libpxa/src/services/net/net_validate.c" \
@@ -133,6 +140,7 @@ for legacy_container in 0 1; do
 build_and_run "store_download_$legacy_container" -DESP_PLATFORM=1 -DPXA_ENABLE_LEGACY_CONTAINER="$legacy_container" \
   '-DCONFIG_PXA_MOUNT_POINT="store-download"' \
   "${adapter_includes[@]}" "$tests_dir/pxa_esp_store_download_test.c" \
+  "$component_dir/src/services/pxa_esp_wifi_transfer.c" -pthread \
   "$pxa_system_dir/libpxa/src/package/container.c" "$pxa_system_dir/libpxa/src/core/wire.c" -lmbedcrypto
 done
 build_and_run store_cache -DESP_PLATFORM=1 \
@@ -276,6 +284,8 @@ for backend in surface audio net; do
   backend_sources=()
   if [[ $backend == surface ]]; then
     backend_sources+=("$project_dir/firmware/components/pxa_render_accel/ppa.c")
+  elif [[ $backend == net ]]; then
+    backend_sources+=("$component_dir/src/services/pxa_esp_wifi_transfer.c")
   fi
   build_and_run "${backend}_backend" \
     "${adapter_includes[@]}" -pthread \

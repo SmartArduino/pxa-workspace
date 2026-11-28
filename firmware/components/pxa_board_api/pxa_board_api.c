@@ -138,6 +138,8 @@ bool pxa_board_performance_get(pxsys_reference_performance_option_t option) {
             return g_performance_log != 0;
         case PXSYS_REFERENCE_PXADB:
             return g_pxa_debug_enabled != 0;
+        case PXSYS_REFERENCE_PXADB_LAN:
+            return false; /* The Wi-Fi listener is never persisted. */
     }
     return false;
 }

@@ -6,12 +6,13 @@
 namespace pxa::board {
 // Copy a clipped span with independent source/destination pitches. Packed
 // spans can use one bulk copy across rows.
+template<auto BulkCopy = std::memcpy>
 inline void CopyRgb565Rows(uint16_t* destination, size_t destination_stride,
                            const uint8_t* source, size_t source_stride_bytes,
                            size_t width, size_t height) {
     const size_t row_bytes = width * sizeof(uint16_t);
     if (destination_stride == width && source_stride_bytes == row_bytes) {
-        std::memcpy(destination, source, row_bytes * height);
+        BulkCopy(destination, source, row_bytes * height);
         return;
     }
     for (size_t row = 0; row < height; ++row)
@@ -62,6 +63,7 @@ inline void BlendRgb565PlaneRows(uint16_t* pixels, size_t stride,
 // Fast path for an opaque, unscaled RGB565 Surface. Copy visible row spans,
 // then visit alpha pixels only where the guest/system planes actually overlap.
 // Region masks and scaled/ARGB Surfaces retain the board's scalar fallback.
+template<auto BulkCopy = std::memcpy>
 inline bool ComposeRgb565Rows(const pxa_esp_surface_frame_t& frame,
                              uint16_t* pixels, int x, int y, int width, int height,
                              size_t stride, int origin_x, int origin_y, int scale) {
@@ -74,7 +76,7 @@ inline bool ComposeRgb565Rows(const pxa_esp_surface_frame_t& frame,
         auto* destination = pixels + size_t(top - y) * stride + left - x;
         const auto* source = frame.pixels + size_t(top - origin_y) * frame.stride_bytes
             + size_t(left - origin_x) * sizeof(uint16_t);
-        CopyRgb565Rows(destination, stride, source, frame.stride_bytes,
+        CopyRgb565Rows<BulkCopy>(destination, stride, source, frame.stride_bytes,
                        right - left, bottom - top);
     }
     if (!frame.suppress_guest_alpha)

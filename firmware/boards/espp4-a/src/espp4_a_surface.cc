@@ -10,12 +10,21 @@
 #include <pxa_board_common/surface_rgb565_rows.h>
 namespace espp4_a {
 using PixelPair = uint32_t __attribute__((may_alias));
-bool IsOpaqueSurface(const pxa_esp_surface_frame_t& frame) {
-    return frame.visible && frame.pixels && frame.width && frame.height &&
+bool CanComposeOnBackdrop(const pxa_esp_surface_frame_t& frame) {
+    const auto& plane = frame.ui_alpha_plane;
+    return frame.visible && (frame.pixels || frame.native_draw) && frame.width && frame.height &&
         frame.format == PXA_SURFACE_FORMAT_RGB565 && !frame.opaque_ui_region_count &&
         frame.stride_bytes >= uint32_t(frame.width) * 2 && !(frame.stride_bytes % 2) &&
-        (frame.suppress_guest_alpha || !frame.ui_alpha_plane.visible) &&
+        (frame.suppress_guest_alpha || !plane.visible ||
+         (plane.pixels && plane.alpha && plane.width && plane.height &&
+          plane.pixel_stride_bytes >= uint32_t(plane.width) * 2 &&
+          !(plane.pixel_stride_bytes % 2) && plane.alpha_stride_bytes >= plane.width)) &&
         !frame.system_alpha_plane.visible;
+}
+
+bool IsOpaqueSurface(const pxa_esp_surface_frame_t& frame) {
+    return (frame.suppress_guest_alpha || !frame.ui_alpha_plane.visible) &&
+        CanComposeOnBackdrop(frame);
 }
 
 bool UniformBackground(const uint16_t* pixels, size_t count, uint16_t& color) {
@@ -26,19 +35,48 @@ bool UniformBackground(const uint16_t* pixels, size_t count, uint16_t& color) {
     return true;
 }
 
-bool FillOpaqueBackdrop(const pxa_esp_surface_frame_t& frame, uint16_t* pixels,
-                        int width, int height, uint16_t color) {
-    if (!pixels || width <= 0 || height <= 0 || !IsOpaqueSurface(frame)) return false;
+struct SurfaceBounds { int left, top, right, bottom; };
+
+static SurfaceBounds SurfaceCoverage(const pxa_esp_surface_frame_t& frame,
+                                     int width, int height) {
     const int scale = std::max(1, int(pxa_surface_fit_scale(frame.width, frame.height, width, height)));
     const int64_t sw = int64_t(frame.width) * scale, sh = int64_t(frame.height) * scale;
     int64_t x = frame.x, y = frame.y;
     if (!x && !y && (sw < width || sh < height)) {
         x = (width - sw) / 2; y = (height - sh) / 2;
     }
-    const int left = int(std::clamp<int64_t>(x, 0, width));
-    const int right = int(std::clamp<int64_t>(x + sw, 0, width));
-    const int top = int(std::clamp<int64_t>(y, 0, height));
-    const int bottom = int(std::clamp<int64_t>(y + sh, 0, height));
+    return {int(std::clamp<int64_t>(x, 0, width)), int(std::clamp<int64_t>(y, 0, height)),
+            int(std::clamp<int64_t>(x + sw, 0, width)), int(std::clamp<int64_t>(y + sh, 0, height))};
+}
+
+bool UniformBackdrop(const pxa_esp_surface_frame_t& frame, const uint16_t* pixels,
+                     int width, int height, uint16_t& color) {
+    if (!pixels || width <= 0 || height <= 0 || !CanComposeOnBackdrop(frame)) return false;
+    const auto [left, top, right, bottom] = SurfaceCoverage(frame, width, height);
+    if (left == right || top == bottom)
+        return UniformBackground(pixels, size_t(width) * height, color);
+    bool found = false;
+    const auto check = [&](const uint16_t* first, size_t count) {
+        if (!count) return true;
+        uint16_t span_color;
+        if (!UniformBackground(first, count, span_color) || (found && color != span_color)) return false;
+        color = span_color;
+        found = true;
+        return true;
+    };
+    if (!check(pixels, size_t(top) * width) ||
+        !check(pixels + size_t(bottom) * width, size_t(height - bottom) * width)) return false;
+    if (left || right < width) for (int row = top; row < bottom; ++row) {
+        const auto* line = pixels + size_t(row) * width;
+        if (!check(line, left) || !check(line + right, width - right)) return false;
+    }
+    return true;
+}
+
+bool FillOpaqueBackdrop(const pxa_esp_surface_frame_t& frame, uint16_t* pixels,
+                        int width, int height, uint16_t color) {
+    if (!pixels || width <= 0 || height <= 0 || !CanComposeOnBackdrop(frame)) return false;
+    const auto [left, top, right, bottom] = SurfaceCoverage(frame, width, height);
     if (left == right || top == bottom) {
         espp4_a_fill_rgb565(pixels, uint32_t(width) * height, color);
         return true;
@@ -51,6 +89,14 @@ bool FillOpaqueBackdrop(const pxa_esp_surface_frame_t& frame, uint16_t* pixels,
     }
     espp4_a_fill_rgb565(pixels + size_t(bottom) * width, uint32_t(width) * (height - bottom), color);
     return true;
+}
+
+bool KeepsOpaqueBackdrop(const pxa_esp_surface_frame_t& frame, int width, int height) {
+    const auto& plane = frame.ui_alpha_plane;
+    if (frame.suppress_guest_alpha || !plane.visible || !plane.opacity) return true;
+    const auto [left, top, right, bottom] = SurfaceCoverage(frame, width, height);
+    return plane.x >= left && plane.y >= top && int64_t(plane.x) + plane.width <= right &&
+           int64_t(plane.y) + plane.height <= bottom;
 }
 
 bool CoversDisplayOpaque(const pxa_esp_surface_frame_t& frame, int width, int height) {
@@ -265,7 +311,7 @@ void Compose(const pxa_esp_surface_frame_t& frame, uint16_t* pixels,
         origin_x = (display_width - frame.width * scale) / 2;
         origin_y = (display_height - frame.height * scale) / 2;
     }
-    if (pxa::board::ComposeRgb565Rows(frame, pixels, tile_x, tile_y, width, height,
+    if (pxa::board::ComposeRgb565Rows<espp4_a_copy_frame>(frame, pixels, tile_x, tile_y, width, height,
                                     stride, origin_x, origin_y, scale)) return;
     if (ComposeArgbRows(frame, pixels, tile_x, tile_y, width, height,
                         stride, origin_x, origin_y, scale)) return;

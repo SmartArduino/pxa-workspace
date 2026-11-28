@@ -55,6 +55,10 @@ typedef enum {
 
 typedef struct {
     uint64_t operation;
+#if PXA_ESP_HTTP_REUSE
+    uint32_t generation;
+    pxa_component_t component;
+#endif
     size_t body_size;
     size_t body_offset;
     uint64_t deadline_us;
@@ -87,6 +91,19 @@ typedef struct {
 typedef struct {
     QueueHandle_t queue;
     TaskHandle_t task;
+    unsigned blocked_stream_steps; /* Owned by the single network worker. */
+#if PXA_ESP_HTTP_REUSE
+    uint32_t generation; /* Incremented on app teardown, read by the worker. */
+    unsigned http_clients;
+    struct {
+        esp_http_client_handle_t client;
+        uint64_t expires_us;
+        uint32_t generation;
+        pxa_component_t component;
+        unsigned headers;
+        char origin[264];
+    } idle;
+#endif
     uint64_t next_operation;
     pxa_esp_net_notify_fn notify;
     void *notify_context;
@@ -309,7 +326,11 @@ static void net_worker(void *context) {
         size_t platform_header_bytes = 0;
         pxa_esp_net_slot_t *slot;
 
-        if (xQueueReceive(net->queue, &index, portMAX_DELAY) != pdTRUE ||
+        TickType_t wait = portMAX_DELAY;
+#if PXA_ESP_HTTP_REUSE
+        wait = http_idle_wait(net);
+#endif
+        if (xQueueReceive(net->queue, &index, wait) != pdTRUE ||
             index >= PXA_ESP_NET_MAX_PENDING) {
             continue;
         }
@@ -325,6 +346,7 @@ static void net_worker(void *context) {
             stream_step(net,slot);
             continue;
         }
+        net->blocked_stream_steps = 0;
         if (slot->cancelled) {
             net->metrics.cancelled_requests++;
             released_storage = reset_slot_metadata(slot);
@@ -339,6 +361,9 @@ static void net_worker(void *context) {
         method = slot->method;
         portEXIT_CRITICAL(&g_net_lock);
 
+#if PXA_ESP_HTTP_REUSE
+        http_idle_close(net);
+#endif
         /* URLs may contain API keys or private location parameters. */
         ESP_LOGI(PXA_ESP_NET_TAG, "Network %s started", method_name(method));
         platform_result = PXA_PLATFORM_NET_FETCH_NOT_USED;
@@ -514,7 +539,7 @@ static pxa_esp_net_state_t *get_state(pxa_esp_net_notify_fn notify,
                             CONFIG_PXA_NET_WORKER_STACK_SIZE, net,
                             PXA_ESP_NET_TASK_PRIORITY, &task,
                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
-        if (net->queue != NULL) vQueueDelete(net->queue);
+        if (net->queue != NULL) vQueueDeleteWithCaps(net->queue);
         free(net);
         return NULL;
     }
@@ -537,7 +562,7 @@ static pxa_status_t start_request(void *context,
     size_t storage_bytes;
     (void)context;
     if (request == NULL || operation == NULL ||
-        request->struct_size < sizeof(*request) ||
+        request->struct_size < PXA_NET_REQUEST_BASE_BYTES ||
         request->method < PXA_NET_METHOD_GET ||
         request->method > PXA_NET_METHOD_DELETE ||
         request->url.data == NULL || request->url.size == 0 ||
@@ -595,6 +620,10 @@ static pxa_status_t start_request(void *context,
     if (value == 0) value = ++net->next_operation;
     reset_slot_metadata(slot);
     slot->operation = value;
+#if PXA_ESP_HTTP_REUSE
+    slot->component = request->struct_size >= sizeof(*request) ? request->component : 0;
+    slot->generation = __atomic_load_n(&net->generation, __ATOMIC_RELAXED);
+#endif
     slot->state = PXA_ESP_NET_SLOT_RESERVED;
     active_slots = active_slot_count_locked(net);
     if (active_slots > net->metrics.peak_active_slots) {
@@ -696,6 +725,13 @@ static pxa_status_t start_request(void *context,
     if (slot->state != PXA_ESP_NET_SLOT_RESERVED ||
         slot->operation != value) {
         portEXIT_CRITICAL(&g_net_lock);
+        return PXA_STATUS_CANCELLED;
+    }
+    if (slot->cancelled) {
+        void *storage = reset_slot_metadata(slot);
+        ++net->metrics.cancelled_requests;
+        portEXIT_CRITICAL(&g_net_lock);
+        free(storage);
         return PXA_STATUS_CANCELLED;
     }
     slot->state = PXA_ESP_NET_SLOT_QUEUED;
@@ -931,9 +967,15 @@ void pxa_esp_net_reset_requests(void) {
     unsigned requeue_count = 0;
     if (g_net == NULL) return;
     portENTER_CRITICAL(&g_net_lock);
+#if PXA_ESP_HTTP_REUSE
+    __atomic_add_fetch(&g_net->generation, 1, __ATOMIC_RELEASE);
+#endif
     for (index = 0; index < PXA_ESP_NET_MAX_PENDING; ++index) {
         pxa_esp_net_slot_t *slot = &g_net->slots[index];
-        if(slot->abi_minor>=2 && slot->state!=PXA_ESP_NET_SLOT_FREE) {
+        if (slot->state == PXA_ESP_NET_SLOT_RESERVED) {
+            /* Its producer is filling storage outside this lock and owns cleanup. */
+            slot->cancelled = 1;
+        } else if(slot->abi_minor>=2 && slot->state!=PXA_ESP_NET_SLOT_FREE) {
             __atomic_fetch_or(&http_stream(slot)->stream.state,PXA_HTTP_STREAM_CLOSED,__ATOMIC_RELEASE);
             if(slot->state==PXA_ESP_NET_SLOT_COMPLETE) {
                 slot->state=PXA_ESP_NET_SLOT_QUEUED;

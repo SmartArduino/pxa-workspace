@@ -36,7 +36,6 @@ static int path_is_within(const char *p,const char *parent) {
 }
 struct pxa_esp_installations {pxa_volume_info_t volume;};
 static struct pxa_esp_installations planning_owner;
-static pxa_status_t pxa_esp_storage_volume(uint64_t e,pxa_volume_info_t *out) {return pxa_volume_get(registry,e,out);}
 static pxa_status_t pxa_esp_storage_refresh_volume(uint64_t e) {return e==epoch?PXA_STATUS_OK:PXA_STATUS_UNAVAILABLE;}
 static pxa_status_t pxa_esp_storage_plan(const pxa_install_requirements_t *r,uint64_t a,uint64_t m,pxa_install_plan_t *out) {
     return pxa_install_plan_evaluate(registry,r,a,m,out);

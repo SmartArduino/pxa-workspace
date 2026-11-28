@@ -24,11 +24,12 @@ struct Queue {
     std::mutex mutex;
     std::condition_variable changed;
     std::deque<std::vector<unsigned char>> items;
-    unsigned capacity; size_t size; bool closing = false;
+    unsigned capacity; size_t size;
 };
 struct Semaphore { std::mutex mutex; std::condition_variable changed; bool ready = false; };
-struct StopWorker {};
-static std::thread *worker_thread;
+static std::vector<std::thread> worker_threads;
+static bool fail_task_create;
+static std::atomic<unsigned> retired;
 QueueHandle_t xQueueCreate(unsigned capacity, size_t size) {
     auto *q = new Queue; q->capacity = capacity; q->size = size; return q;
 }
@@ -41,8 +42,7 @@ int xQueueSend(QueueHandle_t handle, const void *item, uint32_t timeout) {
 }
 int xQueueReceive(QueueHandle_t handle, void *item, uint32_t) {
     auto *q = static_cast<Queue *>(handle); std::unique_lock lock(q->mutex);
-    q->changed.wait(lock, [&]{ return q->closing || !q->items.empty(); });
-    if (q->closing) throw StopWorker{};
+    q->changed.wait(lock, [&]{ return !q->items.empty(); });
     std::memcpy(item, q->items.front().data(), q->size); q->items.pop_front();
     q->changed.notify_all(); return pdTRUE;
 }
@@ -56,9 +56,12 @@ void xSemaphoreGive(SemaphoreHandle_t handle) {
     s->ready = true; s->changed.notify_one();
 }
 int xTaskCreate(void (*run)(void *), const char *, unsigned, void *context, unsigned, TaskHandle_t *handle) {
-    worker_thread = new std::thread([=]{ try { run(context); } catch (StopWorker&) {} });
-    *handle = worker_thread; return pdPASS;
+    if (fail_task_create) return 0;
+    worker_threads.emplace_back([=]{ run(context); });
+    *handle = &g_worker;
+    return pdPASS;
 }
+void vTaskDelete(TaskHandle_t handle) { assert(!handle); ++retired; }
 int64_t esp_timer_get_time() {
     return std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -88,6 +91,13 @@ int main() {
     Generation first; Job jobs[QueueSlots+2];
     for (unsigned i = 0; i < QueueSlots+2; ++i) jobs[i] = {&first, i, i == 0};
     assert(pxa_esp_storage_worker_begin(completion_ready, &first) == PXA_STATUS_OK);
+    pxa_esp_storage_worker_end();
+    assert(worker_threads.empty());
+    assert(pxa_esp_storage_worker_begin(completion_ready, &first) == PXA_STATUS_OK);
+    fail_task_create = true;
+    assert(pxa_esp_storage_worker_submit(nullptr, write_checkpoint, &jobs[0]) == PXA_STATUS_RESOURCE_LIMIT);
+    assert(!g_worker && worker_threads.empty());
+    fail_task_create = false;
     assert(pxa_esp_storage_worker_submit(nullptr, write_checkpoint, &jobs[0]) == PXA_STATUS_OK);
     { std::unique_lock lock(first.mutex); first.changed.wait(lock, [&]{ return first.blocked; }); }
     for (unsigned i = 1; i < QueueSlots+1; ++i)
@@ -112,9 +122,9 @@ int main() {
         assert(next.notifications == 1 && next.completed == std::vector<unsigned>{i});
         next.alive = false;
     }
-    auto *q = static_cast<Queue *>(g_queue);
-    { std::lock_guard lock(q->mutex); q->closing = true; q->changed.notify_one(); }
-    worker_thread->join(); delete worker_thread; delete q;
+    for (auto &thread : worker_threads) thread.join();
+    assert(!g_worker && retired == worker_threads.size());
+    delete static_cast<Queue *>(g_queue);
     delete static_cast<Semaphore *>(g_drained);
-    puts("Native I/O worker: blocked disk leaves owner runnable, FIFO/backpressure, close drains callbacks, and 64 activation handoffs have no late access");
+    puts("Native I/O worker: lazy start, allocation retry, FIFO backpressure, and drained activation handoffs passed");
 }

@@ -24,8 +24,8 @@ SHIM = r'''
 #include <stdbool.h>
 #define PXA_COMPONENT_INVALID 0
 #define PXA_UI_PRIMARY_SURFACE 1
-#define PXA_UI_EVENT_KEY 3
-#define PXA_UI_EVENT_CONTROLLER_STATE 10
+#define PXA_UI_EVENT_MASK_KEY (UINT64_C(1) << 4)
+#define PXA_UI_EVENT_MASK_CONTROLLER_STATE (UINT64_C(1) << 9)
 static int g_public_state_lock, g_process_state_lock, locked;
 #define portENTER_CRITICAL(p) do {(void)(p);assert(!locked);locked=1;} while(0)
 #define portEXIT_CRITICAL(p) do {(void)(p);assert(locked);locked=0;} while(0)
@@ -36,9 +36,10 @@ static struct {
     struct {struct {void *ui;} services;unsigned ui_component,active_component;} activation;
     struct {uint8_t main_active,volume_key_capture_active,controller_input_active;} public_state;
 } g_host;
-static bool pxa_ui_accepts_event(void *ui,unsigned component,unsigned surface,unsigned node,unsigned kind) {
+static uint64_t pxa_ui_subscribed_events(void *ui,unsigned component,unsigned surface,unsigned node) {
+    if (!ui) return 0;
     assert(!locked && ui && component==7 && surface==1 && node==1);
-    ++registry_reads;return !!(root_mask & (UINT64_C(1) << kind));
+    ++registry_reads;return root_mask;
 }
 '''
 CASES = r'''
@@ -49,20 +50,20 @@ int main(void) {
     g_host.activation.services.ui=&g_host;
     g_host.activation.ui_component=g_host.activation.active_component=7;
     // Canvas and Surface share the root subscription. No rendering heuristic.
-    root_mask=UINT64_C(1)<<PXA_UI_EVENT_CONTROLLER_STATE;
+    root_mask=PXA_UI_EVENT_MASK_CONTROLLER_STATE;
     refresh_input_capture_state();assert(pxa_esp_host_accepts_controller_input());
     assert(!g_host.public_state.volume_key_capture_active);
-    unsigned reads=registry_reads;
+    unsigned reads=registry_reads;assert(reads == 1);
     for(unsigned n=0;n<10000;++n)assert(pxa_esp_host_accepts_controller_input());
     assert(registry_reads==reads); // Polling must never traverse another task's UI.
-    root_mask|=UINT64_C(1)<<PXA_UI_EVENT_KEY;
+    root_mask|=PXA_UI_EVENT_MASK_KEY;
     refresh_input_capture_state();assert(g_host.public_state.volume_key_capture_active);
     g_host.ui_foreground_requested=0;assert(!pxa_esp_host_accepts_controller_input());
     g_host.ui_foreground_requested=1;assert(pxa_esp_host_accepts_controller_input());
-    root_mask=UINT64_C(1)<<PXA_UI_EVENT_KEY;
+    root_mask=PXA_UI_EVENT_MASK_KEY;
     refresh_input_capture_state();assert(!pxa_esp_host_accepts_controller_input());
     assert(g_host.public_state.volume_key_capture_active);
-    root_mask=UINT64_C(1)<<PXA_UI_EVENT_CONTROLLER_STATE;
+    root_mask=PXA_UI_EVENT_MASK_CONTROLLER_STATE;
     refresh_input_capture_state();assert(pxa_esp_host_accepts_controller_input());
     g_host.public_state.main_active=0;assert(!pxa_esp_host_accepts_controller_input());
     g_host.public_state.main_active=1;g_host.activation.services.ui=NULL;

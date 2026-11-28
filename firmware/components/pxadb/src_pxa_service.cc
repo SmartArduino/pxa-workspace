@@ -97,6 +97,7 @@ constexpr char kFsUploadTemporary[] = CONFIG_PXA_MOUNT_POINT "/.pxadb-upload";
 constexpr char kPxaMountPoint[] = CONFIG_PXA_MOUNT_POINT;
 constexpr char kPxaStateRoot[] = CONFIG_PXA_STATE_ROOT;
 constexpr char kPxaInboxRoot[] = CONFIG_PXA_STATE_ROOT "/inbox";
+constexpr char kPxaReceivingPrefix[] = CONFIG_PXA_STATE_ROOT "/inbox/.receiving-";
 constexpr size_t kFsAbsolutePathLength =
     kFsPathLength + sizeof(kPxaMountPoint) + 1;
 constexpr size_t kFsDataChunkSize = 192;
@@ -195,9 +196,14 @@ struct ControlParser {
 };
 
 #if CONFIG_PXADB_UART_SECONDARY
-constexpr size_t kSessionCount = 2;
+constexpr size_t kLocalSessionCount = 2;
 #else
-constexpr size_t kSessionCount = 1;
+constexpr size_t kLocalSessionCount = 1;
+#endif
+#if CONFIG_PXADB_LAN
+constexpr size_t kSessionCount = kLocalSessionCount + 1;
+#else
+constexpr size_t kSessionCount = kLocalSessionCount;
 #endif
 constexpr uint8_t kNoSession = UINT8_MAX;
 struct Session {
@@ -213,7 +219,10 @@ struct Session {
     std::atomic<bool> log_subscribed{false};
     std::atomic<uint32_t> dropped_logs{0};
     QueueHandle_t log_queue = nullptr;
+    StaticQueue_t log_queue_control = {};
+    uint8_t* log_queue_records = nullptr;
     bool package_staging = false;
+    bool legacy_receiving = false;
 #if CONFIG_PXA_ENABLED
     uint32_t install_ui = 0;
     uint64_t install_bytes = 0;
@@ -337,7 +346,8 @@ bool WriteAll(Session& session, const void* data, size_t length, uint32_t genera
             offset += static_cast<size_t>(written);
             continue;
         }
-        if (esp_timer_get_time() >= deadline_us) {
+        if ((written < 0 && session.transport == Transport::kLan) ||
+            esp_timer_get_time() >= deadline_us) {
             success = false;
             break;
         }
@@ -365,7 +375,8 @@ bool SendFrameTo(Session& session, unsigned long sequence, const char* type, con
     const int length = snprintf(line, sizeof(line), "\n%s %lu %s %s\n", kProtocol, sequence, type,
                                 payload_length == 0 ? "-" : encoded);
     if (length <= 0 || static_cast<size_t>(length) >= sizeof(line)) return false;
-    if (session.transport == Transport::kPrimary && !s_primary_shares_console.load())
+    if (session.transport == Transport::kLan ||
+        (session.transport == Transport::kPrimary && !s_primary_shares_console.load()))
         return WriteAll(session, line, static_cast<size_t>(length), generation);
     // Newlib vprintf serializes console output with its FILE lock, not the
     // ESP_LOG tag-level mutex. Hold the same locks over every transport chunk,
@@ -459,9 +470,17 @@ void AbortFileUpload(bool keep_install_ui=false) {
     CurrentSession().upload = {};
 }
 
+bool PackageCleanupPending() {
+#if CONFIG_PXA_ENABLED
+    return s_package_cleanup_pending.load() || pxa_host_package_transfer_cleanup_pending();
+#else
+    return false;
+#endif
+}
+
 void TryDiscardPackageTransfers() {
 #if CONFIG_PXA_ENABLED
-    if (!s_package_cleanup_pending.load()) return;
+    if (!PackageCleanupPending()) return;
     if (s_mutation_owner != kNoSession) return;
     const int64_t now=esp_timer_get_time();
     if (now<s_next_package_cleanup_us) return;
@@ -472,8 +491,11 @@ void TryDiscardPackageTransfers() {
 #endif
 }
 
-bool PackageTransfersReady(const char* command) {
-    if (!s_package_cleanup_pending.load()) return true;
+bool PackageTransfersReady(const char* command, const char* argument) {
+    if (!PackageCleanupPending()) return true;
+    if (!strcmp(command, "PACKAGE") && argument &&
+        (!strcmp(argument, "paths") || !strcmp(argument, "run") || !strcmp(argument, "stop")))
+        return true;
     /* Drain the old session before accepting a new transport namespace.
      * Otherwise deferred cleanup could erase newly uploaded receiving files. */
     if (strcmp(command,"PACKAGE") && strcmp(command,"FSPUT") && strcmp(command,"FSINSTALL") &&
@@ -481,19 +503,23 @@ bool PackageTransfersReady(const char* command) {
         strcmp(command,"FSMKDIR") && strcmp(command,"FSMOVE") &&
         strcmp(command,"FSCOPY") && strcmp(command,"FSRM") && strcmp(command,"FSRMTREE"))
         return true;
-    s_next_package_cleanup_us=0;
     TryDiscardPackageTransfers();
-    return !s_package_cleanup_pending.load();
+    return !PackageCleanupPending();
 }
 
-void AbortTransfers() {
+void AbortTransfers(bool explicit_abort = false) {
     const bool may_discard = s_mutation_owner == kNoSession ||
                              s_mutation_owner == CurrentSessionIndex();
     AbortFileUpload();
-    CurrentSession().package_staging = false;
     if (!may_discard) return;
     s_mutation_owner = kNoSession;
-    (void)unlink(kFsUploadTemporary);
+    // Normal uploads own and unlink their exact temporary file in AbortFileUpload.
+    // An explicit recovery command can also clear a pre-reset partial file
+    // when the package store could not start.
+    if (explicit_abort) (void)unlink(kFsUploadTemporary);
+    CurrentSession().package_staging = false;
+    if (!CurrentSession().legacy_receiving) return;
+    CurrentSession().legacy_receiving = false;
 #if CONFIG_PXA_ENABLED
     /* HELLO and startup must stay responsive while runtime bootstrap owns
      * the package transaction lock. No transfer receipt is touched here. */
@@ -589,6 +615,14 @@ bool IsPxaInboxPath(const char* relative) {
            strncmp(relative, kPxaInboxRoot, sizeof(kPxaInboxRoot) - 1) == 0 &&
            (relative[sizeof(kPxaInboxRoot) - 1] == '\0' ||
             relative[sizeof(kPxaInboxRoot) - 1] == '/');
+}
+
+bool TrackInboxStaging(const char* relative) {
+    if (!IsPxaInboxPath(relative)) return false;
+    CurrentSession().package_staging = true;
+    if (!strncmp(relative, kPxaReceivingPrefix, sizeof(kPxaReceivingPrefix) - 1))
+        CurrentSession().legacy_receiving = true;
+    return true;
 }
 
 bool ShouldRefreshPxaInboxAfterUpload(const char* relative) {
@@ -892,7 +926,7 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
         SendFrame(sequence, "ERR", "invalid_sha256");
         return;
     }
-    if (IsPxaInboxPath(relative)) CurrentSession().package_staging = true;
+    const bool inbox_upload = TrackInboxStaging(relative);
     if (CurrentSession().upload.file != nullptr && CurrentSession().upload.total == static_cast<size_t>(size) &&
         strcmp(CurrentSession().upload.destination, path) == 0 &&
         CurrentSession().upload.has_expected_sha256 == has_expected_sha256 &&
@@ -906,7 +940,6 @@ void StartFsUpload(unsigned long sequence, const char* encoded_path,
         SendFrame(sequence, "OK", "");
         return;
     }
-    const bool inbox_upload = IsPxaInboxPath(relative);
     AbortFileUpload(inbox_upload);
     bool external = false;
 #if CONFIG_PXA_ENABLED
@@ -991,11 +1024,11 @@ void StartFsStream(unsigned long sequence, const char* encoded_path,
             SendFrame(sequence,"ERR","invalid_stream_volume");return;
         }
     }
-    constexpr char prefix[] = "pxa-state/inbox/.receiving-";
     if (size < 64 || !IsSha256Hex(expected_sha256) ||
         !DecodeFsPath(encoded_path, relative, sizeof(relative), path, sizeof(path)) ||
         (epoch ? !pxa_host_container_stream_volume_path(epoch,path) :
-            (strncmp(relative,prefix,sizeof(prefix)-1) || !IsSafeIdentity(relative+sizeof(prefix)-1)))) {
+            (strncmp(relative,kPxaReceivingPrefix,sizeof(kPxaReceivingPrefix)-1) ||
+             !IsSafeIdentity(relative+sizeof(kPxaReceivingPrefix)-1)))) {
         SendFrame(sequence, "ERR", "invalid_stream_upload"); return;
     }
     if (CurrentSession().upload.stream && CurrentSession().upload.total == size && CurrentSession().upload.stream_epoch==epoch &&
@@ -1013,6 +1046,7 @@ void StartFsStream(unsigned long sequence, const char* encoded_path,
     uint8_t digest[32];
     for (size_t i=0;i<32;++i) {char hex[3]={expected_sha256[i*2],expected_sha256[i*2+1],0};digest[i]=strtoul(hex,nullptr,16);}
     CurrentSession().package_staging = true;
+    if (!epoch) CurrentSession().legacy_receiving = true;
     pxa_status_t status=epoch?pxa_host_container_stream_begin_volume(epoch,path,size,digest,&CurrentSession().upload.stream):
         pxa_host_container_stream_begin(path,size,digest,&CurrentSession().upload.stream);
     if (status!=PXA_STATUS_OK) {
@@ -1312,7 +1346,7 @@ void MakeFsDirectory(unsigned long sequence, const char* encoded_path) {
         return;
     }
     if (mkdir(path, 0775) == 0 || errno == EEXIST) {
-        if (IsPxaInboxPath(relative)) CurrentSession().package_staging = true;
+        (void)TrackInboxStaging(relative);
         SendFrame(sequence, "OK", "");
     } else {
         SendFrame(sequence, "ERR", "mkdir_failed");
@@ -1517,15 +1551,20 @@ void HandleFsLock(unsigned long sequence) {
     SendFrame(sequence, "OK", "locked");
 }
 
+// Callers advance by at most one complete ring.
+size_t LogHistoryIndex(size_t position) {
+    return position < kLogHistoryDepth ? position : position - kLogHistoryDepth;
+}
+
 void RememberLog(const LogRecord& record) {
-    if (s_log_history == nullptr) return;
+    if (kLogHistoryDepth == 0 || s_log_history == nullptr) return;
     portENTER_CRITICAL(&s_history_lock);
-    const size_t destination = (s_log_history_start + s_log_history_count) % kLogHistoryDepth;
+    const size_t destination = LogHistoryIndex(s_log_history_start + s_log_history_count);
     s_log_history[destination] = record;
     if (s_log_history_count < kLogHistoryDepth) {
         ++s_log_history_count;
     } else {
-        s_log_history_start = (s_log_history_start + 1) % kLogHistoryDepth;
+        s_log_history_start = LogHistoryIndex(s_log_history_start + 1);
     }
     portEXIT_CRITICAL(&s_history_lock);
 }
@@ -1958,7 +1997,8 @@ void HandlePerf(unsigned long sequence, char* const* arguments,
                  "capacity=%u;raster=%u;present=%u;raster_overflow=%u;"
                  "present_overflow=%u;list_min=%u;list_max=%u;"
                  "pixels_min=%u;pixels_max=%u;surface_changed=%u;"
-                 "completed=%u;window_us=%u;display=%u",
+                 "completed=%u;window_us=%u;display=%u;"
+                 "max_gap_us=%u;first_us=%u;tail_us=%u",
                  PXA_ESP_SURFACE_PERF_CAPACITY,
                  static_cast<unsigned>(info.raster_count),
                  static_cast<unsigned>(info.present_interval_count),
@@ -1971,7 +2011,10 @@ void HandlePerf(unsigned long sequence, char* const* arguments,
                  static_cast<unsigned>(info.surface_changed),
                  static_cast<unsigned>(info.completed_frames),
                  static_cast<unsigned>(info.window_us),
-                 static_cast<unsigned>(info.display_mode));
+                 static_cast<unsigned>(info.display_mode),
+                 static_cast<unsigned>(info.max_interval_us),
+                 static_cast<unsigned>(info.first_delay_us),
+                 static_cast<unsigned>(info.tail_delay_us));
         SendFrame(sequence, "OK", payload);
         return;
     }
@@ -2570,8 +2613,10 @@ void HandleVolumes(unsigned long sequence) {
     if(volumes==nullptr) {SendFrame(sequence,"ERR","volume_snapshot_unavailable");return;}
     const size_t count=pxa_esp_storage_volumes(volumes,PXA_ESP_STORAGE_MAX_VOLUMES);
     for(size_t i=0;i<count && i<PXA_ESP_STORAGE_MAX_VOLUMES;++i) {
-        char path[PXA_ESP_STORAGE_PATH_BYTES]={},payload[512]={};
         auto& volume=volumes[i];
+        char path[PXA_ESP_STORAGE_PATH_BYTES]={};
+        // The response includes both the absolute path and its relative suffix.
+        char payload[2 * sizeof(path) + sizeof(volume.name) + 192]={};
         (void)pxa_esp_storage_refresh_volume(volume.mount_epoch);
         (void)pxa_esp_storage_volume(volume.mount_epoch,&volume);
         (void)pxa_esp_storage_volume_path(volume.mount_epoch,path,sizeof(path));
@@ -2820,7 +2865,7 @@ void HandlePackageDeploy(unsigned long sequence, const char* identity) {
 }
 
 void SendLogHistory(unsigned long sequence) {
-    if (s_log_history == nullptr) return;
+    if (kLogHistoryDepth == 0 || s_log_history == nullptr) return;
     size_t start = 0;
     size_t count = 0;
     portENTER_CRITICAL(&s_history_lock);
@@ -2830,7 +2875,7 @@ void SendLogHistory(unsigned long sequence) {
     for (size_t index = 0; index < count; ++index) {
         LogRecord record = {};
         portENTER_CRITICAL(&s_history_lock);
-        record = s_log_history[(start + index) % kLogHistoryDepth];
+        record = s_log_history[LogHistoryIndex(start + index)];
         portEXIT_CRITICAL(&s_history_lock);
         char payload[kMaxLogFramePayload] = {};
         const int length = snprintf(
@@ -2881,7 +2926,7 @@ void HandleCommand(char* line) {
     CurrentSession().last_activity_us.store(
         static_cast<uint64_t>(esp_timer_get_time()), std::memory_order_relaxed);
 
-    if (!PackageTransfersReady(command)) {
+    if (!PackageTransfersReady(command, argument)) {
         SendFrame(sequence,"ERR","package_cleanup_pending");
         return;
     }
@@ -3027,7 +3072,7 @@ void HandleCommand(char* line) {
     } else if (strcmp(command, "FSSHA") == 0 && argument != nullptr) {
         SendFsDigest(sequence, argument);
     } else if (strcmp(command, "FSABORT") == 0) {
-        AbortTransfers();
+        AbortTransfers(true);
         SendFrame(sequence, "OK", "aborted");
 #if CONFIG_PXA_ENABLED
     } else if (strcmp(command, "FSINSTALL") == 0 && argument && second_argument && third_argument) {
@@ -3159,8 +3204,9 @@ void HandleCommand(char* line) {
         (!strcmp(argument, "publish") || !strcmp(argument, "deploy") ||
          !strcmp(argument, "install") || !strcmp(argument, "install-volume") ||
          !strcmp(argument, "cache-import"))) {
-        CurrentSession().package_staging = false;
-        AbortFileUpload();
+        // A single session can stage multiple receiving paths. Retire any
+        // unpublished ones when a terminal request releases its lease.
+        AbortTransfers();
     }
     ReleaseMutationIfIdle();
 }
@@ -3371,7 +3417,7 @@ void PxadbInputTask(void*) {
         s_test_control.cancel_controller(s_test_control.context);
     ResetAcceptedPointer();
     s_input_task_active.store(false);
-    vTaskDelete(nullptr);
+    vTaskDeleteWithCaps(nullptr);
 }
 #endif
 
@@ -3379,6 +3425,12 @@ bool PollControlSession(Session& session) {
     s_current_session = &session;
     auto* parser = session.parser;
     const int received = TransportRead(session.transport, parser->input, sizeof(parser->input), 0);
+    if (session.transport == Transport::kLan && received == -2) {
+        ResetControlSession(false);
+        parser->command_length = 0;
+        parser->discarding = false;
+        return false;
+    }
     if (received <= 0) {
         if (session.bulk.bytes && static_cast<uint64_t>(esp_timer_get_time()) - session.bulk.last_us > 10000000u) {
             const unsigned long sequence = session.bulk.sequence;
@@ -3426,11 +3478,18 @@ bool PollControlSession(Session& session) {
 void PxadbTask(void*) {
     // One task and one bounded parser per endpoint: long device operations
     // serialize, but a partial line/bulk body never blocks the other endpoint.
+    constexpr TickType_t max_idle_ticks = std::max<TickType_t>(1, pdMS_TO_TICKS(4));
+    TickType_t idle_ticks = 1;
     while (s_running.load()) {
         bool received = false;
         for (auto& session : s_sessions)
             if (session.enabled) received = PollControlSession(session) || received;
-        if (!received) vTaskDelay(1);
+        if (received) {
+            idle_ticks = 1;
+        } else {
+            vTaskDelay(idle_ticks);
+            idle_ticks = std::min(max_idle_ticks, idle_ticks + 1);
+        }
     }
     for (auto& session : s_sessions) {
         s_current_session = &session;
@@ -3438,7 +3497,7 @@ void PxadbTask(void*) {
     }
     s_current_session = &s_sessions[0];
     s_task_active.store(false);
-    vTaskDelete(nullptr);
+    vTaskDeleteWithCaps(nullptr);
 }
 
 void PxadbAutostartTask(void*) {
@@ -3458,7 +3517,7 @@ void PxadbAutostartTask(void*) {
                  esp_err_to_name(result));
     }
     s_autostart_active.store(false);
-    vTaskDelete(nullptr);
+    vTaskDeleteWithCaps(nullptr);
 }
 
 void CleanupService(bool cancel_autostart) {
@@ -3494,6 +3553,8 @@ void CleanupService(bool cancel_autostart) {
     for (auto& session : s_sessions) {
         if (session.log_queue) vQueueDelete(session.log_queue);
         session.log_queue = nullptr;
+        heap_caps_free(session.log_queue_records);
+        session.log_queue_records = nullptr;
         heap_caps_free(session.parser);
         session.parser = nullptr;
         session.enabled = false;
@@ -3598,7 +3659,8 @@ esp_err_t Start() {
     esp_err_t last_error = ESP_ERR_INVALID_STATE;
     for (size_t index = 0; index < kSessionCount; ++index) {
         auto& session = s_sessions[index];
-        session.transport = index == 0 ? Transport::kPrimary : Transport::kUart;
+        session.transport = index >= kLocalSessionCount ? Transport::kLan
+            : index == 0 ? Transport::kPrimary : Transport::kUart;
         last_error = TransportStart(session.transport);
         session.enabled = last_error == ESP_OK;
         available = available || session.enabled;
@@ -3609,8 +3671,15 @@ esp_err_t Start() {
     s_running.store(true);
     for (auto& session : s_sessions) {
         if (!session.enabled) continue;
-        session.log_queue = xQueueCreateWithCaps(kLogQueueDepth, sizeof(LogRecord),
-                                                 MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        // Only task-context log subscribers access record payloads. Keep the
+        // kernel queue control and its wait lists in internal memory.
+        session.log_queue_records = static_cast<uint8_t*>(heap_caps_malloc_prefer(
+            kLogQueueDepth * sizeof(LogRecord), 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        if (session.log_queue_records) {
+            session.log_queue = xQueueCreateStatic(kLogQueueDepth, sizeof(LogRecord),
+                session.log_queue_records, &session.log_queue_control);
+        }
         session.parser = static_cast<ControlParser*>(heap_caps_calloc(
             1, sizeof(ControlParser), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
         if (!session.parser) session.parser = static_cast<ControlParser*>(heap_caps_calloc(
@@ -3656,10 +3725,10 @@ esp_err_t Start() {
             s_test_control.context, HandleSystemInputTakeover, nullptr);
     }
 #endif
-    // History is optional; reserve task stacks before this internal-RAM cache.
-    if (s_log_history == nullptr) {
-        s_log_history = static_cast<LogRecord*>(heap_caps_calloc(
-            kLogHistoryDepth, sizeof(LogRecord),
+    // History is optional and shares the record queues' task-context lifetime.
+    if (kLogHistoryDepth > 0 && s_log_history == nullptr) {
+        s_log_history = static_cast<LogRecord*>(heap_caps_calloc_prefer(
+            kLogHistoryDepth, sizeof(LogRecord), 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
             MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         if (s_log_history == nullptr)
             ESP_LOGW(kTag, "PXADB log history is unavailable; live logcat remains enabled");
@@ -3698,6 +3767,7 @@ void ConfigurePrimaryTransportConsoleSharing(bool shares_console) {
 }
 
 void Stop() {
+    (void)SetLanEnabled(false);
     CleanupService(true);
 }
 
@@ -3746,4 +3816,12 @@ bool SetEnabled(bool enabled) {
 }
 }  // namespace pxadb
 
+#endif
+
+#if !CONFIG_PXADB_LAN
+namespace pxadb {
+bool SetLanEnabled(bool enabled) { return !enabled; }
+bool IsLanEnabled() { return false; }
+bool ReadLanEndpoint(char*, size_t, char*, size_t) { return false; }
+}  // namespace pxadb
 #endif

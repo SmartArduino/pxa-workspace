@@ -17,7 +17,7 @@ int main() {
             for (int x = 0; x < width; ++x)
                 source[y * stride + x] = uint16_t((y * width + x) * 17);
         source[0] = 0xf800; source[1] = 0x07e0; source[2] = 0x001f;
-        RotateScaledRgb565(source.data(), stride, wire.data() + 1,
+        RotateScaledRgb565<kWireOrder>(source.data(), stride, wire.data() + 1,
                           width, height, scale, rotation);
         assert(wire.front() == 0xa55a && wire.back() == 0xa55a);
         const auto* bytes = reinterpret_cast<const uint8_t*>(wire.data() + 1);
@@ -26,17 +26,17 @@ int main() {
                 const uint16_t expected = source[(y / scale) * stride + x / scale];
                 const int index = 2 * (rotation == LandscapeRotation::Deg270
                     ? x * kHeight + kHeight - 1 - y : (kWidth - 1 - x) * kHeight + y);
-                // Actual wire stream is high-byte first in native portrait scan order.
-                assert(bytes[index] == uint8_t(expected >> 8));
-                assert(bytes[index + 1] == uint8_t(expected));
+                // Actual wire stream is low-byte first in native portrait scan order.
+                assert(bytes[index] == uint8_t(expected));
+                assert(bytes[index + 1] == uint8_t(expected >> 8));
             }
-        CaptureRotatedRgb565(wire.data() + 1, capture.data(),
+        CaptureRotatedRgb565<kWireOrder>(wire.data() + 1, capture.data(),
                             kWidth, kHeight, rotation);
         assert(capture[0] == 0xf800 && capture[scale] == 0x07e0 && capture[2 * scale] == 0x001f);
         const uint16_t patch[] = {0xffff, 0x0000, 0xf800, 0x001f};
-        RotateRgb565Patch(patch, 2, wire.data() + 1, kWidth, kHeight,
+        RotateRgb565Patch<kWireOrder>(patch, 2, wire.data() + 1, kWidth, kHeight,
                          kWidth - 1, kHeight - 1, 2, 2, rotation);
-        CaptureRotatedRgb565(wire.data() + 1, capture.data(), kWidth, kHeight, rotation);
+        CaptureRotatedRgb565<kWireOrder>(wire.data() + 1, capture.data(), kWidth, kHeight, rotation);
         assert(capture.back() == 0xffff);
         assert(wire.front() == 0xa55a && wire.back() == 0xa55a);
     }

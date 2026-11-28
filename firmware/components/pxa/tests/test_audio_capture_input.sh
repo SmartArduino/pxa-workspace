@@ -11,7 +11,7 @@ mkdir -p "$build_dir"
   -I"$root/deps/pxa-system/libpxa/include" \
   "$source_dir/pxa_audio_capture_input_test.cc" "$source_dir/../src/services/pxa_audio_capture_input.cc" \
   -o "$build_dir/capture-input"
-for stage in 1 2 3; do "$build_dir/capture-input" "$stage"; done
+for stage in 1 2 3 4 5 6; do "$build_dir/capture-input" "$stage"; done
 "$build_dir/capture-input"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
@@ -19,3 +19,9 @@ for stage in 1 2 3; do "$build_dir/capture-input" "$stage"; done
   -I"$source_dir/audio_stubs" -I"$source_dir/../include" \
   "$source_dir/pxa_worker_notifications_test.cc" -o "$build_dir/worker-notifications"
 "$build_dir/worker-notifications"
+
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
+  -fsanitize=address,undefined -fno-omit-frame-pointer -g -pthread \
+  -I"$source_dir/../include" -I"$root/deps/pxa-system/libpxa/include" \
+  "$source_dir/pxa_audio_capture_registry_test.cc" -o "$build_dir/capture-registry"
+"$build_dir/capture-registry"

@@ -104,7 +104,9 @@ private:
     static void Flush(lv_display_t* display, const lv_area_t* area, uint8_t* pixels) {
         auto* self = static_cast<Display*>(lv_display_get_driver_data(display));
         const auto* active = lv_display_get_buf_active(display);
-        if (self->retained_) assert(self->dirty_.Include(*area));
+        if (!self->retained_ && self->native_)
+            assert(self->dirty_.Merge<true>(*area, pixels, active->header.stride, self->snapshot_.data()));
+        else if (self->retained_) assert(self->dirty_.Include(*area));
         else assert(self->dirty_.Merge(*area, pixels, active->header.stride, self->frame_.data()));
         ++self->flushes_;
         if (lv_display_flush_is_last(display)) {
@@ -118,7 +120,7 @@ private:
                 self->pending_bytes_.assign(pixels, pixels + self->draw_[0].size());
                 return;
             }
-            assert(mosaico_board::CopyRefreshArea(dirty,
+            if (self->retained_ || !self->native_) assert(mosaico_board::CopyRefreshArea(dirty,
                 self->retained_ ? pixels : self->frame_.data(), self->snapshot_.data(), self->native_));
         }
         lv_display_flush_ready(display);
@@ -238,13 +240,15 @@ int main() {
     lv_init();
     {
         Display full(mosaico_board::kHeight), half(mosaico_board::kHeight / 2),
-            retained(mosaico_board::kDrawBufferRows, true),
-            native(mosaico_board::kDrawBufferRows, true, true);
+            retained(mosaico_board::kHeight, true), native(mosaico_board::kHeight, true, true),
+            compact(32, false, true);
         for (int stage = 0; stage < 30; ++stage) {
             full.Render(stage);
             half.Render(stage);
             retained.Render(stage);
             native.Render(stage);
+            compact.Render(stage);
+            assert(full.pixels() == compact.pixels());
             assert(full.pixels() == half.pixels());
             assert(full.pixels() == retained.pixels());
             assert(full.pixels() == native.pixels());
@@ -257,7 +261,9 @@ int main() {
                     full.flushes(), half.flushes(), retained.flushes());
         for (int stage = 30; stage < 34; ++stage) {
             full.SimulateDirectGame(); half.SimulateDirectGame(); retained.SimulateDirectGame(); native.SimulateDirectGame();
-            full.Render(stage); half.Render(stage); retained.Render(stage); native.Render(stage);
+            compact.SimulateDirectGame();
+            full.Render(stage); half.Render(stage); retained.Render(stage); native.Render(stage); compact.Render(stage);
+            assert(full.pixels() == compact.pixels());
             assert(full.pixels() == half.pixels());
             assert(full.pixels() == retained.pixels());
             assert(full.pixels() == native.pixels());

@@ -78,12 +78,21 @@ int main(int argc,char **argv) {
     }
     read_calls=0;
     for(unsigned i=0;i<20;++i) {
-        uint8_t actual[16],expected[16];unsigned long at=i%2?12317:8211;
+        uint8_t actual[16],expected[16];unsigned long at=8211+(i%4)*4096;
         assert(face->stream->read(face->stream,at,actual,sizeof(actual))==sizeof(actual));
         assert(pread(reference,expected,sizeof(expected),(off_t)at)==sizeof(expected));
         assert(!memcmp(actual,expected,sizeof(actual)));
     }
-    assert(read_calls<=2 && !close(reference));
+    assert(read_calls<=4);
+    uint8_t table[8192];
+    assert(face->stream->read(face->stream,32768,table,sizeof(table))==sizeof(table));
+    uint8_t expected_table[8192];
+    assert(pread(reference,expected_table,sizeof(table),32768)==sizeof(table));
+    assert(!memcmp(table,expected_table,sizeof(table)));
+    read_calls=0;
+    for(unsigned i=0;i<4;++i)
+        assert(face->stream->read(face->stream,8211+i*4096,table,16)==16);
+    assert(!read_calls && !close(reference));
     FT_UInt uncached=FT_Get_Char_Index(face,0x6c34);assert(uncached);
     assert(!FT_Load_Char(face,0x4e2d,FT_LOAD_RENDER) && face->glyph->bitmap.rows);
     assert(!pxa_esp_storage_drain_volume(epoch));

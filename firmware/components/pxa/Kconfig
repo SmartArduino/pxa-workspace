@@ -100,8 +100,17 @@ menu "PXA Development Apps"
                 No memory is reserved. Total resource quota is half of detected
                 PSRAM and the temporary quota is one quarter. Every external
                 allocation also checks actual free/largest heap and leaves
-                one eighth (at least 256 KiB) for UI and native consumers.
+                the configured native-heap headroom for UI and native consumers.
                 Disable to use the explicit resource ceilings below.
+
+        config PXA_RESOURCE_PSRAM_HEADROOM_BYTES
+            int "Native PSRAM headroom in bytes (0 selects automatic)"
+            range 0 33554432
+            default 0
+            help
+                External resource allocations leave this much PSRAM free.
+                The automatic value is one eighth of detected PSRAM. Both
+                policies leave at least 256 KiB for native allocations.
 
         config PXA_RESOURCE_EXTERNAL_BYTES
             int "Shared resource PSRAM budget"

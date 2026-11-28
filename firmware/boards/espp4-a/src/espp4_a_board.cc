@@ -135,7 +135,8 @@ private:
     void Status();
     void CollectCompletions();
     void WaitScan();
-    void Submit(unsigned buffer, const pxa_esp_surface_frame_t& frame);
+    void Submit(unsigned buffer, const pxa_esp_surface_frame_t& frame,
+                espp4_a::ScanRows rows = {0, kHeight});
     bool PresentOpaqueSurface();
     void UpdateUiRenderMode();
     void ApplyBacklight();
@@ -182,10 +183,19 @@ private:
     uint32_t ui_native_frames_ = 0;
     espp4_a::UiRenderMode ui_render_;
     uint32_t direct_frames_ = 0;
-    uint32_t direct_native_frames_ = 0, direct_backdrop_frames_ = 0;
+    uint32_t direct_native_frames_ = 0, direct_backdrop_frames_ = 0, native_blits_ = 0;
     uint32_t lvgl_revision_ = 0, painted_revision_ = UINT32_MAX;
     uint16_t backdrop_color_ = 0;
     bool backdrop_uniform_ = false;
+    unsigned backdrop_ready_mask_ = 0;
+    struct PicturePlacement {
+        int32_t x, y;
+        uint16_t width, height;
+    } backdrop_picture_{};
+    uintptr_t last_picture_pixels_ = 0;
+    uint64_t last_picture_id_ = 0;
+    int64_t last_picture_us_ = 0, alpha_deferred_until_ = 0;
+    uint32_t alpha_deferred_ = 0;
     uint64_t lvgl_timer_us_ = 0, input_poll_us_ = 0;
     uint32_t ui_passes_ = 0, lvgl_timer_max_us_ = 0;
     uint32_t direct_acquire_misses_ = 0, direct_coverage_misses_ = 0;
@@ -260,6 +270,7 @@ bool Board::Initialize() {
     if (esp_lcd_dpi_panel_register_event_callbacks(panel_, &callbacks, this) != ESP_OK ||
         esp_lcd_panel_init(panel_) != ESP_OK) return false;
     lv_init();
+    espp4_a_init_frame_copy();
 #if PXA_ESPP4_PIXEL_SELFTEST
     if (!espp4_a_pixels_device_test()) return false;
 #endif
@@ -344,6 +355,7 @@ bool Board::Initialize() {
 
 void Board::Flush(lv_display_t* display, const lv_area_t* area, uint8_t* data) {
     auto* b = static_cast<Board*>(lv_display_get_user_data(display));
+    b->ui_render_.NoteFlushedArea(area);
     if (area) b->ui_damage_pixels_ += uint64_t(lv_area_get_width(area)) * lv_area_get_height(area);
     if (!b->ui_render_.ShouldSubmit(display)) {
         lv_display_flush_ready(display);
@@ -355,6 +367,8 @@ void Board::Flush(lv_display_t* display, const lv_area_t* area, uint8_t* data) {
         ++b->painted_frames_; b->paint_started_us_ = 0;
     }
     b->CollectCompletions();
+    b->backdrop_ready_mask_ = 0;
+    b->last_picture_us_ = b->alpha_deferred_until_ = 0;
     auto* output = reinterpret_cast<uint16_t*>(data);
     unsigned next;
     const uint8_t rotation = b->rotation_;
@@ -385,7 +399,7 @@ void Board::Flush(lv_display_t* display, const lv_area_t* area, uint8_t* data) {
         b->ui_render_.OverlayDrawn(overlay);
         b->painted_revision_ = b->lvgl_revision_;
         ++b->ui_native_frames_;
-        b->Submit(next, {});
+        b->Submit(next, {}, b->ui_render_.TakeScanRows(height));
         lv_display_flush_ready(display);
         return;
     }
@@ -408,8 +422,10 @@ void Board::Flush(lv_display_t* display, const lv_area_t* area, uint8_t* data) {
     if (!acquired && pxa_esp_surface_has_visible_surface()) ++b->missed_surfaces_;
     const int64_t compose_start = esp_timer_get_time();
     b->painted_revision_ = b->lvgl_revision_;
-    b->backdrop_uniform_ = acquired && espp4_a::IsOpaqueSurface(frame) &&
-        espp4_a::UniformBackground(output, size_t(width) * height, b->backdrop_color_);
+    b->backdrop_uniform_ = acquired &&
+        espp4_a::UniformBackdrop(frame, output, width, height, b->backdrop_color_);
+    if (b->backdrop_uniform_)
+        b->backdrop_picture_ = {frame.x, frame.y, frame.width, frame.height};
     if (acquired) espp4_a::Compose(frame, output, 0, 0, width, height, width, width, height);
     if (pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY))
         pxa_board_performance_draw_rgb565(output, width, height, width,
@@ -429,9 +445,12 @@ void Board::Flush(lv_display_t* display, const lv_area_t* area, uint8_t* data) {
 
 // Both LVGL and the opaque fullscreen path retain identical DMA ownership,
 // complete-scan timestamps, input latency accounting and screenshot fences.
-void Board::Submit(unsigned next, const pxa_esp_surface_frame_t& frame) {
+void Board::Submit(unsigned next, const pxa_esp_surface_frame_t& frame, espp4_a::ScanRows rows) {
     const int64_t submit_started = esp_timer_get_time();
-    const auto result = esp_lcd_panel_draw_bitmap(panel_, 0, 0, kWidth, kHeight, frames_[next]);
+    // The IDF DPI driver flips its own buffer without copying and writes back
+    // only the supplied scan lines. The EOF fence still covers the whole frame.
+    const auto result = esp_lcd_panel_draw_bitmap(panel_, 0, rows.first, kWidth, rows.end,
+                                                 frames_[next] + rows.first * kWidth);
     const int64_t submitted = esp_timer_get_time();
     submit_us_ += submitted - submit_started;
     if (result != ESP_OK) {
@@ -466,55 +485,115 @@ bool Board::PresentOpaqueSurface() {
     const uint8_t rotation = rotation_;
     if (ui_render_.direct() || (rotation && !rotation_pixels_) || painted_revision_ != lvgl_revision_)
         return false;
-    // The opaque path cannot blend a visible system or guest overlay. Let
-    // Flush materialize the newest draw list when LVGL must repaint anyway;
-    // preparing it here could rasterize a frame that Flush then replaces.
-    if (pxa_esp_surface_composition_required()) return false;
     CollectCompletions();
     while (pending_count_ == pending_.size()) { WaitScan(); CollectCompletions(); }
     pxa_esp_surface_frame_t frame{};
     const int64_t acquire_started = esp_timer_get_time();
     (void)pxa_esp_surface_prepare_latest_raster();
-    // This alpha-aware acquisition atomically checks the fresh-frame resume
-    // barrier and rejects incomplete modal snapshots. The coverage predicate
-    // below additionally requires an empty visible plane stack.
-    if (!pxa_esp_surface_acquire_prepared_with_alpha(&frame)) {
+    // The alpha-aware acquisition retains the visibility, modal and
+    // fresh-frame gates. The backdrop path can blend a prepared guest plane.
+    if (!pxa_esp_surface_acquire_prepared_native(&frame)) {
         ++direct_acquire_misses_; return false;
     }
     const int64_t acquired = esp_timer_get_time();
     const int width = LogicalWidth(), height = LogicalHeight();
     const bool covers_display = espp4_a::CoversDisplayOpaque(frame, width, height);
-    if (!covers_display && (!backdrop_uniform_ || !espp4_a::IsOpaqueSurface(frame))) {
+    const bool buffered_surface = frame.flags &
+        (PXA_SURFACE_FLAG_GUEST_MAPPED | PXA_SURFACE_FLAG_HOST_PRODUCED);
+    const auto& backdrop = backdrop_picture_;
+    const bool same_backdrop = backdrop_uniform_ && backdrop.x == frame.x && backdrop.y == frame.y &&
+        backdrop.width == frame.width && backdrop.height == frame.height;
+    if (!covers_display && (!same_backdrop || !espp4_a::CanComposeOnBackdrop(frame))) {
         if (++direct_coverage_misses_ == 1)
-            ESP_LOGI(kTag, "Opaque fallback: source=%ux%u stride=%lu xy=%ld,%ld format=%u masks=%u alpha=%u/%u target=%dx%d",
+            ESP_LOGI(kTag, "Opaque fallback: source=%ux%u stride=%lu xy=%ld,%ld format=%u masks=%u alpha=%u/%u target=%dx%d backdrop=%u",
                 unsigned(frame.width), unsigned(frame.height), static_cast<unsigned long>(frame.stride_bytes),
                 static_cast<long>(frame.x), static_cast<long>(frame.y), unsigned(frame.format),
                 unsigned(frame.opaque_ui_region_count), unsigned(frame.ui_alpha_plane.visible),
-                unsigned(frame.system_alpha_plane.visible), width, height);
+                unsigned(frame.system_alpha_plane.visible), width, height, unsigned(backdrop_uniform_));
         pxa_esp_surface_release_frame(frame.lease);
         return false;
+    }
+    const bool guest_plane = frame.ui_alpha_plane.visible && !frame.suppress_guest_alpha;
+    const uintptr_t source_identity = frame.native_payload ? reinterpret_cast<uintptr_t>(frame.native_payload)
+                                                         : reinterpret_cast<uintptr_t>(frame.pixels);
+    const bool same_picture = last_picture_us_ && frame.frame_id == last_picture_id_ &&
+        source_identity == last_picture_pixels_;
+    const bool perf_overlay = pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY);
+    // Keep animated alpha updates with the next video frame when possible.
+    // The first overlay, its removal and trusted UI still display immediately.
+    // The deadline also presents a final alpha update if the video stalls.
+    constexpr int64_t alpha_wait_us = 80000;
+    if (same_picture && same_backdrop && guest_plane && compose_guest_plane_ && !perf_overlay &&
+        buffered_surface && acquired - last_picture_us_ < alpha_wait_us) {
+        alpha_deferred_until_ = last_picture_us_ + alpha_wait_us;
+        ++alpha_deferred_;
+        pxa_esp_surface_release_frame(frame.lease);
+        return true;
+    }
+    if (!same_picture) {
+        last_picture_pixels_ = source_identity;
+        last_picture_id_ = frame.frame_id;
+        last_picture_us_ = acquired;
     }
     const unsigned next = scanout_buffer_ ^ 1u;
     auto* output = rotation ? rotation_pixels_ : frames_[next];
     acquire_us_ += acquired - acquire_started;
+    const unsigned backdrop_bit = 1u << next;
+    const bool clean_backdrop = !covers_display && !rotation && !perf_overlay &&
+        espp4_a::KeepsOpaqueBackdrop(frame, width, height);
+    espp4_a::ScanRows scan_rows{0, kHeight};
+    if (clean_backdrop && (backdrop_ready_mask_ & backdrop_bit) &&
+        frame.x == 0 && frame.width == width && frame.height <= height) {
+        const int top = frame.y ? frame.y : (height - frame.height) / 2;
+        if (top >= 0 && top <= height - frame.height)
+            scan_rows = {top, top + frame.height};
+    }
     if (!covers_display) {
-        if (!espp4_a::FillOpaqueBackdrop(frame, output, width, height, backdrop_color_)) {
+        if (!(clean_backdrop && (backdrop_ready_mask_ & backdrop_bit)) &&
+            !espp4_a::FillOpaqueBackdrop(frame, output, width, height, backdrop_color_)) {
             pxa_esp_surface_release_frame(frame.lease);
             return false;
         }
         ++direct_backdrop_frames_;
     }
+    if (clean_backdrop) backdrop_ready_mask_ |= backdrop_bit;
+    else backdrop_ready_mask_ &= ~backdrop_bit;
+    // The decoder's front end runs at priority 5 on this core. Let a
+    // completed display DMA reach the next scan before decoding resumes.
+    // Both the DMA copy and the latch wait block without consuming the CPU.
+    constexpr UBaseType_t presentation_priority = 6;
+    const auto previous_priority = uxTaskPriorityGet(nullptr);
     const bool direct_rotation=rotation && espp4_a::CanRotateSurfaceDirect(frame,width,height);
-    if (!direct_rotation) espp4_a::Compose(frame, output, 0, 0, width, height, width, width, height);
-    if (!direct_rotation && pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY))
+    const bool native_candidate = frame.native_draw && !perf_overlay &&
+        espp4_a::CanRotateSurfaceDirect(frame,width,height);
+    const bool dma_path = native_candidate || !rotation || (direct_rotation && rotation_engine_.HardwareActive());
+    const bool expedite = dma_path && buffered_surface &&
+        previous_priority < presentation_priority;
+    if (expedite) vTaskPrioritySet(nullptr, presentation_priority);
+    bool native = false;
+    if (native_candidate) {
+        // The UI thread owns the released LCD framebuffer until Submit.
+        // Opaque content, its geometry and the overlay state all belong to
+        // the acquired lease; independent Guest preparations cannot alter it.
+        const pxa_esp_surface_native_target_t target{frames_[next],kBytes,kWidth*2,kWidth,kHeight,rotation};
+        native = frame.native_draw(frame.native_payload,&target);
+        native_blits_ += native;
+    }
+    if (!native && !frame.pixels && !pxa_esp_surface_materialize_frame(&frame)) {
+        pxa_esp_surface_release_frame(frame.lease);
+        if (expedite) vTaskPrioritySet(nullptr,previous_priority);
+        return false;
+    }
+    if (!native && !direct_rotation) espp4_a::Compose(frame, output, 0, 0, width, height, width, width, height);
+    if (!direct_rotation && perf_overlay)
         pxa_board_performance_draw_rgb565(output, width, height, width,
             0, 0, width, height, false);
     const int64_t composed = esp_timer_get_time();
     compose_us_ += composed - acquired; ++composed_frames_;
-    if (rotation) {
+    if (rotation && !native) {
         rotation_engine_.Rotate(direct_rotation ? reinterpret_cast<const uint16_t*>(frame.pixels) : output,
             frames_[next], kWidth, kHeight, rotation);
-        if (direct_rotation && pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY)) {
+        if (direct_rotation && perf_overlay) {
             const int left=(width-PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH)/2;
             pxa_board_performance_draw_rgb565(performance_pixels_.data(),width,height,
                 PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH,left,0,PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH,
@@ -525,9 +604,10 @@ bool Board::PresentOpaqueSurface() {
         rotation_us_ += esp_timer_get_time() - composed; ++rotated_frames_;
     } else ++direct_native_frames_;
     ++direct_frames_;
-    compose_masks_ = compose_guest_plane_ = compose_system_plane_ = 0;
+    compose_masks_ = compose_system_plane_ = 0;
+    compose_guest_plane_ = guest_plane;
     pxa_esp_surface_release_frame(frame.lease);
-    Submit(next, frame);
+    Submit(next, frame, scan_rows);
     if (!rotation) {
         // Submit waited for the DMA latch. Only the old scanout buffer is
         // writable now. Rebind LVGL through its public buffer API so its next
@@ -535,6 +615,7 @@ bool Board::PresentOpaqueSurface() {
         lv_display_set_buffers(display_, frames_[next ^ 1u], frames_[next], kBytes,
             LV_DISPLAY_RENDER_MODE_FULL);
     }
+    if (expedite) vTaskPrioritySet(nullptr, previous_priority);
     return true;
 }
 
@@ -917,7 +998,9 @@ void Board::Loop() {
         Input();
         input_poll_us_ += esp_timer_get_time() - input_started;
         ++ui_passes_;
-        if (surface_dirty_.exchange(false)) {
+        if (surface_dirty_.exchange(false) ||
+            (alpha_deferred_until_ && esp_timer_get_time() >= alpha_deferred_until_)) {
+            alpha_deferred_until_ = 0;
             if (ui_render_.direct()) {
                 // Shell overlay notifications are already represented by
                 // LVGL invalid rectangles. Do not turn them into full redraws.
@@ -952,12 +1035,13 @@ void Board::Loop() {
                 static_cast<unsigned long long>((composed_frames_ + ui_native_frames_) ? submit_us_ / (composed_frames_ + ui_native_frames_) : 0),
                 static_cast<unsigned long long>((composed_frames_ + ui_native_frames_) ? scan_wait_us_ / (composed_frames_ + ui_native_frames_) : 0),
                 static_cast<unsigned long>(direct_frames_));
-            ESP_LOGI(kTag, "Opaque fallback counts: acquire=%lu coverage=%lu",
-                static_cast<unsigned long>(direct_acquire_misses_), static_cast<unsigned long>(direct_coverage_misses_));
-            ESP_LOGI(kTag, "UI work: passes=%lu input_total_us=%llu lvgl_total_us=%llu lvgl_max_us=%lu native_direct=%lu backdrop_direct=%lu",
+            ESP_LOGI(kTag, "Opaque fallback counts: acquire=%lu coverage=%lu alpha_deferred=%lu",
+                static_cast<unsigned long>(direct_acquire_misses_), static_cast<unsigned long>(direct_coverage_misses_),
+                static_cast<unsigned long>(alpha_deferred_));
+            ESP_LOGI(kTag, "UI work: passes=%lu input_total_us=%llu lvgl_total_us=%llu lvgl_max_us=%lu native_direct=%lu backdrop_direct=%lu native_blits=%lu",
                 (unsigned long)ui_passes_, (unsigned long long)input_poll_us_,
                 (unsigned long long)lvgl_timer_us_, (unsigned long)lvgl_timer_max_us_,
-                (unsigned long)direct_native_frames_, (unsigned long)direct_backdrop_frames_);
+                (unsigned long)direct_native_frames_, (unsigned long)direct_backdrop_frames_, (unsigned long)native_blits_);
             ESP_LOGI(kTag, "Touch work: irq=%lu reads=%lu errors=%lu",
                 (unsigned long)touch_irq_count_.exchange(0), (unsigned long)touch_reads_, (unsigned long)touch_errors_);
             ESP_LOGI(kTag, "Native UI: direct=%u frames=%lu damage_pixels=%llu",
@@ -972,10 +1056,11 @@ void Board::Loop() {
             compose_us_ = rotation_us_ = 0; composed_frames_ = rotated_frames_ = 0;
             acquire_us_ = submit_us_ = scan_wait_us_ = paint_us_ = 0; painted_frames_ = 0;
             direct_frames_ = 0;
-            direct_native_frames_ = direct_backdrop_frames_ = 0;
+            direct_native_frames_ = direct_backdrop_frames_ = native_blits_ = 0;
             input_poll_us_ = lvgl_timer_us_ = 0; ui_passes_ = lvgl_timer_max_us_ = 0;
             touch_reads_ = touch_errors_ = 0;
             direct_acquire_misses_ = direct_coverage_misses_ = 0;
+            alpha_deferred_ = 0;
             ui_damage_pixels_ = 0; ui_native_frames_ = 0;
         }
         const int64_t timer_started = esp_timer_get_time();

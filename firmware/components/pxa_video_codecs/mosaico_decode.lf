@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# The S31 fetches code through a 16 KiB I-cache. Keep the inter-slice CABAC
+# loop and residual parser resident without moving the whole decoder to SRAM.
+[mapping:pxa_mosaico_h264]
+archive: libesp_openh264.a
+entries:
+    if ESP_OPENH264_PROFILE_MINIMAL = y:
+        decode_slice:_ZN15EspOh264WelsDec32WelsDecodeMbCabacPSliceBaseMode0EPNS_21TagWelsDecoderContextEPNS_16TagNeighborAvailERm (noflash)
+        decode_slice:_ZN15EspOh264WelsDec32WelsDecodeMbCabacBSliceBaseMode0EPNS_21TagWelsDecoderContextEPNS_16TagNeighborAvailERm (noflash)
+        parse_mb_syn_cabac:_ZN15EspOh264WelsDec23ParseResidualBlockCabacEPNS_16TagNeighborAvailEPhPN18EspOh264WelsCommon15TagBitStringAuxEllPKhlPshPNS_21TagWelsDecoderContextE (noflash)

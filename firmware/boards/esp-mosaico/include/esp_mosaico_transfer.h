@@ -16,18 +16,22 @@ namespace mosaico_board {
 // that is safe for the panel's scan rate after a fresh TE edge.
 class RefreshRegion {
 public:
-    template <typename Area>
+    template <bool Swap = false, typename Area>
     bool Merge(const Area& area, const uint8_t* source, uint32_t stride,
                uint8_t* frame) {
         if (!ValidDisplayArea(area) || !source || !frame ||
             stride < (area.x2 - area.x1 + 1u) * sizeof(uint16_t)) return false;
         const size_t bytes = (area.x2 - area.x1 + 1) * sizeof(uint16_t);
+        const auto copy = [](uint8_t* dst, const uint8_t* src, size_t length) {
+            if constexpr (Swap) pxa_render_swap_rgb565(dst, src, length / sizeof(uint16_t));
+            else std::memcpy(dst, src, length);
+        };
         if (bytes == kWidth * sizeof(uint16_t) && stride == bytes) {
-            std::memcpy(frame + area.y1 * bytes, source,
+            copy(frame + area.y1 * bytes, source,
                         (area.y2 - area.y1 + 1) * bytes);
         } else {
             for (int32_t y = area.y1; y <= area.y2; ++y)
-                std::memcpy(frame + (y * kWidth + area.x1) * sizeof(uint16_t),
+                copy(frame + (y * kWidth + area.x1) * sizeof(uint16_t),
                             source + (y - area.y1) * stride, bytes);
         }
         return Include(area);
@@ -113,46 +117,6 @@ bool ExchangeRefreshFrame(const Area& area, uint8_t*& frame, uint8_t*& snapshot)
     return true;
 }
 
-enum class FrameDamage { Unavailable, Unchanged, Changed };
-
-// Compare two complete, immutable panel-order snapshots. The caller fences DMA
-// before reading the previous one. A diagnostic overlay can be excluded because
-// the flush worker redraws it in the new snapshot and merges its own damage.
-template <typename Area>
-FrameDamage FindFrameDamage(const uint8_t* previous, const uint8_t* next,
-                           Area* area, const Area* excluded = nullptr) {
-    if (!previous || !next || !area || (excluded && !ValidDisplayArea(*excluded)))
-        return FrameDamage::Unavailable;
-    int left = kWidth, right = -1, top = kHeight, bottom = -1;
-    for (int y = 0; y < kHeight; ++y) {
-        const auto segment = [&](int begin, int end) {
-            if (begin >= end) return;
-            const size_t offset = (size_t(y) * kWidth + begin) * 2;
-            uint32_t first, last;
-            if (!pxa_render_diff_rgb565(previous + offset, next + offset,
-                                        end - begin, &first, &last)) return;
-            left = std::min(left, begin + int(first));
-            right = std::max(right, begin + int(last));
-            top = std::min(top, y);
-            bottom = y;
-        };
-        if (excluded && y >= excluded->y1 && y <= excluded->y2) {
-            segment(0, std::clamp<int>(excluded->x1, 0, kWidth));
-            segment(std::clamp<int>(excluded->x2 + 1, 0, kWidth), kWidth);
-        } else segment(0, kWidth);
-    }
-    if (right < 0) {
-        // Retain normal frame completion/TE ownership without retransmitting
-        // a visually identical full frame. This is one minimal aligned window.
-        *area = {0, 0, 3, 1};
-        return FrameDamage::Unchanged;
-    }
-    *area = {static_cast<decltype(area->x1)>(left), static_cast<decltype(area->y1)>(top),
-             static_cast<decltype(area->x2)>(right), static_cast<decltype(area->y2)>(bottom)};
-    RoundDisplayArea(area);
-    return FrameDamage::Changed;
-}
-
 inline void CaptureScanoutRgb565(const uint8_t* snapshot, uint16_t* pixels) {
     const auto* source = reinterpret_cast<const uint16_t*>(snapshot);
     for (size_t i = 0; i < kWidth * kHeight; ++i)
@@ -176,13 +140,18 @@ struct TransferPlan {
     bool compact;
 };
 
+// The rectangles have already been clipped to the physical display.
+constexpr uint32_t RowsPerStagedBand(uint32_t width) {
+    return std::min<uint32_t>(kTransferRows, kStagingBytes / (width * sizeof(uint16_t)));
+}
+
 // A narrow, fast writer can overtake the scanning panel. Use it only when the
 // whole window fits between scans: preferably before the first row, otherwise
 // after the last row. Long windows retain the full-row scan-follow path.
 // No TE or an implausible measurement also uses that conservative path.
 template <typename Area>
 TransferPlan<Area> PlanTransfer(Area dirty, uint32_t period_us, uint32_t blank_us,
-                                bool compact_enabled = true) {
+                                bool compact_enabled = true, bool packed = false) {
     RoundDisplayArea(&dirty);
     const bool known = period_us >= 12000 && period_us <= 25000 && blank_us < period_us / 3;
     const uint32_t period = known ? period_us : 16667;
@@ -195,8 +164,25 @@ TransferPlan<Area> PlanTransfer(Area dirty, uint32_t period_us, uint32_t blank_u
     const uint32_t width = dirty.x2 - dirty.x1 + 1;
     const uint32_t wire_us = (static_cast<uint64_t>(width) * height * 16 * 1000000 +
                               4 * kPixelClockHz - 1) / (4 * kPixelClockHz);
+    // A packed, full-height strip takes one contiguous DMA submission. Bound
+    // both ends of every scan line between successive passes of the panel.
+    // DMA cannot traverse the intervening rows faster than the QSPI wire.
+    if (packed && known && compact_enabled && height == kHeight && width < kWidth) {
+        const uint32_t row_span =
+            static_cast<uint64_t>(width) * (height - 1) * 4 * 1000000 / kPixelClockHz;
+        constexpr uint32_t scan_margin = 500;
+        constexpr uint32_t dma_margin = 1500;
+        if (row_span < active && row_span + dma_margin < period - dma_margin) {
+            const uint32_t earliest = active + scan_margin - row_span;
+            const uint32_t latest = period + row_span - scan_margin;
+            const uint32_t budget = row_span + dma_margin;
+            if (earliest + budget < latest)
+                return {dirty, earliest, latest, budget, true};
+        }
+    }
     // Half wire rate plus per-band command/copy overhead and scheduling margin.
-    const uint32_t budget = wire_us * 2 + ((height + kTransferRows - 1) / kTransferRows) * 80 + 2000;
+    const uint32_t band_rows = RowsPerStagedBand(width);
+    const uint32_t budget = wire_us * 2 + ((height + band_rows - 1) / band_rows) * 80 + 2000;
     if (known && compact_enabled && width < kWidth) {
         const uint32_t first_scan = static_cast<uint64_t>(dirty.y1) * active / kHeight;
         if (first_scan >= 2 * guard + budget + 1000)
@@ -208,6 +194,75 @@ TransferPlan<Area> PlanTransfer(Area dirty, uint32_t period_us, uint32_t blank_u
     dirty.x2 = kWidth - 1;
     return {dirty, ScanFollowDelayUs(dirty.y1, active), static_cast<uint32_t>(
             period + static_cast<uint64_t>(dirty.y2) * active / kHeight - guard), 0, false};
+}
+
+enum class FrameDamage { Unavailable, Unchanged, Changed };
+
+struct PanelTiming {
+    uint32_t period_us;
+    uint32_t blank_us;
+    bool compact_enabled;
+};
+
+// Compare two complete, immutable panel-order snapshots. The caller fences DMA
+// before reading the previous one. A diagnostic overlay can be excluded because
+// the flush worker redraws it in the new snapshot and merges its own damage.
+template <typename Area>
+FrameDamage FindFrameDamage(const uint8_t* previous, const uint8_t* next,
+                           Area* area, const Area* excluded = nullptr,
+                           const PanelTiming* timing = nullptr) {
+    if (!previous || !next || !area || (excluded && !ValidDisplayArea(*excluded)))
+        return FrameDamage::Unavailable;
+    int left = kWidth, right = -1;
+    auto compare = [&](int y, int from, int to) {
+        bool changed = false;
+        const auto segment = [&](int begin, int end) {
+            if (begin >= end) return;
+            const size_t offset = (size_t(y) * kWidth + begin) * 2;
+            uint32_t first, last;
+            if (!pxa_render_diff_rgb565(previous + offset, next + offset,
+                                        end - begin, &first, &last)) return;
+            left = std::min(left, begin + int(first));
+            right = std::max(right, begin + int(last));
+            changed = true;
+        };
+        if (excluded && y >= excluded->y1 && y <= excluded->y2) {
+            segment(from, std::min<int>(to, excluded->x1));
+            segment(std::max<int>(from, excluded->x2 + 1), to);
+        } else segment(from, to);
+        return changed;
+    };
+    int top = 0;
+    while (top < kHeight && !compare(top, 0, kWidth)) ++top;
+    if (top == kHeight) {
+        // Retain normal frame completion/TE ownership without retransmitting
+        // a visually identical full frame. This is one minimal aligned window.
+        *area = {0, 0, 3, 1};
+        return FrameDamage::Unchanged;
+    }
+    int bottom = kHeight - 1;
+    while (bottom > top && !compare(bottom, 0, kWidth)) --bottom;
+    if (timing) {
+        // These rows already require at least this width. If it cannot fit
+        // between panel scans, finding additional dirty columns cannot help.
+        const Area bounds = {static_cast<decltype(area->x1)>(left), static_cast<decltype(area->y1)>(top),
+                             static_cast<decltype(area->x2)>(right), static_cast<decltype(area->y2)>(bottom)};
+        const auto plan = PlanTransfer(bounds, timing->period_us, timing->blank_us, timing->compact_enabled);
+        if (!plan.compact) {
+            *area = plan.area;
+            return FrameDamage::Changed;
+        }
+    }
+    // Once the outer rows are known, only pixels outside the horizontal
+    // bounds can change the transfer window. Never reread the movie interior.
+    for (int y = top + 1; y < bottom && (left || right + 1 < kWidth); ++y) {
+        if (left) compare(y, 0, left);
+        if (right + 1 < kWidth) compare(y, right + 1, kWidth);
+    }
+    *area = {static_cast<decltype(area->x1)>(left), static_cast<decltype(area->y1)>(top),
+             static_cast<decltype(area->x2)>(right), static_cast<decltype(area->y2)>(bottom)};
+    RoundDisplayArea(area);
+    return FrameDamage::Changed;
 }
 
 enum class DirectTransferResult { Ineligible, Completed, Failed };
@@ -236,9 +291,10 @@ bool TransferBands(const Area& area, const uint8_t* pixels, uint32_t stride,
                    Mirror mirror) {
     if (!wait()) return false;
     const size_t row_bytes = (area.x2 - area.x1 + 1) * sizeof(uint16_t);
+    const int32_t band_rows = RowsPerStagedBand(area.x2 - area.x1 + 1);
     uint8_t index = 0;
-    for (int32_t y = area.y1; y <= area.y2; y += kTransferRows) {
-        const int32_t rows = std::min<int32_t>(kTransferRows, area.y2 - y + 1);
+    for (int32_t y = area.y1; y <= area.y2; y += band_rows) {
+        const int32_t rows = std::min<int32_t>(band_rows, area.y2 - y + 1);
         const uint8_t* source = pixels + (y - area.y1) * stride;
         if (stride == row_bytes) {
             std::memcpy(buffers[index], source, rows * row_bytes);

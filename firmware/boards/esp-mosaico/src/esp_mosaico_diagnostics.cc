@@ -78,6 +78,7 @@ bool EspMosaicoHardware::CaptureRgb565(
     const bool valid = displayed_frame_valid_ &&
         (!after_present || completed_frames_ != initial_sequence);
     if (valid) {
+        RestoreLogicalScanout();
         mosaico_board::CaptureScanoutRgb565(scanout_pixels_, pixels);
         info->width = mosaico_board::kWidth;
         info->height = mosaico_board::kHeight;

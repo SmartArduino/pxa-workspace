@@ -118,6 +118,7 @@ int pxa_esp_net_backend(pxa_net_backend_t *output,
 }
 
 const pxa_lan_backend_t *pxa_esp_lan_backend(void) { return NULL; }
+const pxa_video_backend_t *pxa_esp_video_backend(void) { return NULL; }
 
 void pxa_esp_net_reset_requests(void) {}
 

@@ -5,9 +5,13 @@ import io
 import json
 import os
 import pathlib
+import secrets
+import socket
+import ssl
 import struct
 import sys
 import tempfile
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -15,6 +19,69 @@ import zlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import pxadb
+
+
+@unittest.skipUnless(getattr(ssl, "HAS_PSK", False), "OpenSSL PSK callbacks unavailable")
+class WiFiPxaDbTest(unittest.TestCase):
+    def test_short_code_preserves_leading_zeroes_and_can_be_entered_at_the_prompt(self):
+        with mock.patch.object(sys.stdin, "isatty", return_value=True), \
+             mock.patch("getpass.getpass", return_value="000123") as prompt, \
+             mock.patch.object(pxadb.socket, "create_connection"), \
+             mock.patch.object(pxadb, "lan_pairing_key", side_effect=OSError) as pair:
+            with self.assertRaisesRegex(pxadb.PxaDbError, "Unable to pair"):
+                pxadb.LanSocketPort("127.0.0.1:47012", 3)
+        prompt.assert_called_once()
+        self.assertEqual(pair.call_args.args[1], "000123")
+
+    def test_only_the_pairing_code_opens_the_encrypted_command_session(self):
+        key = secrets.token_bytes(16)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_2
+        context.set_ciphers("PSK-AES128-GCM-SHA256")
+        context.set_psk_server_callback(lambda identity: key if identity == "pxadb" else b"")
+        commands = []
+        rejected = []
+
+        def serve(listener):
+            for _ in range(2):
+                raw, _ = listener.accept()
+                with raw:
+                    raw.settimeout(3)
+                    try:
+                        with context.wrap_socket(raw, server_side=True) as tls, tls.makefile("rb") as lines:
+                            for line in lines:
+                                if not line.startswith(b"PXADB1 "):
+                                    continue
+                                protocol, sequence, command = line.strip().split(b" ", 2)
+                                commands.append(command)
+                                payload = b"transport=lan" if command == b"HELLO" else b"bye"
+                                tls.sendall(b"\n" + b" ".join(
+                                    (protocol, sequence, b"OK", base64.b64encode(payload))) + b"\n")
+                                if command == b"BYE":
+                                    break
+                    except ssl.SSLError:
+                        rejected.append(True)
+
+        with tempfile.TemporaryDirectory() as directory, socket.socket() as listener:
+            pair_file = pathlib.Path(directory) / "pair"
+            listener.settimeout(4)
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(2)
+            target = f"lan:127.0.0.1:{listener.getsockname()[1]}|{pair_file}"
+            worker = threading.Thread(target=serve, args=(listener,), daemon=True)
+            worker.start()
+            try:
+                pair_file.write_text(secrets.token_hex(16))
+                with self.assertRaisesRegex(pxadb.PxaDbError, "Unable to pair"):
+                    pxadb.open_client(target, 3)
+                pair_file.write_text(key.hex())
+                with pxadb.open_client(target, 3) as client:
+                    self.assertEqual(client.device_info, "transport=lan")
+            finally:
+                worker.join(5)
+            self.assertFalse(worker.is_alive())
+        self.assertEqual(rejected, [True])
+        self.assertEqual(commands, [b"HELLO", b"BYE"])
 
 
 class BulkUploadTest(unittest.TestCase):

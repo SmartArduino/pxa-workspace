@@ -1,6 +1,9 @@
 #include "sdkconfig.h"
 #if CONFIG_PXADB_ENABLED
 #include "pxadb_transport.h"
+#if CONFIG_PXADB_LAN
+#include "pxadb_lan.h"
+#endif
 #include <algorithm>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -62,6 +65,7 @@ esp_err_t StartUart() {
 }  // namespace
 
 bool TransportIsUart(Transport transport) {
+    if (transport == Transport::kLan) return false;
 #if CONFIG_PXADB_TRANSPORT_UART
     (void)transport;
     return true;
@@ -71,6 +75,9 @@ bool TransportIsUart(Transport transport) {
 }
 
 esp_err_t TransportStart(Transport transport) {
+#if CONFIG_PXADB_LAN
+    if (transport == Transport::kLan) return ESP_OK;
+#endif
     if (TransportIsUart(transport)) {
 #if CONFIG_PXADB_TRANSPORT_UART || CONFIG_PXADB_UART_SECONDARY
         return StartUart();
@@ -95,6 +102,9 @@ esp_err_t TransportStart(Transport transport) {
 
 int TransportRead(Transport transport, uint8_t* bytes, size_t size, uint32_t timeout_ms) {
     if (!size) return 0;
+#if CONFIG_PXADB_LAN
+    if (transport == Transport::kLan) return ReadLan(bytes, size);
+#endif
     if (TransportIsUart(transport)) {
 #if CONFIG_PXADB_TRANSPORT_UART || CONFIG_PXADB_UART_SECONDARY
         // Wait for only the first byte; a short command must not wait for a full block.
@@ -119,6 +129,9 @@ int TransportRead(Transport transport, uint8_t* bytes, size_t size, uint32_t tim
 }
 
 int TransportWrite(Transport transport, const uint8_t* bytes, size_t size) {
+#if CONFIG_PXADB_LAN
+    if (transport == Transport::kLan) return WriteLan(bytes, size);
+#endif
     if (TransportIsUart(transport)) {
 #if CONFIG_PXADB_TRANSPORT_UART || CONFIG_PXADB_UART_SECONDARY
         if (!size) return 0;
@@ -151,6 +164,7 @@ int TransportWrite(Transport transport, const uint8_t* bytes, size_t size) {
 }
 
 bool TransportTxDone(Transport transport) {
+    if (transport == Transport::kLan) return true;
     if (TransportIsUart(transport)) {
 #if CONFIG_PXADB_TRANSPORT_UART || CONFIG_PXADB_UART_SECONDARY
         return uart_wait_tx_done(kUart, kIoTimeout) == ESP_OK;
@@ -168,6 +182,7 @@ bool TransportTxDone(Transport transport) {
 }
 
 size_t TransportWriteChunk(Transport transport) {
+    if (transport == Transport::kLan) return 4096;
     if (!TransportIsUart(transport)) return 256;
 #if CONFIG_PXADB_TRANSPORT_UART || CONFIG_PXADB_UART_SECONDARY
     if (kUseConsoleVfs) return SIZE_MAX;
@@ -175,6 +190,7 @@ size_t TransportWriteChunk(Transport transport) {
     return 1024;
 }
 const char* TransportName(Transport transport) {
+    if (transport == Transport::kLan) return "lan";
     if (TransportIsUart(transport)) return "uart";
 #if CONFIG_PXADB_TRANSPORT_USB_CDC
     return "usb-cdc";

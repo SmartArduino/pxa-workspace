@@ -6,7 +6,7 @@ idf_component_register(
     PRIV_INCLUDE_DIRS vendor/gc4023/include vendor/gc4023
         "${PXSYS_ROOT}/libpxa/adapters/include"
     PRIV_REQUIRES pxa_video_codecs esp_app_format esp_driver_gpio esp_driver_i2c esp_driver_i2s pxa_render_accel
-        esp_driver_cam esp_driver_isp esp_driver_jpeg esp_driver_ppa
+        esp_driver_cam esp_driver_isp esp_driver_jpeg esp_driver_ppa esp_driver_dma
         espressif__esp_cam_sensor espressif__esp_sccb_intf espressif__esp_new_jpeg
         esp_driver_ledc esp_driver_sdmmc esp_driver_uart esp_lcd esp_hw_support esp_timer
         esp_netif esp_wifi fatfs sdmmc p4_wireless esp_hal_usb espressif__esp_tinyusb
@@ -16,6 +16,14 @@ idf_component_register(
         pxa_system_standard pxa_system_reference_ui)
 
 target_sources(${COMPONENT_LIB} PRIVATE src/espp4_a_pixels.cc src/espp4_a_pixels.S)
+idf_component_get_property(espp4_video_host pxa COMPONENT_LIB)
+set_property(SOURCE "${PXSYS_ROOT}/libpxa/src/services/video/video_service.c"
+    TARGET_DIRECTORY ${espp4_video_host} APPEND PROPERTY COMPILE_DEFINITIONS
+    PXA_VIDEO_COPY_PIXELS=espp4_a_copy_frame PXA_VIDEO_COPY_ROWS=espp4_a_copy_video_rows
+    PXA_VIDEO_PACKED_SCALE=1)
+set_property(SOURCE "${CMAKE_CURRENT_LIST_DIR}/../../components/pxa/src/services/pxa_esp_surface.c"
+    TARGET_DIRECTORY ${espp4_video_host} APPEND PROPERTY COMPILE_DEFINITIONS
+    PXA_SURFACE_COPY_PIXELS=espp4_a_copy_frame)
 target_link_options(${COMPONENT_LIB} INTERFACE
     "-Wl,--wrap=esp_cpu_reset" "-Wl,--undefined=__wrap_esp_cpu_reset")
 option(PXA_ESPP4_PIXEL_ACCEL "Use P4 v3 PIE RGB565 pixel primitives" ON)

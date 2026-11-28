@@ -8,8 +8,8 @@
 #include "esp_timer.h"
 
 typedef struct { pxa_fs_async_work_fn work; void *context; } fs_work_t;
-/* Board-lifetime worker: its handle and stack never race task deletion. One
- * activation owns this FIFO; end's barrier retires all borrowed pointers. */
+/* The owner reuses these synchronization objects across activations.
+ * A worker exists only in an activation that submitted backend I/O. */
 static QueueHandle_t g_queue;
 static SemaphoreHandle_t g_drained;
 static TaskHandle_t g_worker;
@@ -23,8 +23,10 @@ static void fs_worker(void *unused) {
     for (;;) {
         if (xQueueReceive(g_queue, &job, portMAX_DELAY) != pdTRUE) continue;
         if (!job.work) {
+            /* No access to activation state after this acknowledgement. */
             xSemaphoreGive(g_drained);
-            continue;
+            vTaskDelete(NULL);
+            return;
         }
         const int64_t started = esp_timer_get_time();
         job.work(job.context);
@@ -42,9 +44,6 @@ pxa_status_t pxa_esp_fs_worker_begin(void (*notify)(void *), void *context) {
     if (!g_queue) g_queue = xQueueCreate(2, sizeof(fs_work_t));
     if (!g_drained) g_drained = xSemaphoreCreateBinary();
     if (!g_queue || !g_drained) return PXA_STATUS_RESOURCE_LIMIT;
-    if (!g_worker && xTaskCreate(fs_worker, "pxa-fs", 8192, NULL, 2,
-                                &g_worker) != pdPASS)
-        return PXA_STATUS_RESOURCE_LIMIT;
     g_notify = notify;
     g_notify_context = context;
     g_active = 1;
@@ -56,6 +55,9 @@ pxa_status_t pxa_esp_fs_worker_submit(void *context,
     fs_work_t job = {work, work_context};
     (void)context;
     if (!g_active || !work) return PXA_STATUS_BAD_STATE;
+    if (!g_worker && xTaskCreate(fs_worker, "pxa-fs", 8192, NULL, 2,
+                                &g_worker) != pdPASS)
+        return PXA_STATUS_RESOURCE_LIMIT;
     return xQueueSend(g_queue, &job, 0) == pdTRUE ?
         PXA_STATUS_OK : PXA_STATUS_WOULD_BLOCK;
 }
@@ -66,8 +68,11 @@ void pxa_esp_fs_worker_end(void) {
     g_active = 0;
     /* FIFO admission is serialized by the runtime owner. No producer can
      * enqueue after this barrier, and every accepted backend call finishes. */
-    xQueueSend(g_queue, &barrier, portMAX_DELAY);
-    xSemaphoreTake(g_drained, portMAX_DELAY);
+    if (g_worker) {
+        xQueueSend(g_queue, &barrier, portMAX_DELAY);
+        xSemaphoreTake(g_drained, portMAX_DELAY);
+        g_worker = NULL;
+    }
     g_notify = NULL;
     g_notify_context = NULL;
 }

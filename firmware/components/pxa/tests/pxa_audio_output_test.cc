@@ -258,7 +258,7 @@ int main(){
     open_budget_owner(0);
     PxaAudioOutput a;
     assert(!a.Initialize(nullptr,nullptr) && !created_tasks);
-    for(unsigned fail=1;fail<=6;++fail) {
+    for(unsigned fail=1;fail<=5;++fail) {
         fail_allocation=fail;
         assert(!a.Initialize(write_pcm,nullptr));
         assert(!created_tasks && !live_queues && !live_mutexes);
@@ -275,16 +275,15 @@ int main(){
         const auto device=budget_stats(owners[2]); assert(!device.charged[0] && !device.charged[1]);
         pxa_memory_release(occupied);
     }
-    assert(a.Initialize(write_pcm,nullptr,true) && created_tasks == 2);
+    assert(a.Initialize(write_pcm,nullptr,true) && created_tasks == 1);
     assert(a.device_paced_);
     a.device_paced_=false; // Remaining legacy fixtures end at the software timer.
-    const auto device_resident=budget_stats(owners[2]);
-    assert(device_resident.charged[0] == pxa_memory_allocation_bytes(sizeof(PxaAudioOutput::RuntimeStorage)) +
-        pxa_memory_allocation_bytes(kMusicTaskStackBytes));
-    assert(device_resident.charged[1] == pxa_memory_allocation_bytes(a.kMusicSamples*sizeof(int16_t)) +
-        3*pxa_memory_allocation_bytes(32));
-    const size_t available_external=limits[1]-device_resident.charged[1];
-    assert(a.Initialize(write_pcm,nullptr) && created_tasks == 2); // idempotent, no duplicate registration
+    const auto mixer=budget_stats(owners[2]);
+    assert(mixer.charged[0] == pxa_memory_allocation_bytes(sizeof(PxaAudioOutput::RuntimeStorage)) +
+                                  pxa_memory_allocation_bytes(kOutputTaskStackBytes));
+    assert(mixer.charged[1] == 3*pxa_memory_allocation_bytes(32));
+    size_t available_external=limits[1]-mixer.charged[1];
+    assert(a.Initialize(write_pcm,nullptr) && created_tasks == 1);
     char root[]="/tmp/pxa-audio-output.XXXXXX";assert(mkdtemp(root));
     unsigned char pcm[160];memset(pcm,255,sizeof(pcm));
     pxa_asset_info_t info = {}; info.kind=PXA_ASSET_AUDIO;
@@ -376,7 +375,20 @@ int main(){
     FILE* f;
     char ogg[512]; snprintf(ogg,sizeof(ogg),"%s/music.ogg",root);
     f=fopen(ogg,"wb");assert(f);fclose(f);
+    for (unsigned fail : {2u,3u}) { // Pin succeeds, then stack or ring fails.
+        fail_allocation=fail;
+        uint64_t instance=1;
+        assert(a.PlayMusic(&a,0,91,ogg,false,0,false,&instance)==PXA_STATUS_RESOURCE_LIMIT && !instance);
+        assert(!a.music_task_ && !a.music_ring_ && !a.music_stack_ && created_tasks==1);
+        const auto after=budget_stats(owners[2]);
+        assert(after.charged[0]==mixer.charged[0] && after.charged[1]==mixer.charged[1]);
+        assert(!budget_stats().charged[1]);
+    }
     assert(a.PlayAsset(&a,0,ogg,false,0));
+    const auto device_resident=budget_stats(owners[2]);
+    assert(created_tasks==2 && device_resident.charged[0]==mixer.charged[0]+pxa_memory_allocation_bytes(kMusicTaskStackBytes));
+    assert(device_resident.charged[1]==mixer.charged[1]+pxa_memory_allocation_bytes(a.kMusicSamples*sizeof(int16_t)));
+    available_external=limits[1]-device_resident.charged[1];
     const size_t pin = pxa_memory_allocation_bytes(sizeof(pxa_esp_music_input_t));
     assert(budget_stats().charged[1] == pin);
     assert(a.PlayAsset(&a,0,ogg,false,0)); // replaced queued command drops old pin
@@ -602,6 +614,7 @@ int main(){
     vQueueDelete(a.music_commands_);vSemaphoreDelete(a.music_mutex_);
     // Mock tasks never ran: dispose their board-lifetime backing only in this fixture.
     pxa_memory_release(a.music_ring_);
+    pxa_memory_release(a.runtime_storage_->output_stack);
     pxa_memory_release(a.runtime_storage_);
     pxa_memory_release(a.music_stack_);
     esp_audio_dec_unregister(ESP_AUDIO_TYPE_VORBIS);esp_audio_dec_unregister(ESP_AUDIO_TYPE_OPUS);

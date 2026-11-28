@@ -145,6 +145,7 @@ typedef struct {
 typedef struct {
     uint8_t initialized;
     uint8_t legacy_ready;
+    bool transfer_cleanup_pending;
     pxa_app_locators_t locators;
     pxa_posix_installer_t *installer;
     void *installer_workspace;
@@ -1682,6 +1683,17 @@ static bool initialization_failed(const char *stage) {
     return false;
 }
 
+bool pxa_esp_package_store_transfer_cleanup_pending(void) {
+    return store_is_initialized() &&
+           __atomic_load_n(&g_store->transfer_cleanup_pending, __ATOMIC_RELAXED);
+}
+
+static pxa_status_t discard_receiving_entries(void) {
+    pxa_status_t status = pxa_posix_installer_discard_transfers(g_store->installer);
+    __atomic_store_n(&g_store->transfer_cleanup_pending, status != PXA_STATUS_OK, __ATOMIC_RELAXED);
+    return status;
+}
+
 bool pxa_esp_package_store_initialize(void) {
     uint32_t started_ms = esp_log_timestamp(), phase_ms;
     pxa_posix_installer_config_t config;
@@ -1769,7 +1781,7 @@ bool pxa_esp_package_store_initialize(void) {
         installer_status = pxa_posix_installer_recover_pending(g_store->installer);
         if (installer_status != PXA_STATUS_OK)
             ESP_LOGW(PXA_ESP_PACKAGE_TAG, "Some pending transactions need recovery: %d", (int)installer_status);
-        (void)pxa_posix_installer_discard_transfers(g_store->installer);
+        (void)discard_receiving_entries();
         (void)unlink(CONFIG_PXA_MOUNT_POINT "/.pxadb-upload");
         scan_installed();
         (void)scan_inbox(1);
@@ -2764,7 +2776,7 @@ bool pxa_esp_package_store_publish_transfer(const char *app_id) {
 
 void pxa_esp_package_store_discard_transfers(void) {
     if (!store_is_initialized() || !g_store->legacy_ready || !take_lock(g_store->transaction_lock)) return;
-    (void)pxa_posix_installer_discard_transfers(g_store->installer);
+    (void)discard_receiving_entries();
     release_lock(g_store->transaction_lock);
 }
 
@@ -2773,7 +2785,7 @@ pxa_status_t pxa_esp_package_store_try_discard_transfers(void) {
     SemaphoreHandle_t lock=g_store->transaction_lock;
     if (!lock || xSemaphoreGetMutexHolder(lock)==xTaskGetCurrentTaskHandle() ||
         xSemaphoreTake(lock,0)!=pdTRUE) return PXA_STATUS_WOULD_BLOCK;
-    pxa_status_t status=pxa_posix_installer_discard_transfers(g_store->installer);
+    pxa_status_t status=discard_receiving_entries();
     release_lock(lock);
     return status;
 }
@@ -4677,6 +4689,35 @@ bool pxa_esp_package_store_refresh_permission_summary(const char *identity) {
     release_lock(g_store->metadata_lock);
     release_lock(g_store->transaction_lock);
     return success && status==PXA_STATUS_OK;
+}
+
+void pxa_esp_package_store_publish_loaded_policy(const char *identity,
+    const pxa_esp_app_storage_t *storage, const pxa_package_manifest_t *manifest,
+    const pxa_permission_service_t *policy) {
+    if (!store_is_initialized() || !identity || !storage || !manifest ||
+        !policy || manifest->permission_count > 64) return;
+    uint64_t granted = 0;
+    uint8_t count = 0;
+    for (uint16_t i = 0; i < manifest->permission_count; ++i) {
+        const pxa_package_permission_t *permission = &manifest->permissions[i];
+        if (pxa_permission_get(policy, permission->name, permission->scope) == PXA_PERMISSION_ALLOW) {
+            granted |= UINT64_C(1) << i;
+            ++count;
+        }
+    }
+    // The activation already loaded the persisted decisions. Only publish the
+    // display summary while the catalog still describes the same installation.
+    if (!take_lock(g_store->metadata_lock)) return;
+    pxa_esp_package_entry_t *entry = find_entry(identity);
+    if (entry && entry->installed && entry->volume_local && !entry->ambiguous &&
+        pxa_esp_app_storage_matches_installation(storage, entry->mount_epoch,
+            entry->install_id, entry->install_generation)) {
+        entry->permission_count = (uint8_t)manifest->permission_count;
+        entry->granted_permissions = granted;
+        entry->granted_permission_count = count;
+        entry->permission_summary_known = 1;
+    }
+    release_lock(g_store->metadata_lock);
 }
 
 bool pxa_esp_package_store_refresh_permission_summary_with_storage(const char *identity,pxa_esp_app_storage_t *storage) {

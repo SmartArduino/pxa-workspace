@@ -15,6 +15,7 @@ set(PXA_SRCS
     "src/services/pxa_esp_system_font.c"
     "src/services/pxa_esp_font_source.c"
     "src/services/pxa_esp_net.c"
+    "src/services/pxa_esp_wifi_transfer.c"
     "src/services/pxa_esp_services.c"
     "src/services/pxa_esp_storage_worker.c"
     "src/services/pxa_esp_fs_worker.c"
@@ -78,6 +79,11 @@ if(PXA_BUILTIN_AUDIO_OUTPUT)
         "src/services/pxa_audio_capture_input.cc"
         "src/services/pxa_audio_output.cc"
         "src/services/pxa_codec_memory.cc")
+    if(PXA_BOARD STREQUAL "esp-mosaico" OR PXA_BOARD STREQUAL "espp4-a" OR
+       PXA_BOARD STREQUAL "doit-gamekit-2")
+        list(APPEND PXA_SRCS "src/services/pxa_esp_encoded_audio.cc")
+        set(PXA_HAS_ENCODED_AUDIO ON)
+    endif()
 endif()
 
 idf_build_get_property(PXA_PERIPHERALS_ENABLED PXA_ENABLE_PERIPHERALS)
@@ -231,8 +237,15 @@ endif()
 target_compile_definitions(${COMPONENT_LIB} PUBLIC
     PXA_ENABLE_LEGACY_CONTAINER=$<BOOL:${CONFIG_PXA_ENABLE_LEGACY_CONTAINER}>
     PXA_ENABLE_PERMISSIONS=$<BOOL:${CONFIG_PXA_ENABLE_PERMISSIONS}>)
-if(PXA_BOARD STREQUAL "espp4-a")
+if(PXA_BOARD STREQUAL "espp4-a" AND CONFIG_SPIRAM)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_ESP_HTTP_REUSE=1)
+endif()
+if(PXA_BOARD STREQUAL "espp4-a" OR PXA_BOARD STREQUAL "esp-mosaico")
     target_compile_definitions(${COMPONENT_LIB} PUBLIC PXA_AUDIO_MIXER_PACKETS=24)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_NATIVE_ALPHA_CANVAS_REFRESH=1)
+endif()
+if(PXA_HAS_ENCODED_AUDIO)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_HAS_ENCODED_AUDIO=1)
 endif()
 if(PXA_WIFI_LOCATION_ENABLED)
     target_include_directories(${COMPONENT_LIB} PUBLIC "${PXA_WIFI_LOCATION_ROOT}/include")
@@ -300,3 +313,13 @@ endif()
 include("${CMAKE_CURRENT_LIST_DIR}/littlefs_usage.cmake")
 cmake_language(EVAL CODE
     "cmake_language(DEFER DIRECTORY \"${CMAKE_SOURCE_DIR}\" CALL pxa_configure_littlefs_usage \"${CMAKE_CURRENT_LIST_DIR}\")")
+
+
+# Keep the GameKit 2 factory image inside the existing 5 MiB partition.
+# Package installation and store metadata are outside the playback loop.
+if(PXA_BOARD STREQUAL "doit-gamekit-2" AND CONFIG_COMPILER_OPTIMIZATION_PERF)
+    set_property(SOURCE
+        "src/package/pxa_esp_package_store.c" "src/package/pxa_esp_store_download.c"
+        "src/package/pxa_esp_installations.c" "src/package/pxa_esp_store_cache.c"
+        APPEND PROPERTY COMPILE_OPTIONS "-Os")
+endif()

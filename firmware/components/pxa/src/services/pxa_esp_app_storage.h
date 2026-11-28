@@ -13,6 +13,8 @@ pxa_status_t pxa_esp_app_storage_bind_media(pxa_esp_app_storage_t *,uint64_t mou
 /* Borrowed immutable binding; zero means this installation has no explicit
  * media binding. The storage owner retains the returned mount until close. */
 uint64_t pxa_esp_app_storage_media_epoch(const pxa_esp_app_storage_t *);
+int pxa_esp_app_storage_matches_installation(const pxa_esp_app_storage_t *,
+    uint64_t mount_epoch, const uint8_t install_id[16], uint64_t generation);
 /* Activation owner supplies a home already authenticated by app-store recover
  * (record MAC and signed code), the verified candidate of an approved
  * installation, or a record-authenticated maintenance home. Metadata-only

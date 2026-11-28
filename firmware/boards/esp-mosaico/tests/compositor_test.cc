@@ -453,6 +453,25 @@ void TestFrameDamage() {
         std::memcpy(panel.data() + 1 + (y * 480 + damage.x1) * 2,
                     next + (y * 480 + damage.x1) * 2, (damage.x2 - damage.x1 + 1) * 2);
     assert(panel == new_frame);
+    // The extremal columns can both occur between the first and last dirty rows.
+    for (auto point : {std::pair{190, 31}, std::pair{210, 160}, std::pair{7, 120},
+                       std::pair{466, 121}, std::pair{218, 85}})
+        next[(point.second * 480 + point.first) * 2] ^= 0x12;
+    const lv_area_t inner_overlay{205, 80, 230, 100};
+    assert(mosaico_board::FindFrameDamage(previous, next, &damage, &inner_overlay) == FrameDamage::Changed);
+    assert(damage.x1 == 4 && damage.x2 == 467 && damage.y1 == 0 && damage.y2 == 161);
+    const mosaico_board::PanelTiming timing{16667, 500, true};
+    const mosaico_board::PanelTiming full_rows{16667, 500, false};
+    assert(mosaico_board::FindFrameDamage(previous, next, &damage, &inner_overlay, &full_rows) == FrameDamage::Changed);
+    assert(damage.x1 == 0 && damage.x2 == 479 && damage.y1 == 0 && damage.y2 == 161);
+    std::memcpy(next, previous, bytes);
+    next[(450 * 480 + 174) * 2] ^= 1;
+    assert(mosaico_board::FindFrameDamage(previous, next, &damage, &inner_overlay, &timing) == FrameDamage::Changed);
+    assert(damage.x1 == 172 && damage.x2 == 175 && damage.y1 == 450 && damage.y2 == 451);
+    next[99 * 2] ^= 1;
+    next[(479 * 480 + 322) * 2] ^= 1;
+    assert(mosaico_board::FindFrameDamage(previous, next, &damage, &inner_overlay, &timing) == FrameDamage::Changed);
+    assert(damage.x1 == 0 && damage.x2 == 479 && damage.y1 == 0 && damage.y2 == 479);
     const lv_area_t invalid{-1, 0, 10, 15};
     assert(mosaico_board::FindFrameDamage(previous, next, &damage, &invalid) == FrameDamage::Unavailable);
     assert(mosaico_board::FindFrameDamage(nullptr, next, &damage) == FrameDamage::Unavailable);
@@ -840,8 +859,8 @@ void TestPartialRefreshAndWidenedScanout() {
         for (uint32_t period : {0u, 16931u}) {
             const auto plan = mosaico_board::PlanTransfer(area, period, 800);
             std::vector<uint8_t> storage[2] = {
-                std::vector<uint8_t>(stride * mosaico_board::kTransferRows),
-                std::vector<uint8_t>(stride * mosaico_board::kTransferRows)};
+                std::vector<uint8_t>(mosaico_board::kStagingBytes),
+                std::vector<uint8_t>(mosaico_board::kStagingBytes)};
             uint8_t* buffers[] = {storage[0].data(), storage[1].data()};
             const size_t bytes = (plan.area.x2 - plan.area.x1 + 1) * 2;
             assert(mosaico_board::TransferBands(plan.area,
@@ -855,6 +874,31 @@ void TestPartialRefreshAndWidenedScanout() {
                 }, [](int, int) {}));
         }
     }
+}
+
+void TestPackedScanTiming() {
+    for (uint32_t period : {12000u, 16960u, 25000u}) {
+        for (uint32_t blank : {540u, period / 3 - 1}) {
+            for (int width = 4; width <= 288; width += 4) {
+                const int x = ((mosaico_board::kWidth - width) / 2) & ~3;
+                const lv_area_t dirty{x, 0, x + width - 1, mosaico_board::kHeight - 1};
+                const auto plan = mosaico_board::PlanTransfer(dirty, period, blank, true, true);
+                if (!plan.compact)
+                    continue;
+                const double row_time = width * 4.0e6 / mosaico_board::kPixelClockHz;
+                for (int y = 0; y < mosaico_board::kHeight; ++y) {
+                    const double scan = (period - blank) / double(mosaico_board::kHeight);
+                    assert(plan.start_us + y * row_time > (y + 1) * scan);
+                    assert(plan.deadline_us - (mosaico_board::kHeight - 1 - y) * row_time <
+                           period + y * scan);
+                }
+            }
+        }
+    }
+    const lv_area_t video{104, 0, 375, 479};
+    assert(mosaico_board::PlanTransfer(video, 16960, 540, true, true).compact);
+    assert(!mosaico_board::PlanTransfer(video, 0, 0, true, true).compact);
+    assert(!mosaico_board::PlanTransfer(video, 16960, 540, false, true).compact);
 }
 
 void TestCompactTransferTiming() {
@@ -900,10 +944,11 @@ void TestCompactTransferTiming() {
                         // Every written row must belong to the same panel scan.
                         const double row_us = (plan.area.x2 - plan.area.x1 + 1) * 16.0 *
                             1000000 / (4.0 * mosaico_board::kPixelClockHz) * 2;
+                        const int band_rows = mosaico_board::RowsPerStagedBand(plan.area.x2 - plan.area.x1 + 1);
                         for (int row = plan.area.y1; row <= plan.area.y2; ++row) {
                             const int n = row - plan.area.y1 + 1;
                             const double written = plan.start_us + 2000 + n * row_us +
-                                ((n + mosaico_board::kTransferRows - 1) / mosaico_board::kTransferRows) * 80;
+                                ((n + band_rows - 1) / band_rows) * 80;
                             const double read = row * active / 480 + (before ? 0 : period);
                             assert(written < read);
                             assert(written > read - period);
@@ -1419,6 +1464,7 @@ int main() {
     TestPipelinedSnapshot();
     TestPartialRefreshAndWidenedScanout();
     TestCompactTransferTiming();
+    TestPackedScanTiming();
     TestExchangedFramesAndUiTransition();
     TestAudioWriteRecovery();
     TestInputOwnership();

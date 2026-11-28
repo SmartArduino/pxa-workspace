@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  * Based on firmware/components/pxa_render_accel/pixels_s31.S (MIT).
- * ESP32-P4 v3 PIE kernels. Whole aligned blocks only, task context only.
+ * ESP32-P4 v3 PIE kernels. Whole blocks only, task context only.
  * No SAR, rounding mode, scalar callee-saved register or HW loop state changes.
  */
 #include "sdkconfig.h"
@@ -39,4 +39,5 @@ espp4_a_expand_blocks:
     bnez a2, 1b
     ret
     .size espp4_a_expand_blocks, .-espp4_a_expand_blocks
+
 #endif

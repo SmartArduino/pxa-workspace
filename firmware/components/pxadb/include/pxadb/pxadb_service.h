@@ -95,4 +95,8 @@ bool IsRunning();
 bool IsEnabled();
 bool SetEnabled(bool enabled);
 
+bool SetLanEnabled(bool enabled);
+bool IsLanEnabled();
+bool ReadLanEndpoint(char* address, size_t address_size, char* pairing, size_t pairing_size);
+
 }  // namespace pxadb

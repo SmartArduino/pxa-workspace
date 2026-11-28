@@ -63,6 +63,31 @@ typedef bool (*pxa_esp_surface_fill_bands_fn)(
     uint16_t width, uint16_t height, const uint16_t *tops,
     const uint16_t *bottoms, const uint16_t *colors, uint8_t count);
 
+/* RGB565 destination in physical row order. Rotation is measured in
+ * clockwise quarter turns from the logical Surface. */
+typedef struct {
+    uint16_t *pixels;
+    size_t size;
+    uint32_t stride_bytes;
+    uint16_t width, height;
+    uint8_t rotation;
+} pxa_esp_surface_native_target_t;
+
+typedef bool (*pxa_esp_surface_native_draw_fn)(
+    const void *payload, const pxa_esp_surface_native_target_t *dst);
+
+/* The complete cache-aligned allocation for this active Host RGB writer.
+ * Returns zero for a foreign buffer or mismatched logical extent. */
+size_t pxa_esp_surface_staging_capacity(const uint8_t *pixels, size_t logical_bytes);
+
+/* Only during a Host producer's synchronous fill callback. The slot owns
+ * and reuses this 128-byte-aligned payload. Store all data needed to draw
+ * after the producer closes. draw must support the logical RGB565 target
+ * (rotation 0), including when its hardware accelerator is unavailable. */
+bool pxa_esp_surface_stage_native(uint8_t *staging_rgb, size_t payload_bytes,
+                                  pxa_esp_surface_native_draw_fn draw, void **payload);
+void pxa_esp_surface_cancel_native(uint8_t *staging_rgb);
+
 typedef struct {
     const uint8_t *pixels;
     uint32_t stride_bytes;
@@ -86,6 +111,9 @@ typedef struct {
     uint64_t frame_id;
     uint64_t input_timestamp_us;
     uint64_t lease;
+    /* Available only to a native-aware presenter for the lifetime of lease. */
+    const void *native_payload;
+    pxa_esp_surface_native_draw_fn native_draw;
 } pxa_esp_surface_frame_t;
 
 /* Enforce padding reuse on the target ABI as well as the desktop ABI. */
@@ -146,6 +174,9 @@ typedef struct {
     uint32_t window_us;
     uint8_t surface_changed;
     uint8_t display_mode;
+    uint32_t max_interval_us;
+    uint32_t first_delay_us;
+    uint32_t tail_delay_us;
 } pxa_esp_surface_perf_info_t;
 
 /* ESP heap blocks owned directly by the Surface backend. These bytes are
@@ -268,6 +299,9 @@ bool pxa_esp_surface_acquire_current_for_preview(
     pxa_esp_surface_frame_t *frame);
 /* Atomically acquires only a frame eligible to resume direct scanout. Unlike
  * the composition acquire path, this never consumes a modal-barrier frame. */
+/* Same composition, fresh-frame and pending-raster checks as the direct
+ * acquisition below. The presenter may draw the lease into its scan buffer. */
+bool pxa_esp_surface_acquire_latest_native_for_direct(pxa_esp_surface_frame_t *frame);
 bool pxa_esp_surface_acquire_latest_for_direct(
     pxa_esp_surface_frame_t *frame);
 /* Raster-only work: no LVGL calls or alpha providers. May run outside the UI
@@ -282,6 +316,11 @@ bool pxa_esp_surface_acquire_prepared(pxa_esp_surface_frame_t *frame,
  * direct-resume barrier and rejects opaque/modal fallback; caller must hold
  * the UI lock, validate placement/format and apply the returned planes. */
 bool pxa_esp_surface_acquire_prepared_with_alpha(pxa_esp_surface_frame_t *frame);
+/* The caller may draw a native payload directly to the panel. If it needs
+ * logical RGB (e.g. to blend a HUD), materialize it under the same lease.
+ * A native-only frame has pixels == NULL until materialization succeeds. */
+bool pxa_esp_surface_acquire_prepared_native(pxa_esp_surface_frame_t *frame);
+bool pxa_esp_surface_materialize_frame(pxa_esp_surface_frame_t *frame);
 bool pxa_esp_surface_has_pending_frame(void);
 /* True while an application Surface owns the panel, i.e. while the compositor
  * draws application frames instead of the LVGL shell. Host overlays only need

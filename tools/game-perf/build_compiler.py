@@ -10,12 +10,11 @@ import subprocess
 import sys
 
 
-PIN = "6a54186abc1c10c37c28e443107107c97af8f25f"
 PROFILES = {
-    "fixed-memory": ["wamr-base-alignment.patch", "wamr-fixed-memory.patch"],
-    "minimum-range": ["wamr-base-alignment.patch", "wamr-fixed-memory.patch",
+    "fixed-memory": ["wamr-base-alignment.patch"],
+    "minimum-range": ["wamr-base-alignment.patch",
                       "wamr-minimum-memory-range.patch"],
-    "size-experiment": ["wamr-base-alignment.patch", "wamr-fixed-memory.patch",
+    "size-experiment": ["wamr-base-alignment.patch",
                         "wamr-size-optimization.patch"],
 }
 
@@ -57,8 +56,6 @@ def main():
         parser.error("--jobs must be positive")
     sdk = args.sdk.resolve()
     config = json.loads((sdk / "config/wamr.json").read_text())
-    if config["commit"] != PIN:
-        parser.error("Memory patches require the pinned WAMR revision " + PIN)
     patches = [here / name for name in PROFILES[args.profile]]
     bootstrap = sdk / "tools/package/build_wamrc.sh"
     recipe = {
@@ -87,7 +84,7 @@ def main():
             if source.exists():
                 raise RuntimeError("Unrecorded source directory exists; choose a new --output directory")
             subprocess.run(["git", "-C", str(sdk / "wamr"), "worktree", "add",
-                            "--detach", str(source), PIN], check=True, stdout=sys.stderr)
+                            "--detach", str(source), config["commit"]], check=True, stdout=sys.stderr)
             for patch in patches:
                 subprocess.run(["git", "-C", str(source), "apply", "--check", str(patch)], check=True)
                 subprocess.run(["git", "-C", str(source), "apply", str(patch)], check=True)

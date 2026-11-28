@@ -8,6 +8,24 @@ config PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT
         DOIT GameKit 1. Narrow strided windows retain internal staging.
         Disable to use the original two internal staging buffers throughout.
 
+config PXA_MOSAICO_LCD_COMPACT_UI
+    bool "Use a 32-row LVGL draw buffer"
+    default n
+    help
+        Render UI patches into a panel-owned snapshot. This releases
+        420 KiB of PSRAM for large decoder reference pictures on the H264 build.
+
+config PXA_MOSAICO_LCD_STAGING_ROWS
+    int "Internal DMA staging capacity in full-width rows per buffer"
+    range 1 16
+    default 4 if PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT
+    default 16
+    help
+        Each row reserves 960 bytes in each of the two staging buffers.
+        Narrow rectangles can pack up to 16 rows per transfer. Aligned
+        full-width frames use direct PSRAM DMA at the usual transaction size.
+        Larger buffers reduce transactions for wide strided windows.
+
 config PXA_MOSAICO_NAND_FORMAT_IF_MOUNT_FAILED
     bool "Automatically initialize onboard NAND without a filesystem"
     default y

@@ -95,6 +95,18 @@ menu "PXADB development service"
             The user's PXADB switch in Settings is saved and takes precedence
             on subsequent normal boots.
 
+    config PXADB_LAN
+        bool "Offer Wi-Fi PXADB from Developer options"
+        depends on PXADB_ENABLED && MBEDTLS_TLS_ENABLED && MBEDTLS_SSL_PROTO_TLS1_2
+        default y
+        select MBEDTLS_PSK_MODES
+        select MBEDTLS_KEY_EXCHANGE_PSK
+        select ESP_PROTOCOMM_SUPPORT_SECURITY_VERSION_2
+        help
+            Add an optional TLS endpoint on the station network. It is off
+            at boot and uses a fresh six-digit code to authenticate an SRP
+            key exchange before TLS.
+
     config PXADB_TASK_STACK_SIZE
         int "PXADB control task stack size (bytes)"
         range 16384 32768
@@ -108,12 +120,13 @@ menu "PXADB development service"
 
     config PXADB_LOG_HISTORY_DEPTH
         int "PXADB retained log records"
-        range 4 64
+        range 0 64
         default 16
         depends on PXADB_ENABLED
         help
             Internal-memory history replayed when logcat connects. Live log
-            streaming uses its separate bounded queue. Boards with camera DMA
+            streaming uses its separate bounded queue. Zero disables history
+            allocation and copying while preserving live logs. Boards with camera DMA
             requirements can retain fewer records to preserve internal memory.
 
     config PXADB_TEST_CONTROL

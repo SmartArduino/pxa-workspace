@@ -42,14 +42,16 @@ GPIOs are driven. No eFuse is written by this firmware.
   A dedicated flush task sends aligned, contiguous snapshot rows directly
   from PSRAM using the same SPI DMA mode as DOIT GameKit 1. The LCD IO driver
   splits large writes at the SPI transaction limit and signals the final chunk.
-  Narrow strided windows retain two 16-row internal staging buffers;
-  `PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT=n` uses that path throughout.
+  Narrow strided windows use two internal buffers. Set
+  `CONFIG_PXA_MOSAICO_LCD_STAGING_ROWS` from 1 to 16. Each full-width row
+  costs 1,920 bytes across both buffers. Direct mode defaults to 4 rows
+  (7,680 bytes total), with up to 16 narrow rows packed per transaction.
+  Disabling direct mode defaults to 16 rows for staged full-screen transfers.
   LVGL renders its retained UI frame while SPI reads the immutable snapshot.
   Snapshot exchange, UI copying and idle diagnostics wait for pending DMA,
   including recovery from a timeout; a failed direct transfer is not retried
   through staging while it can still own its source. Completed scanout is converted to
   screenshot RGB565 only on request, avoiding an extra full-frame write.
-  The two staging buffers together retain the original 32-row SRAM footprint.
   Row copies respect LVGL's draw-buffer stride. DMA completion waits are bounded;
   a timed-out transfer retains ownership of its staging buffer until completion.
   The panel
@@ -419,7 +421,15 @@ path and Pai's smaller 296 x 240 panel have different limits. Native game
 resolution remains 480 x 480; this optimization does not force lower quality.
 This display's LVGL refresh timer is 16 ms; actual output is bounded by rendering,
 TE and transfer completion, rather than this timer alone. Other boards keep
-their own refresh periods. One retained full-height draw buffer keeps the
+their own refresh periods. The normal UI configuration uses a retained full-height
+draw buffer. The H.264 configuration enables `CONFIG_PXA_MOSAICO_LCD_COMPACT_UI`
+and uses a 32-row draw buffer, releasing 420 KiB of PSRAM. Its flush callback
+byte-swaps each UI patch into the panel snapshot and holds the same Surface
+lease until the final tile. An opaque video rectangle can overwrite a complete
+tile directly. Only complete video rectangles contribute a video frame ID
+when the panel transfer finishes.
+
+With the retained draw buffer, the board keeps the
 460,800-byte (450 KiB) PSRAM saving versus the original two full-height buffers.
 LVGL renders dirty rectangles directly into that retained UI frame. Flush
 callbacks collect their bounds without copying each chunk into another frame.
@@ -560,17 +570,18 @@ snapshot before returning the source buffer to LVGL. QSPI transfer can then
 overlap the next frame's rendering. Painting waits while the source is being
 copied; screenshots and display changes also wait for in-flight transfers.
 
-The 16 MiB NOR partition table reserves 5 MiB for the factory application at
-`0x10000` and `0xAF0000` bytes for the `pxa_data` LittleFS partition at
-`0x510000`. The separate SPI NAND volume and onboard peripherals are described
+The 16 MiB NOR partition table reserves 6 MiB for the factory application at
+`0x10000` and `0x9F0000` bytes for the `pxa_data` LittleFS partition at
+`0x610000`. The separate SPI NAND volume and onboard peripherals are described
 in the hardware sections above.
 
 Before an app-only firmware update, verify that the device's partition table
-matches the target image. Older 4 MiB application layouts need a data backup
-and a full-image migration; writing a larger app into that old layout can
-overwrite its data partition. Full images provision fonts and the Store but
-replace existing internal data. App-only updates preserve the installed apps,
-fonts, Store and settings when the partition table matches.
+matches the target image. Both the 4 MiB and 5 MiB layouts need a data backup
+and migration to the new table and LittleFS geometry. Writing a larger app
+into either old layout can overwrite its data partition. Full images
+provision fonts and the Store and replace existing internal data. App-only
+updates preserve the installed apps, fonts, Store and settings when the
+partition table matches.
 
 ## Build and use
 
@@ -685,8 +696,9 @@ system font must be supplied locally as described in the workspace README.
 The matching simulator profile is `esp-mosaico` (480 × 480).
 
 ESP32-S31 app packages use O3, the ILP32F ABI and the RV32IMAFCB instruction
-set (`+m,+a,+f,+c,+zba,+zbb,+zbs`). Compressed instructions reduce instruction
-fetches, while bit-manipulation instructions shorten address and bit operations.
+set with Zcb (`+m,+a,+f,+c,+zba,+zbb,+zbs,+zcb`). Zcb gives common
+byte loads and stores 16-bit encodings. Zba combines shifts with adds in
+address calculations. The Guest uses the native Video service for H.264.
 WAMR's `--size-level=3` selects the Small code model; it does not select Os/Oz.
 The bundled LLVM has no ESP32-S31 CPU model, so `generic-rv32` remains explicit.
 Rebuild and reinstall the app package to apply these compiler settings; this
@@ -721,8 +733,13 @@ free memory. Read it with `python3 tools/pxadb/pxadb.py logcat --port /dev/ttyAC
 
 Window 0.5 支持显式 0°/90°/180°/270°，同步变换显示和物理触摸。
 480×480 在所有角度都属于方屏；应用请求“横屏”或“竖屏”时保持当前角度，
-需要改变阅读方向时请求显式角度。非零角度首次分配一个 450 KiB PSRAM
-旋转缓冲，复用原有 TE/SPI 提交流程；0° 保留原来的快路径。
+需要改变阅读方向时请求显式角度。在启用部分绘制和 PSRAM DMA 的配置中，
+旋转工作区初始为 270 KiB。居中的视频窗口在尺寸和背景稳定时，沿用 LVGL
+已绘制的边框，按面板扫描时序发送视频区域。HUD、弹幕及窗口变化由合成器处理。
+全屏不透明 Surface 可以将工作区扩展至 450 KiB，用一次 PPA 操作完成旋转和
+RGB565 字节交换。截图或后续局部合成需要逻辑坐标像素时再还原。
+其他配置使用完整的旋转工作区。PPA 不可用时由 CPU 完成旋转。
+回到 0° 后，待上一笔传输完成即释放旋转缓冲，直接使用原有扫描缓冲。
 截图与 PXADB 注入输入使用逻辑坐标。Home/退出恢复系统方向。
 运动传感器仍使用原生设备坐标，不随屏幕旋转；需要跟随画面的重力操作
 可使用 SDK 的 `pxa_display_motion_to_screen`，避免重复转换。

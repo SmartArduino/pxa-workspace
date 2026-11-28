@@ -45,6 +45,25 @@ set(SDKCONFIG_DEFAULTS
     "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults"
     "${CMAKE_CURRENT_LIST_DIR}/boards/${PXA_BOARD}/sdkconfig.defaults")
 
+set(PXA_ESP_OPENH264_DIR "" CACHE PATH "Optional local Espressif esp_openh264 component")
+if(PXA_ESP_OPENH264_DIR)
+    if(NOT PXA_BOARD_TARGET MATCHES "^(esp32p4|esp32s31)$")
+        message(FATAL_ERROR "esp_openh264 supports ESP32-P4 and ESP32-S31 only")
+    endif()
+    get_filename_component(PXA_ESP_OPENH264_DIR "${PXA_ESP_OPENH264_DIR}" REALPATH)
+    if(NOT EXISTS "${PXA_ESP_OPENH264_DIR}/include/esp_openh264_dec.h")
+        message(FATAL_ERROR "PXA_ESP_OPENH264_DIR must point to the esp_openh264 package")
+    endif()
+    list(APPEND EXTRA_COMPONENT_DIRS "${PXA_ESP_OPENH264_DIR}")
+    list(APPEND SDKCONFIG_DEFAULTS
+        "${CMAKE_CURRENT_LIST_DIR}/components/pxa_video_codecs/sdkconfig.esp_openh264.defaults")
+    set(board_codec_defaults
+        "${CMAKE_CURRENT_LIST_DIR}/boards/${PXA_BOARD}/sdkconfig.esp_openh264.defaults")
+    if(EXISTS "${board_codec_defaults}")
+        list(APPEND SDKCONFIG_DEFAULTS "${board_codec_defaults}")
+    endif()
+endif()
+
 # Keep the generated Kconfig state per board. The shared firmware/sdkconfig
 # would otherwise leak flash size, partition table and feature choices from a
 # previously built board into the next one.
@@ -75,6 +94,10 @@ idf_build_set_property(DEPENDENCIES_LOCK "dependencies.lock.${PXA_BOARD}")
 # relying on the top-level PXA_BOARD cache variable in that process.
 idf_build_set_property(PXA_BOARD_COMPONENT "${PXA_BOARD_COMPONENT}")
 idf_build_set_property(PXA_BOARD_ID "${PXA_BOARD}")
+if(PXA_ESP_OPENH264_DIR)
+    idf_build_set_property(PXA_USE_ESP_OPENH264 ON)
+    set(pxa_binary_audit_args --esp-openh264-root "${PXA_ESP_OPENH264_DIR}")
+endif()
 idf_build_set_property(PXA_ENABLE_VOICE_TRIGGER "${PXA_ENABLE_VOICE_TRIGGER}")
 idf_build_set_property(PXA_ENABLE_PERIPHERALS "${PXA_BOARD_ENABLE_PERIPHERALS}")
 idf_build_set_property(PXA_WIFI_LOCATION_ENABLED "${PXA_ENABLE_WIFI_LOCATION}")
@@ -86,6 +109,9 @@ idf_build_set_property(PXA_ENABLE_APP_PAGES_COMPAT OFF)
 project(pxa_esp_platform)
 if(TARGET __idf_esp_driver_i2c)
     include("${CMAKE_CURRENT_LIST_DIR}/cmake/i2c_sync_probe.cmake")
+endif()
+if(CONFIG_PXA_ENABLED AND TARGET __idf_esp_http_client)
+    include("${CMAKE_CURRENT_LIST_DIR}/cmake/http_stream_logging.cmake")
 endif()
 
 include("${PXSYS_ROOT}/cmake/PxaLicensePolicy.cmake")
@@ -129,11 +155,15 @@ if(CONFIG_PXA_ENABLED)
             --idf-root "$ENV{IDF_PATH}"
             --firmware-root "${CMAKE_CURRENT_LIST_DIR}"
             --compiler "${CMAKE_C_COMPILER}"
+            ${pxa_binary_audit_args}
         COMMENT "Checking linked prebuilt system licenses"
         VERBATIM)
     set_property(TARGET ${pxa_elf} APPEND PROPERTY LINK_DEPENDS
         "${CMAKE_CURRENT_LIST_DIR}/../tools/audit-system-binaries.py"
         "${CMAKE_CURRENT_LIST_DIR}/../tools/system-binary-licenses.json")
+    if(PXA_ESP_OPENH264_DIR)
+        set_property(TARGET ${pxa_elf} APPEND PROPERTY LINK_DEPENDS "${PXA_ESP_OPENH264_DIR}/LICENSE")
+    endif()
 
     add_custom_command(TARGET ${pxa_elf} POST_BUILD
         COMMAND "${pxa_python}" "${CMAKE_CURRENT_LIST_DIR}/../tools/audit-codec-memory.py"

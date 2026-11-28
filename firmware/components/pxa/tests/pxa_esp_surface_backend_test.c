@@ -25,6 +25,7 @@ size_t pxa_esp_assets_trim(uint8_t cls, size_t bytes) { (void)cls; (void)bytes; 
 static unsigned lock_depth;
 static unsigned allocations;
 static unsigned fail_next_malloc;
+static bool fail_readback;
 static size_t last_aligned_allocation_size;
 static unsigned last_malloc_caps;
 static unsigned notifications;
@@ -74,6 +75,10 @@ void *heap_caps_aligned_calloc(size_t alignment, size_t count, size_t size,
                                unsigned caps) {
     last_malloc_caps = caps;
     assert(lock_depth == 0);
+    if (fail_readback) {
+        fail_readback = false;
+        return NULL;
+    }
     void *memory = memalign(alignment, count * size);
     if (memory != NULL) { ++allocations; memset(memory, 0, count * size); }
     return memory;
@@ -212,7 +217,7 @@ static void test_close_while_rendering(pxa_game_render_backend_t *backend) {
     pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 2, PXA_RASTER_CLEAR_BYTES);
     assert(backend->submit(NULL, surface, draw, sizeof(draw)) == 0);
     during_raster = close_during_raster;
-    assert(!pxa_esp_surface_acquire_latest_for_direct(&frame));
+    assert(!pxa_esp_surface_acquire_latest_native_for_direct(&frame));
     assert(during_raster == NULL && allocations == 0);
     pxa_esp_surface_memory_info_t memory = {0};
     pxa_esp_surface_memory_snapshot(&memory);
@@ -466,6 +471,313 @@ static void test_retired_display_budget(pxa_game_render_backend_t *backend) {
            memory.mailbox_bytes == 0);
 }
 
+static void fill_test_pixels(void *context, uint8_t *pixels, uint32_t stride, uint8_t index) {
+    (void)index;
+    memset(pixels, *(const uint8_t *)context, stride * 4);
+}
+
+static unsigned native_draws;
+static bool draw_native_color(const void *payload, const pxa_esp_surface_native_target_t *dst) {
+    assert(!lock_depth && dst->width == 4 && dst->height == 4 && dst->size == 128 &&
+           dst->stride_bytes == 8 && dst->rotation == 0);
+    ++native_draws;
+    memset(dst->pixels, *(const uint8_t *)payload, dst->size);
+    return true;
+}
+
+static void fill_native_color(void *context, uint8_t *pixels, uint32_t stride, uint8_t index) {
+    void *payload = NULL;
+    assert(((uintptr_t)pixels & 127u) == 0);
+    assert(pxa_esp_surface_staging_capacity(pixels, 32) == 128);
+    assert(!pxa_esp_surface_staging_capacity(pixels, 33));
+    assert(!pxa_esp_surface_staging_capacity(pixels + 2, 32));
+    assert(pxa_esp_surface_stage_native(pixels, 16, draw_native_color, &payload));
+    assert(((uintptr_t)payload & 127u) == 0);
+    *(uint8_t *)payload = *(const uint8_t *)context;
+    if (!*(uint8_t *)payload) {
+        pxa_esp_surface_cancel_native(pixels);
+        fill_test_pixels(context, pixels, stride, index);
+    }
+}
+
+typedef struct {
+    unsigned frame;
+    size_t bytes;
+    bool cancel;
+    bool inlined;
+    uint8_t *base;
+} inline_case_t;
+
+static unsigned inline_draws;
+static bool fail_after_draw;
+static bool draw_inline_test(const void *payload, const pxa_esp_surface_native_target_t *dst) {
+    assert(payload != dst->pixels && ((uintptr_t)dst->pixels & 127u) == 0);
+    memset(dst->pixels, *(const uint8_t *)payload, dst->size);
+    ++inline_draws;
+    if (fail_after_draw) {
+        memset(dst->pixels, 0xce, dst->size);
+        fail_after_draw = false;
+        return false;
+    }
+    return true;
+}
+static void fill_inline_test(void *ctx, uint8_t *pixels, uint32_t stride, uint8_t index) {
+    (void)index;
+    inline_case_t *test = ctx;
+    void *payload = NULL;
+    test->base = pixels;
+    assert(pxa_esp_surface_stage_native(pixels, test->bytes, draw_inline_test, &payload));
+    test->inlined = pixels == payload;
+    memset(payload, test->frame, test->bytes);
+    if (test->cancel) {
+        pxa_esp_surface_cancel_native(pixels);
+        memset(pixels + stride + 2, 0x78, 4);
+        memset(pixels + 2 * stride + 2, 0x78, 4);
+    }
+}
+static void partial_test(void *ctx, uint8_t *pixels, uint32_t stride, uint8_t index) {
+    (void)index;
+    (void)stride;
+    assert(pixels[30] == *(uint8_t *)ctx);
+    pixels[0] = 0x9a;
+}
+static void check_inline_slots(pxa_surface_backend_t *backend) {
+    const pxa_surface_desc_t desc = {4, 4, PXA_SURFACE_FORMAT_RGB565, 2,
+                                     PXA_SURFACE_FLAG_HOST_PRODUCED};
+    const pxa_surface_layer_t layer = {.width = 4, .height = 4, .visible = 1};
+    uint64_t handle;
+    uint32_t stride;
+    pxa_esp_surface_frame_t a, b;
+    assert(!backend->create(NULL, &desc, &handle, &stride) &&
+           !backend->configure(NULL, handle, &layer));
+    pxa_esp_surface_t *surface = (void *)(uintptr_t)handle;
+    inline_case_t test = {.frame = 0x12, .bytes = 32};
+    pxa_surface_region_fill_t region = {fill_inline_test, &test, {1, 1, 2, 2}, NULL};
+    assert(!backend->stage(NULL, handle, pxa_surface_fill_region, &region) && test.inlined);
+    assert(!backend->queue_ordered(NULL, handle, 1, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest_native_for_direct(&a) && a.native_payload == test.base &&
+           !a.pixels);
+    const uint8_t *initial = a.native_payload;
+    test.frame = 0x34;
+    assert(!backend->stage(NULL, handle, pxa_surface_fill_region, &region) && test.inlined &&
+           initial != test.base);
+    assert(!backend->queue_ordered(NULL, handle, 2, NULL, 0));
+    assert(initial[0] == 0x12 && initial[31] == 0x12);
+    assert(!surface->native[0].storage && !surface->native[1].storage);
+    fail_readback = true;
+    assert(!pxa_esp_surface_materialize_frame(&a) && !a.pixels && initial[0] == 0x12);
+    assert(pxa_esp_surface_materialize_frame(&a) && a.pixels != initial && a.pixels[0] == 0x12);
+    assert(pxa_esp_surface_materialize_frame(&a) && inline_draws == 1 && initial[31] == 0x12);
+    pxa_esp_surface_release_frame(a.lease);
+    assert(pxa_esp_surface_acquire_latest_native_for_direct(&b) && !b.pixels);
+    pxa_esp_surface_release_frame(b.lease);
+    test.frame = 0xad;
+    test.cancel = true;
+    assert(!backend->stage(NULL, handle, pxa_surface_fill_region, &region) && test.inlined);
+    assert(!backend->queue_ordered(NULL, handle, 3, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest(&a) && !a.native_draw);
+    for (unsigned y = 0; y < 4; ++y)
+        for (unsigned x = 0; x < 4; ++x)
+            assert(a.pixels[y * 8 + x * 2] ==
+                   ((x == 1 || x == 2) && (y == 1 || y == 2) ? 0x78 : 0));
+    pxa_esp_surface_release_frame(a.lease);
+    /* The free slot now contains frame 2. A legacy partial writer must see
+     * its prior RGB, even without a previous readback. */
+    uint8_t expected = 0x34;
+    assert(!backend->stage(NULL, handle, partial_test, &expected));
+    assert(!backend->queue_ordered(NULL, handle, 4, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest(&a) && a.pixels[0] == 0x9a && a.pixels[10] == 0x34);
+    pxa_esp_surface_release_frame(a.lease);
+    test.cancel = false;
+    test.frame = 0x55;
+    test.bytes = 256;
+    assert(!backend->stage(NULL, handle, pxa_surface_fill_region, &region) && !test.inlined);
+    assert(!backend->queue_ordered(NULL, handle, 5, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest(&b) && b.pixels[0] == 0x55);
+    pxa_esp_surface_release_frame(b.lease);
+    test.frame = 0x65;
+    test.bytes = 32;
+    assert(!backend->stage(NULL, handle, pxa_surface_fill_region, &region) && test.inlined);
+    assert(!backend->queue_ordered(NULL, handle, 6, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest_native_for_direct(&a) && a.native_payload == test.base);
+    initial = a.native_payload;
+    assert(pxa_esp_surface_materialize_frame(&a) && a.pixels[0] == 0x65);
+    unsigned n = inline_draws;
+    pxa_esp_surface_release_frame(a.lease);
+    assert(pxa_esp_surface_acquire_current_for_preview(&a) && a.pixels[31] == 0x65 &&
+           n == inline_draws);
+    pxa_esp_surface_release_frame(a.lease);
+    assert(pxa_esp_surface_acquire_prepared_native(&a) && a.native_payload == initial);
+    backend->close(NULL, handle);
+    assert(pxa_esp_surface_materialize_frame(&a) && a.pixels[0] == 0x65 && initial[31] == 0x65);
+    pxa_esp_surface_release_frame(a.lease);
+}
+
+static void check_single_readback(pxa_surface_backend_t *backend) {
+    const pxa_surface_desc_t desc = {4, 4, PXA_SURFACE_FORMAT_RGB565, 2,
+                                     PXA_SURFACE_FLAG_HOST_PRODUCED};
+    const pxa_surface_layer_t layer = {.width = 4, .height = 4, .visible = 1};
+    uint64_t handle;
+    uint32_t stride;
+    pxa_esp_surface_frame_t frame;
+    assert(!backend->create(NULL, &desc, &handle, &stride) &&
+           !backend->configure(NULL, handle, &layer));
+    pxa_esp_surface_t *surface = (void *)(uintptr_t)handle;
+    inline_case_t test = {.frame = 0x11, .bytes = 32};
+    pxa_surface_region_fill_t region = {fill_inline_test, &test, {0, 0, 4, 4}, NULL};
+    assert(!backend->stage(NULL, handle, pxa_surface_fill_region, &region));
+    assert(!backend->queue_ordered(NULL, handle, 1, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest_native_for_direct(&frame));
+    pxa_esp_surface_release_frame(frame.lease);
+    test.frame = 0x33;
+    assert(!backend->stage(NULL, handle, pxa_surface_fill_region, &region));
+    assert(!backend->queue_ordered(NULL, handle, 2, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest(&frame) && frame.pixels == surface->readback &&
+           frame.pixels[31] == 0x33);
+    uint8_t *shared = surface->readback;
+    uint8_t old = 0x11;
+    fail_after_draw = true;
+    assert(backend->stage(NULL, handle, partial_test, &old) == PXA_STATUS_IO_ERROR);
+    assert(frame.pixels[12] == 0x33);
+    assert(!backend->stage(NULL, handle, partial_test, &old));
+    assert(frame.pixels[10] == 0x33 && frame.pixels == shared);
+    pxa_esp_surface_release_frame(frame.lease);
+    assert(!backend->queue_ordered(NULL, handle, 3, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest(&frame) && frame.pixels[0] == 0x9a);
+    pxa_esp_surface_release_frame(frame.lease);
+    for (unsigned id = 4; id < 16; ++id) {
+        test.frame = id;
+        assert(!backend->stage(NULL, handle, pxa_surface_fill_region, &region));
+        assert(!backend->queue_ordered(NULL, handle, id, NULL, 0));
+        assert(pxa_esp_surface_acquire_latest(&frame) && frame.pixels == shared &&
+               frame.pixels[31] == id);
+        pxa_esp_surface_release_frame(frame.lease);
+    }
+    for (unsigned id = 16; id < 18; ++id) {
+        test.frame = id;
+        assert(!backend->stage(NULL, handle, pxa_surface_fill_region, &region));
+        assert(!backend->queue_ordered(NULL, handle, id, NULL, 0));
+        assert(pxa_esp_surface_acquire_latest_native_for_direct(&frame) && !frame.pixels &&
+               frame.native_payload);
+        pxa_esp_surface_release_frame(frame.lease);
+    }
+    assert(!surface->readback);
+    backend->close(NULL, handle);
+}
+
+static void check_ordered_producer(pxa_surface_backend_t *backend) {
+    const pxa_surface_desc_t desc = {4, 4, PXA_SURFACE_FORMAT_RGB565, 3, PXA_SURFACE_FLAG_HOST_PRODUCED};
+    const pxa_surface_layer_t layer = {.width = 4, .height = 4, .visible = 1};
+    uint64_t surface;
+    uint32_t stride;
+    uint8_t color = 1;
+    pxa_esp_surface_frame_t reading;
+    pxa_surface_state_t state;
+    assert(!backend->create(NULL, &desc, &surface, &stride));
+    assert(!backend->configure(NULL, surface, &layer));
+    assert(!backend->stage(NULL, surface, fill_test_pixels, &color));
+    assert(!backend->queue_ordered(NULL, surface, 1, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest(&reading) && reading.pixels[0] == 1);
+    color = 2;
+    assert(!backend->stage(NULL, surface, fill_test_pixels, &color));
+    assert(!backend->queue_ordered(NULL, surface, 2, NULL, 0));
+    color = 3;
+    assert(!backend->stage(NULL, surface, fill_test_pixels, &color));
+    assert(backend->queue_ordered(NULL, surface, 3, NULL, 0) == PXA_STATUS_WOULD_BLOCK);
+    assert(backend->queue_ordered(NULL, surface, 3, NULL, 0) == PXA_STATUS_WOULD_BLOCK);
+    assert(!backend->query(NULL, surface, &state));
+    assert(state.submitted_frames == 2 && !state.dropped_frames && !state.replaced_frames);
+    assert(reading.frame_id == 1 && reading.pixels[0] == 1);
+    pxa_esp_surface_release_frame(reading.lease);
+    assert(pxa_esp_surface_acquire_latest(&reading) && reading.frame_id == 2 && reading.pixels[0] == 2);
+    assert(!backend->queue_ordered(NULL, surface, 3, NULL, 0));
+    assert(backend->queue_ordered(NULL, surface, 3, NULL, 0) == PXA_STATUS_BAD_STATE);
+    pxa_esp_surface_release_frame(reading.lease);
+    assert(pxa_esp_surface_acquire_latest(&reading) && reading.frame_id == 3 && reading.pixels[0] == 3);
+    backend->close(NULL, surface);
+    assert(reading.pixels[0] == 3);
+    pxa_esp_surface_release_frame(reading.lease);
+}
+
+static void check_native_producer(pxa_surface_backend_t *backend) {
+    const pxa_surface_desc_t desc = {4, 4, PXA_SURFACE_FORMAT_RGB565, 2, PXA_SURFACE_FLAG_HOST_PRODUCED};
+    const pxa_surface_layer_t layer = {.width = 4, .height = 4, .visible = 1};
+    uint64_t surface;
+    uint32_t stride;
+    uint8_t color = 21;
+    pxa_esp_surface_frame_t reading;
+    assert(!backend->create(NULL, &desc, &surface, &stride));
+    assert(!backend->configure(NULL, surface, &layer));
+    /* Replace an unpresented native slot without doing RGB work. */
+    assert(!backend->stage(NULL, surface, fill_native_color, &color));
+    assert(!backend->queue(NULL, surface, 1, NULL, 0));
+    ++color;
+    assert(!backend->stage(NULL, surface, fill_native_color, &color));
+    assert(!backend->queue(NULL, surface, 2, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest_native_for_direct(&reading));
+    assert(!native_draws && reading.native_draw == draw_native_color && !reading.pixels &&
+           *(const uint8_t *)reading.native_payload == 22);
+    void *payload;
+    assert(!pxa_esp_surface_stage_native(NULL, 1, draw_native_color, &payload) && !payload);
+    assert(pxa_esp_surface_materialize_frame(&reading) && reading.pixels[0] == 22);
+    assert(pxa_esp_surface_materialize_frame(&reading) && native_draws == 1);
+    pxa_esp_surface_release_frame(reading.lease);
+    assert(!pxa_esp_surface_materialize_frame(&reading));
+    assert(pxa_esp_surface_acquire_current_for_preview(&reading) && reading.pixels[0] == 22);
+    assert(native_draws == 1 && !reading.native_draw);
+    pxa_esp_surface_release_frame(reading.lease);
+    color = 0;
+    assert(!backend->stage(NULL, surface, fill_native_color, &color));
+    assert(!backend->queue(NULL, surface, 3, NULL, 0));
+    assert(pxa_esp_surface_acquire_prepared_native(&reading) && !reading.native_draw &&
+           reading.pixels[0] == 0);
+    pxa_esp_surface_release_frame(reading.lease);
+    color = 31;
+    assert(!backend->stage(NULL, surface, fill_native_color, &color));
+    assert(!backend->queue(NULL, surface, 4, NULL, 0));
+    assert(pxa_esp_surface_acquire_latest(&reading) && reading.pixels[0] == 31 && native_draws == 2);
+    pxa_esp_surface_release_frame(reading.lease);
+    color = 32;
+    assert(!backend->stage(NULL, surface, fill_native_color, &color));
+    assert(!backend->queue(NULL, surface, 5, NULL, 0));
+    assert(pxa_esp_surface_acquire_prepared_native(&reading));
+    backend->close(NULL, surface);
+    assert(pxa_esp_surface_materialize_frame(&reading) && reading.pixels[0] == 32);
+    pxa_esp_surface_release_frame(reading.lease);
+}
+
+static void check_producer_front_buffer(pxa_surface_backend_t *backend) {
+    const pxa_surface_desc_t desc = {4, 4, PXA_SURFACE_FORMAT_RGB565, 2, PXA_SURFACE_FLAG_HOST_PRODUCED};
+    const pxa_surface_layer_t layer = {.width = 4, .height = 4, .visible = 1};
+    uint64_t surface;
+    uint32_t stride;
+    uint8_t color = 1;
+    pxa_esp_surface_frame_t reading;
+    assert(backend->create(backend->context, &desc, &surface, &stride) == PXA_STATUS_OK);
+    assert(backend->configure(backend->context, surface, &layer) == PXA_STATUS_OK);
+    assert(backend->stage(backend->context, surface, fill_test_pixels, &color) == PXA_STATUS_OK);
+    assert(backend->queue(backend->context, surface, 1, NULL, 0) == PXA_STATUS_OK);
+    assert(pxa_esp_surface_acquire_latest(&reading) && reading.pixels[0] == 1);
+    pxa_esp_surface_release_frame(reading.lease);
+    ++color;
+    assert(backend->stage(backend->context, surface, fill_test_pixels, &color) == PXA_STATUS_OK);
+    assert(backend->queue(backend->context, surface, 2, NULL, 0) == PXA_STATUS_OK);
+    assert(pxa_esp_surface_acquire_current_for_preview(&reading) && reading.pixels[0] == 1);
+    ++color;
+    assert(backend->stage(backend->context, surface, fill_test_pixels, &color) == PXA_STATUS_WOULD_BLOCK);
+    pxa_esp_surface_release_frame(reading.lease);
+    assert(pxa_esp_surface_acquire_latest(&reading) && reading.pixels[0] == 2);
+    assert(backend->stage(backend->context, surface, fill_test_pixels, &color) == PXA_STATUS_OK);
+    assert(reading.pixels[0] == 2);
+    assert(backend->queue(backend->context, surface, 3, NULL, 0) == PXA_STATUS_OK);
+    pxa_esp_surface_release_frame(reading.lease);
+    assert(pxa_esp_surface_acquire_current_for_preview(&reading) && reading.pixels[0] == 2);
+    pxa_esp_surface_release_frame(reading.lease);
+    assert(pxa_esp_surface_acquire_latest(&reading) && reading.pixels[0] == 3);
+    pxa_esp_surface_release_frame(reading.lease);
+    backend->close(backend->context, surface);
+}
+
 int main(void) {
     assert(pxa_esp_resource_memory_begin() == PXA_STATUS_OK);
     {
@@ -560,6 +872,7 @@ int main(void) {
     assert(!pxa_esp_surface_composition_required());
     pxa_esp_surface_set_system_overlay_visible(true);
     assert(notifications == 7 && pxa_esp_surface_composition_required());
+    assert(!pxa_esp_surface_acquire_latest_native_for_direct(&probe));
     assert(!pxa_esp_surface_acquire_latest_for_direct(&probe));
     assert(pxa_esp_surface_acquire_latest(&probe));
     assert(probe.opaque_ui_region_count == 1 &&
@@ -578,6 +891,7 @@ int main(void) {
     assert(notifications == 9 && pxa_esp_surface_composition_required());
     pxa_esp_surface_runtime_modal_leave();
     assert(notifications == 10 && !pxa_esp_surface_composition_required());
+    assert(!pxa_esp_surface_acquire_latest_native_for_direct(&probe));
     assert(!pxa_esp_surface_acquire_latest_for_direct(&probe));
     assert(!pxa_esp_surface_try_resume_direct_scanout(2));
     assert(!pxa_esp_surface_try_resume_direct_scanout(1));
@@ -812,6 +1126,7 @@ int main(void) {
         assert(pxa_esp_surface_perf_start_display());
         pxa_esp_surface_note_game_frame_presented(1, 1100);
         pxa_esp_surface_note_display_frame_presented(0);
+        pxa_esp_surface_note_display_frame_presented(900);
         pxa_esp_surface_note_display_frame_presented(1200);
         pxa_esp_surface_note_display_frame_presented(1200);
         pxa_esp_surface_note_display_frame_presented(1199);
@@ -820,6 +1135,8 @@ int main(void) {
         assert(pxa_esp_surface_perf_stop(&info));
         assert(info.display_mode && info.window_us == 2000 &&
                info.completed_frames == 2 && info.present_interval_count == 1 &&
+               info.first_delay_us == 200 && info.max_interval_us == 1000 &&
+               info.tail_delay_us == 800 &&
                info.raster_count == 0 && !info.surface_changed);
         pxa_esp_surface_note_display_frame_presented(3200);
         assert(pxa_esp_surface_perf_read(PXA_ESP_SURFACE_PERF_PRESENT_INTERVAL,
@@ -828,10 +1145,22 @@ int main(void) {
         assert(pxa_esp_surface_perf_start_display());
         for (unsigned n = 0; n < PXA_ESP_SURFACE_PERF_CAPACITY + 3; ++n)
             pxa_esp_surface_note_display_frame_presented(4000 + n * 1000);
+        test_now_us = 4000 + (PXA_ESP_SURFACE_PERF_CAPACITY + 2) * 1000 + 2500000;
+        pxa_esp_surface_note_display_frame_presented(test_now_us);
+        test_now_us += 100;
         assert(pxa_esp_surface_perf_stop(&info));
         assert(info.present_interval_count == PXA_ESP_SURFACE_PERF_CAPACITY &&
-               info.present_interval_overflow == 2 &&
-               info.completed_frames == PXA_ESP_SURFACE_PERF_CAPACITY + 3);
+               info.present_interval_overflow == 3 && info.max_interval_us == 2500000 &&
+               info.first_delay_us == 1000 && info.tail_delay_us == 100 &&
+               info.completed_frames == PXA_ESP_SURFACE_PERF_CAPACITY + 4);
+        assert(pxa_esp_surface_perf_start_display());
+        test_now_us += 750000;
+        assert(pxa_esp_surface_perf_stop(&info));
+        assert(info.completed_frames == 0 && info.max_interval_us == 0 &&
+               info.first_delay_us == 0 && info.tail_delay_us == 750000);
+        test_now_us += 100;
+        assert(pxa_esp_surface_perf_stop(&info));
+        assert(info.window_us == 750000 && info.tail_delay_us == info.window_us);
         pxa_esp_surface_perf_clear();
         pxa_esp_surface_memory_snapshot(&memory_info);
         assert(memory_info.probe_bytes == 0);
@@ -846,6 +1175,7 @@ int main(void) {
     /* No new Guest frame: volume/modal redraws still have a leased backdrop.
      * The held buffer is neither writable nor released to the Guest. */
     pxa_esp_surface_set_system_overlay_visible(true);
+    assert(!pxa_esp_surface_acquire_latest_native_for_direct(&probe));
     assert(!pxa_esp_surface_acquire_latest_for_direct(&probe));
     for (unsigned redraw = 0; redraw < 4; ++redraw) {
         assert(pxa_esp_surface_acquire_latest(&probe) &&
@@ -900,7 +1230,8 @@ int main(void) {
     pxa_esp_surface_runtime_modal_enter();
     assert(pxa_esp_surface_composition_required());
     for (unsigned redraw = 0; redraw < 8; ++redraw) {
-        assert(!pxa_esp_surface_acquire_latest_for_direct(&probe));
+        assert(!pxa_esp_surface_acquire_latest_native_for_direct(&probe));
+    assert(!pxa_esp_surface_acquire_latest_for_direct(&probe));
         assert(pxa_esp_surface_acquire_latest(&probe) && probe.frame_id == 32);
         assert(probe.opaque_ui_region_count == 0 && !probe.suppress_guest_alpha);
         assert(probe.system_alpha_plane.visible && probe.system_alpha_plane.alpha);
@@ -1018,7 +1349,7 @@ int main(void) {
         assert(pxa_esp_surface_acquire_current_for_preview(&frame));
         assert(frame.raster_ready_tick_us == (uint32_t)test_now_us);
         pxa_esp_surface_release_frame(frame.lease);
-        pxa_esp_surface_note_game_frame_presented(1, 1000);
+        pxa_esp_surface_note_game_frame_presented(1, test_now_us + 1000);
 
         pxa_write_u64(draw + 20, 2);
         pxa_write_u16(draw + PXA_RASTER_DRAW_HEADER_BYTES + 4, 0x2222);
@@ -1049,8 +1380,9 @@ int main(void) {
                telemetry.clear_commands == 2 &&
                telemetry.last_draw_list_bytes == sizeof(draw));
         pxa_esp_surface_release_frame(frame.lease);
-        pxa_esp_surface_note_game_frame_presented(3, 2000);
-        pxa_esp_surface_note_game_frame_presented(3, 2500);
+        test_now_us += 2000;
+        pxa_esp_surface_note_game_frame_presented(3, test_now_us);
+        pxa_esp_surface_note_game_frame_presented(3, test_now_us + 500);
         assert(pxa_esp_surface_perf_stop(&perf_info));
         assert(perf_info.raster_count == 2 &&
                perf_info.present_interval_count == 1 &&
@@ -1266,6 +1598,7 @@ int main(void) {
     assert(backend.queue(backend.context, surface, 12, NULL, 0) ==
            PXA_STATUS_OK);
     assert(pxa_esp_surface_composition_required());
+    assert(!pxa_esp_surface_acquire_latest_native_for_direct(&probe));
     assert(!pxa_esp_surface_acquire_latest_for_direct(&probe));
     assert(pxa_esp_surface_acquire_prepared_with_alpha(&probe));
     assert(probe.system_alpha_plane.visible && !probe.suppress_guest_alpha &&
@@ -1320,6 +1653,11 @@ int main(void) {
     pxa_esp_surface_release_frame(probe.lease);
     backend.close(backend.context, surface);
     pxa_esp_surface_set_system_alpha_provider(NULL, NULL);
+    check_producer_front_buffer(&backend);
+    check_native_producer(&backend);
+    check_inline_slots(&backend);
+    check_single_readback(&backend);
+    check_ordered_producer(&backend);
     assert(pxa_esp_resource_memory_end() == PXA_STATUS_OK && !allocations);
     return 0;
 }

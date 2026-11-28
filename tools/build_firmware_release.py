@@ -216,14 +216,14 @@ def build_board(args, name: str, version: str) -> dict:
     stub_option = '--no-stub ' if not flash['extra_esptool_args'].get('stub', True) else ''
     for language in ('zh-CN', 'en'):
         migration = ''
-        if name == 'esp-mosaico' and storage['offset'] == 0x510000:
+        if name == 'esp-mosaico' and storage['offset'] == 0x610000:
             migration = (
-                '**旧版 Mosaico 升级：本版应用分区为 5 MiB，数据分区位于 0x510000。'
-                '不能向旧版 4 MiB 布局直接刷写 app 文件，否则会覆盖旧数据。'
+                '**旧版 Mosaico 升级：本版应用分区为 6 MiB，数据分区位于 0x610000。'
+                '旧版 4 MiB 或 5 MiB 布局直接刷写超过原应用分区的固件会覆盖旧数据。'
                 '先备份应用私有数据、存档及设置，再使用完整镜像迁移并恢复数据。**\n\n'
                 if language == 'zh-CN' else
-                '**Mosaico migration: this layout has a 5 MiB application partition and storage at 0x510000. '
-                'Do not write this app image onto the old 4 MiB layout: it would overwrite existing data. '
+                '**Mosaico migration: this layout has a 6 MiB application partition and storage at 0x610000. '
+                'An app-only write that exceeds the old 4 MiB or 5 MiB application partition would overwrite existing data. '
                 'Back up private app data, saves and settings before provisioning and restoring the new layout.**\n\n')
         elif name == 'esp32s31-korvo-1' and storage['offset'] == 0x700000:
             migration = (

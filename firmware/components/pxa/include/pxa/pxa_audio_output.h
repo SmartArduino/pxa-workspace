@@ -23,8 +23,10 @@ public:
     // Guest submit never calls the physical device or decoder directly.
     // device_paced requires Write to block when its bounded hardware buffer
     // is full, including silence. It replaces the software 20-ms timer.
+    // An external output stack requires a sink that never performs flash I/O
+    // and owns all buffers submitted to its DMA driver.
     bool Initialize(Write write, void* context, bool device_paced = false,
-                    uint32_t sample_rate = 16000);
+                    uint32_t sample_rate = 16000, bool external_output_stack = false);
     struct MusicStats {
         pxa_audio_buffer_t buffer = {};
         uint64_t ready_max_us = 0;
@@ -80,6 +82,7 @@ private:
     void Run();
     void WakeOutput();
     void RunMusic();
+    bool EnsureMusicWorker();
     void FinishMusic(uint32_t token,pxa_status_t status=PXA_STATUS_OK);
     bool QueueMusic(const int16_t* samples, size_t count, uint32_t token);
     bool PublishMusicLocked();

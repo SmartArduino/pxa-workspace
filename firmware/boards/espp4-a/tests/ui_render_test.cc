@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace {
 constexpr int kWidth = 480, kHeight = 854;
@@ -14,6 +15,8 @@ struct Display {
     lv_display_t* display;
     espp4_a::UiRenderMode mode;
     uint16_t* buffers[2];
+    std::vector<uint16_t> scan_memory[2];
+    uint64_t synced_rows = 0;
     uint16_t* front;
     lv_obj_t *panel, *marker[2], *clock;
     uint64_t damaged = 0;
@@ -24,6 +27,7 @@ struct Display {
     static void Flush(lv_display_t* display, const lv_area_t* area, uint8_t* pixels) {
         auto& self = *static_cast<Display*>(lv_display_get_user_data(display));
         self.damaged += uint64_t(lv_area_get_width(area)) * lv_area_get_height(area);
+        self.mode.NoteFlushedArea(area);
         if (self.mode.ShouldSubmit(display)) {
             self.front = reinterpret_cast<uint16_t*>(pixels);
             assert(self.front == self.buffers[0] || self.front == self.buffers[1]);
@@ -34,6 +38,13 @@ struct Display {
                 for (int y = 0; y < 16; ++y)
                     std::fill_n(self.front + y * kWidth + 210, 60, uint16_t(0xffff));
             self.mode.OverlayDrawn(self.overlay);
+            const auto rows = self.mode.direct() ? self.mode.TakeScanRows(kHeight)
+                                                 : espp4_a::ScanRows{0, kHeight};
+            auto& scan = self.scan_memory[self.front == self.buffers[1]];
+            std::copy(self.front + rows.first * kWidth, self.front + rows.end * kWidth,
+                      scan.begin() + rows.first * kWidth);
+            assert(!std::memcmp(scan.data(), self.front, kBytes));
+            self.synced_rows += rows.end - rows.first;
             ++self.submitted;
         } else ++self.partial;
         lv_display_flush_ready(display);
@@ -44,6 +55,7 @@ struct Display {
         lv_obj_set_style_bg_opa(object, LV_OPA_COVER, 0);
     }
     Display() {
+        for (auto& scan : scan_memory) scan.resize(kPixels);
         for (auto& buffer : buffers) {
             buffer = static_cast<uint16_t*>(aligned_alloc(LV_DRAW_BUF_ALIGN, kBytes));
             assert(buffer); std::memset(buffer, 0, kBytes);
@@ -134,9 +146,20 @@ int main() {
             baseline.Draw(); candidate.Draw(); Same(baseline, candidate);
         }
         assert(candidate.partial > 0);
+        assert(candidate.synced_rows < baseline.synced_rows);
         assert(candidate.damaged < baseline.damaged * 9 / 10);
-        std::printf("Native UI: FULL=%llu DIRECT=%llu damaged pixels; identical completed images; %u non-final flushes withheld\n",
-            (unsigned long long)baseline.damaged, (unsigned long long)candidate.damaged, candidate.partial);
+        std::printf("Native UI: FULL=%llu DIRECT=%llu damaged pixels; cache sync FULL=%llu DIRECT=%llu rows; identical completed images; %u non-final flushes withheld\n",
+            (unsigned long long)baseline.damaged, (unsigned long long)candidate.damaged,
+            (unsigned long long)baseline.synced_rows, (unsigned long long)candidate.synced_rows, candidate.partial);
+        baseline.synced_rows = candidate.synced_rows = 0;
+        for (unsigned second = 0; second < 20; ++second) {
+            for (auto* screen : {&baseline, &candidate})
+                lv_label_set_text_fmt(screen->clock, "08:%02u", second);
+            baseline.Draw(); candidate.Draw(); Same(baseline, candidate);
+        }
+        std::printf("Status clock: cache sync FULL=%llu DIRECT=%llu rows for 20 updates\n",
+            (unsigned long long)baseline.synced_rows, (unsigned long long)candidate.synced_rows);
+        assert(candidate.synced_rows < baseline.synced_rows / 5);
         for (unsigned cycle = 0; cycle < 5; ++cycle) {
             // A FULL compositor is allowed to modify its target after LVGL.
             baseline.guest = candidate.guest = true;

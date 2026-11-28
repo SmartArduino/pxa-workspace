@@ -56,11 +56,22 @@ bool DoitGamekit2Touch::Initialize() {
     return true;
 }
 
-bool DoitGamekit2Touch::Read(doit_gamekit_2::LandscapeRotation rotation,
+bool DoitGamekit2Touch::Read(doit_gamekit_2::LandscapeRotation rotation, bool tracking,
                             doit_gamekit_2::TouchReport& report) {
     uint8_t bytes[13]{};
     const uint8_t status_reg = 0x02;
-    return device_ && i2c_master_transmit_receive(device_, &status_reg, 1,
-               bytes, sizeof(bytes), 20) == ESP_OK &&
-        doit_gamekit_2::DecodeTouchReport(bytes, sizeof(bytes), rotation, report);
+    if (!device_) return false;
+    auto read = [&](size_t size) {
+        return i2c_master_transmit_receive(device_, &status_reg, 1, bytes, size, 20) == ESP_OK;
+    };
+    // While released, TD_STATUS alone reports whether any contacts are present.
+    // Once a contact is seen, read count and coordinates in the same transaction.
+    if (!tracking) {
+        if (!read(1)) return false;
+        if (!(bytes[0] & 0x0f)) {
+            report = {};
+            return true;
+        }
+    }
+    return read(sizeof(bytes)) && doit_gamekit_2::DecodeTouchReport(bytes, sizeof(bytes), rotation, report);
 }

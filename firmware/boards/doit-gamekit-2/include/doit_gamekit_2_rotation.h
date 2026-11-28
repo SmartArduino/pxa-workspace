@@ -3,6 +3,7 @@
 
 namespace doit_gamekit_2 {
 using pxa::board::LandscapeRotation;
+constexpr auto kWireOrder = pxa::board::Rgb565WireOrder::LittleEndian;
 using pxa::board::RotateRgb565;
 using pxa::board::RotateRgb565Patch;
 using pxa::board::RotateScaledRgb565;

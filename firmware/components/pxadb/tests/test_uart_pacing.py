@@ -23,7 +23,7 @@ FIXTURE = r'''
 #define TINYUSB_CDC_ACM_0 0
 #define STDOUT_FILENO 1
 namespace pxadb {
-enum class Transport {kPrimary,kUart};
+enum class Transport {kPrimary,kUart,kLan};
 constexpr int kUart=0,kIoTimeout=1000,ESP_OK=0;
 bool kUseConsoleVfs=false;
 std::string uart,usb;

@@ -4,6 +4,12 @@
 
 #include <string.h>
 
+#ifdef PXA_SURFACE_COPY_PIXELS
+extern void PXA_SURFACE_COPY_PIXELS(void *out, const void *in, size_t bytes);
+#else
+#define PXA_SURFACE_COPY_PIXELS memcpy
+#endif
+
 #include "esp_cache.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -31,6 +37,11 @@
 #else
 #define PXA_ESP_SURFACE_CACHE_ALIGNMENT 64u
 #endif
+/* A video producer may use a PPA client with a 128-byte output constraint. */
+#define PXA_HOST_FRAME_ALIGNMENT (PXA_ESP_SURFACE_CACHE_ALIGNMENT > 128u ? PXA_ESP_SURFACE_CACHE_ALIGNMENT : 128u)
+static size_t host_frame_capacity(size_t bytes) {
+    return (bytes + PXA_HOST_FRAME_ALIGNMENT - 1u) & ~(size_t)(PXA_HOST_FRAME_ALIGNMENT - 1u);
+}
 /* Three slots let the Guest queue one frame while the presenter renders the
  * previous one; a fourth submission replaces the pending list instead, which
  * keeps latency bounded without stalling the Guest. */
@@ -63,10 +74,27 @@ typedef struct {
 } raster_allocator_t;
 
 typedef struct {
+    void *storage;
+    size_t capacity;
+    pxa_esp_surface_native_draw_fn draw;
+    void *inline_payload;
+    size_t inline_size;
+    bool allow_inline;
+    bool base_contains_packed;
+    bool materialized;
+} surface_native_slot_t;
+
+typedef struct {
     uint32_t magic;
     const pxa_memory_allocator_t *resource_allocators[PXA_MEMORY_CLASSES];
     raster_allocator_t raster_allocators[PXA_MEMORY_CLASSES];
     uint8_t *buffers[PXA_ESP_SURFACE_MAX_BUFFERS];
+    const pxa_memory_allocator_t *frame_allocator;
+    surface_native_slot_t native[PXA_ESP_SURFACE_MAX_BUFFERS];
+    uint8_t *readback;
+    uint64_t readback_frame_id;
+    uint8_t direct_uses;
+    bool leased_readback;
     uint32_t frame_bytes;
     uint32_t stride_bytes;
     uint16_t width;
@@ -133,6 +161,7 @@ typedef struct {
 static portMUX_TYPE g_surface_lock = portMUX_INITIALIZER_UNLOCKED;
 static pxa_esp_surface_t *g_surface;
 static pxa_esp_surface_t *g_acquired_surface;
+static uint32_t g_acquire_generation;
 /* Shared raster worker/job must remain exclusive even across surface replacement. */
 static bool g_materialize_active;
 enum {
@@ -188,10 +217,8 @@ typedef struct {
     uint32_t present_interval_us[PXA_ESP_SURFACE_PERF_CAPACITY];
     pxa_esp_surface_t *surface;
     uint64_t last_present_us;
-    union {
-        uint64_t last_present_frame_id;
-        uint64_t window_started_us;
-    } clock;
+    uint64_t last_present_frame_id;
+    uint64_t window_started_us;
     pxa_esp_surface_perf_info_t info;
     uint8_t active;
 } pxa_esp_surface_perf_buffer_t;
@@ -244,9 +271,8 @@ static bool perf_start(bool display_mode) {
     fresh->info.list_min_bytes = UINT32_MAX;
     fresh->info.covered_min_pixels = UINT32_MAX;
     fresh->info.display_mode = display_mode;
-    if (display_mode)
-        fresh->clock.window_started_us = (uint64_t)esp_timer_get_time();
     taskENTER_CRITICAL(&g_surface_lock);
+    fresh->window_started_us = (uint64_t)esp_timer_get_time();
     fresh->surface = g_surface;
     old = g_perf;
     g_perf = fresh;
@@ -265,10 +291,14 @@ bool pxa_esp_surface_perf_stop(pxa_esp_surface_perf_info_t *info) {
         taskEXIT_CRITICAL(&g_surface_lock);
         return false;
     }
-    g_perf->active = 0;
-    if (g_perf->info.display_mode)
-        g_perf->info.window_us = latency_us(g_perf->clock.window_started_us,
-                                           (uint64_t)esp_timer_get_time());
+    if (g_perf->active) {
+        const uint64_t stopped_us = (uint64_t)esp_timer_get_time();
+        g_perf->active = 0;
+        g_perf->info.window_us = latency_us(g_perf->window_started_us, stopped_us);
+        g_perf->info.tail_delay_us = g_perf->last_present_us != 0
+            ? latency_us(g_perf->last_present_us, stopped_us)
+            : g_perf->info.window_us;
+    }
     *info = g_perf->info;
     if (info->raster_count == 0) {
         info->list_min_bytes = 0;
@@ -617,6 +647,10 @@ static void destroy_surface(pxa_esp_surface_t *surface) {
     uint8_t index;
     if (surface == NULL) return;
     surface->magic = 0;
+    for (index = 0; index < surface->buffer_count; ++index) {
+        pxa_memory_release(surface->native[index].storage);
+    }
+    surface_native_release(PXA_SURFACE_NATIVE_FRAME, surface->readback);
     if ((surface->flags & PXA_SURFACE_FLAG_GUEST_MAPPED) == 0) {
         for (index = 0; index < surface->buffer_count; ++index)
             surface_native_release(PXA_SURFACE_NATIVE_FRAME,
@@ -731,7 +765,7 @@ static pxa_status_t create_surface_with_raster_capacity(
     taskEXIT_CRITICAL(&g_surface_lock);
     frame_bytes64 = (uint64_t)desc->width * desc->height * bytes_per_pixel;
     if (frame_bytes64 > UINT32_MAX ||
-        frame_bytes64 > SIZE_MAX - (PXA_ESP_SURFACE_CACHE_ALIGNMENT - 1u))
+        frame_bytes64 > SIZE_MAX - (PXA_HOST_FRAME_ALIGNMENT - 1u))
         return PXA_STATUS_RESOURCE_LIMIT;
     frame_bytes = (uint32_t)frame_bytes64;
     surface = pxa_esp_resource_allocate(PXA_MEMORY_INTERNAL, PXA_MEMORY_METADATA, sizeof(*surface));
@@ -750,6 +784,8 @@ static pxa_status_t create_surface_with_raster_capacity(
     }
     surface->buffer_count = desc->buffer_count;
     surface->flags = desc->flags;
+    if (desc->flags & PXA_SURFACE_FLAG_HOST_PRODUCED)
+        surface->frame_allocator = pxa_esp_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_FRAME);
     surface->raster_max_draw_bytes = raster_draw_capacity != 0
                                          ? raster_draw_capacity
                                          : PXA_RASTER_MAX_DRAW_BYTES;
@@ -769,7 +805,7 @@ static pxa_status_t create_surface_with_raster_capacity(
         }
     } else {
         for (index = 0; index < surface->buffer_count; ++index) {
-            if ((desc->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) != 0) {
+            if ((desc->flags & (PXA_ESP_SURFACE_FLAG_GAME_RENDER | PXA_SURFACE_FLAG_HOST_PRODUCED)) != 0) {
                 /* Cached PSRAM on purpose. The raster writes every pixel of this
                  * buffer and the DMA-mapped PSRAM pool is several times slower
                  * to write from the CPU (measured ~150 ns per pixel against
@@ -777,10 +813,10 @@ static pxa_status_t create_surface_with_raster_capacity(
                  * read the frame either with the CPU (the pai-touch rotation) or
                  * through a DMA that the writer flushes with esp_cache_msync
                  * before handing the frame over. */
+                const bool host = (desc->flags & PXA_SURFACE_FLAG_HOST_PRODUCED) != 0;
+                const size_t alignment = host ? PXA_HOST_FRAME_ALIGNMENT : PXA_ESP_SURFACE_CACHE_ALIGNMENT;
                 surface->buffers[index] = heap_caps_aligned_calloc(
-                    PXA_ESP_SURFACE_CACHE_ALIGNMENT, 1,
-                    ((size_t)frame_bytes + PXA_ESP_SURFACE_CACHE_ALIGNMENT - 1u) &
-                        ~(size_t)(PXA_ESP_SURFACE_CACHE_ALIGNMENT - 1u),
+                    alignment, 1, ((size_t)frame_bytes + alignment - 1u) & ~(alignment - 1u),
                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
             } else {
                 surface->buffers[index] = heap_caps_calloc(
@@ -1058,22 +1094,225 @@ static void consume_surface_release(void *context, uint64_t provider_surface) {
     taskEXIT_CRITICAL(&g_surface_lock);
 }
 
-static pxa_status_t write_surface(void *context, uint64_t provider_surface,
-                                  const uint8_t *pixels, size_t size) {
+/* The synchronous fill owns this slot until it returns. Close defers
+ * destruction to that writer, including while an allocation is in progress. */
+static surface_native_slot_t *native_writer(uint8_t *pixels,
+                                           const pxa_memory_allocator_t **allocator, size_t *capacity) {
+    surface_native_slot_t *slot = NULL;
+    taskENTER_CRITICAL(&g_surface_lock);
+    pxa_esp_surface_t *surface = g_surface;
+    if (surface && surface->writer_active && surface->writing >= 0 &&
+        surface->frame_allocator && pixels == surface->buffers[surface->writing]) {
+        slot = &surface->native[surface->writing];
+        if (allocator) *allocator = surface->frame_allocator;
+        if (capacity) *capacity = host_frame_capacity(surface->frame_bytes);
+    }
+    taskEXIT_CRITICAL(&g_surface_lock);
+    return slot;
+}
+
+static void *native_payload(const surface_native_slot_t *slot) {
+    if (slot->inline_payload) return slot->inline_payload;
+    return (void *)(((uintptr_t)slot->storage + 127u) & ~(uintptr_t)127u);
+}
+
+size_t pxa_esp_surface_staging_capacity(const uint8_t *pixels, size_t bytes) {
+    size_t capacity = 0;
+    taskENTER_CRITICAL(&g_surface_lock);
+    const pxa_esp_surface_t *surface = g_surface;
+    if (surface && surface->writer_active && surface->writing >= 0 &&
+        (surface->flags & PXA_SURFACE_FLAG_HOST_PRODUCED) &&
+        pixels == surface->buffers[surface->writing] && bytes == surface->frame_bytes)
+        capacity = host_frame_capacity(bytes);
+    taskEXIT_CRITICAL(&g_surface_lock);
+    return capacity;
+}
+
+bool pxa_esp_surface_stage_native(uint8_t *staging_rgb, size_t bytes,
+                                  pxa_esp_surface_native_draw_fn draw, void **payload) {
+    if (!payload) return false;
+    *payload = NULL;
+    if (!bytes || bytes > SIZE_MAX - 254u || !draw) return false;
+    const pxa_memory_allocator_t *allocator;
+    size_t inline_capacity;
+    surface_native_slot_t *slot = native_writer(staging_rgb, &allocator, &inline_capacity);
+    if (!slot || slot->draw) return false;
+    if (slot->allow_inline && bytes <= inline_capacity) {
+        slot->inline_payload = staging_rgb;
+        slot->inline_size = bytes;
+        slot->base_contains_packed = true;
+        slot->draw = draw;
+        slot->materialized = false;
+        *payload = staging_rgb;
+        return true;
+    }
+    if (bytes > slot->capacity) {
+        pxa_memory_release(slot->storage);
+        const size_t rounded = (bytes + 127u) & ~(size_t)127u;
+        slot->storage = pxa_memory_allocate(allocator, rounded + 127u);
+        slot->capacity = slot->storage ? rounded : 0;
+        if (!slot->storage) return false;
+    }
+    slot->draw = draw;
+    slot->materialized = false;
+    *payload = native_payload(slot);
+    return true;
+}
+
+void pxa_esp_surface_cancel_native(uint8_t *staging_rgb) {
+    surface_native_slot_t *slot = native_writer(staging_rgb, NULL, NULL);
+    if (slot) {
+        slot->draw = NULL;
+        slot->inline_payload = NULL;
+    }
+}
+
+static bool draw_slot(pxa_esp_surface_t *surface, int index, const void *packed, uint8_t *rgb) {
+    const pxa_esp_surface_native_target_t target = {
+        .pixels = (uint16_t *)rgb, .size = host_frame_capacity(surface->frame_bytes),
+        .stride_bytes = surface->stride_bytes, .width = surface->width,
+        .height = surface->height, .rotation = 0
+    };
+    return surface->native[index].draw(packed, &target);
+}
+
+/* The reader is exclusive across the entire Surface. Host-produced frame
+ * IDs increase strictly, including after mailbox replacement. The preview
+ * and a resumed composition of that ID can reuse this one logical frame. */
+static bool materialize_read_lease(pxa_esp_surface_t *surface, int index) {
+    surface_native_slot_t *slot = &surface->native[index];
+    if (!slot->draw) return true;
+    if (!slot->inline_payload) {
+        if (!slot->materialized)
+            slot->materialized = draw_slot(surface, index, native_payload(slot), surface->buffers[index]);
+        return slot->materialized;
+    }
+    if (surface->readback_frame_id != surface->acquired_frame_id) {
+        if (!surface->readback) {
+            surface->readback = heap_caps_aligned_calloc(PXA_HOST_FRAME_ALIGNMENT, 1,
+                host_frame_capacity(surface->frame_bytes), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!surface->readback) return false;
+            surface_native_note_alloc(PXA_SURFACE_NATIVE_FRAME, surface->readback);
+        }
+        surface->readback_frame_id = 0;
+        if (!draw_slot(surface, index, slot->inline_payload, surface->readback)) return false;
+        surface->readback_frame_id = surface->acquired_frame_id;
+    }
+    surface->leased_readback = true;
+    return true;
+}
+
+/* Another lease may be drawing into the shared readback at the same time.
+ * The free slot's packed bytes alone have to survive this rare transition.
+ * A failed native renderer may partially write its target: restore the
+ * original payload before the caller retries. */
+static pxa_status_t restore_partial_writer(pxa_esp_surface_t *surface, int index) {
+    surface_native_slot_t *slot = &surface->native[index];
+    uint8_t *base = surface->buffers[index];
+    if (slot->inline_payload) {
+        const size_t capacity = (slot->inline_size + 127u) & ~(size_t)127u;
+        void *storage = pxa_memory_allocate(surface->frame_allocator, capacity + 127u);
+        if (!storage) return PXA_STATUS_RESOURCE_LIMIT;
+        uint8_t *copy = (uint8_t *)(((uintptr_t)storage + 127u) & ~(uintptr_t)127u);
+        memcpy(copy, base, slot->inline_size);
+        const bool ok = draw_slot(surface, index, copy, base);
+        if (!ok) memcpy(base, copy, slot->inline_size);
+        pxa_memory_release(storage);
+        if (!ok) return PXA_STATUS_IO_ERROR;
+    } else if (!slot->materialized && !draw_slot(surface, index, native_payload(slot), base)) {
+        return PXA_STATUS_IO_ERROR;
+    }
+    (void)esp_cache_msync(base, host_frame_capacity(surface->frame_bytes), ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+    slot->base_contains_packed = false;
+    return PXA_STATUS_OK;
+}
+
+static void clear_region_exterior(pxa_esp_surface_t *surface, uint8_t *base,
+                                  const pxa_surface_damage_rect_t *r) {
+    const size_t stride = surface->stride_bytes;
+    const size_t left = (size_t)r->x * 2;
+    const size_t right = ((size_t)r->x + r->width) * 2;
+    if (r->y == 0 && r->height == surface->height && !left && right == stride) return;
+    memset(base, 0, r->y * stride);
+    if (left || right != stride) {
+        for (unsigned y = r->y; y < (unsigned)r->y + r->height; ++y) {
+            uint8_t *row = base + y * stride;
+            memset(row, 0, left);
+            memset(row + right, 0, stride - right);
+        }
+    }
+    const size_t end = ((size_t)r->y + r->height) * stride;
+    memset(base + end, 0, surface->frame_bytes - end);
+    (void)esp_cache_msync(base, host_frame_capacity(surface->frame_bytes), ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+}
+
+static pxa_status_t fill_host_slot(pxa_esp_surface_t *surface, int index,
+                                   pxa_surface_fill_fn fill, void *source) {
+    surface_native_slot_t *slot = &surface->native[index];
+    uint8_t *base = surface->buffers[index];
+    const pxa_surface_region_fill_t *region = NULL;
+    if (fill == pxa_surface_fill_region) {
+        region = source;
+        if (!region || !region->fill || !region->region.width || !region->region.height ||
+            (uint32_t)region->region.x + region->region.width > surface->width ||
+            (uint32_t)region->region.y + region->region.height > surface->height)
+            return PXA_STATUS_INVALID_ARGUMENT;
+    } else if (slot->base_contains_packed) {
+        /* An ordinary fill can read or update only part of the old RGB. */
+        const pxa_status_t status = restore_partial_writer(surface, index);
+        if (status) return status;
+    }
+
+    slot->draw = NULL;
+    slot->inline_payload = NULL;
+    slot->allow_inline = region != NULL;
+    fill(source, base, surface->stride_bytes, (uint8_t)index);
+    slot->allow_inline = false;
+    if (region && region->status && *region->status) {
+        /* A failed fused operation may not have written any RGB pixels. */
+        if (slot->base_contains_packed) {
+            memset(base, 0, surface->frame_bytes);
+            (void)esp_cache_msync(base, host_frame_capacity(surface->frame_bytes),
+                                  ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+        }
+        slot->base_contains_packed = false;
+        slot->draw = NULL;
+        slot->inline_payload = NULL;
+    } else if (!slot->draw) {
+        if (region && slot->base_contains_packed)
+            clear_region_exterior(surface, base, &region->region);
+        slot->base_contains_packed = false;
+        slot->inline_payload = NULL;
+    }
+    if (slot->storage && slot->inline_payload) {
+        pxa_memory_release(slot->storage);
+        slot->storage = NULL;
+        slot->capacity = 0;
+    }
+    return PXA_STATUS_OK;
+}
+
+static pxa_status_t stage_pixels(uint64_t provider_surface, const uint8_t *pixels,
+                                 size_t size, pxa_surface_fill_fn fill, void *source) {
     pxa_esp_surface_t *surface =
         (pxa_esp_surface_t *)(uintptr_t)provider_surface;
     int index = PXA_ESP_SURFACE_NONE;
     uint8_t cursor;
     int destroy = 0;
-    (void)context;
-    if (surface == NULL || pixels == NULL) return PXA_STATUS_INVALID_ARGUMENT;
+    if (surface == NULL) return PXA_STATUS_INVALID_ARGUMENT;
     taskENTER_CRITICAL(&g_surface_lock);
     if (surface->magic != PXA_ESP_SURFACE_MAGIC ||
-        surface->closing || size != surface->frame_bytes ||
+        surface->closing || (pixels && size != surface->frame_bytes) ||
+        (!pixels != !!(surface->flags & PXA_SURFACE_FLAG_HOST_PRODUCED)) ||
         (surface->flags & (PXA_SURFACE_FLAG_GUEST_MAPPED |
                            PXA_ESP_SURFACE_FLAG_GAME_RENDER)) != 0) {
         taskEXIT_CRITICAL(&g_surface_lock);
         return PXA_STATUS_BAD_STATE;
+    }
+    if (!pixels && !fill) {
+        surface->staged = PXA_ESP_SURFACE_NONE;
+        taskEXIT_CRITICAL(&g_surface_lock);
+        return PXA_STATUS_OK;
     }
     if (surface->staged != PXA_ESP_SURFACE_NONE ||
         surface->writer_active) {
@@ -1094,23 +1333,41 @@ static pxa_status_t write_surface(void *context, uint64_t provider_surface,
     surface->writer_active = 1;
     taskEXIT_CRITICAL(&g_surface_lock);
 
-    memcpy(surface->buffers[index], pixels, size);
+    pxa_status_t result = PXA_STATUS_OK;
+    if (fill)
+        result = fill_host_slot(surface, index, fill, source);
+    else
+        PXA_SURFACE_COPY_PIXELS(surface->buffers[index], pixels, size);
 
     taskENTER_CRITICAL(&g_surface_lock);
     surface->writer_active = 0;
     surface->writing = PXA_ESP_SURFACE_NONE;
-    if (!surface->closing)
+    const bool closing = surface->closing;
+    if (!closing && !result)
         surface->staged = (int8_t)index;
-    else if (!surface->acquire_active)
+    else if (closing && !surface->acquire_active)
         destroy = 1;
     taskEXIT_CRITICAL(&g_surface_lock);
     if (destroy) destroy_surface(surface);
-    return destroy ? PXA_STATUS_BAD_STATE : PXA_STATUS_OK;
+    return closing ? PXA_STATUS_BAD_STATE : result;
 }
 
-static pxa_status_t queue_surface(
+static pxa_status_t write_surface(void *context, uint64_t provider_surface,
+                                  const uint8_t *pixels, size_t size) {
+    (void)context;
+    if (!pixels) return PXA_STATUS_INVALID_ARGUMENT;
+    return stage_pixels(provider_surface, pixels, size, NULL, NULL);
+}
+
+static pxa_status_t stage_producer_surface(void *context, uint64_t provider_surface,
+                                           pxa_surface_fill_fn fill, void *source) {
+    (void)context;
+    return stage_pixels(provider_surface, NULL, 0, fill, source);
+}
+
+static pxa_status_t queue_frame(
     void *context, uint64_t provider_surface, uint64_t frame_id,
-    const pxa_surface_damage_rect_t *damage, uint8_t damage_count) {
+    const pxa_surface_damage_rect_t *damage, uint8_t damage_count, bool ordered) {
     pxa_esp_surface_t *surface =
         (pxa_esp_surface_t *)(uintptr_t)provider_surface;
     (void)context;
@@ -1124,12 +1381,19 @@ static pxa_status_t queue_surface(
         taskEXIT_CRITICAL(&g_surface_lock);
         return PXA_STATUS_BAD_STATE;
     }
-    if (surface->staged == PXA_ESP_SURFACE_NONE) {
+    if (surface->staged == PXA_ESP_SURFACE_NONE ||
+        ((surface->flags & PXA_SURFACE_FLAG_HOST_PRODUCED) && frame_id <= surface->last_frame_id)) {
         taskEXIT_CRITICAL(&g_surface_lock);
         return PXA_STATUS_BAD_STATE;
     }
-    if (surface->pending != PXA_ESP_SURFACE_NONE)
+    if (surface->pending != PXA_ESP_SURFACE_NONE) {
+        if (ordered) {
+            taskEXIT_CRITICAL(&g_surface_lock);
+            return PXA_STATUS_WOULD_BLOCK;
+        }
         ++surface->dropped_frames;
+    }
+    surface->last_frame_id = frame_id;
     surface->pending = surface->staged;
     surface->staged = PXA_ESP_SURFACE_NONE;
     surface->pending_frame_id = frame_id;
@@ -1137,6 +1401,18 @@ static pxa_status_t queue_surface(
     taskEXIT_CRITICAL(&g_surface_lock);
     notify_frame_ready();
     return PXA_STATUS_OK;
+}
+
+static pxa_status_t queue_surface(
+    void *context, uint64_t provider_surface, uint64_t frame_id,
+    const pxa_surface_damage_rect_t *damage, uint8_t damage_count) {
+    return queue_frame(context, provider_surface, frame_id, damage, damage_count, false);
+}
+
+static pxa_status_t queue_surface_ordered(
+    void *context, uint64_t provider_surface, uint64_t frame_id,
+    const pxa_surface_damage_rect_t *damage, uint8_t damage_count) {
+    return queue_frame(context, provider_surface, frame_id, damage, damage_count, true);
 }
 
 static uint32_t raster_capabilities(void) {
@@ -1562,6 +1838,8 @@ void pxa_esp_surface_backend(pxa_surface_backend_t *backend) {
     backend->create = create_surface;
     backend->write = write_surface;
     backend->queue = queue_surface;
+    backend->queue_ordered = queue_surface_ordered;
+    backend->stage = stage_producer_surface;
     backend->configure = configure_surface;
     backend->configure_opaque_ui_regions = configure_opaque_ui_regions_surface;
     backend->query = query_surface;
@@ -1976,15 +2254,19 @@ void pxa_esp_surface_note_frame_presented(uint64_t timestamp_us,
 }
 
 static void perf_note_present_locked(uint64_t presented_us) {
-    if (g_perf->last_present_us != 0 &&
+    if (presented_us < g_perf->window_started_us ||
         presented_us <= g_perf->last_present_us) return;
     ++g_perf->info.completed_frames;
     if (g_perf->last_present_us != 0) {
+        const uint32_t interval = latency_us(g_perf->last_present_us, presented_us);
+        if (interval > g_perf->info.max_interval_us)
+            g_perf->info.max_interval_us = interval;
         if (g_perf->info.present_interval_count < PXA_ESP_SURFACE_PERF_CAPACITY)
-            g_perf->present_interval_us[g_perf->info.present_interval_count++] =
-                latency_us(g_perf->last_present_us, presented_us);
+            g_perf->present_interval_us[g_perf->info.present_interval_count++] = interval;
         else
             ++g_perf->info.present_interval_overflow;
+    } else {
+        g_perf->info.first_delay_us = latency_us(g_perf->window_started_us, presented_us);
     }
     g_perf->last_present_us = presented_us;
 }
@@ -2004,9 +2286,9 @@ void pxa_esp_surface_note_game_frame_presented(uint64_t frame_id,
     if (g_perf != NULL && g_perf->active && !g_perf->info.display_mode) {
         if (g_perf->surface != g_surface) {
             g_perf->info.surface_changed = 1;
-        } else if (frame_id != g_perf->clock.last_present_frame_id) {
+        } else if (frame_id != g_perf->last_present_frame_id) {
             perf_note_present_locked(presented_us);
-            g_perf->clock.last_present_frame_id = frame_id;
+            g_perf->last_present_frame_id = frame_id;
         }
     }
     taskEXIT_CRITICAL(&g_surface_lock);
@@ -2393,7 +2675,7 @@ static bool materialize_latest_raster_draw(void) {
 
 static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
                            bool current_only, bool prepare_raster,
-                           bool allow_alpha) {
+                           bool allow_alpha, bool allow_native) {
     pxa_esp_surface_t *surface;
     pxa_esp_surface_ui_alpha_provider_fn ui_alpha_provider;
     void *ui_alpha_provider_context;
@@ -2442,19 +2724,19 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
     surface->acquire_new = !current_only &&
                            surface->pending != PXA_ESP_SURFACE_NONE;
     if (surface->acquire_new) {
-        /* Keep the last mapped frame readable between submissions, including
-         * redraws caused only by volume/permission overlays. Return its buffer
-         * as soon as the replacement lease starts, so the Guest can render in
-         * parallel with rotation of the replacement. Never read a buffer after
-         * its release has been delivered to the Guest. */
-        if ((surface->flags & PXA_SURFACE_FLAG_GUEST_MAPPED) != 0 &&
+        /* The display holds at most one lease. Once it takes the replacement,
+         * the producer can fill the old front buffer during rotation or DMA.
+         * A mapped producer additionally needs its reliable release event. */
+        if ((surface->flags & (PXA_SURFACE_FLAG_GUEST_MAPPED | PXA_SURFACE_FLAG_HOST_PRODUCED)) &&
             surface->current != PXA_ESP_SURFACE_NONE) {
-            if (!enqueue_release_locked(surface, surface->current,
-                                        surface->current_frame_id)) {
-                taskEXIT_CRITICAL(&g_surface_lock);
-                return false;
+            if (surface->flags & PXA_SURFACE_FLAG_GUEST_MAPPED) {
+                if (!enqueue_release_locked(surface, surface->current,
+                                            surface->current_frame_id)) {
+                    taskEXIT_CRITICAL(&g_surface_lock);
+                    return false;
+                }
+                release_ready = 1;
             }
-            release_ready = 1;
             surface->current = PXA_ESP_SURFACE_NONE;
             surface->current_frame_id = 0;
             surface->current_input_timestamp_us = 0;
@@ -2474,9 +2756,21 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
     surface->acquired = (int8_t)index;
     surface->acquire_active = 1;
     g_acquired_surface = surface;
-    ++surface->acquire_generation;
-    if (surface->acquire_generation == 0) ++surface->acquire_generation;
+    if (!++g_acquire_generation) ++g_acquire_generation;
+    surface->acquire_generation = g_acquire_generation;
     frame->pixels = surface->buffers[index];
+    surface_native_slot_t *slot = &surface->native[index];
+    if (slot->draw) {
+        if (slot->inline_payload) {
+            frame->pixels = surface->readback_frame_id == surface->acquired_frame_id
+                ? surface->readback : NULL;
+            surface->leased_readback = frame->pixels != NULL;
+        } else if (!slot->materialized) frame->pixels = NULL;
+        if (allow_native) {
+            frame->native_payload = native_payload(slot);
+            frame->native_draw = slot->draw;
+        }
+    }
     frame->stride_bytes = surface->stride_bytes;
     frame->width = surface->width;
     frame->height = surface->height;
@@ -2544,21 +2838,48 @@ static bool acquire_latest(pxa_esp_surface_frame_t *frame, bool direct_only,
         memset(frame, 0, sizeof(*frame));
         return false;
     }
+    if (!allow_native && !frame->pixels && !pxa_esp_surface_materialize_frame(frame)) {
+        pxa_esp_surface_release_frame(frame->lease);
+        memset(frame, 0, sizeof(*frame));
+        return false;
+    }
     return true;
 }
 
+bool pxa_esp_surface_materialize_frame(pxa_esp_surface_frame_t *frame) {
+    if (!frame || !frame->lease) return false;
+    taskENTER_CRITICAL(&g_surface_lock);
+    pxa_esp_surface_t *surface = g_acquired_surface;
+    if (!surface || frame->lease != surface->acquire_generation ||
+        frame->frame_id != surface->acquired_frame_id) {
+        taskEXIT_CRITICAL(&g_surface_lock);
+        return false;
+    }
+    const int index = surface->acquired;
+    taskEXIT_CRITICAL(&g_surface_lock);
+    /* Only the owner of this exclusive read lease may draw or release it. */
+    surface_native_slot_t *slot = &surface->native[index];
+    if (!materialize_read_lease(surface, index)) return false;
+    frame->pixels = slot->inline_payload ? surface->readback : surface->buffers[index];
+    return true;
+}
+
+bool pxa_esp_surface_acquire_latest_native_for_direct(pxa_esp_surface_frame_t *frame) {
+    return acquire_latest(frame, true, false, true, false, true);
+}
+
 bool pxa_esp_surface_acquire_latest(pxa_esp_surface_frame_t *frame) {
-    return acquire_latest(frame, false, false, true, false);
+    return acquire_latest(frame, false, false, true, false, false);
 }
 
 bool pxa_esp_surface_acquire_current_for_preview(
     pxa_esp_surface_frame_t *frame) {
-    return acquire_latest(frame, false, true, false, false);
+    return acquire_latest(frame, false, true, false, false, false);
 }
 
 bool pxa_esp_surface_acquire_latest_for_direct(
     pxa_esp_surface_frame_t *frame) {
-    return acquire_latest(frame, true, false, true, false);
+    return acquire_latest(frame, true, false, true, false, false);
 }
 
 bool pxa_esp_surface_prepare_latest_raster(void) {
@@ -2576,11 +2897,15 @@ bool pxa_esp_surface_has_pending_raster_draw(void) {
 
 bool pxa_esp_surface_acquire_prepared(pxa_esp_surface_frame_t *frame,
                                       bool direct_only) {
-    return acquire_latest(frame, direct_only, false, false, false);
+    return acquire_latest(frame, direct_only, false, false, false, false);
 }
 
 bool pxa_esp_surface_acquire_prepared_with_alpha(pxa_esp_surface_frame_t *frame) {
-    return acquire_latest(frame, true, false, false, true);
+    return acquire_latest(frame, true, false, false, true, false);
+}
+
+bool pxa_esp_surface_acquire_prepared_native(pxa_esp_surface_frame_t *frame) {
+    return acquire_latest(frame, true, false, false, true, true);
 }
 
 bool pxa_esp_surface_has_visible_surface(void) {
@@ -2628,6 +2953,7 @@ bool pxa_esp_surface_get_present_info(
 
 void pxa_esp_surface_release_frame(uint64_t lease) {
     pxa_esp_surface_t *surface;
+    uint8_t *unused_readback = NULL;
     uint32_t generation =
         lease <= UINT32_MAX ? (uint32_t)lease : UINT32_C(0);
     int destroy = 0;
@@ -2653,6 +2979,17 @@ void pxa_esp_surface_release_frame(uint64_t lease) {
         if ((surface->flags & PXA_ESP_SURFACE_FLAG_GAME_RENDER) != 0)
             ++surface->raster_telemetry.visible_frames;
     }
+    if (surface->readback) {
+        if (surface->leased_readback) {
+            surface->direct_uses = 0;
+        } else if (++surface->direct_uses >= 2) {
+            unused_readback = surface->readback;
+            surface->readback = NULL;
+            surface->readback_frame_id = 0;
+            surface->direct_uses = 0;
+        }
+        surface->leased_readback = false;
+    }
     surface->acquired = PXA_ESP_SURFACE_NONE;
     surface->acquire_active = 0;
     surface->acquire_new = 0;
@@ -2661,10 +2998,31 @@ void pxa_esp_surface_release_frame(uint64_t lease) {
     g_acquired_surface = NULL;
     if (surface->closing && !surface->writer_active) destroy = 1;
     taskEXIT_CRITICAL(&g_surface_lock);
+    if (unused_readback) surface_native_release(PXA_SURFACE_NATIVE_FRAME, unused_readback);
     if (destroy) destroy_surface(surface);
 }
 
 #else
+
+size_t pxa_esp_surface_staging_capacity(const uint8_t *pixels, size_t bytes) {
+    (void)pixels; (void)bytes; return 0;
+}
+bool pxa_esp_surface_stage_native(uint8_t *staging_rgb, size_t bytes,
+                                  pxa_esp_surface_native_draw_fn draw, void **payload) {
+    (void)staging_rgb; (void)bytes; (void)draw;
+    if (payload) *payload = NULL;
+    return false;
+}
+void pxa_esp_surface_cancel_native(uint8_t *staging_rgb) { (void)staging_rgb; }
+bool pxa_esp_surface_acquire_latest_native_for_direct(pxa_esp_surface_frame_t *frame) {
+    (void)frame; return false;
+}
+bool pxa_esp_surface_acquire_prepared_native(pxa_esp_surface_frame_t *frame) {
+    (void)frame; return false;
+}
+bool pxa_esp_surface_materialize_frame(pxa_esp_surface_frame_t *frame) {
+    (void)frame; return false;
+}
 
 void pxa_esp_surface_backend(pxa_surface_backend_t *backend) {
     if (backend != NULL) backend->struct_size = 0;

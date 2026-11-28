@@ -1,0 +1,9 @@
+# The Host decodes on core 0 while Runtime services audio and DASH on core 1.
+CONFIG_PXA_RUNTIME_TASK_AFFINITY=1
+# Keep CABAC parsing and inter prediction in internal RAM while streaming.
+# CONFIG_ESP_OPENH264_PROFILE_MINIMAL is not set
+CONFIG_ESP_OPENH264_PROFILE_BALANCED=y
+# Keep HTTPS media refills working while the decoder and display own DMA memory.
+# CONFIG_MBEDTLS_HARDWARE_AES is not set
+# Let ordinary small allocations use PSRAM and reserve internal memory for DMA.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0

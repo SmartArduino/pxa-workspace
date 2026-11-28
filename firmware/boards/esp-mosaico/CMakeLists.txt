@@ -1,3 +1,7 @@
+idf_build_get_property(use_esp_openh264 PXA_USE_ESP_OPENH264)
+if(use_esp_openh264)
+    set(video_dependency pxa_video_codecs)
+endif()
 idf_component_register(
     SRCS
         "src/esp_mosaico_board_port.cc"
@@ -13,9 +17,11 @@ idf_component_register(
         "vendor/bmi270/bmi270.c"
         "vendor/bmm150/bmm150.c"
         "src/esp_mosaico_pxa_surface.cc"
+        "src/esp_mosaico_video_copy.cc"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "vendor/bmi270" "vendor/bmm150"
     PRIV_REQUIRES
+        ${video_dependency}
         78__esp-wifi-connect
         78__esp_lcd_touch_cst92xx
         efuse
@@ -24,6 +30,7 @@ idf_component_register(
         esp_driver_i2s
         esp_driver_ledc
         esp_driver_ppa
+        esp_driver_dma
         esp_driver_spi
         esp_driver_uart
         esp_blockdev
@@ -51,9 +58,17 @@ idf_component_register(
         pxa_system_reference_ui
         pxa_system_standard
         pxadb)
+idf_component_get_property(mosaico_video_host pxa COMPONENT_LIB)
+set_property(SOURCE "${PXSYS_ROOT}/libpxa/src/services/video/video_service.c"
+    TARGET_DIRECTORY ${mosaico_video_host} APPEND PROPERTY COMPILE_DEFINITIONS
+    PXA_VIDEO_COPY_ROWS=mosaico_video_copy_rows)
+if(use_esp_openh264)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE PXA_USE_ESP_OPENH264=1)
+endif()
 
 target_link_options(${COMPONENT_LIB} INTERFACE
-    "-Wl,--wrap=esp_cpu_reset" "-Wl,--undefined=__wrap_esp_cpu_reset")
+    "-Wl,--wrap=esp_cpu_reset" "-Wl,--undefined=__wrap_esp_cpu_reset"
+    "-Wl,--undefined=mosaico_video_copy_rows")
 
 if(TARGET lvgl_docoder_lib)
     target_compile_definitions(lvgl_docoder_lib PRIVATE ESP_LV_ENABLE_HW_JPEG=0)

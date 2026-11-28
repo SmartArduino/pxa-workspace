@@ -1,5 +1,13 @@
+#if PXA_ESP_HTTP_REUSE
+#define PXA_TEST_HEAP_SNAPSHOT 1
+#define CONFIG_PXA_RESOURCE_PSRAM_HEADROOM_BYTES 0
+#endif
 #include "pxa_test_platform.h"
 #include <setjmp.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <esp_wifi.h>
+#include "pxa_esp_wifi_transfer.h"
 #include <string.h>
 
 static unsigned critical_depth, task_count, notifications;
@@ -13,10 +21,50 @@ static uint8_t queued[4];
 static unsigned queued_count;
 static jmp_buf worker_idle;
 static esp_http_client_config_t mock_client;
+static int mock_socket_fd = -1;
 static unsigned mock_offset, mock_size, mock_uploaded, mock_cleanups, mock_header_waits, mock_inits;
 static unsigned mock_mode;
+#if PXA_ESP_HTTP_REUSE
+static unsigned reused_opens, stale_open, stale_head, reject_update, fail_after_header;
+static bool persistent = true, low_heap, reset_on_alloc;
+typedef struct {
+    esp_http_client_config_t config;
+    unsigned offset;
+    bool used;
+} range_mock_t;
+static range_mock_t range_clients[4];
+static range_mock_t *range_client(esp_http_client_handle_t handle) {
+    for (unsigned i = 0; i < 4; ++i)
+        if (handle == &range_clients[i]) return &range_clients[i];
+    return NULL;
+}
+static const char *response_header;
+static unsigned range_status = 206;
+size_t heap_caps_get_total_size(unsigned caps) { (void)caps; return 8u << 20; }
+size_t heap_caps_get_free_size(unsigned caps) { (void)caps; return low_heap ? 4096 : 8u << 20; }
+size_t heap_caps_get_largest_free_block(unsigned caps) { return heap_caps_get_free_size(caps); }
+esp_err_t esp_http_client_set_url(esp_http_client_handle_t client, const char *url) {
+    range_mock_t *c = range_client(client);
+    assert(c && c->used && !c->config.user_data && url);
+    if (reject_update) { --reject_update; return ESP_FAIL; }
+    ++reused_opens; c->offset = 0;
+    return ESP_OK;
+}
+esp_err_t esp_http_client_set_user_data(esp_http_client_handle_t client, void *data) {
+    range_mock_t *c = range_client(client);
+    assert(c && c->used); c->config.user_data = data; return ESP_OK;
+}
+bool esp_http_client_is_persistent_connection(esp_http_client_handle_t client) {
+    return client && persistent;
+}
+#endif
+static int expected_rx_buffer = 512, reject_rx_buffer;
 static int mock_status;
 static int64_t mock_time = 1000;
+
+static wifi_ps_type_t wifi_power = WIFI_PS_MIN_MODEM;
+esp_err_t esp_wifi_get_ps(wifi_ps_type_t *power) { *power = wifi_power; return ESP_OK; }
+esp_err_t esp_wifi_set_ps(wifi_ps_type_t power) { wifi_power = power; return ESP_OK; }
 
 static void checked_free(void *memory) {
     assert(critical_depth == 0);
@@ -72,6 +120,12 @@ void *heap_caps_malloc(size_t size, unsigned caps) {
     void *memory;
     (void)caps;
     assert(critical_depth == 0);
+#if PXA_ESP_HTTP_REUSE
+    if (reset_on_alloc) {
+        reset_on_alloc = false;
+        pxa_esp_net_reset_requests();
+    }
+#endif
     if (fail_allocation) return NULL;
     memory = malloc(size);
     if (memory) { ++allocation_count; ++live_allocations; }
@@ -84,6 +138,10 @@ void *heap_caps_calloc(size_t count, size_t size, unsigned caps) {
 }
 QueueHandle_t xQueueCreateWithCaps(unsigned count, size_t size, unsigned caps) {
     (void)caps; assert(count == 4 && size == 1); return queued;
+}
+unsigned uxQueueMessagesWaiting(QueueHandle_t queue) {
+    assert(queue == queued);
+    return queued_count;
 }
 int xQueueReceive(QueueHandle_t queue, void *value, uint32_t timeout) {
     (void)queue; (void)timeout;
@@ -99,7 +157,7 @@ int xQueueSendToBack(QueueHandle_t queue, const void *value, uint32_t timeout) {
     queued[queued_count++] = *(const uint8_t *)value;
     return pdTRUE;
 }
-void vQueueDelete(QueueHandle_t queue) { (void)queue; }
+void vQueueDeleteWithCaps(QueueHandle_t queue) { (void)queue; }
 int xTaskCreateWithCaps(void (*fn)(void *), const char *name, unsigned stack,
     void *context, unsigned priority, TaskHandle_t *task, unsigned caps) {
     (void)fn; (void)name; (void)stack; (void)priority; (void)caps;
@@ -109,11 +167,29 @@ int64_t esp_timer_get_time(void) { return mock_time; }
 void esp_crt_bundle_attach(void) {}
 esp_http_client_handle_t esp_http_client_init(const esp_http_client_config_t *c) {
     assert(critical_depth == 0);
+    if (reject_rx_buffer && c->buffer_size == reject_rx_buffer) {
+        reject_rx_buffer = 0;
+        return NULL;
+    }
     ++mock_inits; mock_client = *c; mock_offset = mock_uploaded = 0;
     mock_profile[0] = '\0'; mock_profile_headers = 0;
     mock_size = mock_mode == 2 ? 0 : 8192;
     mock_status = mock_mode == 2 ? 413 : 200;
-    assert(c->disable_auto_redirect && c->buffer_size == 512);
+#if PXA_ESP_HTTP_REUSE
+    if (mock_mode == 4) mock_status = (int)range_status;
+#endif
+    assert(c->disable_auto_redirect && c->buffer_size == expected_rx_buffer);
+#if PXA_ESP_HTTP_REUSE
+    if (mock_mode == 4) {
+        for (unsigned i = 0; i < 4; ++i) {
+            if (!range_clients[i].used) {
+                range_clients[i] = (range_mock_t){*c, 0, true};
+                return &range_clients[i];
+            }
+        }
+        assert(0 && "a fifth live HTTP client");
+    }
+#endif
     return &mock_client;
 }
 esp_err_t esp_http_client_set_header(esp_http_client_handle_t c, const char *n, const char *v) {
@@ -131,7 +207,14 @@ esp_err_t esp_http_client_set_post_field(esp_http_client_handle_t c, const char 
 }
 esp_err_t esp_http_client_perform(esp_http_client_handle_t c) { (void)c; return ESP_FAIL; }
 int esp_http_client_get_status_code(esp_http_client_handle_t c) { (void)c; return mock_status; }
-void esp_http_client_cleanup(esp_http_client_handle_t c) { (void)c; ++mock_cleanups; }
+void esp_http_client_cleanup(esp_http_client_handle_t c) {
+    assert(!critical_depth);
+#if PXA_ESP_HTTP_REUSE
+    range_mock_t *r = range_client(c);
+    if (r) { assert(r->used); r->used = false; }
+#endif
+    (void)c; ++mock_cleanups;
+}
 
 void vTaskDelay(TickType_t ticks) { (void)ticks; }
 void vTaskDelete(TaskHandle_t task) { (void)task; }
@@ -147,7 +230,14 @@ uint32_t ulTaskNotifyTake(int clear, TickType_t ticks) {
     ++worker_waits;
     return pending;
 }
-esp_err_t esp_http_client_open(esp_http_client_handle_t c, int n) { (void)c; (void)n; return ESP_OK; }
+esp_err_t esp_http_client_open(esp_http_client_handle_t c, int n) {
+    (void)c; (void)n;
+#if PXA_ESP_HTTP_REUSE
+    if (stale_open) { --stale_open; return ESP_FAIL; }
+#endif
+    return ESP_OK;
+}
+int esp_http_client_get_socket(esp_http_client_handle_t c) { (void)c; return mock_socket_fd; }
 esp_err_t esp_http_client_set_timeout_ms(esp_http_client_handle_t c, int n) { (void)c; (void)n; return ESP_OK; }
 int esp_http_client_write(esp_http_client_handle_t c, const char *s, int n) {
     (void)c;
@@ -164,6 +254,22 @@ static void mock_header(char *name, char *value) {
 int64_t esp_http_client_fetch_headers(esp_http_client_handle_t c) {
     (void)c;
     if (mock_header_waits) { --mock_header_waits; return -ESP_ERR_HTTP_EAGAIN; }
+#if PXA_ESP_HTTP_REUSE
+    if (mock_mode == 4) {
+        if (stale_head) { --stale_head; return -1; }
+        range_mock_t *r = range_client(c);
+        assert(r && r->used && r->config.user_data);
+        esp_http_client_event_t event = {.user_data = r->config.user_data,
+            .event_id = HTTP_EVENT_ON_HEADER, .header_key = "Content-Length", .header_value = "8192"};
+        r->config.event_handler(&event);
+        if (response_header) {
+            event.header_key = (char *)response_header; event.header_value = "private";
+            r->config.event_handler(&event);
+        }
+        if (fail_after_header) { --fail_after_header; return -1; }
+        return 8192;
+    }
+#endif
     if (mock_mode != 1) mock_header("Content-Length", mock_size ? "8192" : "0");
     else mock_header("Transfer-Encoding", "chunked");
     mock_header("Set-Cookie", "a=1"); mock_header("Set-Cookie", "b=2");
@@ -172,12 +278,25 @@ int64_t esp_http_client_fetch_headers(esp_http_client_handle_t c) {
 }
 int esp_http_client_read(esp_http_client_handle_t c, char *s, int n) {
     (void)c;
+#if PXA_ESP_HTTP_REUSE
+    range_mock_t *r = range_client(c);
+    if (r) {
+        assert(r->used && r->offset <= 8192);
+        if ((unsigned)n > 8192 - r->offset) n = 8192 - r->offset;
+        for (int i = 0; i < n; ++i) s[i] = (char)((r->offset + i) & 255);
+        r->offset += n; return n;
+    }
+#endif
     if ((unsigned)n > mock_size - mock_offset) n = (int)(mock_size - mock_offset);
     for (int i = 0; i < n; ++i) s[i] = (char)((mock_offset + i) & 255);
     mock_offset += n;
     return n;
 }
 bool esp_http_client_is_complete_data_received(esp_http_client_handle_t c) {
+#if PXA_ESP_HTTP_REUSE
+    range_mock_t *r = range_client(c);
+    if (r) return r->used && r->offset == 8192;
+#endif
     (void)c; return mock_offset == mock_size;
 }
 
@@ -310,11 +429,41 @@ static void test_stream(pxa_net_backend_t *b) {
     r.url = (pxa_bytes_t){(const uint8_t*)"http://test.invalid",19};
     r.timeout_ms = 1000; r.buffer_bytes = 512; r.response_header_bytes = 1024;
     r.max_body_bytes = 8192;
+#if (CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31) && CONFIG_SPIRAM
+    {
+        const struct { uint32_t body, ring; int rx, reject; } cases[] = {
+            {65535, 4096, 512, 0}, {65536, 4096, 2048, 0},
+            {124362, 4096, 2048, 0}, {131072, 4096, 4096, 0},
+            {124362, 512, 512, 0}, {124362, 4096, 512, 2048}
+        };
+        for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); ++i) {
+            r.max_body_bytes = cases[i].body;
+            r.buffer_bytes = cases[i].ring;
+            expected_rx_buffer = cases[i].rx;
+            reject_rx_buffer = cases[i].reject;
+            assert(b->open_exchange(NULL, &r, &exchange) == PXA_STATUS_OK);
+            step_stream();
+            assert(!reject_rx_buffer);
+            b->close_exchange(NULL, exchange);
+            step_stream();
+            assert(live_allocations == 1 && !queued_count);
+        }
+        r.max_body_bytes = 8192;
+        r.buffer_bytes = expected_rx_buffer = 512;
+    }
+#endif
     /* A live exchange survives 65 seconds and still releases its bounded
      * buffer on cancellation. Connection setup keeps a short timeout. */
     r.timeout_ms = PXA_NET_MAX_STREAM_TIMEOUT_MS;
+    int pair[2];
+    assert(socketpair(AF_UNIX,SOCK_STREAM,0,pair)==0);
+    mock_socket_fd=pair[0];
+    r.url=(pxa_bytes_t){(const uint8_t*)"https://test.invalid",20};
     assert(b->open_exchange(NULL,&r,&exchange) == PXA_STATUS_OK);
     step_stream();
+    assert(fcntl(mock_socket_fd,F_GETFL) & O_NONBLOCK);
+    close(pair[0]); close(pair[1]); mock_socket_fd=-1;
+    r.url=(pxa_bytes_t){(const uint8_t*)"http://test.invalid",19};
     assert(mock_client.timeout_ms <= 15000);
     mock_time += INT64_C(65000000);
     step_stream();
@@ -322,6 +471,29 @@ static void test_stream(pxa_net_backend_t *b) {
     b->close_exchange(NULL,exchange);step_stream();
     assert(live_allocations == 1 && !queued_count);
     r.timeout_ms = 1000;
+    {
+        void *second;
+        assert(b->open_exchange(NULL, &r, &exchange) == PXA_STATUS_OK);
+        for (unsigned i = 0; i < 4; ++i) step_stream();
+        assert(!pxa_http_ring_writable(&http_stream(exchange)->stream.receive));
+        assert(b->open_exchange(NULL, &r, &second) == PXA_STATUS_OK);
+        unsigned waits = worker_waits;
+        step_stream(); /* Full first ring, second request ready to open. */
+        assert(worker_waits == waits);
+        step_stream(); /* Open second. */
+        step_stream(); /* First still full. */
+        step_stream(); /* GET switches from upload to headers. */
+        mock_header_waits = 1;
+        step_stream(); /* First full. */
+        assert(worker_waits == waits);
+        step_stream(); /* Second also blocked. Sleep once for both. */
+        assert(worker_waits == waits + 1);
+        b->close_exchange(NULL, exchange);
+        b->close_exchange(NULL, second);
+        step_stream();
+        step_stream();
+        assert(live_allocations == 1 && !queued_count);
+    }
     for (r.buffer_bytes = 512; r.buffer_bytes <= 4096; r.buffer_bytes *= 8) {
       for (mock_mode = 0; mock_mode < 2; ++mock_mode) {
         size_t total = 0, allocations;
@@ -403,7 +575,17 @@ static void test_stream(pxa_net_backend_t *b) {
     assert(worker_notifications && worker_waits && task_count == 1);
 }
 
+#if PXA_ESP_HTTP_REUSE
+#include "pxa_esp_http_reuse_test.inc"
+#endif
+
 int main(void) {
+    assert(pxa_esp_wifi_transfer_acquire() && wifi_power == WIFI_PS_NONE);
+    assert(pxa_esp_wifi_transfer_acquire());
+    pxa_esp_wifi_transfer_release();
+    assert(wifi_power == WIFI_PS_NONE);
+    pxa_esp_wifi_transfer_release();
+    assert(wifi_power == WIFI_PS_MIN_MODEM);
     assert(pxa_esp_lan_backend() == NULL);
     pxa_net_backend_t backend;
     pxa_net_request_t request = {0};
@@ -470,6 +652,9 @@ int main(void) {
     pxa_esp_net_snapshot(&snapshot);
     assert(snapshot.active_slots == 0 && snapshot.slot_storage_bytes == sizeof(g_net->slots));
     test_stream(&backend);
+#if PXA_ESP_HTTP_REUSE
+    test_http_connection_reuse(&backend);
+#endif
     test_store_profile(&backend);
     pxa_socket_request_t socket_request = {0};
     socket_request.host = (pxa_bytes_t){(const uint8_t *)"test.invalid", 12};

@@ -30,7 +30,7 @@ constexpr unsigned kIoTimeout=1000, configTICK_RATE_HZ=1000;
 constexpr size_t kMaxEncodedPayload=2048;
 constexpr int pdTRUE=1;
 const char* kProtocol="PXADB1";
-struct Transport {static constexpr int kPrimary=0;};
+struct Transport {static constexpr int kPrimary=0,kLan=2;};
 std::atomic<bool> s_primary_shares_console{true};
 struct Session {
     std::atomic<bool> active{true};

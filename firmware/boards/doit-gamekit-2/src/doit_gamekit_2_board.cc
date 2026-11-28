@@ -34,6 +34,7 @@
 #include <esp_timer.h>
 #include <esp_vfs_fat.h>
 #include <freertos/semphr.h>
+#include <freertos/idf_additions.h>
 #include <freertos/queue.h>
 #include <pxa/pxa_esp_surface.h>
 #include <pxa/pxa_host.h>
@@ -42,6 +43,7 @@
 #include <diskio_sdmmc.h>
 #include <pxa_board_api.h>
 #include <pxa_board_common/ledc_backlight.h>
+#include <pxa_board_common/ppa_rgb565.h>
 #include <pxa_board_common/rgb_port.h>
 #include <pxa_board_common/boot_screen.h>
 #include <pxa_board_common/lcd_render_trace.h>
@@ -49,6 +51,10 @@
 #include <pxadb_pointer_samples.h>
 #include <sdmmc_cmd.h>
 #include <wifi_manager.h>
+#if PXA_USE_ESP_OPENH264
+#include <pxa/pxa_esp_video.h>
+#include <pxa_video_codecs.h>
+#endif
 
 // Kconfig omits disabled boolean symbols from sdkconfig.h.
 #ifndef CONFIG_PXA_DOIT2_LCD_INVERT
@@ -78,7 +84,7 @@ constexpr auto kRotation = LandscapeRotation::Deg270;
 #endif
 constexpr auto kTouchRotation = kRotation;
 constexpr char kPanelName[] = "ST7789V TN";
-constexpr char kCaptureSource[] = "st7789-sw-rotation-completed";
+constexpr char kCaptureSource[] = "st7789-native-completed";
 static_assert(kFrameBytes % kOutputAlignment == 0);
 static_assert(kControllerMask == PXA_HOST_CONTROLLER_BUTTON_MASK);
 static_assert(X == PXA_HOST_CONTROLLER_X && R == PXA_HOST_CONTROLLER_R);
@@ -116,6 +122,7 @@ private:
     bool InitializeTouch();
     void PollTouch(uint32_t now);
     void CancelTouch();
+    void WakeRemotePointers();
     bool CreateRemotePointer(uint8_t id);
     bool InitializeSd();
     bool InitializeWifi();
@@ -125,6 +132,7 @@ private:
     void Back();
     lv_obj_t* NavigationScope() const;
     void PollPresentation();
+    void RotateOutput(const uint16_t* source, size_t stride, uint16_t* output);
     void DrawPerformanceOverlay(uint16_t* native);
     void SubmitFrames();
     uint8_t AcquireOutput();
@@ -142,6 +150,7 @@ private:
     pxa_board_common::LedcBacklight backlight_;
     pxa_board_common::BootScreen boot_screen_;
     DoitGamekit2Panel panel_;
+    ppa_client_handle_t rotation_client_ = nullptr;
     esp_lcd_panel_io_handle_t io_ = nullptr;
     esp_lv_decoder_handle_t decoder_ = nullptr;
     SemaphoreHandle_t display_mutex_ = nullptr;
@@ -187,6 +196,7 @@ private:
     std::array<TouchPoint, 2> touch_points_{};
     lv_indev_t* touch_pointers_[2]{};
     pxadb::PointerSamples<2> touch_samples_;
+    std::atomic<uint32_t> remote_pointer_wakes_{0};
     portMUX_TYPE remote_lock_ = portMUX_INITIALIZER_UNLOCKED;
     std::atomic<bool> physical_active_{false}, wake_requested_{false};
     // Bits 16/17 mark a diagnostic override and its connection state.
@@ -208,6 +218,9 @@ private:
 };
 
 bool Gamekit::Initialize() {
+#if PXA_USE_ESP_OPENH264
+    if (!pxa_esp_video_set_backend(pxa_video_codecs_backend())) return false;
+#endif
     // V2.0 schematic, sheet 1: GPIO47 sinks LED2 through R47 to 3.3 V.
     // Reserve the physical line for this logical indicator; it is no longer L.
     gpio_config_t indicator_config{};
@@ -364,6 +377,13 @@ bool Gamekit::InitializeDisplay() {
              kDirectDma, unsigned(dma_chunk_bytes), unsigned(kFrameBytes),
              unsigned(kOutputAlignment));
 
+    ppa_client_config_t rotation_config{};
+    rotation_config.oper_type = PPA_OPERATION_SRM;
+    rotation_config.max_pending_trans_num = 1;
+    rotation_config.data_burst_length = PPA_DATA_BURST_LENGTH_128;
+    if (ppa_register_client(&rotation_config, &rotation_client_) != ESP_OK)
+        ESP_LOGW(kTag, "PPA unavailable, using tiled RGB565 rotation");
+
     dma_done_ = xSemaphoreCreateBinary();
     frame_ = static_cast<uint16_t*>(heap_caps_aligned_calloc(kOutputAlignment, kPixels, sizeof(uint16_t),
                                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -377,10 +397,19 @@ bool Gamekit::InitializeDisplay() {
     // SPI reads separate rotated outputs, so no second logical buffer is needed.
     if (!dma_done_ || !frame_ || !native_frames_[0] || !native_frames_[1] ||
         !free_outputs_ || !ready_outputs_) return false;
+#if PXA_GAMEKIT_VERIFY_NATIVE_OUTPUT
+    pxa_gamekit_native_verify(frame_, native_frames_[0], native_frames_[1],
+                             kRotation == LandscapeRotation::Deg270 ? 1 : 3);
+#endif
     for (uint8_t index = 0; index < 2; ++index) xQueueSend(free_outputs_, &index, 0);
-    if (xTaskCreatePinnedToCore([](void* context) {
-            static_cast<Gamekit*>(context)->SubmitFrames();
-        }, "gamekit_lcd", 4096, this, 5, nullptr, 0) != pdPASS) return false;
+    const auto lcd_task = [](void* context) { static_cast<Gamekit*>(context)->SubmitFrames(); };
+    bool lcd_started = false;
+#if CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+    lcd_started = xTaskCreatePinnedToCoreWithCaps(lcd_task, "gamekit_lcd", 4096, this, 5,
+        nullptr, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS;
+#endif
+    if (!lcd_started && xTaskCreatePinnedToCore(lcd_task, "gamekit_lcd", 4096, this, 5,
+        nullptr, 0) != pdPASS) return false;
     display_mutex_ = xSemaphoreCreateRecursiveMutex();
     if (!display_mutex_) return false;
     lv_init();
@@ -439,9 +468,9 @@ bool Gamekit::InitializeDisplay() {
     lv_unlock();
     UnlockDisplay();
     ESP_ERROR_CHECK(panel_.DisplayOn());
-    ESP_LOGI(kTag, "Native portrait, software rotation: logical=%dx%d output=%dx%d, "
-             "tiled software rotation, double-buffered %d MHz SPI, no TE",
-             kWidth, kHeight, kNativeWidth, kNativeHeight,
+    ESP_LOGI(kTag, "Native portrait: logical=%dx%d output=%dx%d, "
+             "%s rotation, double-buffered %d MHz SPI, no TE",
+             kWidth, kHeight, kNativeWidth, kNativeHeight, rotation_client_ ? "PPA" : "tiled",
              CONFIG_PXA_DOIT2_LCD_CLOCK_HZ / 1000000);
     // The backlight stays off until a complete frame has reached the panel.
     return ready;
@@ -500,7 +529,7 @@ void Gamekit::Flush(lv_display_t* display, const lv_area_t* area, uint8_t* bytes
     const uint8_t output = self->AcquireOutput();
     self->ui_trace_.Add(pxa::board::LcdRenderTrace::Wait, phase);
     phase = self->ui_trace_.Mark();
-    RotateRgb565(self->frame_, kWidth, self->native_frames_[output], kWidth, kHeight, kRotation);
+    self->RotateOutput(self->frame_, kWidth, self->native_frames_[output]);
     self->ui_trace_.Add(pxa::board::LcdRenderTrace::Rotate, phase);
     self->QueueOutput(output, self->refresh_.content(),
                       self->surface_acquired_ ? &self->surface_ : nullptr);
@@ -568,7 +597,7 @@ bool Gamekit::Capture(uint16_t* pixels, size_t count, pxadb::TestControlCaptureI
     const int output = completed_output_.load(std::memory_order_acquire);
     const bool complete = !pending_outputs_.load(std::memory_order_acquire) && output >= 0;
     if (complete) {
-        CaptureRotatedRgb565(native_frames_[output], pixels, kWidth, kHeight, kRotation);
+        CaptureRotatedRgb565<kWireOrder>(native_frames_[output], pixels, kWidth, kHeight, kRotation);
         if (info) {
             info->width = kWidth; info->height = kHeight; info->stride_bytes = kWidth * 2;
             info->frame_id = completed_frames_.load();
@@ -580,6 +609,20 @@ bool Gamekit::Capture(uint16_t* pixels, size_t count, pxadb::TestControlCaptureI
     lv_unlock();
     UnlockDisplay();
     return complete;
+}
+
+void Gamekit::RotateOutput(const uint16_t* source, size_t stride, uint16_t* output) {
+    if (rotation_client_) {
+        constexpr auto angle = kRotation == LandscapeRotation::Deg270
+            ? PPA_SRM_ROTATION_ANGLE_270 : PPA_SRM_ROTATION_ANGLE_90;
+        const auto result = pxa::board::RotatePpaRgb565(rotation_client_, source, stride, kWidth,
+                                                        kHeight, output, angle, false);
+        if (result == ESP_OK) return;
+        ESP_LOGW(kTag, "PPA rotation rejected (%s), using tiled RGB565 rotation", esp_err_to_name(result));
+        ppa_unregister_client(rotation_client_);
+        rotation_client_ = nullptr;
+    }
+    RotateRgb565<kWireOrder>(source, stride, output, kWidth, kHeight, kRotation);
 }
 
 void Gamekit::PollPresentation() {
@@ -614,17 +657,42 @@ void Gamekit::PollPresentation() {
     // before the LVGL refresh could compose them. The direct acquisition also
     // enforces the fresh-frame barrier after closing a modal or Recents.
     const bool composition = pointer_mode_ || pxa_esp_surface_composition_required();
-    const bool acquired = !composition && pxa_esp_surface_acquire_latest_for_direct(&frame);
-    const bool direct = acquired && CanPresentDirectly(frame, false, false);
+    const bool acquired = !composition && pxa_esp_surface_acquire_latest_native_for_direct(&frame);
+    bool direct = acquired && CanPresentDirectly(frame, false, false);
     if (direct) {
         const uint8_t output = AcquireOutput();
-        RotateScaledRgb565(reinterpret_cast<const uint16_t*>(frame.pixels), frame.stride_bytes / 2,
-                          native_frames_[output], frame.width, frame.height,
-                          kWidth / frame.width, kRotation);
-        // Release the runtime's borrowed frame before waiting on SPI.
-        pxa_esp_surface_release_frame(frame.lease);
-        QueueOutput(output, content, &frame);
-    } else {
+        bool drawn = false;
+        // QueueOutput adds the performance overlay to the completed native frame.
+        if (frame.native_draw && frame.width == kWidth && frame.height == kHeight) {
+            constexpr uint8_t rotation = kRotation == LandscapeRotation::Deg270 ? 1 : 3;
+            const pxa_esp_surface_native_target_t target{native_frames_[output], kFrameBytes,
+                kNativeWidth * 2, kNativeWidth, kNativeHeight, rotation};
+            drawn = frame.native_draw(frame.native_payload, &target);
+#if PXA_GAMEKIT_VERIFY_NATIVE_OUTPUT
+            static unsigned native_draws;
+            if (drawn && (++native_draws == 1 || (native_draws & 127) == 0))
+                ESP_LOGI("S31Scanout", "single PPA presents=%u", native_draws);
+#endif
+        }
+        if (!drawn && (frame.pixels || pxa_esp_surface_materialize_frame(&frame))) {
+            const auto* pixels = reinterpret_cast<const uint16_t*>(frame.pixels);
+            if (frame.width == kWidth)
+                RotateOutput(pixels, frame.stride_bytes / 2, native_frames_[output]);
+            else
+                RotateScaledRgb565<kWireOrder>(pixels, frame.stride_bytes / 2, native_frames_[output],
+                                  frame.width, frame.height, kWidth / frame.width, kRotation);
+            drawn = true;
+        }
+        direct = drawn;
+        if (drawn) {
+            pxa_esp_surface_release_frame(frame.lease);
+            QueueOutput(output, content, &frame);
+        } else {
+            // No transfer owns this index. Recycle it before invalidating LVGL.
+            xQueueSend(free_outputs_, &output, portMAX_DELAY);
+        }
+    }
+    if (!direct) {
         if (acquired) pxa_esp_surface_release_frame(frame.lease);
         lv_obj_invalidate(lv_display_get_screen_active(display_));
     }
@@ -639,7 +707,7 @@ void Gamekit::DrawPerformanceOverlay(uint16_t* native) {
     uint16_t patch[width * height]{};
     pxa_board_performance_draw_rgb565(patch, kWidth, kHeight, width,
                                      left, 0, width, height, false);
-    RotateRgb565Patch(patch, width, native, kWidth, kHeight,
+    RotateRgb565Patch<kWireOrder>(patch, width, native, kWidth, kHeight,
                      left, 0, width, height, kRotation);
 }
 
@@ -703,8 +771,25 @@ bool Gamekit::InitializeSd() {
     return true;
 }
 
-// Called with the display lock held. Additional diagnostic fingers are lazy,
-// so ordinary controller play retains the same single pointer timer.
+// A released pointer has no new input for LVGL. Keep normal timer mode so
+// held contacts repeat, and DOWN/UP samples queued together drain in order.
+void WakePointer(lv_indev_t* pointer) {
+    if (!pointer) return;
+    auto* timer = lv_indev_get_read_timer(pointer);
+    if (lv_timer_get_paused(timer)) {
+        lv_timer_resume(timer);
+        lv_timer_ready(timer);
+    }
+}
+
+void Gamekit::WakeRemotePointers() {
+    if (!remote_pointer_wakes_.load(std::memory_order_relaxed)) return;
+    const auto mask = remote_pointer_wakes_.exchange(0, std::memory_order_acquire);
+    for (unsigned id = 0; id < kDebugPointers; ++id)
+        if (mask & (1u << id)) WakePointer(remote_pointers_[id]);
+}
+
+// Called with the display lock held. Additional diagnostic fingers are lazy.
 bool Gamekit::CreateRemotePointer(uint8_t id) {
     if (id >= kDebugPointers) return false;
     if (remote_pointers_[id]) return true;
@@ -727,6 +812,7 @@ bool Gamekit::CreateRemotePointer(uint8_t id) {
         data->timestamp = lv_tick_get();
         data->state = sample.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
         data->continue_reading = more;
+        if (!sample.pressed && !more) lv_timer_pause(lv_indev_get_read_timer(device));
     });
     lv_timer_set_period(lv_indev_get_read_timer(pointer), 5);
     remote_pointers_[id] = pointer;
@@ -755,6 +841,8 @@ bool Gamekit::InitializeButtons() {
             data->point = {self->cursor_x_, self->cursor_y_};
             data->timestamp = lv_tick_get();
             data->state = self->pointer_down_ ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+            if (!self->pointer_mode_ && !self->pointer_down_)
+                lv_timer_pause(lv_indev_get_read_timer(device));
         });
         lv_timer_set_period(lv_indev_get_read_timer(pointer_), 5);
         cursor_ = lv_obj_create(lv_display_get_layer_sys(display_));
@@ -808,6 +896,7 @@ bool Gamekit::InitializeTouch() {
             data->timestamp = lv_tick_get();
             data->state = sample.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
             data->continue_reading = more;
+            if (!sample.pressed && !more) lv_timer_pause(lv_indev_get_read_timer(device));
         });
         lv_timer_set_period(lv_indev_get_read_timer(pointer), 5);
     }
@@ -824,7 +913,10 @@ bool Gamekit::InitializeTouch() {
 void Gamekit::CancelTouch() {
     for (uint8_t id = 0; id < 2; ++id) {
         (void)touch_samples_.Cancel(id);
-        if (touch_pointers_[id]) lv_indev_wait_release(touch_pointers_[id]);
+        if (touch_pointers_[id]) {
+            lv_indev_wait_release(touch_pointers_[id]);
+            WakePointer(touch_pointers_[id]);
+        }
     }
 }
 
@@ -832,7 +924,7 @@ void Gamekit::PollTouch(uint32_t now) {
     if (!touch_ready_ || now - touch_tick_ < 10) return;
     touch_tick_ = now;
     TouchReport report;
-    if (!touch_.Read(kTouchRotation, report)) {
+    if (!touch_.Read(kTouchRotation, touch_pressed_, report)) {
         if (now - touch_success_tick_ >= 100 && touch_pressed_) {
             ESP_LOGW(kTag, "Touch report timeout; cancelling physical contacts");
             CancelTouch();
@@ -850,6 +942,7 @@ void Gamekit::PollTouch(uint32_t now) {
     for (uint8_t slot = 0; slot < 2; ++slot) {
         const auto& previous = touch_points_[slot];
         const auto& next = points[slot];
+        if (!touch_blocked_ && (previous.pressed || next.pressed)) WakePointer(touch_pointers_[slot]);
         if (previous.pressed && (!next.pressed || previous.id != next.id)) {
             if (!touch_blocked_) (void)touch_samples_.Push(slot, previous.x, previous.y, false);
             ESP_LOGI(kTag, "Touch UP slot=%u id=%u x=%u y=%u", slot, previous.id, previous.x, previous.y);
@@ -871,6 +964,7 @@ void Gamekit::PollInput() {
     const uint32_t now = lv_tick_get();
     const uint32_t elapsed = std::min(now - input_tick_, uint32_t(40));
     input_tick_ = now;
+    WakeRemotePointers();
     PollTouch(now);
     uint32_t raw = 0;
     for (size_t i = 0; i < kButtonPins.size(); ++i)
@@ -882,7 +976,10 @@ void Gamekit::PollInput() {
         portENTER_CRITICAL(&remote_lock_);
         remote_samples_.Clear();
         portEXIT_CRITICAL(&remote_lock_);
-        for (auto* pointer : remote_pointers_) if (pointer) lv_indev_wait_release(pointer);
+        for (auto* pointer : remote_pointers_) if (pointer) {
+            lv_indev_wait_release(pointer);
+            WakePointer(pointer);
+        }
         if (takeover_) takeover_(takeover_context_);
     }
     previous_raw_ = physical;
@@ -948,9 +1045,9 @@ void Gamekit::PollInput() {
         return;
     }
     if (gamepad_buttons) lv_display_trigger_activity(display_);
-    const bool system_shortcuts = force_pointer_ || NativeNavigation(false,
+    const bool system_shortcuts = (gamepad_buttons & Select) && (force_pointer_ || NativeNavigation(false,
         NavigationScope() != nullptr, pxa_host_accepts_controller_input(),
-        pxa_esp_surface_has_visible_surface());
+        pxa_esp_surface_has_visible_surface()));
     const auto action = shortcuts_.Update(gamepad_buttons, now, system_shortcuts);
     if (action.back) {
         navigation_.Cancel();
@@ -987,6 +1084,7 @@ void Gamekit::PollInput() {
     uint32_t delivered = swallow_until_release_ ? 0 : action.buttons;
     if (cursor_mode != pointer_mode_ || focus_mode != focus_mode_) {
         pointer_mode_ = cursor_mode;
+        if (cursor_mode) WakePointer(pointer_);
         focus_mode_ = focus_mode;
         pointer_down_ = false;
         // Never turn an already-held game A into a click after a UI transition.
@@ -1055,13 +1153,17 @@ void Gamekit::ReportController(uint32_t report, uint32_t now) {
     if (gamepad_consumed_ || swallow_until_release_ || pointer_mode_ || focus_mode_) report = 0;
     // Retry failed queue submissions and periodically refresh complete state,
     // including zero, so app startup/resume never inherits stale held keys.
-    if (report != reported_buttons_ || connected != reported_connected_ ||
-        now - report_tick_ >= 50) {
-        if (pxa_host_post_controller_state(0, connected, report)) {
-            reported_buttons_ = report;
-            reported_connected_ = connected;
+    if (report == reported_buttons_ && connected == reported_connected_) {
+        if (now - report_tick_ < 50) return;
+        if (!pxa_host_accepts_controller_input()) {
             report_tick_ = now;
+            return;
         }
+    }
+    if (pxa_host_post_controller_state(0, connected, report)) {
+        reported_buttons_ = report;
+        reported_connected_ = connected;
+        report_tick_ = now;
     }
 }
 
@@ -1098,6 +1200,7 @@ bool Gamekit::ConfigureDiagnostics() {
         const bool accepted = !self->physical_active_.load() &&
             self->remote_samples_.Push(id, x, y, pressed);
         portEXIT_CRITICAL(&self->remote_lock_);
+        if (accepted) self->remote_pointer_wakes_.fetch_or(1u << id, std::memory_order_release);
         return accepted;
     };
     adapter.cancel_pointer = [](void* context, uint8_t id) {
@@ -1105,6 +1208,7 @@ bool Gamekit::ConfigureDiagnostics() {
         portENTER_CRITICAL(&self->remote_lock_);
         const bool accepted = self->remote_samples_.Cancel(id);
         portEXIT_CRITICAL(&self->remote_lock_);
+        if (accepted) self->remote_pointer_wakes_.fetch_or(1u << id, std::memory_order_release);
         return accepted;
     };
     adapter.route_key = [](void* context, pxadb::TestControlKey key) {

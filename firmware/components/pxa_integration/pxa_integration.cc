@@ -445,6 +445,8 @@ bool DeveloperGet(void* context, pxsys_reference_performance_option_t option) {
     const auto* board = static_cast<const pxa_board_port_t*>(context);
     if (option == PXSYS_REFERENCE_PXADB)
         return pxadb::IsRunning();
+    if (option == PXSYS_REFERENCE_PXADB_LAN)
+        return pxadb::IsLanEnabled();
     return board != nullptr && board->performance_get != nullptr &&
            board->performance_get(board->context, option);
 }
@@ -456,6 +458,8 @@ bool DeveloperSet(void* context, pxsys_reference_performance_option_t option,
         return pxadb::SetEnabled(enabled) &&
                pxa_board_performance_set(option, enabled);
     }
+    if (option == PXSYS_REFERENCE_PXADB_LAN)
+        return pxadb::SetLanEnabled(enabled);
     return board != nullptr && board->performance_set != nullptr &&
            board->performance_set(board->context, option, enabled);
 }
@@ -1452,6 +1456,9 @@ bool CreateSystem(const pxa_board_port_t* board,
         ui_config.performance_context = const_cast<pxa_board_port_t*>(board);
         ui_config.performance_get = DeveloperGet;
         ui_config.performance_set = DeveloperSet;
+#if CONFIG_PXADB_LAN
+        ui_config.pxadb_lan_endpoint = pxadb::ReadLanEndpoint;
+#endif
         ui_config.wifi_scan = ScanWifi;
         ui_config.wifi_scan_start = StartWifiScan;
         ui_config.wifi_connect = ConnectWifi;

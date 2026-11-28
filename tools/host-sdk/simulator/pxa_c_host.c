@@ -1678,7 +1678,7 @@ static pxa_status_t c_host_net_start(void *context,
     CURLMcode multi_code;
     const char *method;
     if (host == NULL || request == NULL || operation == NULL ||
-        request->struct_size < sizeof(*request) ||
+        request->struct_size < PXA_NET_REQUEST_BASE_BYTES ||
         request->method < PXA_NET_METHOD_GET ||
         request->method > PXA_NET_METHOD_DELETE || request->url.data == NULL ||
         request->url.size == 0 || request->url.size > PXA_NET_MAX_URL_BYTES ||

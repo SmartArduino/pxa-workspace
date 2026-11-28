@@ -1,5 +1,6 @@
 #include "esp_mosaico_hardware.h"
 #include "esp_mosaico_transfer.h"
+#include <pxa_board_common/ppa_rgb565.h>
 #include "esp_mosaico_refresh.h"
 #include "esp_mosaico_storage.h"
 #include "esp_mosaico_sensors.h"
@@ -57,6 +58,54 @@ namespace {
 constexpr char kTag[] = "mosaico_hw";
 constexpr size_t kFramePixels = mosaico_board::kWidth * mosaico_board::kHeight;
 constexpr bool kDirectPsramDma = CONFIG_PXA_MOSAICO_LCD_PSRAM_DMA_DIRECT;
+constexpr bool kCompactRotation =
+    kDirectPsramDma && mosaico_board::kDrawBufferRows < mosaico_board::kHeight;
+// Two bands also fit a centered 480x270 video in panel order. Larger frames
+// stream in alternating bands while the canonical logical image stays intact.
+constexpr uint32_t kRotatedRows = 144;
+constexpr size_t kRotatedBandPixels = mosaico_board::kWidth * kRotatedRows;
+constexpr size_t kRotationWorkspaceBytes = 2 * kRotatedBandPixels * sizeof(uint16_t);
+static_assert(kRotatedBandPixels * sizeof(uint16_t) % 128 == 0);
+
+void RotatePanelBand(ppa_client_handle_t ppa, uint8_t rotation, const uint8_t* source, uint32_t stride,
+                     int32_t first_x, int32_t first_y, uint32_t width, uint32_t rows, uint16_t* out,
+                     size_t capacity = kRotatedBandPixels * sizeof(uint16_t)) {
+    constexpr uint32_t w = mosaico_board::kWidth, h = mosaico_board::kHeight;
+    uint32_t x0, y0, x1, y1;
+    pxa_display_native_to_logical(w, h, rotation, first_x, first_y, &x0, &y0);
+    pxa_display_native_to_logical(w, h, rotation, first_x + width - 1, first_y + rows - 1, &x1, &y1);
+    if (ppa && width * rows >= 4096) {
+        const auto x = std::min(x0, x1), y = std::min(y0, y1);
+        const ppa_srm_oper_config_t config = {
+            .in = {.buffer = source,
+                   .pic_w = stride / 2,
+                   .pic_h = h,
+                   .block_w = std::max(x0, x1) - x + 1,
+                   .block_h = std::max(y0, y1) - y + 1,
+                   .block_offset_x = x,
+                   .block_offset_y = y,
+                   .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
+            .out = {.buffer = out,
+                    .buffer_size = capacity,
+                    .pic_w = width,
+                    .pic_h = rows,
+                    .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
+            .rotation_angle = static_cast<ppa_srm_rotation_angle_t>((4u - rotation) & 3u),
+            .scale_x = 1.0f,
+            .scale_y = 1.0f,
+            .mode = PPA_TRANS_MODE_BLOCKING};
+        if (ppa_do_scale_rotate_mirror(ppa, &config) == ESP_OK)
+            return;
+    }
+    const auto* input = reinterpret_cast<const uint16_t*>(source);
+    for (unsigned y = 0; y < rows; ++y) {
+        for (unsigned x = 0; x < width; ++x) {
+            uint32_t lx, ly;
+            pxa_display_native_to_logical(w, h, rotation, first_x + x, first_y + y, &lx, &ly);
+            out[y * width + x] = input[ly * (stride / 2) + lx];
+        }
+    }
+}
 
 esp_err_t ConfigureOutput(int pin, int level,
                            gpio_mode_t mode = GPIO_MODE_OUTPUT) {
@@ -307,17 +356,14 @@ bool EspMosaicoHardware::InitializeDisplay() {
     flush_queue_ = xQueueCreate(1, sizeof(FlushRequest));
     for (auto& buffer : transfer_pixels_) {
         buffer = static_cast<uint8_t*>(heap_caps_aligned_alloc(
-            64, mosaico_board::kWidth * mosaico_board::kTransferRows * sizeof(uint16_t),
+            64, mosaico_board::kStagingBytes,
             MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
     }
-    present_pixels_ = static_cast<uint8_t*>(heap_caps_aligned_calloc(
-        64, kFramePixels, sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     scanout_pixels_ = static_cast<uint8_t*>(heap_caps_aligned_calloc(
         64, kFramePixels, sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (transfer_done_ == nullptr || present_available_ == nullptr ||
         panel_mutex_ == nullptr || flush_queue_ == nullptr ||
         transfer_pixels_[0] == nullptr || transfer_pixels_[1] == nullptr ||
-        present_pixels_ == nullptr ||
         scanout_pixels_ == nullptr)
         return false;
     xSemaphoreGive(present_available_);
@@ -353,7 +399,8 @@ bool EspMosaicoHardware::InitializeDisplay() {
     }
     lv_display_set_driver_data(display_, this);
     lv_display_set_color_format(display_, LV_COLOR_FORMAT_RGB565);
-    lv_display_set_render_mode(display_, LV_DISPLAY_RENDER_MODE_DIRECT);
+    lv_display_set_render_mode(display_, mosaico_board::kDrawBufferRows < mosaico_board::kHeight
+        ? LV_DISPLAY_RENDER_MODE_PARTIAL : LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(display_, FlushDisplay);
     // The worker converts the final dirty snapshot outside the UI lock.
     // LVGL must retain the source until that conversion calls flush_ready.
@@ -374,7 +421,8 @@ bool EspMosaicoHardware::InitializeDisplay() {
             self->refresh_started_us_ = esp_timer_get_time();
             self->WaitForUiSnapshot();
             self->refresh_wait_us_ = esp_timer_get_time() - self->refresh_started_us_;
-            if (self->ui_frame_state_.load(std::memory_order_acquire) == UiFrameState::RestoreRequired) {
+            if (mosaico_board::kDrawBufferRows == mosaico_board::kHeight &&
+                self->ui_frame_state_.load(std::memory_order_acquire) == UiFrameState::RestoreRequired) {
                 // Restore before drawing, so a direct game does not leave old
                 // UI pixels around newly drawn patches. Never overwrite a
                 // patch which LVGL has already rendered in this refresh.
@@ -471,7 +519,7 @@ void EspMosaicoHardware::OnTe(void* context) {
     if (awakened) portYIELD_FROM_ISR();
 }
 
-void EspMosaicoHardware::WaitForTe(lv_area_t* area) {
+void EspMosaicoHardware::WaitForTe(lv_area_t* area, bool packed) {
     const lv_area_t dirty = *area;
     // The retained scanout is a complete image, so it is safe to widen a
     // copied dirty rectangle when the TE signal cannot admit a narrow window.
@@ -495,8 +543,8 @@ void EspMosaicoHardware::WaitForTe(lv_area_t* area) {
         if (age <= 2000) {
             const uint32_t measured = te_period_us_.load();
             const uint32_t blank = te_blank_us_.load();
-            const auto plan = mosaico_board::PlanTransfer(dirty, measured, blank,
-                                                          compact_te_enabled_.load());
+            const auto plan =
+                mosaico_board::PlanTransfer(dirty, measured, blank, compact_te_enabled_.load(), packed);
             const int64_t edge = esp_timer_get_time() - age;
             const int64_t start = edge + plan.start_us;
             for (;;) {
@@ -540,6 +588,10 @@ void EspMosaicoHardware::FlushDisplay(lv_display_t* display,
     const lv_draw_buf_t* active_buffer = lv_display_get_buf_active(display);
     if (self == nullptr || area == nullptr || pixels == nullptr ||
         !mosaico_board::ValidDisplayArea(*area) || active_buffer == nullptr) {
+        if (self && mosaico_board::kDrawBufferRows < mosaico_board::kHeight) {
+            self->compose_failed_ = true;
+            if (lv_display_flush_is_last(display)) self->FinishUiTiles();
+        }
         lv_display_flush_ready(display);
         return;
     }
@@ -547,6 +599,10 @@ void EspMosaicoHardware::FlushDisplay(lv_display_t* display,
     const size_t row_bytes = width * sizeof(uint16_t);
     const uint32_t source_stride = active_buffer->header.stride;
     if (source_stride < row_bytes || source_stride % 2 != 0) {
+        if constexpr (mosaico_board::kDrawBufferRows < mosaico_board::kHeight) {
+            self->compose_failed_ = true;
+            if (lv_display_flush_is_last(display)) self->FinishUiTiles();
+        }
         self->redraw_pending_ = true;
         lv_display_flush_ready(display);
         return;
@@ -557,7 +613,16 @@ void EspMosaicoHardware::FlushDisplay(lv_display_t* display,
     // restoring/copying 460,800 bytes for a small Back/volume/status-bar change.
     if (!self->flush_direct_checked_) {
         self->flush_direct_checked_ = true;
-        self->flush_direct_ready_ = self->PrepareDirectFrame(&self->flush_direct_request_);
+        self->flush_surface_visible_ = pxa_esp_surface_has_visible_surface();
+        // A UI-only refresh uses the retained LVGL draw buffer and scanout.
+        // The direct producer is available after an exchange and no longer
+        // needed once the app hides its Surface.
+        if (!self->flush_surface_visible_ && self->present_pixels_) {
+            heap_caps_free(self->present_pixels_);
+            self->present_pixels_ = nullptr;
+        }
+        self->flush_direct_ready_ = self->flush_surface_visible_ &&
+            self->PrepareDirectFrame(&self->flush_direct_request_);
     }
     if (self->flush_direct_ready_) {
         if (lv_display_flush_is_last(display)) {
@@ -565,16 +630,22 @@ void EspMosaicoHardware::FlushDisplay(lv_display_t* display,
             (void)self->pending_region_.Take(&unused);
             self->compose_failed_ = false;
             const auto& request = self->flush_direct_request_;
-            (void)self->QueuePresent(request.area, request.timestamp,
-                request.frame_id, request.raster_ready_tick_us);
+            (void)self->SubmitPrepared(request);
         }
+        lv_display_flush_ready(display);
+        return;
+    }
+    if constexpr (mosaico_board::kDrawBufferRows < mosaico_board::kHeight) {
+        self->CopyUiTile(*area, pixels, source_stride);
+        if (lv_display_flush_is_last(display)) self->FinishUiTiles();
         lv_display_flush_ready(display);
         return;
     }
     // DIRECT flush maps start at the full frame, unlike PARTIAL chunk maps.
     uint8_t* patch = pixels + area->y1 * source_stride + area->x1 * sizeof(uint16_t);
-    const uint64_t timestamp = mosaico_pxa_surface::ComposeFlushArea(
-        area, patch, source_stride, mosaico_pxa_surface::PixelOrder::Native);
+    const uint64_t timestamp = self->flush_surface_visible_ ?
+        mosaico_pxa_surface::ComposeFlushArea(area, patch, source_stride,
+            mosaico_pxa_surface::PixelOrder::Native) : 0;
     const bool last = lv_display_flush_is_last(display);
     // Diagnostics are painted into the owned scanout by the transfer worker.
     // Keeping them outside LVGL also covers refreshes below the top strip.
@@ -594,18 +665,120 @@ void EspMosaicoHardware::FlushDisplay(lv_display_t* display,
     lv_display_flush_ready(display);
 }
 
+void EspMosaicoHardware::CopyUiTile(const lv_area_t& area, const uint8_t* pixels, uint32_t stride) {
+    if (compose_failed_) return;
+    if (!tile_owns_scanout_) {
+        // Hold the scanout and one stable Surface lease for the entire refresh.
+        xSemaphoreTake(present_available_, portMAX_DELAY);
+        if (!WaitForTransfer(pdMS_TO_TICKS(10))) {
+            compose_failed_ = true;
+            xSemaphoreGive(present_available_);
+            return;
+        }
+        RestoreLogicalScanout();
+        tile_owns_scanout_ = true;
+        if (flush_surface_visible_ && pxa_esp_surface_acquire_prepared(&tile_frame_, false) &&
+            mosaico_pxa_surface::VisibleVideoArea(tile_frame_, &tile_surface_area_)) {
+            tile_next_row_ = tile_surface_area_.y1;
+            if (lv_area_get_height(&tile_surface_area_) < mosaico_board::kHeight && kCompactRotation &&
+                display_rotation_) {
+                if (rotation_full_) {
+                    auto* compact = static_cast<uint16_t*>(heap_caps_aligned_alloc(
+                        64, kRotationWorkspaceBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+                    if (compact) {
+                        heap_caps_free(rotation_pixels_);
+                        rotation_pixels_ = compact;
+                        rotation_full_ = false;
+                    }
+                }
+                if (present_pixels_) {
+                    heap_caps_free(present_pixels_);
+                    present_pixels_ = nullptr;
+                }
+            }
+        }
+    }
+    constexpr uint32_t pitch = mosaico_board::kWidth * sizeof(uint16_t);
+    const bool video_covers_tile = tile_next_row_ >= 0 &&
+        area.x1 >= tile_surface_area_.x1 && area.x2 <= tile_surface_area_.x2 &&
+        area.y1 >= tile_surface_area_.y1 && area.y2 <= tile_surface_area_.y2;
+    if (!(video_covers_tile ? pending_region_.Include(area) :
+          pending_region_.Merge<true>(area, pixels, stride, scanout_pixels_))) {
+        compose_failed_ = true;
+        return;
+    }
+    uint8_t* output = scanout_pixels_ + area.y1 * pitch + area.x1 * sizeof(uint16_t);
+    if (tile_frame_.lease) {
+        mosaico_pxa_surface::ComposeFrame(tile_frame_, &area, output, pitch);
+        if (tile_next_row_ >= 0 && area.x1 <= tile_surface_area_.x1 &&
+            area.x2 >= tile_surface_area_.x2 && area.y1 <= tile_next_row_ &&
+            area.y2 >= tile_next_row_)
+            tile_next_row_ = area.y2 + 1;
+    }
+}
+
+void EspMosaicoHardware::FinishUiTiles() {
+    const uint64_t timestamp = tile_frame_.input_timestamp_us;
+    // Count a video frame only when all its visible rows were composed from
+    // the same lease. A HUD-only patch may still complete a display refresh.
+    const bool whole_surface = tile_next_row_ >= 0 && tile_next_row_ > tile_surface_area_.y2;
+    const uint64_t frame_id = whole_surface ? tile_frame_.frame_id : 0;
+    if (tile_frame_.lease) pxa_esp_surface_release_frame(tile_frame_.lease);
+    tile_frame_ = {};
+    tile_next_row_ = -1;
+    lv_area_t dirty;
+    bool queued = false;
+    if (pending_region_.Take(&dirty) && !compose_failed_ && tile_owns_scanout_) {
+        FlushRequest request = {dirty, timestamp, {frame_id}, 0, FlushKind::Composited};
+        queued = xQueueSend(flush_queue_, &request, 0) == pdTRUE;
+    }
+    retained_region_valid_ = queued && whole_surface;
+    if (retained_region_valid_)
+        retained_region_ = tile_surface_area_;
+    if (!queued) {
+        if (tile_owns_scanout_) xSemaphoreGive(present_available_);
+        redraw_pending_ = true;
+    }
+    tile_owns_scanout_ = false;
+    compose_failed_ = false;
+}
+
 bool EspMosaicoHardware::SetDisplayRotation(uint8_t rotation) {
     if (rotation > 3) return false;
     if (rotation == display_rotation_) return true;
     WaitForUiSnapshot();
     if (rotation && !rotation_pixels_) {
-        rotation_pixels_ = static_cast<uint16_t*>(heap_caps_aligned_alloc(64,
-            size_t(mosaico_board::kWidth) * mosaico_board::kHeight * 2,
+        rotation_pixels_ = static_cast<uint16_t*>(heap_caps_aligned_alloc(
+            64, (kCompactRotation ? 2 * kRotatedBandPixels : kFramePixels) * sizeof(uint16_t),
             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
         if (!rotation_pixels_) return false;
+        // The transfer worker owns this client. The UI can issue its own SRM
+        // operation for the next Surface while the current snapshot rotates.
+        const ppa_client_config_t config = {
+            .oper_type = PPA_OPERATION_SRM, .max_pending_trans_num = 1,
+            .data_burst_length = PPA_DATA_BURST_LENGTH_128,
+        };
+        if (ppa_register_client(&config, &rotation_ppa_) != ESP_OK) rotation_ppa_ = nullptr;
     }
     WaitForFlush();
     xSemaphoreTake(panel_mutex_, portMAX_DELAY);
+    RestoreLogicalScanout();
+    if (!rotation && rotation_pixels_) {
+        // The last rotated transfer is complete. Release the snapshot while
+        // the launcher and the next app allocate their persistent buffers.
+        if (!WaitForTransfer(pdMS_TO_TICKS(1000))) {
+            xSemaphoreGive(panel_mutex_);
+            return false;
+        }
+        if (rotation_ppa_) {
+            ppa_unregister_client(rotation_ppa_);
+            rotation_ppa_ = nullptr;
+        }
+        heap_caps_free(rotation_pixels_);
+        rotation_pixels_ = nullptr;
+        rotation_full_ = false;
+        rotation_limited_ = false;
+    }
     portENTER_CRITICAL(&touch_lock_);
     EspMosaicoTouchPoint points[EspMosaicoInput::kPointers];
     const bool pressed = input_.Points(points) != 0;
@@ -613,6 +786,7 @@ bool EspMosaicoHardware::SetDisplayRotation(uint8_t rotation) {
     const auto cancel_input = input_takeover_;
     void* cancel_context = input_takeover_context_;
     display_rotation_ = rotation;
+    retained_region_valid_ = false;
     portEXIT_CRITICAL(&touch_lock_);
     for (auto* pointer : {touch_input_, secondary_touch_input_}) if (pointer) {
         lv_indev_reset(pointer, nullptr);
@@ -642,9 +816,49 @@ bool EspMosaicoHardware::TransferArea(
     }
     lv_area_t area = dirty;
     const uint8_t rotation = display_rotation_;
-    if (rotation) {
-        pxa_display_rgb565_to_native(reinterpret_cast<const uint16_t*>(frame),
-            rotation_pixels_, mosaico_board::kWidth, mosaico_board::kHeight, rotation);
+    const bool partial_rotation = kCompactRotation && !rotation_full_ && rotation &&
+                                  frame != reinterpret_cast<const uint8_t*>(rotation_pixels_);
+    if (rotation && frame != reinterpret_cast<const uint8_t*>(rotation_pixels_)) {
+        constexpr uint32_t w = mosaico_board::kWidth, h = mosaico_board::kHeight;
+        if (!partial_rotation) {
+            const lv_area_t changed = displayed_frame_initialized_ && displayed_frame_valid_
+                                          ? dirty
+                                          : lv_area_t{0, 0, w - 1, h - 1};
+            bool rotated = false;
+            if (rotation_ppa_ && lv_area_get_size(&changed) >= 32768) {
+                // SRM invalidates complete output rows. Rewrite the owned native
+                // snapshot in full so preserved neighbours cannot be discarded.
+                const ppa_srm_oper_config_t config = {
+                    .in = {.buffer = frame,
+                           .pic_w = source_stride / 2,
+                           .pic_h = h,
+                           .block_w = w,
+                           .block_h = h,
+                           .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
+                    .out = {.buffer = rotation_pixels_,
+                            .buffer_size = w * h * 2,
+                            .pic_w = w,
+                            .pic_h = h,
+                            .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
+                    .rotation_angle = static_cast<ppa_srm_rotation_angle_t>((4u - rotation) & 3u),
+                    .scale_x = 1.0f,
+                    .scale_y = 1.0f,
+                    .mode = PPA_TRANS_MODE_BLOCKING,
+                };
+                rotated = ppa_do_scale_rotate_mirror(rotation_ppa_, &config) == ESP_OK;
+            }
+            if (!rotated) {
+                const auto* input = reinterpret_cast<const uint16_t*>(frame);
+                for (int32_t ty = changed.y1; ty <= changed.y2; ty += 16)
+                    for (int32_t tx = changed.x1; tx <= changed.x2; tx += 16)
+                        for (int32_t y = ty; y <= std::min(ty + 15, changed.y2); ++y)
+                            for (int32_t x = tx; x <= std::min(tx + 15, changed.x2); ++x) {
+                                uint32_t nx, ny;
+                                pxa_display_logical_to_native(w, h, rotation, x, y, &nx, &ny);
+                                rotation_pixels_[ny * w + nx] = input[y * (source_stride / 2) + x];
+                            }
+            }
+        }
         uint32_t x, y, ex, ey;
         pxa_display_logical_to_native(mosaico_board::kWidth, mosaico_board::kHeight,
             rotation, dirty.x1, dirty.y1, &x, &y);
@@ -652,10 +866,24 @@ bool EspMosaicoHardware::TransferArea(
             rotation, dirty.x2, dirty.y2, &ex, &ey);
         area = {int32_t(std::min(x, ex)), int32_t(std::min(y, ey)),
                 int32_t(std::max(x, ex)), int32_t(std::max(y, ey))};
-        frame = reinterpret_cast<const uint8_t*>(rotation_pixels_);
+        if (!partial_rotation) {
+            frame = reinterpret_cast<const uint8_t*>(rotation_pixels_);
+            source_stride = w * sizeof(uint16_t);
+        }
+    }
+    mosaico_board::RoundDisplayArea(&area);
+    const lv_area_t packed_area = area;
+    bool packed = partial_rotation && frame_id && compact_te_enabled_ && area.x1 > 0 &&
+                  lv_area_get_height(&area) == mosaico_board::kHeight &&
+                  uint32_t(lv_area_get_size(&area)) <= 2 * kRotatedBandPixels;
+    if (packed) {
+        RotatePanelBand(rotation_ppa_, rotation, frame, source_stride, area.x1, area.y1,
+                        lv_area_get_width(&area), lv_area_get_height(&area), rotation_pixels_,
+                        kRotationWorkspaceBytes);
     }
     const int64_t te_wait_started = esp_timer_get_time();
-    WaitForTe(&area);
+    WaitForTe(&area, packed);
+    packed = packed && area.x1 == packed_area.x1 && area.x2 == packed_area.x2;
     te_wait_us_ = esp_timer_get_time() - te_wait_started;
     const uint8_t* pixels = frame + area.y1 * source_stride + area.x1 * sizeof(uint16_t);
     const int64_t transfer_started_us = esp_timer_get_time();
@@ -682,25 +910,52 @@ bool EspMosaicoHardware::TransferArea(
             ESP_LOGE(kTag, "Panel transfer timed out; retaining the DMA source");
             return false;
         };
-    auto direct = mosaico_board::DirectTransferResult::Ineligible;
-    if (kDirectPsramDma) {
-        direct = mosaico_board::TransferContiguousRows(area, pixels, source_stride,
-            wait_transfer, [this](const uint8_t* source, size_t bytes) {
-                (void)xSemaphoreTake(transfer_done_, 0);
-                // tx_color may have queued some chunks before a later failure.
-                // Keep ownership until the IO driver has drained those chunks.
-                transfer_pending_ = true;
-                const esp_err_t result = esp_lcd_panel_io_tx_color(
-                    panel_io_, 0x32002c00, source, bytes);
-                if (result != ESP_OK) {
-                    ++transfer_errors_;
-                    ESP_LOGE(kTag, "Direct panel transfer failed: %s", esp_err_to_name(result));
-                    if (esp_lcd_panel_io_tx_param(panel_io_, -1, nullptr, 0) == ESP_OK)
-                        transfer_pending_ = false;
-                    return false;
-                }
-                ++direct_dma_transfers_;
-                return true;
+    const auto submit_color = [this](int command, const uint8_t* source, size_t bytes) {
+        (void)xSemaphoreTake(transfer_done_, 0);
+        transfer_pending_ = true;
+        const auto result = esp_lcd_panel_io_tx_color(panel_io_, command, source, bytes);
+        if (result == ESP_OK) {
+            ++direct_dma_transfers_;
+            return true;
+        }
+        // tx_color may have submitted some chunks before a later failure.
+        ++transfer_errors_;
+        ESP_LOGE(kTag, "Direct panel transfer failed: %s", esp_err_to_name(result));
+        if (esp_lcd_panel_io_tx_param(panel_io_, -1, nullptr, 0) == ESP_OK)
+            transfer_pending_ = false;
+        return false;
+    };
+    using Transfer = mosaico_board::DirectTransferResult;
+    auto direct = Transfer::Ineligible;
+    if (packed) {
+        direct = submit_color(0x32002c00, reinterpret_cast<const uint8_t*>(rotation_pixels_),
+                              lv_area_get_size(&area) * sizeof(uint16_t)) &&
+                         wait_transfer()
+                     ? Transfer::Completed
+                     : Transfer::Failed;
+    } else if (partial_rotation) {
+        // Rotate the next band while SPI owns its predecessor.
+        const uint32_t width = lv_area_get_width(&area);
+        bool submitted = true;
+        unsigned slot = 0;
+        for (int32_t row = area.y1; row <= area.y2; row += kRotatedRows) {
+            const uint32_t lines = std::min<uint32_t>(kRotatedRows, area.y2 - row + 1);
+            auto* band = rotation_pixels_ + slot * kRotatedBandPixels;
+            RotatePanelBand(rotation_ppa_, rotation, frame, source_stride, area.x1, row, width, lines,
+                            band);
+            const int command = row == area.y1 ? 0x32002c00 : 0x32003c00;
+            if (!wait_transfer() || !submit_color(command, reinterpret_cast<uint8_t*>(band),
+                                                  size_t(lines) * width * sizeof(uint16_t))) {
+                submitted = false;
+                break;
+            }
+            slot ^= 1u;
+        }
+        direct = submitted && wait_transfer() ? Transfer::Completed : Transfer::Failed;
+    } else if (kDirectPsramDma) {
+        direct = mosaico_board::TransferContiguousRows(
+            area, pixels, source_stride, wait_transfer, [&](const uint8_t* source, size_t bytes) {
+                return submit_color(0x32002c00, source, bytes);
             });
     }
     const bool staged = direct == mosaico_board::DirectTransferResult::Ineligible;
@@ -765,10 +1020,110 @@ bool EspMosaicoHardware::TransferArea(
     return completed;
 }
 
+bool EspMosaicoHardware::PresentRetainedRegion() {
+    // Only the last completed LVGL pass may establish the pixels outside the
+    // Surface. Any UI invalidation, overlay, or geometry change must repaint.
+    if (!retained_region_valid_ || display_->inv_p || redraw_pending_ || !panel_on_ ||
+        !display_rotation_ || !reference_ui_ || pxsys_reference_lvgl_is_locked(reference_ui_) ||
+        pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY))
+        return false;
+    pxa_esp_surface_frame_t frame;
+    if (!pxa_esp_surface_acquire_prepared_with_alpha(&frame))
+        return false;
+    lv_area_t area;
+    const bool eligible =
+        mosaico_pxa_surface::VisibleVideoArea(frame, &area) && area.x1 == retained_region_.x1 &&
+        area.y1 == retained_region_.y1 && area.x2 == retained_region_.x2 &&
+        area.y2 == retained_region_.y2 && area.x1 == 0 && area.x2 == mosaico_board::kWidth - 1 &&
+        frame.width == mosaico_board::kWidth && frame.height == lv_area_get_height(&area) &&
+        frame.height < mosaico_board::kHeight && !frame.ui_alpha_plane.visible &&
+        !frame.system_alpha_plane.visible;
+    bool queued = false;
+    if (eligible) {
+        xSemaphoreTake(present_available_, portMAX_DELAY);
+        if (displayed_frame_valid_ && displayed_frame_initialized_ &&
+            frame.frame_id != displayed_frame_id_ && !redraw_pending_ &&
+            WaitForTransfer(pdMS_TO_TICKS(10))) {
+            RestoreLogicalScanout();
+            constexpr uint32_t pitch = mosaico_board::kWidth * sizeof(uint16_t);
+            const ppa_srm_oper_config_t config = {
+                .in = {.buffer = frame.pixels,
+                       .pic_w = frame.stride_bytes / 2,
+                       .pic_h = frame.height,
+                       .block_w = frame.width,
+                       .block_h = frame.height,
+                       .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
+                .out = {.buffer = scanout_pixels_,
+                        .buffer_size = kFramePixels * 2,
+                        .pic_w = mosaico_board::kWidth,
+                        .pic_h = mosaico_board::kHeight,
+                        .block_offset_y = static_cast<uint32_t>(area.y1),
+                        .srm_cm = PPA_SRM_COLOR_MODE_RGB565},
+                .scale_x = 1.0f,
+                .scale_y = 1.0f,
+                .byte_swap = true,
+                .mode = PPA_TRANS_MODE_BLOCKING,
+            };
+            if (!rotation_ppa_ || ppa_do_scale_rotate_mirror(rotation_ppa_, &config) != ESP_OK) {
+                auto* dst = scanout_pixels_ + area.y1 * pitch;
+                mosaico_pxa_surface::ComposeFrame(frame, &area, dst, pitch);
+            }
+            FlushRequest request = {area,
+                                    frame.input_timestamp_us,
+                                    {frame.frame_id},
+                                    frame.raster_ready_tick_us,
+                                    FlushKind::Composited};
+            queued = xQueueSend(flush_queue_, &request, 0) == pdTRUE;
+            if (!queued)
+                redraw_pending_ = true;
+        }
+        if (!queued)
+            xSemaphoreGive(present_available_);
+    }
+    pxa_esp_surface_release_frame(frame.lease);
+    return queued;
+}
+
 bool EspMosaicoHardware::PresentDirectFrame() {
+    if (kCompactRotation && PresentRetainedRegion())
+        return true;
     FlushRequest request;
-    return PrepareDirectFrame(&request) && QueuePresent(request.area,
-        request.timestamp, request.frame_id, request.raster_ready_tick_us);
+    return PrepareDirectFrame(&request) && SubmitPrepared(request);
+}
+
+bool EspMosaicoHardware::SubmitPrepared(const FlushRequest& request) {
+    if (request.kind != FlushKind::Rotated)
+        return QueuePresent(request.area, request.timestamp, request.frame_id,
+                            request.raster_ready_tick_us);
+    if (xQueueSend(flush_queue_, &request, 0) == pdTRUE)
+        return true;
+    displayed_frame_valid_ = false;
+    displayed_frame_initialized_ = false;
+    redraw_pending_ = true;
+    xSemaphoreGive(present_available_);
+    return false;
+}
+
+void EspMosaicoHardware::RestoreLogicalScanout() {
+    // Opaque fullscreen frames can go directly from the Surface into panel
+    // order. Materialize logical pixels on demand for overlays, screenshots,
+    // partial updates and orientation changes.
+    if (!rotated_snapshot_)
+        return;
+    constexpr uint32_t w = mosaico_board::kWidth, h = mosaico_board::kHeight;
+    const auto inverse = static_cast<ppa_srm_rotation_angle_t>(display_rotation_.load());
+    if (pxa::board::RotatePpaRgb565(rotation_ppa_, rotation_pixels_, w, w, h,
+                                    reinterpret_cast<uint16_t*>(scanout_pixels_), inverse,
+                                    false) != ESP_OK) {
+        auto* dst = reinterpret_cast<uint16_t*>(scanout_pixels_);
+        for (unsigned y = 0; y < h; ++y)
+            for (unsigned x = 0; x < w; ++x) {
+                uint32_t nx, ny;
+                pxa_display_logical_to_native(w, h, display_rotation_, x, y, &nx, &ny);
+                dst[y * w + x] = rotation_pixels_[ny * w + nx];
+            }
+    }
+    rotated_snapshot_ = false;
 }
 
 bool EspMosaicoHardware::PrepareDirectFrame(FlushRequest* request) {
@@ -785,6 +1140,71 @@ bool EspMosaicoHardware::PrepareDirectFrame(FlushRequest* request) {
         return false;
     }
     const lv_area_t area = {0, 0, mosaico_board::kWidth - 1, mosaico_board::kHeight - 1};
+    constexpr uint32_t w = mosaico_board::kWidth, h = mosaico_board::kHeight;
+    if (mosaico_board::kDrawBufferRows < h && !rotation_limited_ && display_rotation_ && rotation_ppa_ &&
+        frame.width == w && frame.height == h && !frame.x && !frame.y &&
+        (frame.suppress_guest_alpha || !frame.ui_alpha_plane.visible) &&
+        !frame.system_alpha_plane.visible &&
+        !pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY)) {
+        const int64_t waiting = esp_timer_get_time();
+        xSemaphoreTake(present_available_, portMAX_DELAY);
+        if (!WaitForTransfer(pdMS_TO_TICKS(10))) {
+            pxa_esp_surface_release_frame(frame.lease);
+            xSemaphoreGive(present_available_);
+            redraw_pending_ = true;
+            return false;
+        }
+        if (!rotation_full_) {
+            auto* full = static_cast<uint16_t*>(
+                heap_caps_aligned_alloc(64, kFramePixels * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+            if (full) {
+                heap_caps_free(rotation_pixels_);
+                rotation_pixels_ = full;
+                rotation_full_ = true;
+            } else {
+                rotation_limited_ = true;
+            }
+        }
+        present_wait_us_ = esp_timer_get_time() - waiting;
+        refresh_wait_us_ += present_wait_us_.load();
+        const int64_t started = esp_timer_get_time();
+        const auto angle = static_cast<ppa_srm_rotation_angle_t>((4u - display_rotation_) & 3u);
+        if (rotation_full_ &&
+            pxa::board::RotatePpaRgb565(rotation_ppa_, reinterpret_cast<const uint16_t*>(frame.pixels),
+                                        frame.stride_bytes / 2, w, h, rotation_pixels_, angle,
+                                        true) == ESP_OK) {
+            direct_compose_us_ = esp_timer_get_time() - started;
+            ++direct_ppa_frames_;
+            *request = {area,
+                        frame.input_timestamp_us,
+                        {frame.frame_id},
+                        frame.raster_ready_tick_us,
+                        FlushKind::Rotated};
+            rotated_snapshot_ = true;
+            retained_region_valid_ = false;
+            pxa_esp_surface_release_frame(frame.lease);
+            if (present_pixels_) {
+                heap_caps_free(present_pixels_);
+                present_pixels_ = nullptr;
+            }
+            return true;
+        }
+        rotated_snapshot_ = false;
+        displayed_frame_valid_ = false;
+        displayed_frame_initialized_ = false;
+        xSemaphoreGive(present_available_);
+    }
+    // Partial or transparent Surfaces are composed by LVGL and never need
+    // this second panel-sized buffer. The UI lock serializes both producers.
+    if (!present_pixels_) {
+        present_pixels_ = static_cast<uint8_t*>(heap_caps_aligned_alloc(
+            64, kFramePixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!present_pixels_) {
+            pxa_esp_surface_release_frame(frame.lease);
+            return false;
+        }
+    }
+    retained_region_valid_ = false;
     const int64_t compose_started = esp_timer_get_time();
     if (mosaico_pxa_surface::TryAcceleratedDirectFrame(frame, present_pixels_)) {
         ++direct_ppa_frames_;
@@ -832,6 +1252,7 @@ bool EspMosaicoHardware::QueuePresent(const lv_area_t& area, uint64_t timestamp,
         redraw_pending_ = true;
         return false;
     }
+    RestoreLogicalScanout();
     present_wait_us_ = esp_timer_get_time() - wait_started;
     refresh_wait_us_ += present_wait_us_.load();
     FlushRequest request = {area, timestamp, {frame_id}, raster_ready_tick_us, FlushKind::Frame};
@@ -846,9 +1267,11 @@ bool EspMosaicoHardware::QueuePresent(const lv_area_t& area, uint64_t timestamp,
                 (mosaico_board::kWidth + PXA_BOARD_PERFORMANCE_OVERLAY_WIDTH) / 2 - 1,
                 PXA_BOARD_PERFORMANCE_OVERLAY_HEIGHT - 1};
             const int64_t started = esp_timer_get_time();
+            const mosaico_board::PanelTiming timing{te_period_us_.load(), te_blank_us_.load(),
+                                                    compact_te_enabled_.load()};
             const auto damage = mosaico_board::FindFrameDamage(scanout_pixels_, present_pixels_,
                 &request.area, pxa_board_performance_get(PXSYS_REFERENCE_PERFORMANCE_OVERLAY)
-                    ? &overlay : nullptr);
+                    ? &overlay : nullptr, &timing);
             damage_scan_us_ = esp_timer_get_time() - started;
             if (damage == mosaico_board::FrameDamage::Unchanged) ++identical_frames_;
             if (damage != mosaico_board::FrameDamage::Unavailable &&
@@ -938,6 +1361,11 @@ void EspMosaicoHardware::FlushTask(void* context) {
             xSemaphoreGive(self->present_available_);
             continue;
         }
+        bool rotated = content && request.kind == FlushKind::Rotated;
+        if (enabled || !rotated) {
+            self->RestoreLogicalScanout();
+            rotated = false;
+        }
         lv_area_t dirty = content ? request.area : overlay_area;
         // A direct frame swaps the whole snapshot even when only a small panel
         // window changes. Keep its captured HUD complete outside that window.
@@ -960,10 +1388,14 @@ void EspMosaicoHardware::FlushTask(void* context) {
             (void)region.Take(&dirty);
         }
         const uint64_t frame_id = content && !ui ? request.frame_id : 0;
-        const bool completed = self->TransferArea(dirty, self->scanout_pixels_,
-            mosaico_board::kWidth * sizeof(uint16_t), content,
-            content ? request.timestamp : 0,
-            frame_id ? "surface-direct" : "lvgl-composited", frame_id);
+        const auto* pixels =
+            rotated ? reinterpret_cast<const uint8_t*>(self->rotation_pixels_) : self->scanout_pixels_;
+        const bool direct =
+            content && (request.kind == FlushKind::Frame || request.kind == FlushKind::Rotated);
+        const bool completed =
+            self->TransferArea(dirty, pixels, mosaico_board::kWidth * sizeof(uint16_t), content,
+                               content ? request.timestamp : 0,
+                               frame_id && direct ? "surface-direct" : "lvgl-composited", frame_id);
         if (!content) {
             // A failed diagnostic stripe must request a clean recovery frame
             // without carrying its failure into the next content refresh.
@@ -976,8 +1408,9 @@ void EspMosaicoHardware::FlushTask(void* context) {
         }
         // HUD-only transfers do not complete a new content frame. Neither the
         // on-screen FPS nor PXADB PERF should count their own instrumentation.
-        if (content && completed && frame_id) {
-            ++self->direct_frames_;
+        if (content && completed && frame_id && self->displayed_frame_valid_) {
+            if (direct)
+                ++self->direct_frames_;
             pxa_esp_surface_note_game_frame_presented(request.frame_id, self->displayed_timestamp_us_);
             if (request.raster_ready_tick_us) {
                 pxa_esp_surface_note_raster_frame_presented(request.frame_id, request.timestamp,
@@ -1525,7 +1958,10 @@ bool EspMosaicoHardware::CaptureDisplayedRgb565(uint16_t* pixels,
     WaitForFlush();
     xSemaphoreTake(panel_mutex_, portMAX_DELAY);
     const bool valid = displayed_frame_valid_;
-    if (valid) mosaico_board::CaptureScanoutRgb565(scanout_pixels_, pixels);
+    if (valid) {
+        RestoreLogicalScanout();
+        mosaico_board::CaptureScanoutRgb565(scanout_pixels_, pixels);
+    }
     xSemaphoreGive(panel_mutex_);
     esp_lv_adapter_unlock();
     return valid;

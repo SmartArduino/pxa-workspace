@@ -15,9 +15,12 @@ int main(void) {
     assert(!limit && !temporary);
     pxa_esp_resource_psram_limits(SIZE_MAX,1,0,0,&limit,&temporary);
     assert(limit==SIZE_MAX/2 && temporary==SIZE_MAX/4);
-    assert(!pxa_esp_resource_psram_available(8*mib,mib));
-    assert(pxa_esp_resource_psram_available(8*mib,5*mib)==4*mib);
-    assert(pxa_esp_resource_psram_available(32*mib,20*mib)==16*mib);
-    assert(!pxa_esp_resource_psram_available(0,0));
+    assert(!pxa_esp_resource_psram_available(8*mib,mib,0));
+    assert(pxa_esp_resource_psram_available(8*mib,5*mib,0)==4*mib);
+    assert(pxa_esp_resource_psram_available(32*mib,20*mib,0)==16*mib);
+    assert(!pxa_esp_resource_psram_available(0,0,0));
+    assert(pxa_esp_resource_psram_available(16*mib,2*mib,mib)==mib);
+    assert(!pxa_esp_resource_psram_available(16*mib,mib,mib));
+    assert(!pxa_esp_resource_psram_available(16*mib,256*1024,1));
     puts("PSRAM resource policy PASS: 8/32MiB, manual ceilings, zero, overflow, headroom");
 }

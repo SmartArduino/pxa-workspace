@@ -33,21 +33,24 @@ constexpr uint32_t kMusicTaskStackBytes = 20480;
 constexpr uint32_t kOutputTaskStackBytes = 8192;
 }
 
-// ESP-IDF task stack depths are bytes. All RTOS backing storage is charged
-// before creating any task; static creation cannot fail from heap pressure.
-// This block and both tasks have the board's lifetime, not an app's lifetime.
+// ESP-IDF task stack depths are bytes. The mixer and any file-music worker
+// have the board's lifetime. PCM and resident sounds only need the mixer.
 struct PxaAudioOutput::RuntimeStorage {
     StaticQueue_t music_commands;
     StaticSemaphore_t music_mutex;
     StaticTask_t output_task;
     StaticTask_t music_task;
     uint8_t music_command[sizeof(MusicCommand)];
-    StackType_t output_stack[kOutputTaskStackBytes / sizeof(StackType_t)];
+    StackType_t* output_stack;
 };
 static_assert(kMusicTaskStackBytes % sizeof(StackType_t) == 0, "whole stack elements required");
 static_assert(kOutputTaskStackBytes % sizeof(StackType_t) == 0, "whole stack elements required");
 
-bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced, uint32_t sample_rate) {
+bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced,
+                                uint32_t sample_rate, bool external_output_stack) {
+#if !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+    external_output_stack = false;
+#endif
     if (task_ != nullptr) return true;
     if (!write || sample_rate < 16000 || sample_rate > 48000) return false;
     if (pxa_esp_resource_memory_initialize() != PXA_STATUS_OK) return false;
@@ -60,22 +63,20 @@ bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced, u
     runtime_storage_ = static_cast<RuntimeStorage*>(pxa_memory_allocate(
         pxa_esp_device_resource_allocator(PXA_MEMORY_INTERNAL, PXA_MEMORY_METADATA),
         sizeof(RuntimeStorage)));
-    // Keep the larger decoder stack separate: budgeting must not raise the
-    // largest contiguous internal-RAM request from 20 KiB to almost 28 KiB.
-    music_stack_ = static_cast<StackType_t*>(pxa_memory_allocate(
-        pxa_esp_device_resource_allocator(PXA_MEMORY_INTERNAL, PXA_MEMORY_METADATA),
-        kMusicTaskStackBytes));
-    music_ring_ = static_cast<int16_t*>(pxa_memory_allocate(
-        pxa_esp_device_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO),
-        kMusicSamples * sizeof(int16_t)));
     if (runtime_storage_) {
+        const auto stack_class = external_output_stack ? PXA_MEMORY_EXTERNAL : PXA_MEMORY_INTERNAL;
+        runtime_storage_->output_stack = static_cast<StackType_t*>(pxa_memory_allocate(
+            pxa_esp_device_resource_allocator(stack_class, PXA_MEMORY_METADATA), kOutputTaskStackBytes));
+        if (!runtime_storage_->output_stack && external_output_stack) {
+            runtime_storage_->output_stack = static_cast<StackType_t*>(pxa_memory_allocate(
+                pxa_esp_device_resource_allocator(PXA_MEMORY_INTERNAL, PXA_MEMORY_METADATA), kOutputTaskStackBytes));
+        }
         music_commands_ = xQueueCreateStatic(1, sizeof(MusicCommand),
             runtime_storage_->music_command, &runtime_storage_->music_commands);
         music_mutex_ = xSemaphoreCreateMutexStatic(&runtime_storage_->music_mutex);
     }
     bool vorbis_registered = false, opus_registered = false, ogg_registered = false;
-    if (!runtime_storage_ || !music_stack_ || !music_commands_ || !music_mutex_ ||
-        !music_ring_ ||
+    if (!runtime_storage_ || !runtime_storage_->output_stack || !music_commands_ || !music_mutex_ ||
         !(vorbis_registered = esp_vorbis_dec_register() == ESP_AUDIO_ERR_OK) ||
         !(opus_registered = esp_opus_dec_register() == ESP_AUDIO_ERR_OK) ||
         !(ogg_registered = esp_ogg_dec_register() == ESP_AUDIO_ERR_OK) ||
@@ -85,11 +86,10 @@ bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced, u
         if (vorbis_registered) esp_audio_dec_unregister(ESP_AUDIO_TYPE_VORBIS);
         if (music_commands_) vQueueDelete(music_commands_);
         if (music_mutex_) vSemaphoreDelete(music_mutex_);
-        pxa_memory_release(music_ring_);
+        if (runtime_storage_) pxa_memory_release(runtime_storage_->output_stack);
         pxa_memory_release(runtime_storage_); runtime_storage_ = nullptr;
-        pxa_memory_release(music_stack_); music_stack_ = nullptr;
         music_commands_ = nullptr;
-        music_mutex_ = nullptr; music_ring_ = nullptr;
+        music_mutex_ = nullptr;
         write_ = nullptr; write_context_ = nullptr;
         return false;
     }
@@ -97,13 +97,9 @@ bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced, u
         kOutputTaskStackBytes, this, 6, runtime_storage_->output_stack,
         &runtime_storage_->output_task, CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY < 0
             ? tskNO_AFFINITY : CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY);
-    music_task_ = xTaskCreateStatic(MusicTask, "pxa_decode", kMusicTaskStackBytes, this, 5,
-        music_stack_, &runtime_storage_->music_task);
-    configASSERT(task_ && music_task_);
-    ESP_LOGI(kTag, "Audio device storage: RTOS=%u (stacks=%u), ring=%u bytes, output_core=%d",
-        static_cast<unsigned>(sizeof(RuntimeStorage) + kMusicTaskStackBytes),
-        static_cast<unsigned>(kOutputTaskStackBytes + kMusicTaskStackBytes),
-        static_cast<unsigned>(kMusicSamples * sizeof(int16_t)),
+    configASSERT(task_);
+    ESP_LOGI(kTag, "Audio mixer storage=%u bytes, output_core=%d",
+        static_cast<unsigned>(sizeof(RuntimeStorage) + kOutputTaskStackBytes),
         CONFIG_PXA_AUDIO_OUTPUT_TASK_AFFINITY);
     pxa_host_set_audio_asset_sink(PlayAsset, ControlAsset, this);
     pxa_host_set_audio_sound_sink(PlaySound,this);
@@ -111,6 +107,35 @@ bool PxaAudioOutput::Initialize(Write write, void* context, bool device_paced, u
     const pxa_host_audio_music_sink_t music_sink={this,PlayMusic,PlaybackPeek,PlaybackConsume,PlaybackClose,ControlMusic};
     pxa_host_set_audio_music_sink(&music_sink);
     return true;
+}
+
+bool PxaAudioOutput::EnsureMusicWorker() {
+    xSemaphoreTake(music_mutex_, portMAX_DELAY);
+    const bool ready = music_task_ != nullptr;
+    xSemaphoreGive(music_mutex_);
+    if (ready) return true;
+
+    // Allocate outside the mixer lock. A second producer may finish first.
+    auto* stack = static_cast<StackType_t*>(pxa_memory_allocate(
+        pxa_esp_device_resource_allocator(PXA_MEMORY_INTERNAL, PXA_MEMORY_METADATA),
+        kMusicTaskStackBytes));
+    auto* ring = stack ? static_cast<int16_t*>(pxa_memory_allocate(
+        pxa_esp_device_resource_allocator(PXA_MEMORY_EXTERNAL, PXA_MEMORY_AUDIO),
+        kMusicSamples * sizeof(int16_t))) : nullptr;
+    xSemaphoreTake(music_mutex_, portMAX_DELAY);
+    if (!music_task_ && ring) {
+        music_stack_ = stack;
+        music_ring_ = ring;
+        music_task_ = xTaskCreateStatic(MusicTask, "pxa_decode", kMusicTaskStackBytes, this, 5,
+            stack, &runtime_storage_->music_task);
+        if (music_task_) { stack = nullptr; ring = nullptr; }
+        else { music_stack_ = nullptr; music_ring_ = nullptr; }
+    }
+    const bool started = music_task_ != nullptr;
+    xSemaphoreGive(music_mutex_);
+    pxa_memory_release(ring);
+    pxa_memory_release(stack);
+    return started;
 }
 
 void PxaAudioOutput::WakeOutput() {
@@ -183,6 +208,10 @@ pxa_status_t PxaAudioOutput::PlayMusic(void* context,uint8_t voice,uint64_t sess
     pxa_status_t acquired = pxa_esp_music_input_acquire(absolute_path,
         command.temporary_allocator, &command.input);
     if (acquired) return acquired;
+    if (!self->EnsureMusicWorker()) {
+        pxa_esp_music_input_release(command.input);
+        return PXA_STATUS_RESOURCE_LIMIT;
+    }
     xSemaphoreTake(self->music_mutex_, portMAX_DELAY);
     const int owner = self->music_voice_.load();
     if (owner >= 0 && owner != voice) {
@@ -217,10 +246,11 @@ pxa_status_t PxaAudioOutput::PlayMusic(void* context,uint8_t voice,uint64_t sess
     // admission checks precede replacement, so synchronous rejection preserves
     // the previous playback. The mutex serializes producers and STOP.
     (void)xQueueOverwrite(self->music_commands_, &command);
+    const auto worker = self->music_task_;
     xSemaphoreGive(self->music_mutex_);
     pxa_esp_music_input_release(retired_command.input);
     self->WakeOutput();
-    xTaskNotifyGive(self->music_task_);
+    if (worker) xTaskNotifyGive(worker);
     pxa_host_audio_notify();
     return PXA_STATUS_OK;
 }
@@ -253,7 +283,7 @@ bool PxaAudioOutput::ControlMusic(void* context,uint8_t voice,uint8_t action,int
 }
 bool PxaAudioOutput::ControlAssetImpl(void* context,uint8_t voice,uint8_t action,int16_t gain_db_q8,bool music_only) {
     auto* self = static_cast<PxaAudioOutput*>(context);
-    if (self == nullptr || self->music_task_ == nullptr || voice >= 3) return false;
+    if (self == nullptr || self->music_mutex_ == nullptr || voice >= 3) return false;
     if (action < PXA_AUDIO_ASSET_PAUSE || action > PXA_AUDIO_ASSET_SET_GAIN) return false;
     MusicCommand retired_command = {};
     xSemaphoreTake(self->music_mutex_, portMAX_DELAY);
@@ -283,10 +313,11 @@ bool PxaAudioOutput::ControlAssetImpl(void* context,uint8_t voice,uint8_t action
                     powf(10.f, gain_db_q8 / 5120.f))); break;
         }
     }
+    const auto worker = self->music_task_;
     xSemaphoreGive(self->music_mutex_);
     pxa_esp_music_input_release(retired_command.input);
     self->WakeOutput();
-    xTaskNotifyGive(self->music_task_);
+    if (worker) xTaskNotifyGive(worker);
     pxa_host_audio_notify();
     return true;
 }
@@ -627,8 +658,9 @@ void PxaAudioOutput::Run() {
         for (const auto& sound : sounds_)
             sounds_active |= sound.asset && !sound.paused && !sound_paused_[sound.voice];
         xSemaphoreGive(music_mutex_);
-        if (rendered_token != music_token_.load()) {
-            rendered_token = music_token_.load();
+        const uint32_t current_token = music_token_.load();
+        if (rendered_token != current_token) {
+            rendered_token = current_token;
             last_music_sample = 0;
             output_music_gain_q15 = source_music_gain_q15 = 0;
         }
@@ -723,10 +755,12 @@ void PxaAudioOutput::Run() {
             ESP_LOGW(kTag, "Physical audio write failed");
         // Keep the in-flight marker set until failure is latched, so the
         // decoder cannot win the race by publishing successful EOF first.
-        if (!written && frame_music_token) FinishMusic(frame_music_token,PXA_STATUS_IO_ERROR);
-        xSemaphoreTake(music_mutex_,portMAX_DELAY);
-        if (music_output_token_==frame_music_token) music_output_token_=0;
-        xSemaphoreGive(music_mutex_);
+        if (frame_music_token) {
+            if (!written) FinishMusic(frame_music_token,PXA_STATUS_IO_ERROR);
+            xSemaphoreTake(music_mutex_,portMAX_DELAY);
+            if (music_output_token_==frame_music_token) music_output_token_=0;
+            xSemaphoreGive(music_mutex_);
+        }
         // A blocking I2S sink supplies the playback clock and lets us refill
         // its DMA ring ahead of playback. An additional software timer leaves
         // that ring mostly empty and allows scheduling jitter/clock drift to

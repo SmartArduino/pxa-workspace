@@ -17,9 +17,15 @@ set(PXADB_PRIV_REQUIRES
     log
     joltwallet__littlefs
     mbedtls
+    # IDF discovers dependencies before Kconfig has selected the LAN source.
+    lwip
+    protocomm
     pxa)
 
 set(PXADB_SRCS "src_pxa_service.cc" "pxadb_transport.cc" "pxadb_jpeg_encode.cc")
+if(CONFIG_PXADB_LAN)
+    list(APPEND PXADB_SRCS "pxadb_lan.cc")
+endif()
 if(CONFIG_PXADB_ENABLED AND (CONFIG_PXADB_TRANSPORT_UART OR CONFIG_PXADB_UART_SECONDARY))
     list(APPEND PXADB_SRCS "pxadb_uart_buffer.cc")
 endif()
@@ -54,6 +60,11 @@ endif()
 # Product main components resolve their board after dependencies have been
 # registered. Read the final build property at generation time.
 idf_build_get_property(PXADB_BOARD_ID PXA_BOARD_ID GENERATOR_EXPRESSION)
+# Keep the diagnostic command server inside GameKit 2's 5 MiB application slot.
+if(CONFIG_COMPILER_OPTIMIZATION_PERF)
+    set_property(SOURCE src_pxa_service.cc APPEND PROPERTY COMPILE_OPTIONS
+        "$<$<STREQUAL:${PXADB_BOARD_ID},doit-gamekit-2>:-Os>")
+endif()
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     PXA_FIRMWARE_BOARD="${PXADB_BOARD_ID}")
 

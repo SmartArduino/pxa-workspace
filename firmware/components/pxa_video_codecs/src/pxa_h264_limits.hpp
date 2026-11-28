@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstddef>
+#include <cstring>
 #include <iterator>
 namespace pxa_video {
 inline constexpr uint8_t h264_max_level = 51;
@@ -71,8 +72,16 @@ inline pxa_status_t check_sps(const uint8_t *data, size_t size, uint16_t max_wid
     return PXA_STATUS_OK;
 }
 inline size_t start_code(const uint8_t *p, size_t n, size_t at) {
-    for (; at+3 <= n; ++at) if (!p[at] && !p[at+1] &&
-        (p[at+2] == 1 || (at+4 <= n && !p[at+2] && p[at+3] == 1))) return at;
+    if (at > n || n-at < 3) return n;
+    size_t pos = at + 2;
+    while (pos < n) {
+        const auto *one = static_cast<const uint8_t*>(std::memchr(p+pos, 1, n-pos));
+        if (!one) break;
+        pos = size_t(one-p);
+        if (!one[-1] && !one[-2])
+            return pos - (pos-at >= 3 && !one[-3] ? 3 : 2);
+        ++pos;
+    }
     return n;
 }
 inline pxa_status_t validate_annexb(const uint8_t *p, size_t n, uint16_t max_width, uint16_t max_height) {

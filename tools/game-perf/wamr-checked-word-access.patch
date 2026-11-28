@@ -1,8 +1,8 @@
 diff --git a/core/iwasm/compilation/aot_emit_memory.c b/core/iwasm/compilation/aot_emit_memory.c
-index 420096c..05aa2cb 100644
+index fb28a22f..08646418 100644
 --- a/core/iwasm/compilation/aot_emit_memory.c
 +++ b/core/iwasm/compilation/aot_emit_memory.c
-@@ -628,6 +628,7 @@ aot_check_memory_overflow(AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+@@ -645,6 +645,7 @@ aot_check_memory_overflow(AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
              aot_set_last_error("llvm build load failed.");
              goto fail;
          }
@@ -10,7 +10,7 @@ index 420096c..05aa2cb 100644
      }
  
      aot_value_top =
-@@ -1521,6 +1522,7 @@ check_bulk_memory_overflow(AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+@@ -1553,6 +1554,7 @@ check_bulk_memory_overflow(AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
              aot_set_last_error("llvm build load failed.");
              goto fail;
          }
@@ -19,10 +19,10 @@ index 420096c..05aa2cb 100644
  
      /*
 diff --git a/core/iwasm/compilation/aot_llvm.c b/core/iwasm/compilation/aot_llvm.c
-index 8eaa9d8..8474997 100644
+index f7a4ef37..37e75c7c 100644
 --- a/core/iwasm/compilation/aot_llvm.c
 +++ b/core/iwasm/compilation/aot_llvm.c
-@@ -1352,6 +1352,8 @@ create_memory_info(const AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+@@ -1363,6 +1363,8 @@ create_memory_info(const AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
              aot_set_last_error("llvm build load failed");
              return false;
          }
@@ -31,7 +31,7 @@ index 8eaa9d8..8474997 100644
          if (!(func_ctx->mem_info[0].mem_cur_page_count_addr =
                    LLVMBuildLoad2(comp_ctx->builder, I32_TYPE,
                                   func_ctx->mem_info[0].mem_cur_page_count_addr,
-@@ -1376,6 +1378,8 @@ create_memory_info(const AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
+@@ -1387,6 +1389,8 @@ create_memory_info(const AOTCompContext *comp_ctx, AOTFuncContext *func_ctx,
              aot_set_last_error("llvm build load failed");
              return false;
          }
@@ -60,7 +60,7 @@ index 8eaa9d8..8474997 100644
 +                    LLVMMetadataAsValue(context, node));
 +}
 diff --git a/core/iwasm/compilation/aot_llvm.h b/core/iwasm/compilation/aot_llvm.h
-index 5bd75a3..f338f28 100644
+index 74978b35..d048cddb 100644
 --- a/core/iwasm/compilation/aot_llvm.h
 +++ b/core/iwasm/compilation/aot_llvm.h
 @@ -53,6 +53,8 @@
@@ -73,7 +73,7 @@ index 5bd75a3..f338f28 100644
  #define LLVMBuildLoad2(builder, type, value, name) \
      LLVMBuildLoad(builder, value, name)
 diff --git a/core/iwasm/compilation/aot_llvm_extra.cpp b/core/iwasm/compilation/aot_llvm_extra.cpp
-index 3a3dc29..e001437 100644
+index cfa677d7..cace4682 100644
 --- a/core/iwasm/compilation/aot_llvm_extra.cpp
 +++ b/core/iwasm/compilation/aot_llvm_extra.cpp
 @@ -29,6 +29,7 @@
@@ -86,7 +86,7 @@ index 3a3dc29..e001437 100644
  #include <llvm/IR/PassManager.h>
 @@ -79,6 +80,62 @@ LLVM_C_EXTERN_C_BEGIN
  bool
- aot_check_simd_compatibility(const char *arch_c_str, const char *cpu_c_str);
+ aot_check_simd_compatibility(LLVMTargetMachineRef target_machine);
  
 +
 +/* Experiment: retain the bytewise fallback, but use one native word operation
@@ -147,7 +147,7 @@ index 3a3dc29..e001437 100644
  void
  aot_apply_llvm_new_pass_manager(AOTCompContext *comp_ctx, LLVMModuleRef module);
  
-@@ -403,6 +460,7 @@ aot_apply_llvm_new_pass_manager(AOTCompContext *comp_ctx, LLVMModuleRef module)
+@@ -402,6 +459,7 @@ aot_apply_llvm_new_pass_manager(AOTCompContext *comp_ctx, LLVMModuleRef module)
      }
  
      MPM.run(*M, MAM);

@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# MAX_SPEED uses two-tap luma prediction. Keep the inter-coded macroblock
+# loops and the scalar predictors they call in internal RAM during scanout.
+[sections:pxa_p4_base_mc]
+entries:
+    .text._ZN15EspOh264WelsDec6BaseMCEPNS_21TagWelsDecoderContextEPNS_14TagMCRefMemberERKlRKallP9TagMcFuncllPs+
+
+[scheme:pxa_p4_base_mc_iram]
+entries:
+    pxa_p4_base_mc -> iram0_text
+
+[mapping:pxa_espp4_scalar_h264]
+archive: libesp_openh264.a
+entries:
+    if ESP_OPENH264_PROFILE_MINIMAL = y:
+        mc:_ZN12_GLOBAL__N_1L10McChroma_cEPKhlPhlssll (noflash)
+        mc:_ZN12_GLOBAL__N_1L10PixelAvg_cEPhlPKhlS2_lll (noflash)
+        mc:_ZN12_GLOBAL__N_1L8McCopy_cEPKhlPhlll (noflash)
+        rec_mb:_ZN15EspOh264WelsDecL17McLuma_fast2tap_cEPKhlPhlssll (noflash)
+        rec_mb (pxa_p4_base_mc_iram)
+        parse_mb_syn_cavlc:_ZN15EspOh264WelsDec23WelsFillCacheInterCabacEPNS_16TagNeighborAvailEPhPA30_A2_sS5_PA30_aPNS_10TagDqLayerE (noflash)
+        decode_slice:_ZN15EspOh264WelsDec32WelsDecodeMbCabacPSliceBaseMode0EPNS_21TagWelsDecoderContextEPNS_16TagNeighborAvailERm (noflash)
+        decode_slice:_ZN15EspOh264WelsDec32WelsDecodeMbCabacBSliceBaseMode0EPNS_21TagWelsDecoderContextEPNS_16TagNeighborAvailERm (noflash)
+        decode_mb_aux:_ZN15EspOh264WelsDec16IdctResAddPred_cEPhlPs (noflash)
+        decode_mb_aux:_ZN15EspOh264WelsDec19IdctResAddPred8x8_cEPhlPs (noflash)
+        parse_mb_syn_cabac (noflash)

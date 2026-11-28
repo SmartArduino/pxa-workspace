@@ -11,6 +11,7 @@ using DirectPresenter = bool (*)(void* context);
 enum class PixelOrder { Native, Panel };
 bool Install(lv_display_t* display, DirectPresenter presenter = nullptr,
              void* context = nullptr);
+bool VisibleVideoArea(const pxa_esp_surface_frame_t& frame, lv_area_t* area);
 bool DirectFrameEligible(const pxa_esp_surface_frame_t& frame);
 bool TryAcceleratedDirectFrame(const pxa_esp_surface_frame_t& frame, uint8_t* pixels);
 // Both pointers own separate complete 480x480 frames, not compact patches.

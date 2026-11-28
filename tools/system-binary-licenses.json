@@ -127,5 +127,59 @@
     "license_sha256": "4ef33c7bdd57f5fa8fbe3bdc0200245ab91c564c2ef530d95bbe7fd4070757cd",
     "selected": "BSD permissive libnosys stubs",
     "evidence": "Exact RISC-V bare-metal no-RTTI multilib libnosys archive only. COPYING.LIBGLOSS Red Hat BSD grant applies to syscall stubs. Its GPL runtime exception section (16) is explicitly limited to sparc-leon/crx/cr16 and is not used by riscv32-esp-elf. No other libgloss library is admitted."
+  },
+  {
+    "root": "esp_openh264",
+    "archive_pattern": "libs/esp32p4/balanced/libesp_openh264\\.a",
+    "archive_sha256": "32cb52a61fee20225763e3a47f509e303b35ff28068b1def72363c8123d03b68",
+    "license": "LICENSE",
+    "license_sha256": "7388df95f8998ce3ec751af5efcdae9316d54ecbcae76485fa95d8f3d8130fc6",
+    "selected": "Apache-2.0 AND BSD-2-Clause",
+    "evidence": "User-supplied esp_openh264 1.0.0. Package grant covers the Espressif wrapper and PIE kernels under Apache-2.0 and Cisco OpenH264 2.6.0 under BSD-2-Clause. Archive imports reviewed against ESP-IDF and its C/C++ runtimes. Local opt-in distribution with original package notice and Cisco attribution."
+  },
+  {
+    "root": "esp_openh264",
+    "archive_pattern": "libs/esp32p4/minimal/libesp_openh264\\.a",
+    "archive_sha256": "c3d9d9e02fa271ce6857df813b7192da158a71252b8842e21bd5b6216aa13bad",
+    "license": "LICENSE",
+    "license_sha256": "7388df95f8998ce3ec751af5efcdae9316d54ecbcae76485fa95d8f3d8130fc6",
+    "selected": "Apache-2.0 AND BSD-2-Clause",
+    "evidence": "User-supplied esp_openh264 1.0.0. Package grant covers the Espressif wrapper and PIE kernels under Apache-2.0 and Cisco OpenH264 2.6.0 under BSD-2-Clause. Archive imports reviewed against ESP-IDF and its C/C++ runtimes. Local opt-in distribution with original package notice and Cisco attribution."
+  },
+  {
+    "root": "esp_openh264",
+    "archive_pattern": "libs/esp32p4/performance/libesp_openh264\\.a",
+    "archive_sha256": "d64e7b25a150341ffaa30de65244cdc17b28461606a21ed8dbb2d0a44affd67f",
+    "license": "LICENSE",
+    "license_sha256": "7388df95f8998ce3ec751af5efcdae9316d54ecbcae76485fa95d8f3d8130fc6",
+    "selected": "Apache-2.0 AND BSD-2-Clause",
+    "evidence": "User-supplied esp_openh264 1.0.0. Package grant covers the Espressif wrapper and PIE kernels under Apache-2.0 and Cisco OpenH264 2.6.0 under BSD-2-Clause. Archive imports reviewed against ESP-IDF and its C/C++ runtimes. Local opt-in distribution with original package notice and Cisco attribution."
+  },
+  {
+    "root": "esp_openh264",
+    "archive_pattern": "libs/esp32s31/balanced/libesp_openh264\\.a",
+    "archive_sha256": "b7d672306b1cc2b1d1ea87fa1b4ccd817055cf40ced0b888aec59e078b2bc6da",
+    "license": "LICENSE",
+    "license_sha256": "7388df95f8998ce3ec751af5efcdae9316d54ecbcae76485fa95d8f3d8130fc6",
+    "selected": "Apache-2.0 AND BSD-2-Clause",
+    "evidence": "User-supplied esp_openh264 1.0.0. Package grant covers the Espressif wrapper and PIE kernels under Apache-2.0 and Cisco OpenH264 2.6.0 under BSD-2-Clause. Archive imports reviewed against ESP-IDF and its C/C++ runtimes. Local opt-in distribution with original package notice and Cisco attribution."
+  },
+  {
+    "root": "esp_openh264",
+    "archive_pattern": "libs/esp32s31/minimal/libesp_openh264\\.a",
+    "archive_sha256": "88a04350fc40f9da326f422644164d923d7dad6f9c72aff8111a4ad2d9da1a42",
+    "license": "LICENSE",
+    "license_sha256": "7388df95f8998ce3ec751af5efcdae9316d54ecbcae76485fa95d8f3d8130fc6",
+    "selected": "Apache-2.0 AND BSD-2-Clause",
+    "evidence": "User-supplied esp_openh264 1.0.0. Package grant covers the Espressif wrapper and PIE kernels under Apache-2.0 and Cisco OpenH264 2.6.0 under BSD-2-Clause. Archive imports reviewed against ESP-IDF and its C/C++ runtimes. Local opt-in distribution with original package notice and Cisco attribution."
+  },
+  {
+    "root": "esp_openh264",
+    "archive_pattern": "libs/esp32s31/performance/libesp_openh264\\.a",
+    "archive_sha256": "e6e89da39e37f038c170956f55bc268cd5635e40f15ec4ba81faa5c609a40f0d",
+    "license": "LICENSE",
+    "license_sha256": "7388df95f8998ce3ec751af5efcdae9316d54ecbcae76485fa95d8f3d8130fc6",
+    "selected": "Apache-2.0 AND BSD-2-Clause",
+    "evidence": "User-supplied esp_openh264 1.0.0. Package grant covers the Espressif wrapper and PIE kernels under Apache-2.0 and Cisco OpenH264 2.6.0 under BSD-2-Clause. Archive imports reviewed against ESP-IDF and its C/C++ runtimes. Local opt-in distribution with original package notice and Cisco attribution."
   }
 ]

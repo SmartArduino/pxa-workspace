@@ -25,7 +25,7 @@
 #endif
 
 struct pxa_esp_app_storage {
-    uint64_t epoch,capacity,reserved_bytes,growth_reserved,data_generation,media_epoch;
+    uint64_t epoch,capacity,reserved_bytes,growth_reserved,data_generation,media_epoch,install_generation;
     const pxa_install_plan_t *plan;
     esp_blockdev_handle_t image;
     uint8_t native_private,mounted,alias_bound,home_bound,ready;
@@ -37,6 +37,12 @@ static pthread_mutex_t g_alias_lock=PTHREAD_MUTEX_INITIALIZER;
 static uint32_t g_alias_sequence;
 uint64_t pxa_esp_app_storage_media_epoch(const pxa_esp_app_storage_t *storage) {
     return storage?storage->media_epoch:0;
+}
+int pxa_esp_app_storage_matches_installation(const pxa_esp_app_storage_t *storage,
+    uint64_t mount_epoch, const uint8_t install_id[16], uint64_t generation) {
+    return storage && install_id && storage->epoch == mount_epoch &&
+        storage->install_generation == generation &&
+        memcmp(storage->install_id, install_id, sizeof(storage->install_id)) == 0;
 }
 pxa_status_t pxa_esp_app_storage_bind_media(pxa_esp_app_storage_t *storage,uint64_t epoch) {
     if(!storage || !epoch)return PXA_STATUS_INVALID_ARGUMENT;
@@ -117,6 +123,7 @@ pxa_status_t pxa_esp_app_storage_create(const pxa_posix_app_home_t *home,uint64_
     storage->epoch=epoch;storage->capacity=capacity;storage->plan=plan;
     storage->native_private=!!(info.capabilities&PXA_VOLUME_PRIVATE_NATIVE);
     storage->data_generation=home->record.data_generation;
+    storage->install_generation=home->record.generation;
     memcpy(storage->install_id,home->record.install_id,sizeof(storage->install_id));
     status=authority_identity(storage,&home->record);
     if(status==PXA_STATUS_OK)status=ready(storage);

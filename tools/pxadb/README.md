@@ -229,7 +229,14 @@ commands `PERF START`, `PERF STOP`, `PERF READ raster|present OFFSET`, and
 `PERF CLEAR`. The bounded 256-frame probe allocates PSRAM only while enabled;
 read samples after stopping it. Raster samples exclude panel transfer, while
 `present` samples are intervals between completed new GameRender frames on
-boards with a panel-completion hook. `tools/measure-device-voxel.py` runs the
+boards with a panel-completion hook. Use `PERF START display` to record the
+board's display completions. On Hosts with full-window timing, `PERF STOP`
+reports `completed` for the whole window and `max_gap_us` for the longest
+interval between completions, even after the sample buffer fills. `first_us`
+and `tail_us` cover the time from start to the first completion and from the
+last completion to stop. With no completions, only `tail_us` covers the window.
+Timing fields saturate at UINT32_MAX microseconds.
+`tools/measure-device-voxel.py` runs the
 warmup, capture, sample download, screenshot and cleanup for an already
 installed signed Voxel package. The optional `--package` argument records a
 local package file hash in the report; install that same file first when using
@@ -433,6 +440,22 @@ TCP token 认证不加密流量。仅 UI 的桌面模拟器仍没有 PXADB 端�
 
 基于同一客户端的桌面 GUI 位于 `tools/pxadb-gui.sh`，支持实时预览、远程操纵、
 文件传输和 Package 管理，详见 [PXADB GUI](../pxadb-gui/README.md)。
+
+### 通过 Wi-Fi 调试真机
+
+在同一 Wi-Fi 局域网内，进入设备的**设置 → 关于 → 开发者选项**，
+开启 **PXADB 调试**和**局域网 PXADB**。用设备显示的 IPv4 地址和端口连接，
+在终端提示时输入屏幕上的 **6 位数字**，保留开头的 `0`。
+客户端需要支持 TLS-PSK 的 Python 3.13 或更新版本。
+
+```sh
+pxadb package list --connect-lan 192.168.1.20:47012
+```
+
+脚本可以用 `--token pairing.txt` 读取配对码。新版客户端也支持旧固件显示的
+32 个十六进制字符。6 位码用于 SRP 双向认证，随后 TLS 加密调试流量。
+每次开启都会生成新码，连续配对失败五次会关闭局域网调试，需要在设备上重新开启。
+设备重启后默认关闭。关闭局域网开关、关闭 PXADB 或 Wi-Fi 断开会结束连接。
 
 On internal Flash, protected system directories can be created only after explicit `fs unlock`; this includes missing `system/pxa` and `system/fonts` parents for initial factory provisioning. Upload/replacement/removal still use the stricter policy. Finish provisioning with `fs lock`. Ordinary SD card directories are writable through PXADB without unlocking: uploads, deletion, directory creation and same-card file moves are allowed. `sdcard/PXA/system` is read-only by default; `fs unlock` temporarily allows mutations below it, and `fs lock` or expiry restores read-only access. The system root, its parent `sdcard/PXA` and the card mount point stay in place. Other card directories, such as `sdcard/PXA/media`, need no unlock. Store Installer is available to the active, installed and enabled application; its App ID grants no extra authority. The Host verifies store signatures and package bindings, controls placement and requests native user confirmation before installation.
 

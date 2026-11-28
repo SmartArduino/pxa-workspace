@@ -228,6 +228,10 @@ bool pxa_host_publish_package_transfer(const char *app_id) {
     return success;
 }
 
+bool pxa_host_package_transfer_cleanup_pending(void) {
+    return g_host_ready && pxa_esp_package_store_transfer_cleanup_pending();
+}
+
 void pxa_host_discard_package_transfers(void) {
     if (g_host_ready) pxa_esp_package_store_discard_transfers();
 }

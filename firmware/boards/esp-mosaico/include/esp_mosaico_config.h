@@ -1,5 +1,9 @@
 #pragma once
 
+#if defined(ESP_PLATFORM)
+#include "sdkconfig.h"
+#endif
+
 #include <cstdint>
 #include <optional>
 
@@ -30,13 +34,25 @@ constexpr std::optional<HardwareConfig> DecodeHardwareConfig(uint16_t version) {
 
 inline constexpr uint16_t kWidth = 480;
 inline constexpr uint16_t kHeight = 480;
+#ifdef CONFIG_PXA_MOSAICO_LCD_COMPACT_UI
+inline constexpr uint16_t kDrawBufferRows = 32;
+#else
 // One retained full-frame draw buffer replaces two half-frame scratch buffers
 // at the same total capacity. DIRECT drawing avoids copying every LVGL chunk
 // into a second full-frame producer before taking the scanout snapshot.
 inline constexpr uint16_t kDrawBufferRows = kHeight;
+#endif
 inline constexpr uint32_t kUiRefreshPeriodMs = 16;
-// Two 16-row buffers retain the original 32-row total SRAM footprint.
+// The SPI transaction limit also applies to direct PSRAM transfers.
 inline constexpr uint16_t kTransferRows = 16;
+#ifdef CONFIG_PXA_MOSAICO_LCD_STAGING_ROWS
+inline constexpr uint16_t kStagingRows = CONFIG_PXA_MOSAICO_LCD_STAGING_ROWS;
+#else
+inline constexpr uint16_t kStagingRows = kTransferRows;
+#endif
+static_assert(kStagingRows >= 1 && kStagingRows <= kTransferRows);
+inline constexpr uint32_t kStagingBytes = kWidth * kStagingRows * sizeof(uint16_t);
+
 // 480 MHz BBPLL / 10 is exact on ESP32-S31 and below CO5300's 50 MHz limit.
 inline constexpr uint32_t kPixelClockHz = 48000000;
 inline constexpr uint8_t kMinimumPanelBrightnessPercent = 10;

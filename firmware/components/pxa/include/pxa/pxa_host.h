@@ -232,6 +232,8 @@ int32_t pxa_host_import_cached_package_file(const char *source,const char *owner
 /* PXADB's reserved receiving directories are invisible until publication. */
 bool pxa_host_publish_package_transfer(const char *app_id);
 void pxa_host_discard_package_transfers(void);
+/* A previous legacy Inbox cleanup failed, including during boot recovery. */
+bool pxa_host_package_transfer_cleanup_pending(void);
 /* PXA_STATUS_WOULD_BLOCK asks the transport to retry later, without waiting
  * for unrelated code/resource installation or boot recovery. */
 int32_t pxa_host_try_discard_package_transfers(void);

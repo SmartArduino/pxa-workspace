@@ -24,11 +24,13 @@ for name in ('CXX_DEFINES', 'CXX_INCLUDES', 'CXX_FLAGS'):
 arguments = [a for a in arguments if a != '-DNDEBUG']
 libraries = shlex.split(subprocess.check_output(
     ['pkg-config', '--libs', 'sdl2', 'freetype2', 'libpng'], text=True))
+accel = tests.parents[2] / 'components/pxa_render_accel'
 for source in ('lvgl_partial_test.cc', 'lvgl_direct_refresh_test.cc'):
     binary=build/Path(source).stem
     subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++17', *arguments,
         '-Wall', '-Wextra', '-Werror', '-I'+str(tests/'../include'),
-        str(tests/source), str(simulator/'lvgl/liblvgl.a'),
+        '-I'+str(accel/'include'), str(tests/source), str(accel/'pixels.c'),
+        str(simulator/'lvgl/liblvgl.a'),
         *libraries, '-lm', '-o', str(binary)], check=True)
     subprocess.run([str(binary)],
         env={**os.environ, 'SDL_VIDEODRIVER':'dummy', 'SDL_AUDIODRIVER':'dummy'}, check=True)

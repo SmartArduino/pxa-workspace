@@ -19,7 +19,8 @@ TMPDIR="$build_dir" python3 "$tests_dir/test_usb_restart.py"
   -I"$project_dir/firmware/components/pxa/include" \
   -I"$project_dir/firmware/components/pxa_render_accel/include" \
   -I"$project_dir/deps/pxa-system/libpxa/include" \
-  -DCONFIG_PXA_RENDER_ACCEL=0 \
+  -DCONFIG_PXA_RENDER_ACCEL=0 -DCONFIG_PXA_MOSAICO_LCD_STAGING_ROWS=4 \
+  -DCONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=1 \
   "$tests_dir/compositor_test.cc" \
   "$project_dir/firmware/components/pxa_render_accel/pixels.c" \
   "$project_dir/firmware/components/pxa_render_accel/ppa.c" \

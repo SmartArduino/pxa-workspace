@@ -71,8 +71,9 @@ public:
         struct { uint64_t consumed_samples, underruns, recoveries, missing_samples; } buffer;
         uint64_t decode_max_us, read_max_us;
     };
-    bool Initialize(bool (*write)(void*, const int16_t*, size_t), void* context, bool paced) {
-        assert(paced);
+    bool Initialize(bool (*write)(void*, const int16_t*, size_t), void* context,
+                    bool paced, uint32_t sample_rate, bool external_stack) {
+        assert(paced && sample_rate == 16000 && external_stack);
         write_ = write; context_ = context;
         active = this;
         return true;

@@ -6,7 +6,7 @@
 
 namespace pxadb {
 
-enum class Transport : uint8_t { kPrimary, kUart };
+enum class Transport : uint8_t { kPrimary, kUart, kLan };
 
 esp_err_t TransportStart(Transport transport);
 int TransportRead(Transport transport, uint8_t* bytes, size_t size, uint32_t timeout_ms);
